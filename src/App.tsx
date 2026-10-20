@@ -710,7 +710,7 @@ export default function App() {
     try {
       const allPriorMessages = activeThread ? activeThread.messages : [];
       const authHeaders = await getAuthHeaders();
-      const response = await fetch('/api/chat', {
+      const response = await fetch('https://prod-main-zeno-api-c257d4-00gfx3c9932.compute.instacloud-edge.com/api/chat', {
         method: 'POST',
         headers: authHeaders,
         signal: controller.signal,
@@ -909,7 +909,7 @@ export default function App() {
 
     try {
       const authHeaders = await getAuthHeaders();
-      const response = await fetch('/api/chat', {
+      const response = await fetch('https://prod-main-zeno-api-c257d4-00gfx3c9932.compute.instacloud-edge.com/api/chat', {
         method: 'POST',
         headers: authHeaders,
         signal: controller.signal,
@@ -1028,7 +1028,7 @@ export default function App() {
 
     try {
       const authHeaders = await getAuthHeaders();
-      const response = await fetch('/api/chat', {
+      const response = await fetch('https://prod-main-zeno-api-c257d4-00gfx3c9932.compute.instacloud-edge.com/api/chat', {
         method: 'POST',
         headers: authHeaders,
         signal: controller.signal,

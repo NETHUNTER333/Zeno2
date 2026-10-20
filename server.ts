@@ -2167,6 +2167,13 @@ Return ONLY valid JSON matching this schema:
 
 export const app = express();
 app.set('trust proxy', getTrustProxySetting());
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
 app.use(express.json({ limit: SERVER_LIMITS.JSON_BODY_LIMIT }));
 app.use(express.urlencoded({ extended: true, limit: SERVER_LIMITS.JSON_BODY_LIMIT }));
 
