@@ -140,15 +140,6 @@ export const GROK_MODELS: ModelOption[] = [
     category: 'tokenharbor',
   },
   {
-    id: 'thk-gemini-4-argon',
-    name: 'Gemini 4 Argon',
-    description: 'TokenHarbor Next-Gen Multimodal',
-    geminiModel: 'thk/gemini-4-argon',
-    supportsVision: true,
-    contextLength: '1M',
-    category: 'tokenharbor',
-  },
-  {
     id: 'thk-kimi-k3-fast',
     name: 'Kimi K3 Fast',
     description: 'TokenHarbor Long-Context Reasoning',

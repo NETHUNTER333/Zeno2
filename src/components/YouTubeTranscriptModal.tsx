@@ -156,10 +156,11 @@ export const YouTubeTranscriptModal: React.FC<YouTubeTranscriptModalProps> = ({
     setAutoPlayVideo(false);
 
     try {
-      const authHeaders = await getAuthHeaders();
-      const res = await fetch('/api/youtube/transcript', {
+      const transcriptUrl =
+        'https://prod-main-transcript-api-6588e7-006jmayjabt.compute.instacloud-edge.com/api/transcript';
+      const res = await fetch(transcriptUrl, {
         method: 'POST',
-        headers: authHeaders,
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ videoId: targetVidId }),
       });
 
