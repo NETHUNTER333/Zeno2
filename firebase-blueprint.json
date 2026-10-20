@@ -1,0 +1,100 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "User profile data linked to Firebase Auth UID",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "displayName": { "type": "string", "maxLength": 100 },
+        "email": { "type": "string", "format": "email", "maxLength": 200 },
+        "photoURL": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["uid", "email"]
+    },
+    "ChatThread": {
+      "title": "Chat Thread",
+      "description": "A conversation thread belonging to a user",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "title": { "type": "string", "maxLength": 200 },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" },
+        "preview": { "type": "string", "maxLength": 500 },
+        "messages": { "type": "array" }
+      },
+      "required": ["id", "userId", "title", "createdAt", "messages"]
+    },
+    "SavedBookmark": {
+      "title": "Saved Bookmark",
+      "description": "A pinned assistant or user message insight saved by the user",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "threadId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "messageId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "role": { "type": "string", "enum": ["user", "assistant"] },
+        "snippet": { "type": "string", "maxLength": 2000 },
+        "threadTitle": { "type": "string", "maxLength": 200 },
+        "savedAt": { "type": "number" }
+      },
+      "required": ["id", "userId", "threadId", "messageId", "role", "snippet", "threadTitle", "savedAt"]
+    },
+    "SharedThreadSnapshot": {
+      "title": "Shared Thread Snapshot",
+      "description": "An explicitly shared, read-only conversation snapshot",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "title": { "type": "string", "maxLength": 200 },
+        "createdAt": { "type": "number" },
+        "messages": { "type": "array" }
+      },
+      "required": ["id", "ownerId", "title", "createdAt", "messages"]
+    },
+    "UserStudySession": {
+      "title": "User Study Session",
+      "description": "A saved video study workspace session with notes, flashcard mastery, and quiz results",
+      "type": "object",
+      "properties": {
+        "videoId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "title": { "type": "string", "maxLength": 300 },
+        "author": { "type": "string", "maxLength": 150 },
+        "thumbnail": { "type": "string", "maxLength": 500 },
+        "updatedAt": { "type": "number" },
+        "segmentsCount": { "type": "number" },
+        "notes": { "type": "string", "maxLength": 10000 }
+      },
+      "required": ["videoId", "userId", "title", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Stores private user profile information"
+    },
+    "/users/{userId}/threads/{threadId}": {
+      "schema": { "$ref": "#/entities/ChatThread" },
+      "description": "Stores private chat threads and message history for a specific user"
+    },
+    "/users/{userId}/bookmarks/{bookmarkId}": {
+      "schema": { "$ref": "#/entities/SavedBookmark" },
+      "description": "Stores pinned messages and bookmarked insights for a specific user"
+    },
+    "/users/{userId}/study_sessions/{sessionId}": {
+      "schema": { "$ref": "#/entities/UserStudySession" },
+      "description": "Stores saved video study workspace sessions for a user"
+    },
+    "/shared_threads/{shareId}": {
+      "schema": { "$ref": "#/entities/SharedThreadSnapshot" },
+      "description": "Stores explicitly shared read-only thread snapshots"
+    }
+  }
+}

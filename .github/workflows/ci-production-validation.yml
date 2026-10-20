@@ -1,0 +1,49 @@
+name: Zeno Production Hardening & Security Validation
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  security-and-production-validation:
+    name: Typecheck, Rules Lint, Unit/Integration, Live Firestore Emulator & Load Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21 Runtime (Required for Firebase Firestore Emulator)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools
+
+      - name: Run TypeScript type checking
+        run: npm run lint
+
+      - name: Run static Firestore security rules linter
+        run: npm run lint:rules
+
+      - name: Run production Vite build
+        run: npm run build
+
+      - name: Run unit, staging, distributed rate-limit, and controlled SSE load tests
+        run: npx vitest run tests/auth-and-rate-limit.test.ts tests/search-and-chat-reliability.test.ts tests/staging-and-distributed-rate-limit.test.ts tests/load-and-sse-validation.test.ts
+
+      - name: Run real Firestore Emulator Suite authorization tests (Java 17)
+        run: npm run test:emulator

@@ -1,0 +1,17 @@
+{
+  "name": "subclip-instacloud-service",
+  "version": "2.0.0",
+  "description": "Subclip YouTube Real Transcript & Study Card Backend Service for InstaCloud",
+  "type": "module",
+  "main": "server.mjs",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "youtube-transcript": "^1.3.1",
+    "youtube-transcript-plus": "^2.0.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

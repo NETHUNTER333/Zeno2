@@ -1,0 +1,8 @@
+{
+  "name": "Zeno",
+  "description": "An AI chat bot supercharged with real-time web search and live agent tools powered by Treg and Google Gemini.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
