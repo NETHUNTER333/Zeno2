@@ -182,9 +182,10 @@ export const YouTubeTranscriptModal: React.FC<YouTubeTranscriptModalProps> = ({
       if (loadedSegments.length > 0) {
         setLoadingStudy(true);
         try {
-          const studyRes = await fetch('/api/youtube/study', {
+          const backendUrl = 'https://prod-main-zeno-api-c257d4-00gfx3c9932.compute.instacloud-edge.com';
+          const studyRes = await fetch(`${backendUrl}/api/youtube/study`, {
             method: 'POST',
-            headers: authHeaders,
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               videoId: targetVidId,
               videoTitle: title,
@@ -334,9 +335,10 @@ export const YouTubeTranscriptModal: React.FC<YouTubeTranscriptModalProps> = ({
 
     try {
       const authHeaders = await getAuthHeaders();
-      const res = await fetch('/api/youtube/chat', {
+      const backendUrl = 'https://prod-main-zeno-api-c257d4-00gfx3c9932.compute.instacloud-edge.com';
+      const res = await fetch(`${backendUrl}/api/youtube/chat`, {
         method: 'POST',
-        headers: authHeaders,
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           videoId: activeVideoId,
           videoTitle: resolvedTitle,

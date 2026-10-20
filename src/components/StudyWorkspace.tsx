@@ -275,9 +275,10 @@ export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
       if (loadedSegments.length > 0) {
         setLoadingStudy(true);
         try {
-          const studyRes = await fetch('/api/youtube/study', {
+          const backendUrl = 'https://prod-main-zeno-api-c257d4-00gfx3c9932.compute.instacloud-edge.com';
+          const studyRes = await fetch(`${backendUrl}/api/youtube/study`, {
             method: 'POST',
-            headers: authHeaders,
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               videoId: targetVidId,
               videoTitle: title,

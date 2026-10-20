@@ -23,3 +23,5 @@ coverage/
 .github/skills/
 skills-lock.json
 .vercel
+
+.insta/.agent-session-*.tmp
