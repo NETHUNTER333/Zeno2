@@ -289,3 +289,49 @@ html.light .prose-grok th {
   animation: textShimmer 3s linear infinite;
 }
 
+/* Auto-resizing viewport rules for mobile devices, tablets, and desktop browsers */
+html,
+body,
+#root {
+  width: 100%;
+  max-width: 100vw;
+  height: 100%;
+  height: 100dvh;
+  height: var(--app-height, 100dvh);
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+}
+
+.app-viewport-shell {
+  width: var(--app-width, 100%);
+  max-width: 100vw;
+  height: var(--app-height, 100dvh);
+  max-height: var(--app-height, 100dvh);
+}
+
+/* Ensure markdown tables, code blocks, and math formulas adapt and scroll within device screen width */
+.prose-grok {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  max-width: 100%;
+}
+
+.prose-grok pre {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.prose-grok table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.katex-display {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}

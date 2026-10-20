@@ -76,31 +76,88 @@ async function generateGeminiContentWithFallback(contents: any) {
           httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
         })
       : null);
-  if (!client) throw new Error('Gemini client not configured');
 
   let lastErr: any;
-  for (const modelName of GEMINI_FALLBACK_MODELS) {
-    try {
-      const resp = await Promise.race([
-        client.models.generateContent({
-          model: modelName,
-          contents,
-          config: modelName.startsWith('gemini-3')
-            ? { thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL } }
-            : undefined,
-        }),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error(`Gemini ${modelName} timed out`)), 4500)
-        ),
-      ]);
-      if (resp.text?.trim()) {
-        return { resp, modelName };
+  if (client) {
+    for (const modelName of GEMINI_FALLBACK_MODELS) {
+      try {
+        const resp = await Promise.race([
+          client.models.generateContent({
+            model: modelName,
+            contents,
+            config: modelName.startsWith('gemini-3')
+              ? { thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL } }
+              : undefined,
+          }),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error(`Gemini ${modelName} timed out`)), 4500)
+          ),
+        ]);
+        if (resp.text?.trim()) {
+          return { resp, modelName };
+        }
+      } catch (err) {
+        lastErr = err;
       }
-    } catch (err) {
-      lastErr = err;
     }
   }
-  throw lastErr || new Error('All Gemini models failed');
+
+  // Fallback to TokenHarbour / LarpRouter / InternAI when GEMINI_API_KEY is not configured
+  const promptText =
+    typeof contents === 'string'
+      ? contents
+      : Array.isArray(contents)
+      ? contents
+          .map((c: any) =>
+            typeof c === 'string'
+              ? c
+              : Array.isArray(c?.parts)
+              ? c.parts.map((p: any) => p?.text || '').join('\n')
+              : c?.text || ''
+          )
+          .join('\n')
+      : String(contents || '');
+
+  if (promptText.trim()) {
+    const fallbackGateways = [
+      { url: `${TOKENHARBOR_BASE_URL}/chat/completions`, key: TOKENHARBOR_API_KEY, model: 'deepseek-v4.1-flash:free' },
+      { url: `${LARPROUTER_BASE_URL}/chat/completions`, key: LARPROUTER_API_KEY, model: 'deepseek-chat' },
+      { url: `${INTERN_AI_BASE_URL}/chat/completions`, key: INTERN_AI_API_KEY, model: 'Agents-A1' },
+    ];
+    for (const gw of fallbackGateways) {
+      if (!gw.key) continue;
+      try {
+        const r = await fetch(gw.url, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${gw.key}`,
+            'Content-Type': 'application/json',
+          },
+          signal: AbortSignal.timeout(8000),
+          body: JSON.stringify({
+            model: gw.model,
+            messages: [{ role: 'user', content: promptText }],
+            max_tokens: 4096,
+            temperature: 0.7,
+          }),
+        });
+        if (r.ok) {
+          const data: any = await r.json();
+          const text = data?.choices?.[0]?.message?.content?.trim();
+          if (text) {
+            return {
+              resp: { text, usageMetadata: undefined } as any,
+              modelName: gw.model,
+            };
+          }
+        }
+      } catch (err) {
+        lastErr = err;
+      }
+    }
+  }
+
+  throw lastErr || new Error('All Gemini and gateway fallback models failed');
 }
 
 // Rumik AI Silk TTS Credentials (strictly from environment variables)
@@ -642,6 +699,15 @@ async function generateChatCompletion(
     if (TOKENHARBOR_API_KEY) {
       try {
         return await tryCallWithTextFallback((m) => callTokenHarbor('deepseek-v4.1-flash:free', m, false));
+      } catch {
+        // Continue
+      }
+    }
+
+    // 2b. Try LarpRouter gateway (deepseek-chat)
+    if (LARPROUTER_API_KEY) {
+      try {
+        return await tryCallWithTextFallback((m) => callLarpRouter('deepseek-chat', m));
       } catch {
         // Continue
       }

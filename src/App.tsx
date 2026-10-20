@@ -208,6 +208,41 @@ export default function App() {
     return () => window.removeEventListener('zeno-open-study-workspace', handleOpenStudyWorkspace);
   }, []);
 
+  // Automatically resize application container for any device screen, mobile keyboard, or browser window
+  useEffect(() => {
+    let prevWidth = window.innerWidth;
+    const syncViewportDimensions = () => {
+      const vv = window.visualViewport;
+      const height = vv ? vv.height : window.innerHeight;
+      const width = vv ? vv.width : window.innerWidth;
+      document.documentElement.style.setProperty('--app-height', `${height}px`);
+      document.documentElement.style.setProperty('--app-width', `${width}px`);
+
+      // Automatically close sidebar if browser shrinks from desktop to mobile breakpoint
+      if (prevWidth >= 768 && width < 768) {
+        setIsSidebarOpen(false);
+      }
+      prevWidth = width;
+    };
+
+    syncViewportDimensions();
+    window.addEventListener('resize', syncViewportDimensions);
+    window.addEventListener('orientationchange', syncViewportDimensions);
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', syncViewportDimensions);
+      window.visualViewport.addEventListener('scroll', syncViewportDimensions);
+    }
+
+    return () => {
+      window.removeEventListener('resize', syncViewportDimensions);
+      window.removeEventListener('orientationchange', syncViewportDimensions);
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', syncViewportDimensions);
+        window.visualViewport.removeEventListener('scroll', syncViewportDimensions);
+      }
+    };
+  }, []);
+
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -1056,7 +1091,7 @@ export default function App() {
 
   return (
     <div
-      className={`flex h-screen w-full overflow-hidden font-sans select-text transition-colors duration-200 ${
+      className={`app-viewport-shell flex h-[100dvh] w-full max-w-[100vw] overflow-hidden font-sans select-text transition-colors duration-200 ${
         isDark ? 'bg-[#000000] text-white' : 'bg-[#ffffff] text-[#000000]'
       }`}
     >
@@ -1108,7 +1143,7 @@ export default function App() {
 
           {/* Main View Area: Dedicated Account & Settings Page OR Study Workspace OR Main Chat Canvas */}
           {currentView === 'account' ? (
-            <div className="flex-1 flex flex-col h-full overflow-hidden relative">
+            <div className="flex-1 min-w-0 flex flex-col h-full overflow-hidden relative">
               <AccountWorkspacePage
                 onBackToChat={() => setCurrentView('chat')}
                 initialTab={accountPageTab}
@@ -1126,7 +1161,7 @@ export default function App() {
               />
             </div>
           ) : currentView === 'study' ? (
-            <div className="flex-1 flex flex-col h-full overflow-hidden relative">
+            <div className="flex-1 min-w-0 flex flex-col h-full overflow-hidden relative">
               <StudyWorkspace
                 initialVideo={activeStudyVideo}
                 onBackToChat={() => setCurrentView('chat')}
@@ -1139,9 +1174,9 @@ export default function App() {
             </div>
           ) : (
             /* Main Chat Canvas */
-            <div className="flex-1 flex flex-col h-full overflow-hidden relative">
+            <div className="flex-1 min-w-0 flex flex-col h-full overflow-hidden relative">
               {/* Glassmorphic Floating Top Controls (Sidebar toggle, Export & Small Icon-only New Chat) */}
-              <div className="absolute top-2 left-4 right-4 z-30 flex items-center justify-between pointer-events-none">
+              <div className="absolute top-[max(0.5rem,env(safe-area-inset-top))] left-3 right-3 sm:left-4 sm:right-4 z-30 flex items-center justify-between gap-2 pointer-events-none">
                 <button
                   onClick={() => setIsSidebarOpen(!isSidebarOpen)}
                   className={`pointer-events-auto p-1.5 rounded-xl border backdrop-blur-2xl transition-all cursor-pointer ${
@@ -1186,7 +1221,7 @@ export default function App() {
               {/* Content State: Empty vs Thread */}
               {isThreadEmpty ? (
                 /* Empty State: Center logo, small subtle suggestions above prompt input, prompt input anchored at bottom */
-                <div className="flex-1 flex flex-col items-center justify-between px-4 w-full overflow-y-auto pt-16 pb-6 sm:pb-8">
+                <div className="flex-1 min-w-0 flex flex-col items-center justify-between px-3 sm:px-4 w-full overflow-y-auto pt-14 sm:pt-16 pb-[max(1rem,env(safe-area-inset-bottom))] sm:pb-8">
                   {/* Center Area: Centered Grok Wordmark */}
                   <div className="flex-1 flex flex-col items-center justify-center my-auto">
                     <GrokLogo size="lg" isDark={isDark} />
@@ -1230,13 +1265,13 @@ export default function App() {
                 </div>
               ) : (
                 /* Active Thread State with message flow beneath floating prompt */
-                <div className="flex-1 flex flex-col h-full overflow-hidden relative">
+                <div className="flex-1 min-w-0 flex flex-col h-full overflow-hidden relative">
                   {/* Slim horizontal reading progress bar at top of chat viewport */}
                   <ReadingProgressBar viewportRef={messagesContainerRef} isDark={isDark} />
 
                   {/* Scrollable Messages Viewport with bottom padding so content flows beneath the floating composer */}
-                  <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-4 pb-36 scrollbar-thin">
-                    <div className="py-4 max-w-3xl mx-auto w-full">
+                  <div ref={messagesContainerRef} className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden px-3 sm:px-4 pb-36 scrollbar-thin">
+                    <div className="py-4 max-w-3xl mx-auto w-full min-w-0">
                       {messages.map((msg) => (
                         <GrokChatMessage
                           key={msg.id}
@@ -1262,8 +1297,8 @@ export default function App() {
                   />
 
                   {/* Absolute Floating Bottom Composer with no opaque background scrim */}
-                  <div className="absolute bottom-0 inset-x-0 p-4 pointer-events-none z-20">
-                    <div className="max-w-3xl mx-auto pointer-events-auto">
+                  <div className="absolute bottom-0 inset-x-0 px-3 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:p-4 pointer-events-none z-20">
+                    <div className="max-w-3xl mx-auto w-full pointer-events-auto">
                       <ChatInput
                         onSend={handleSend}
                         onCancel={handleCancel}

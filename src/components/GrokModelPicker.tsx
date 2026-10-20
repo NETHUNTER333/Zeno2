@@ -365,7 +365,7 @@ export const GrokModelPicker: React.FC<GrokModelPickerProps> = ({
       ? 'top-full left-1/2 -translate-x-1/2 mt-2'
       : 'bottom-full right-0 mb-3';
 
-  const renderModelGroup = (category: 'core' | 'tokenharbor' | 'intern', title: string, showBorder = false) => {
+  const renderModelGroup = (category: 'core' | 'tokenharbor' | 'intern' | 'larp', title: string, showBorder = false) => {
     const items = GROK_MODELS.filter((m) => m.category === category);
     if (items.length === 0) return null;
     return (
@@ -449,12 +449,12 @@ export const GrokModelPicker: React.FC<GrokModelPickerProps> = ({
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className={triggerClasses}
+        className={`${triggerClasses} max-w-[60vw] sm:max-w-[320px]`}
         title={current.name}
       >
-        <span className="font-semibold text-[12px] tracking-tight">{current.name}</span>
+        <span className="font-semibold text-[12px] tracking-tight truncate">{current.name}</span>
         <ChevronDown
-          className={`w-3.5 h-3.5 transition-transform duration-200 ${
+          className={`w-3.5 h-3.5 shrink-0 transition-transform duration-200 ${
             isOpen ? 'rotate-180' : ''
           } opacity-60`}
         />
@@ -463,7 +463,7 @@ export const GrokModelPicker: React.FC<GrokModelPickerProps> = ({
       {/* Downward opening Dropdown Menu */}
       {isOpen && (
         <div
-          className={`absolute ${dropdownPositionClasses} w-72 max-w-[calc(100vw-2rem)] max-h-[460px] overflow-y-auto scrollbar-thin rounded-2xl border p-2 z-50 text-xs shadow-2xl animate-in fade-in zoom-in-95 duration-150 ${
+          className={`absolute ${dropdownPositionClasses} w-72 max-w-[calc(100vw-1.5rem)] max-h-[min(460px,68dvh)] overflow-y-auto scrollbar-thin rounded-2xl border p-2 z-50 text-xs shadow-2xl animate-in fade-in zoom-in-95 duration-150 ${
             isDark
               ? 'bg-[#141414]/98 border-[#2e2e2e] text-white shadow-[0_20px_60px_rgba(0,0,0,0.95)]'
               : 'bg-[#ffffff]/98 border-[#dcdcdc] text-[#0d0d0d] shadow-[0_20px_60px_rgba(0,0,0,0.18)]'
