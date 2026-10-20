@@ -13,15 +13,6 @@ export interface ModelOption {
 
 export const GROK_MODELS: ModelOption[] = [
   {
-    id: 'gemini-3.8-flash-free',
-    name: 'Gemini 3.8 Flash',
-    description: 'Multimodal Vision & High Speed',
-    geminiModel: 'gemini-3.8-flash-free',
-    supportsVision: true,
-    contextLength: '1M',
-    category: 'core',
-  },
-  {
     id: 'deepseek-v4.1-flash-free',
     name: 'DeepSeek V4.1 Flash',
     description: 'TokenHarbor Live Reasoning & Search',
@@ -315,7 +306,7 @@ export const GROK_MODELS: ModelOption[] = [
 ];
 
 export function getDefaultVisionModel(): ModelOption {
-  return GROK_MODELS.find((m) => m.id === 'gemini-3.8-flash-free') || GROK_MODELS[0];
+  return GROK_MODELS.find((m) => m.supportsVision) || GROK_MODELS[0];
 }
 
 interface GrokModelPickerProps {

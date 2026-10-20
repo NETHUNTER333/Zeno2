@@ -133,7 +133,7 @@ export const DEFAULT_PERSONALIZATION: UserPersonalization = {
   customInstructionsEnabled: true,
   voicePersona: 'Puck',
   voiceSpeed: 1.0,
-  defaultModelId: 'gemini-3.8-flash-free',
+  defaultModelId: 'deepseek-v4.1-flash-free',
 };
 
 export const DEFAULT_PROJECT_FOLDERS: ProjectFolder[] = [

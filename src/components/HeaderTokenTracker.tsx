@@ -11,7 +11,7 @@ interface HeaderTokenTrackerProps {
 }
 
 function getCleanModelName(rawModel?: string): string {
-  if (!rawModel) return 'Gemini 3.8 Flash';
+  if (!rawModel) return 'DeepSeek V4.1 Flash';
   const matched = GROK_MODELS.find(
     (m) => m.name === rawModel || m.id === rawModel || m.geminiModel === rawModel
   );
