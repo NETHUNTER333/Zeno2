@@ -3,6 +3,14 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI, ThinkingLevel } from '@google/genai';
+import rootKeysAndRouters from './keysAndRouters.json';
+import folderKeysAndRouters from './keys/keysAndRouters.json';
+
+const keysAndRouters = {
+  ...rootKeysAndRouters,
+  tokens: { ...rootKeysAndRouters?.tokens, ...folderKeysAndRouters?.tokens },
+  baseUrls: { ...rootKeysAndRouters?.baseUrls, ...folderKeysAndRouters?.baseUrls },
+};
 import {
   SERVER_LIMITS,
   getFirebaseProjectId,
@@ -120,6 +128,8 @@ async function generateGeminiContentWithFallback(contents: any) {
 
   if (promptText.trim()) {
     const fallbackGateways = [
+      { url: `${RADOX_AI_BASE_URL}/chat/completions`, key: RADOX_AI_API_KEY, model: 'qwen3.8-27b' },
+      { url: `${ITERA_COMPUTE_BASE_URL}/chat/completions`, key: ITERA_COMPUTE_API_KEY, model: 'qwen/qwen3.8-27b' },
       { url: `${TOKENHARBOR_BASE_URL}/chat/completions`, key: TOKENHARBOR_API_KEY, model: 'deepseek-v4.1-flash:free' },
       { url: `${LARPROUTER_BASE_URL}/chat/completions`, key: LARPROUTER_API_KEY, model: 'deepseek-chat' },
       { url: `${INTERN_AI_BASE_URL}/chat/completions`, key: INTERN_AI_API_KEY, model: 'Agents-A1' },
@@ -183,8 +193,14 @@ const APINEX_DEFAULT_MODEL = process.env.APINEX_MODEL || 'free/glm-5.3';
 const FLM_BASE_URL = process.env.FLM_BASE_URL || 'https://flm.stonech.at/v1';
 
 // Intern InkStone (InternAI) Discovery API provider
-const INTERN_AI_BASE_URL = process.env.INTERN_AI_BASE_URL || 'https://discovery-api.intern-ai.org.cn/v1';
-const INTERN_AI_API_KEY = process.env.INTERN_AI_API_KEY || 'sk-fd15650f5caec01e7ac7b27ee50c130cddd8c0d9efb9be85865cb81e709f0dc1';
+const INTERN_AI_BASE_URL =
+  process.env.INTERN_AI_BASE_URL ||
+  keysAndRouters?.baseUrls?.internAi ||
+  'https://discovery-api.intern-ai.org.cn/v1';
+const INTERN_AI_API_KEY =
+  process.env.INTERN_AI_API_KEY ||
+  keysAndRouters?.tokens?.internAi ||
+  'sk-fd15650f5caec01e7ac7b27ee50c130cddd8c0d9efb9be85865cb81e709f0dc1';
 const INTERN_SUPPORTED_MODELS = [
   'Agents-A1',
   'Atria-Dawn',
@@ -201,9 +217,13 @@ const INTERN_SUPPORTED_MODELS = [
 ];
 
 // Token Harbor AI Unified Frontier Gateway (https://tokenharbor.ai/v1)
-const TOKENHARBOR_BASE_URL = process.env.TOKENHARBOR_BASE_URL || 'https://tokenharbor.ai/v1';
+const TOKENHARBOR_BASE_URL =
+  process.env.TOKENHARBOR_BASE_URL ||
+  keysAndRouters?.baseUrls?.tokenHarbour ||
+  'https://tokenharbor.ai/v1';
 const TOKENHARBOR_API_KEY =
   process.env.TOKENHARBOR_API_KEY ||
+  keysAndRouters?.tokens?.tokenHarbour ||
   'thk_live_N01K1qzLlsOd_3kMQ1vmD6iXGlRkezxwDv1yzHVDndwdyAUMLdxZJ01Eh_mCDGMS';
 const TOKENHARBOR_FREE_MODELS = [
   'deepseek-v4.1-flash:free',
@@ -213,10 +233,101 @@ const TOKENHARBOR_FREE_MODELS = [
 ];
 
 // LarpRouter Gateway (https://larprouter.com/v1)
-const LARPROUTER_BASE_URL = process.env.LARPROUTER_BASE_URL || 'https://larprouter.com/v1';
+const LARPROUTER_BASE_URL =
+  process.env.LARPROUTER_BASE_URL ||
+  keysAndRouters?.baseUrls?.larpRouter ||
+  'https://larprouter.com/v1';
 const LARPROUTER_API_KEY =
   process.env.LARPROUTER_API_KEY ||
+  keysAndRouters?.tokens?.larpRouter ||
   'lrsk-22e48d93c031bd11594a6d662abdf6e580ebaa923c79ee966b8f17f621ec4300';
+
+// RadoxAI Gateway (https://radoxai.com/v1)
+const RADOX_AI_BASE_URL =
+  process.env.RADOX_AI_BASE_URL ||
+  (keysAndRouters?.baseUrls as any)?.radoxAi ||
+  'https://radoxai.com/v1';
+const RADOX_AI_API_KEY =
+  process.env.RADOX_AI_API_KEY ||
+  (keysAndRouters?.tokens as any)?.radoxAi ||
+  'cc_LJObev7AfX0EgPkH8KAd46CGoumngCZAP5gMcbH1v0pPd53k';
+const RADOX_SUPPORTED_MODELS = [
+  'claude-opus-5.5',
+  'claude-mythos-preview',
+  'claude-fable-5.1',
+  'claude-fable-5',
+  'claude-sonnet-5',
+  'claude-opus-5',
+  'claude-opus-4.8',
+  'claude-opus-4.7',
+  'claude-opus-4.6',
+  'gpt-5.6-sol',
+  'gpt-5.6-terra',
+  'gpt-5.6-luna',
+  'gpt-5.5-pro',
+  'gpt-5.5',
+  'deepseek-v4-pro-max',
+  'deepseek-v4-pro-0813',
+  'deepseek-v4-flash-0731',
+  'gemini-3.7-flash',
+  'gemini-3.6-flash',
+  'gemini-3.1-pro',
+  'grok-4.6',
+  'grok-4.5',
+  'qwen3.8-max',
+  'qwen3.7-max',
+  'qwen3.8-27b',
+  'kimi-k3',
+  'kimi-k2.6',
+  'seed-2.1-pro',
+  'seed-2.1-turbo',
+  'muse-spark-1.1',
+  'glm-5.3',
+  'glm-5.2',
+  'gemma-2-2b',
+];
+
+// IteraCompute Gateway (https://api.iteracompute.com/v1)
+const ITERA_COMPUTE_BASE_URL =
+  process.env.ITERA_COMPUTE_BASE_URL ||
+  (keysAndRouters?.baseUrls as any)?.iteraCompute ||
+  'https://api.iteracompute.com/v1';
+const ITERA_COMPUTE_API_KEY =
+  process.env.ITERA_COMPUTE_API_KEY ||
+  (keysAndRouters?.tokens as any)?.iteraCompute ||
+  'sk-b5buq_HdkB_Xu485GqZ9Dg';
+const ITERA_SUPPORTED_MODELS = [
+  'moonshotai/kimi-k3-free',
+  'qwen/qwen3.8-27b',
+  'anthropic/claude-opus-5-5',
+  'anthropic/claude-sonnet-5-5',
+  'anthropic/claude-fable-5-1',
+  'anthropic/claude-haiku-5-5',
+  'openai/gpt-6.1-sol',
+  'openai/gpt-6-astra',
+  'openai/gpt-6-luna',
+  'gemini/gemini-4-argon',
+  'gemini/gemini-3.8-flash',
+  'gemini/gemini-nano-banana-2.1',
+  'deepseek/deepseek-v4.1-flash-1017',
+  'deepseek/deepseek-v4.1-flash',
+  'deepseek/deepseek-v4-pro-0813',
+  'deepseek/deepseek-v4-flash-0731',
+  'qwen/qwen3.8-2.4t-a95b',
+  'qwen/qwen3.8-flash',
+  'moonshotai/kimi-k3',
+  'moonshotai/kimi-k2.7-code',
+  'moonshotai/kimi-k2.6',
+  'moonshotai/kimi-k2.5',
+  'minimax/minimax-m3',
+  'minimax/minimax-m2.7',
+  'minimax/minimax-m2.5',
+  'z-ai/glm-5.3',
+  'z-ai/glm-5.3-flash',
+  'z-ai/glm-5.2',
+  'z-ai/glm-5.1',
+  'z-ai/glm-5',
+];
 
 async function callInternAiGlobal(targetModel: string, msgs: any[]): Promise<string> {
   if (!INTERN_AI_API_KEY) throw new Error('INTERN_AI_API_KEY not configured');
@@ -673,6 +784,161 @@ async function generateChatCompletion(
     return metrics;
   };
 
+  const callRadoxAiSingle = async (
+    targetModel: string,
+    msgs = openAiMessages,
+    timeoutMs = 20000
+  ): Promise<RealCompletionMetrics> => {
+    if (!RADOX_AI_API_KEY) throw new Error('RADOX_AI_API_KEY not configured');
+    const t0 = Date.now();
+    const resp = await fetch(`${RADOX_AI_BASE_URL}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${RADOX_AI_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      signal: AbortSignal.timeout(timeoutMs),
+      body: JSON.stringify({
+        model: targetModel,
+        messages: msgs,
+        temperature: 0.7,
+        reasoning_effort: 'low',
+      }),
+    });
+    const tHeaders = Date.now();
+    const data: any = await resp.json();
+    const tDone = Date.now();
+
+    if (!resp.ok || data?.error) {
+      throw new Error(data?.error?.message || `RadoxAI HTTP ${resp.status}`);
+    }
+
+    const rawMsg = data?.choices?.[0]?.message;
+    const bodyText = rawMsg?.content || '';
+    const reasoningText = rawMsg?.reasoning_content || '';
+    let content = '';
+    if (reasoningText && bodyText) {
+      content = `<think>\n${reasoningText.trim()}\n</think>\n\n${bodyText.trim()}`;
+    } else {
+      content = bodyText || reasoningText || '';
+    }
+    if (!content) throw new Error('Empty RadoxAI response');
+
+    const metrics = buildMetricsFromOpenAiResponse(
+      data,
+      content,
+      `radox/${data?.model || targetModel}`,
+      msgs,
+      t0,
+      tHeaders,
+      tDone
+    );
+    if (metrics.reasoningTokens === 0 && reasoningText) {
+      metrics.reasoningTokens = countExactSubwordTokens(reasoningText);
+    }
+    return metrics;
+  };
+
+  const callRadoxAi = async (
+    targetModel: string,
+    msgs = openAiMessages
+  ): Promise<RealCompletionMetrics> => {
+    const candidates = Array.from(
+      new Set([
+        targetModel,
+        'qwen3.8-27b',
+        'grok-4.5',
+        'glm-5.2',
+      ])
+    );
+    let lastErr: any;
+    for (let i = 0; i < candidates.length; i++) {
+      const candidate = candidates[i];
+      try {
+        const res = await callRadoxAiSingle(candidate, msgs, i === 0 ? 18000 : 10000);
+        return { ...res, modelUsed: `radox/${targetModel}` };
+      } catch (err) {
+        lastErr = err;
+      }
+    }
+    throw lastErr || new Error('RadoxAI request failed');
+  };
+
+  const callIteraComputeSingle = async (
+    targetModel: string,
+    msgs = openAiMessages,
+    timeoutMs = 20000
+  ): Promise<RealCompletionMetrics> => {
+    if (!ITERA_COMPUTE_API_KEY) throw new Error('ITERA_COMPUTE_API_KEY not configured');
+    const t0 = Date.now();
+    const resp = await fetch(`${ITERA_COMPUTE_BASE_URL}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${ITERA_COMPUTE_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      signal: AbortSignal.timeout(timeoutMs),
+      body: JSON.stringify({
+        model: targetModel,
+        messages: msgs,
+        max_tokens: 4096,
+        temperature: 0.7,
+      }),
+    });
+    const tHeaders = Date.now();
+    const data: any = await resp.json();
+    const tDone = Date.now();
+
+    if (!resp.ok || data?.error) {
+      throw new Error(data?.error?.message || `IteraCompute HTTP ${resp.status}`);
+    }
+
+    const rawMsg = data?.choices?.[0]?.message;
+    const bodyText = rawMsg?.content || '';
+    const reasoningText = rawMsg?.reasoning_content || '';
+    let content = '';
+    if (reasoningText && bodyText) {
+      content = `<think>\n${reasoningText.trim()}\n</think>\n\n${bodyText.trim()}`;
+    } else {
+      content = bodyText || reasoningText || '';
+    }
+    if (!content) throw new Error('Empty IteraCompute response');
+
+    const metrics = buildMetricsFromOpenAiResponse(
+      data,
+      content,
+      `itera/${data?.model || targetModel}`,
+      msgs,
+      t0,
+      tHeaders,
+      tDone
+    );
+    if (metrics.reasoningTokens === 0 && reasoningText) {
+      metrics.reasoningTokens = countExactSubwordTokens(reasoningText);
+    }
+    return metrics;
+  };
+
+  const callIteraCompute = async (
+    targetModel: string,
+    msgs = openAiMessages
+  ): Promise<RealCompletionMetrics> => {
+    const candidates = Array.from(
+      new Set([targetModel, 'qwen/qwen3.8-27b'])
+    );
+    let lastErr: any;
+    for (let i = 0; i < candidates.length; i++) {
+      const candidate = candidates[i];
+      try {
+        const res = await callIteraComputeSingle(candidate, msgs, i === 0 ? 15000 : 12000);
+        return { ...res, modelUsed: `itera/${targetModel}` };
+      } catch (err) {
+        lastErr = err;
+      }
+    }
+    throw lastErr || new Error('IteraCompute request failed');
+  };
+
   const hasMultimodalArray = openAiMessages.some((m) => Array.isArray(m.content));
 
   const tryCallWithTextFallback = async (
@@ -688,13 +954,31 @@ async function generateChatCompletion(
     }
   };
 
-  // Helper to try Gemini Direct, TokenHarbor, Intern InkStone, Beat API, FLM, Pollinations, and Apinex
+  // Helper to try Gemini Direct, RadoxAI, IteraCompute, TokenHarbor, LarpRouter, Intern InkStone, Beat API, FLM, Pollinations, and Apinex
   const tryBeatModelsAndFallbacks = async (primaryBeatModel: string): Promise<RealCompletionMetrics> => {
     // 1. Try Gemini Direct first (fast ~1.5s & native)
     try {
       return await callGeminiDirect(openAiMessages);
     } catch {
       // Continue to secondary providers
+    }
+
+    // 1a. Try RadoxAI fast verified model (qwen3.8-27b ~3s)
+    if (RADOX_AI_API_KEY) {
+      try {
+        return await tryCallWithTextFallback((m) => callRadoxAiSingle('qwen3.8-27b', m, 10000));
+      } catch {
+        // Continue
+      }
+    }
+
+    // 1b. Try IteraCompute verified free model (qwen/qwen3.8-27b ~5s)
+    if (ITERA_COMPUTE_API_KEY) {
+      try {
+        return await tryCallWithTextFallback((m) => callIteraComputeSingle('qwen/qwen3.8-27b', m, 10000));
+      } catch {
+        // Continue
+      }
     }
 
     // 2. Try TokenHarbor live free model (deepseek-v4.1-flash:free)
@@ -782,23 +1066,41 @@ async function generateChatCompletion(
   const cleanLarpModel = requestedModel.startsWith('larp/') ? requestedModel.slice(5) : requestedModel;
   const isLarpModel = requestedModel.startsWith('larp/') || requestedModel.startsWith('larp-');
 
+  const cleanRadoxModel = requestedModel.startsWith('radox/') ? requestedModel.slice(6) : requestedModel;
+  const isRadoxModel =
+    requestedModel.startsWith('radox/') || RADOX_SUPPORTED_MODELS.includes(cleanRadoxModel);
+
+  const cleanIteraModel = requestedModel.startsWith('itera/') ? requestedModel.slice(6) : requestedModel;
+  const isIteraModel =
+    requestedModel.startsWith('itera/') || ITERA_SUPPORTED_MODELS.includes(cleanIteraModel);
+
   const isBeatModel = BEAT_SUPPORTED_MODELS.includes(requestedModel);
   const isFlmSelected =
     requestedModel === 'flm/auto' || requestedModel === 'auto' || requestedModel.startsWith('flm');
 
-  if (isTokenHarborModel) {
+  if (isIteraModel) {
+    try {
+      return await tryCallWithTextFallback((m) => callIteraCompute(cleanIteraModel, m));
+    } catch {
+      return await tryBeatModelsAndFallbacks('deepseek-v4.1-flash-free');
+    }
+  } else if (isRadoxModel) {
+    try {
+      return await tryCallWithTextFallback((m) => callRadoxAi(cleanRadoxModel, m));
+    } catch {
+      return await tryBeatModelsAndFallbacks('deepseek-v4.1-flash-free');
+    }
+  } else if (isTokenHarborModel) {
     try {
       return await tryCallWithTextFallback((m) => callTokenHarbor(cleanThkModel, m, true));
-    } catch (err: any) {
-      console.warn(`TokenHarbor model ${cleanThkModel} failed:`, err.message);
-      return await tryBeatModelsAndFallbacks('gemini-3.8-flash-free');
+    } catch {
+      return await tryBeatModelsAndFallbacks('deepseek-v4.1-flash-free');
     }
   } else if (isLarpModel) {
     try {
       return await tryCallWithTextFallback((m) => callLarpRouter(cleanLarpModel, m));
-    } catch (err: any) {
-      console.warn(`LarpRouter model ${cleanLarpModel} failed:`, err.message);
-      return await tryBeatModelsAndFallbacks('gemini-3.8-flash-free');
+    } catch {
+      return await tryBeatModelsAndFallbacks('deepseek-v4.1-flash-free');
     }
   } else if (isInternModel) {
     try {
@@ -806,9 +1108,8 @@ async function generateChatCompletion(
     } catch {}
     try {
       return await tryCallWithTextFallback((m) => callInternAi(cleanInternModel, m));
-    } catch (err: any) {
-      console.warn(`Intern InkStone model ${cleanInternModel} failed:`, err.message);
-      return await tryBeatModelsAndFallbacks('gemini-3.8-flash-free');
+    } catch {
+      return await tryBeatModelsAndFallbacks('deepseek-v4.1-flash-free');
     }
   } else if (isBeatModel) {
     return await tryBeatModelsAndFallbacks(requestedModel);

@@ -8,14 +8,14 @@ export interface ModelOption {
   geminiModel: string;
   supportsVision: boolean;
   contextLength?: string;
-  category?: 'core' | 'tokenharbor' | 'intern' | 'larp';
+  category?: 'core' | 'tokenharbor' | 'intern' | 'larp' | 'radox' | 'itera';
 }
 
 export const GROK_MODELS: ModelOption[] = [
   {
     id: 'deepseek-v4.1-flash-free',
     name: 'DeepSeek V4.1 Flash',
-    description: 'TokenHarbor Live Reasoning & Search',
+    description: 'Live Reasoning & Search',
     geminiModel: 'thk/deepseek-v4.1-flash:free',
     supportsVision: false,
     contextLength: '1M',
@@ -24,7 +24,7 @@ export const GROK_MODELS: ModelOption[] = [
   {
     id: 'mimo-v2.5-free',
     name: 'MiMo V2.5 High-Tier',
-    description: 'TokenHarbor High-Tier Reasoning (Free)',
+    description: 'High-Tier Analytical Reasoning',
     geminiModel: 'thk/mimo-v2.5:free',
     supportsVision: false,
     contextLength: '1M',
@@ -33,7 +33,7 @@ export const GROK_MODELS: ModelOption[] = [
   {
     id: 'deepseek-v4-flash-0731-free',
     name: 'DeepSeek V4 Flash',
-    description: 'TokenHarbor Fast Analytical Reasoning',
+    description: 'Fast Analytical Reasoning',
     geminiModel: 'thk/deepseek-v4-flash:free',
     supportsVision: false,
     contextLength: '1M',
@@ -42,7 +42,7 @@ export const GROK_MODELS: ModelOption[] = [
   {
     id: 'mimo-v2.6-flash-free',
     name: 'MiMo V2.6 Flash',
-    description: 'TokenHarbor Low-Latency Thinking',
+    description: 'Low-Latency Thinking',
     geminiModel: 'thk/mimo-v2.6-flash:free',
     supportsVision: false,
     contextLength: '1M',
@@ -86,18 +86,18 @@ export const GROK_MODELS: ModelOption[] = [
   },
   {
     id: 'flm-auto',
-    name: 'FLM Auto',
+    name: 'Auto Router',
     description: 'Adaptive Smart Model Router',
     geminiModel: 'flm/auto',
     supportsVision: false,
     contextLength: 'Auto',
     category: 'core',
   },
-  // --- Token Harbor AI Unified Gateway Models ---
+  // --- Frontier Models ---
   {
     id: 'thk-claude-opus-5.5',
     name: 'Claude Opus 5.5',
-    description: 'TokenHarbor Anthropic Frontier Route',
+    description: 'Flagship Deep Reasoning & Coding',
     geminiModel: 'thk/claude-opus-5.5',
     supportsVision: true,
     contextLength: '1M',
@@ -106,7 +106,7 @@ export const GROK_MODELS: ModelOption[] = [
   {
     id: 'thk-claude-sonnet-5.5',
     name: 'Claude Sonnet 5.5',
-    description: 'TokenHarbor Balanced Coding & Analysis',
+    description: 'Balanced Coding & Analysis',
     geminiModel: 'thk/claude-sonnet-5.5',
     supportsVision: true,
     contextLength: '1M',
@@ -115,7 +115,7 @@ export const GROK_MODELS: ModelOption[] = [
   {
     id: 'thk-gpt-6.1-sol-fast',
     name: 'GPT-6.1 Sol Fast',
-    description: 'TokenHarbor High-Speed Frontier Route',
+    description: 'High-Speed Frontier Intelligence',
     geminiModel: 'thk/gpt-6.1-sol-fast',
     supportsVision: true,
     contextLength: '1.05M',
@@ -124,7 +124,7 @@ export const GROK_MODELS: ModelOption[] = [
   {
     id: 'thk-gpt-6-astra-fast',
     name: 'GPT-6 Astra Fast',
-    description: 'TokenHarbor Flagship Deep Intelligence',
+    description: 'Flagship Deep Intelligence',
     geminiModel: 'thk/gpt-6-astra-fast',
     supportsVision: true,
     contextLength: '1.05M',
@@ -133,16 +133,25 @@ export const GROK_MODELS: ModelOption[] = [
   {
     id: 'thk-grok-4.7',
     name: 'Grok 4.7',
-    description: 'TokenHarbor Real-Time Synthesis',
+    description: 'Real-Time Synthesis & Reasoning',
     geminiModel: 'thk/grok-4.7',
     supportsVision: true,
     contextLength: '500K',
     category: 'tokenharbor',
   },
   {
+    id: 'thk-gemini-4-argon',
+    name: 'Gemini 4 Argon',
+    description: 'Next-Gen Multimodal Intelligence',
+    geminiModel: 'thk/gemini-4-argon',
+    supportsVision: true,
+    contextLength: '1M',
+    category: 'tokenharbor',
+  },
+  {
     id: 'thk-kimi-k3-fast',
     name: 'Kimi K3 Fast',
-    description: 'TokenHarbor Long-Context Reasoning',
+    description: 'Long-Context Fast Reasoning',
     geminiModel: 'thk/kimi-k3-fast',
     supportsVision: true,
     contextLength: '1M',
@@ -151,13 +160,13 @@ export const GROK_MODELS: ModelOption[] = [
   {
     id: 'thk-mistral-large-4',
     name: 'Mistral Large 4',
-    description: 'TokenHarbor European Frontier Model',
+    description: 'Multilingual Frontier Model',
     geminiModel: 'thk/mistral-large-4',
     supportsVision: true,
     contextLength: '512K',
     category: 'tokenharbor',
   },
-  // --- Intern InkStone Scientific & Frontier Models ---
+  // --- Scientific & Research Models ---
   {
     id: 'agents-a1',
     name: 'Agents-A1',
@@ -248,11 +257,11 @@ export const GROK_MODELS: ModelOption[] = [
     contextLength: '256K',
     category: 'intern',
   },
-  // --- LarpRouter Gateway Models ---
+  // --- Extended Models ---
   {
     id: 'larp-deepseek-v4',
-    name: 'Larp DeepSeek V4',
-    description: 'LarpRouter Advanced Reasoning',
+    name: 'DeepSeek V4',
+    description: 'Advanced Analytical Reasoning',
     geminiModel: 'larp/deepseek-v4',
     supportsVision: false,
     contextLength: '1M',
@@ -260,8 +269,8 @@ export const GROK_MODELS: ModelOption[] = [
   },
   {
     id: 'larp-claude-sonnet',
-    name: 'Larp Claude Sonnet',
-    description: 'LarpRouter Anthropic Frontier Route',
+    name: 'Claude Sonnet',
+    description: 'Frontier Coding & Writing',
     geminiModel: 'larp/claude-sonnet',
     supportsVision: true,
     contextLength: '1M',
@@ -269,8 +278,8 @@ export const GROK_MODELS: ModelOption[] = [
   },
   {
     id: 'larp-gpt-6',
-    name: 'Larp GPT-6 Frontier',
-    description: 'LarpRouter High-Intelligence Route',
+    name: 'GPT-6 Frontier',
+    description: 'High-Intelligence Multimodal',
     geminiModel: 'larp/gpt-6',
     supportsVision: true,
     contextLength: '1.05M',
@@ -278,8 +287,8 @@ export const GROK_MODELS: ModelOption[] = [
   },
   {
     id: 'larp-glm-5',
-    name: 'Larp GLM-5',
-    description: 'LarpRouter Vision & Reasoning',
+    name: 'GLM-5',
+    description: 'Vision & Deep Reasoning',
     geminiModel: 'larp/glm-5',
     supportsVision: true,
     contextLength: '1M',
@@ -287,12 +296,293 @@ export const GROK_MODELS: ModelOption[] = [
   },
   {
     id: 'larp-auto',
-    name: 'Larp Auto Router',
-    description: 'LarpRouter Dynamic Smart Model Routing',
+    name: 'Smart Auto Router',
+    description: 'Dynamic Smart Model Routing',
     geminiModel: 'larp/auto',
     supportsVision: false,
     contextLength: 'Auto',
     category: 'larp',
+  },
+  // --- Pro & Next-Gen Models ---
+  {
+    id: 'radox-claude-opus-5.5',
+    name: 'Claude Opus 5.5 Pro',
+    description: 'Flagship Deep Reasoning',
+    geminiModel: 'radox/claude-opus-5.5',
+    supportsVision: true,
+    contextLength: '1M',
+    category: 'radox',
+  },
+  {
+    id: 'radox-claude-mythos-preview',
+    name: 'Claude Mythos Preview',
+    description: 'Next-Gen Frontier Intelligence',
+    geminiModel: 'radox/claude-mythos-preview',
+    supportsVision: true,
+    contextLength: '1M',
+    category: 'radox',
+  },
+  {
+    id: 'radox-claude-fable-5.1',
+    name: 'Claude Fable 5.1',
+    description: 'Creative & Deep Synthesis',
+    geminiModel: 'radox/claude-fable-5.1',
+    supportsVision: true,
+    contextLength: '1M',
+    category: 'radox',
+  },
+  {
+    id: 'radox-claude-sonnet-5',
+    name: 'Claude Sonnet 5',
+    description: 'Fast Coding & Reasoning',
+    geminiModel: 'radox/claude-sonnet-5',
+    supportsVision: true,
+    contextLength: '1M',
+    category: 'radox',
+  },
+  {
+    id: 'radox-gpt-5.6-sol',
+    name: 'GPT-5.6 Sol',
+    description: 'High-Speed Frontier Intelligence',
+    geminiModel: 'radox/gpt-5.6-sol',
+    supportsVision: true,
+    contextLength: '1.05M',
+    category: 'radox',
+  },
+  {
+    id: 'radox-gpt-5.6-terra',
+    name: 'GPT-5.6 Terra',
+    description: 'Deep Analytical Reasoning',
+    geminiModel: 'radox/gpt-5.6-terra',
+    supportsVision: true,
+    contextLength: '1.05M',
+    category: 'radox',
+  },
+  {
+    id: 'radox-gpt-5.6-luna',
+    name: 'GPT-5.6 Luna',
+    description: 'Multimodal Vision & Reasoning',
+    geminiModel: 'radox/gpt-5.6-luna',
+    supportsVision: true,
+    contextLength: '1.05M',
+    category: 'radox',
+  },
+  {
+    id: 'radox-deepseek-v4-pro-max',
+    name: 'DeepSeek V4 Pro Max',
+    description: 'Maximum Reasoning & Math',
+    geminiModel: 'radox/deepseek-v4-pro-max',
+    supportsVision: false,
+    contextLength: '1M',
+    category: 'radox',
+  },
+  {
+    id: 'radox-gemini-3.7-flash',
+    name: 'Gemini 3.7 Flash',
+    description: 'Ultra-Fast Multimodal',
+    geminiModel: 'radox/gemini-3.7-flash',
+    supportsVision: true,
+    contextLength: '1M',
+    category: 'radox',
+  },
+  {
+    id: 'radox-gemini-3.1-pro',
+    name: 'Gemini 3.1 Pro',
+    description: 'Long-Context Pro Reasoning',
+    geminiModel: 'radox/gemini-3.1-pro',
+    supportsVision: true,
+    contextLength: '2M',
+    category: 'radox',
+  },
+  {
+    id: 'radox-grok-4.6',
+    name: 'Grok 4.6',
+    description: 'Real-Time Intelligence',
+    geminiModel: 'radox/grok-4.6',
+    supportsVision: true,
+    contextLength: '500K',
+    category: 'radox',
+  },
+  {
+    id: 'radox-qwen3.8-max',
+    name: 'Qwen 3.8 Max',
+    description: 'Flagship Coding & Logic',
+    geminiModel: 'radox/qwen3.8-max',
+    supportsVision: true,
+    contextLength: '1M',
+    category: 'radox',
+  },
+  {
+    id: 'radox-kimi-k3',
+    name: 'Kimi K3',
+    description: 'Long-Context Synthesis',
+    geminiModel: 'radox/kimi-k3',
+    supportsVision: true,
+    contextLength: '1M',
+    category: 'radox',
+  },
+  {
+    id: 'radox-seed-2.1-pro',
+    name: 'Seed 2.1 Pro',
+    description: 'High-Precision Pro Model',
+    geminiModel: 'radox/seed-2.1-pro',
+    supportsVision: true,
+    contextLength: '512K',
+    category: 'radox',
+  },
+  {
+    id: 'radox-muse-spark-1.1',
+    name: 'Muse Spark 1.1',
+    description: 'Fast Creative & Analytical',
+    geminiModel: 'radox/muse-spark-1.1',
+    supportsVision: false,
+    contextLength: '256K',
+    category: 'radox',
+  },
+  // --- Compute & High-Effort Models ---
+  {
+    id: 'itera-kimi-k3-free',
+    name: 'Kimi K3 (1M)',
+    description: '1M Context Deep Reasoning',
+    geminiModel: 'itera/moonshotai/kimi-k3-free',
+    supportsVision: true,
+    contextLength: '1M',
+    category: 'itera',
+  },
+  {
+    id: 'itera-qwen3.8-27b-free',
+    name: 'Qwen 3.8 27B High-Effort',
+    description: 'High-Effort Analytical Reasoning',
+    geminiModel: 'itera/qwen/qwen3.8-27b',
+    supportsVision: true,
+    contextLength: '256K',
+    category: 'itera',
+  },
+  {
+    id: 'itera-claude-opus-5.5',
+    name: 'Claude Opus 5.5 Ultra',
+    description: 'Flagship Multimodal Intelligence',
+    geminiModel: 'itera/anthropic/claude-opus-5-5',
+    supportsVision: true,
+    contextLength: '1M',
+    category: 'itera',
+  },
+  {
+    id: 'itera-claude-sonnet-5.5',
+    name: 'Claude Sonnet 5.5 Fast',
+    description: 'Fast Coding & Reasoning',
+    geminiModel: 'itera/anthropic/claude-sonnet-5-5',
+    supportsVision: true,
+    contextLength: '1M',
+    category: 'itera',
+  },
+  {
+    id: 'itera-claude-fable-5.1',
+    name: 'Claude Fable 5.1 Ultra',
+    description: 'Deep Synthesis & Reasoning',
+    geminiModel: 'itera/anthropic/claude-fable-5-1',
+    supportsVision: true,
+    contextLength: '1M',
+    category: 'itera',
+  },
+  {
+    id: 'itera-claude-haiku-5.5',
+    name: 'Claude Haiku 5.5',
+    description: 'Ultra-Low-Latency Intelligence',
+    geminiModel: 'itera/anthropic/claude-haiku-5-5',
+    supportsVision: true,
+    contextLength: '1M',
+    category: 'itera',
+  },
+  {
+    id: 'itera-gpt-6.1-sol',
+    name: 'GPT-6.1 Sol',
+    description: 'Frontier High-Speed Intelligence',
+    geminiModel: 'itera/openai/gpt-6.1-sol',
+    supportsVision: true,
+    contextLength: '922K',
+    category: 'itera',
+  },
+  {
+    id: 'itera-gpt-6-astra',
+    name: 'GPT-6 Astra',
+    description: 'Deep Analytical Intelligence',
+    geminiModel: 'itera/openai/gpt-6-astra',
+    supportsVision: true,
+    contextLength: '922K',
+    category: 'itera',
+  },
+  {
+    id: 'itera-gpt-6-luna',
+    name: 'GPT-6 Luna',
+    description: 'Multimodal Vision & Reasoning',
+    geminiModel: 'itera/openai/gpt-6-luna',
+    supportsVision: true,
+    contextLength: '922K',
+    category: 'itera',
+  },
+  {
+    id: 'itera-gemini-4-argon',
+    name: 'Gemini 4 Argon Pro',
+    description: 'Next-Gen Multimodal Intelligence',
+    geminiModel: 'itera/gemini/gemini-4-argon',
+    supportsVision: true,
+    contextLength: '1M',
+    category: 'itera',
+  },
+  {
+    id: 'itera-deepseek-v4.1-flash-1017',
+    name: 'DeepSeek V4.1 Flash (1017)',
+    description: 'Latest Fast Reasoning',
+    geminiModel: 'itera/deepseek/deepseek-v4.1-flash-1017',
+    supportsVision: false,
+    contextLength: '1M',
+    category: 'itera',
+  },
+  {
+    id: 'itera-deepseek-v4-pro-0813',
+    name: 'DeepSeek V4 Pro (0813)',
+    description: 'Deep Analytical Pro',
+    geminiModel: 'itera/deepseek/deepseek-v4-pro-0813',
+    supportsVision: false,
+    contextLength: '1M',
+    category: 'itera',
+  },
+  {
+    id: 'itera-qwen3.8-2.4t',
+    name: 'Qwen 3.8 2.4T MoE',
+    description: 'Massive 2.4T Parameter Reasoning',
+    geminiModel: 'itera/qwen/qwen3.8-2.4t-a95b',
+    supportsVision: true,
+    contextLength: '1M',
+    category: 'itera',
+  },
+  {
+    id: 'itera-kimi-k2.7-code',
+    name: 'Kimi K2.7 Code',
+    description: 'Specialized Software Engineering',
+    geminiModel: 'itera/moonshotai/kimi-k2.7-code',
+    supportsVision: false,
+    contextLength: '256K',
+    category: 'itera',
+  },
+  {
+    id: 'itera-minimax-m3',
+    name: 'MiniMax M3 (1M)',
+    description: '1M Context Flagship',
+    geminiModel: 'itera/minimax/minimax-m3',
+    supportsVision: false,
+    contextLength: '1M',
+    category: 'itera',
+  },
+  {
+    id: 'itera-glm-5.3',
+    name: 'GLM 5.3 Max Reasoning',
+    description: 'Max Effort Reasoning & Vision',
+    geminiModel: 'itera/z-ai/glm-5.3',
+    supportsVision: true,
+    contextLength: '1M',
+    category: 'itera',
   },
 ];
 
@@ -347,84 +637,6 @@ export const GrokModelPicker: React.FC<GrokModelPickerProps> = ({
       ? 'top-full left-1/2 -translate-x-1/2 mt-2'
       : 'bottom-full right-0 mb-3';
 
-  const renderModelGroup = (category: 'core' | 'tokenharbor' | 'intern' | 'larp', title: string, showBorder = false) => {
-    const items = GROK_MODELS.filter((m) => m.category === category);
-    if (items.length === 0) return null;
-    return (
-      <div className={showBorder ? 'pt-1 border-t border-white/[0.06]' : ''}>
-        <div className="px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider opacity-40">
-          {title}
-        </div>
-        <div className="space-y-0.5 mt-1">
-          {items.map((m) => {
-            const isSelected = m.id === current.id;
-            return (
-              <button
-                key={m.id}
-                type="button"
-                onClick={() => {
-                  onSelectModel(m);
-                  setIsOpen(false);
-                }}
-                className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left transition-colors cursor-pointer ${
-                  isSelected
-                    ? isDark
-                      ? 'bg-white/10 text-white font-medium'
-                      : 'bg-black/5 text-[#0d0d0d] font-medium'
-                    : isDark
-                    ? 'hover:bg-white/[0.05] text-white/80'
-                    : 'hover:bg-black/[0.04] text-black/80'
-                }`}
-              >
-                <div className="min-w-0 pr-2">
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-semibold text-xs truncate">{m.name}</span>
-                    {m.contextLength && (
-                      <span
-                        className={`text-[9px] px-1.5 py-0.2 rounded font-mono font-medium ${
-                          isDark
-                            ? 'bg-white/[0.08] text-white/60'
-                            : 'bg-black/[0.06] text-black/60'
-                        }`}
-                      >
-                        {m.contextLength}
-                      </span>
-                    )}
-                    {m.supportsVision && (
-                      <span
-                        className={`text-[9px] px-1.5 py-0.2 rounded font-mono font-medium ${
-                          isDark
-                            ? 'bg-emerald-500/10 text-emerald-400/90'
-                            : 'bg-emerald-50 text-emerald-700'
-                        }`}
-                      >
-                        Vision
-                      </span>
-                    )}
-                  </div>
-                  <div
-                    className={`text-[11px] mt-0.5 truncate ${
-                      isDark ? 'text-white/50' : 'text-black/50'
-                    }`}
-                  >
-                    {m.description}
-                  </div>
-                </div>
-                {isSelected && (
-                  <Check
-                    className={`w-4 h-4 flex-shrink-0 ${
-                      isDark ? 'text-white' : 'text-black'
-                    }`}
-                  />
-                )}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-    );
-  };
-
   return (
     <div className="relative" ref={containerRef}>
       {/* Dynamic Island Header Button */}
@@ -451,15 +663,74 @@ export const GrokModelPicker: React.FC<GrokModelPickerProps> = ({
               : 'bg-[#ffffff]/98 border-[#dcdcdc] text-[#0d0d0d] shadow-[0_20px_60px_rgba(0,0,0,0.18)]'
           }`}
         >
-          <div className="space-y-3">
-            {renderModelGroup('core', 'Core & TokenHarbor Free Models', false)}
-            {renderModelGroup('tokenharbor', 'Token Harbor Frontier Gateway', true)}
-            {renderModelGroup('larp', 'LarpRouter Gateway Models', true)}
-            {renderModelGroup('intern', 'Intern InkStone Scientific & Research', true)}
+          <div className="space-y-0.5">
+            {GROK_MODELS.map((m) => {
+              const isSelected = m.id === current.id;
+              return (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => {
+                    onSelectModel(m);
+                    setIsOpen(false);
+                  }}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left transition-colors cursor-pointer ${
+                    isSelected
+                      ? isDark
+                        ? 'bg-white/10 text-white font-medium'
+                        : 'bg-black/5 text-[#0d0d0d] font-medium'
+                      : isDark
+                      ? 'hover:bg-white/[0.05] text-white/80'
+                      : 'hover:bg-black/[0.04] text-black/80'
+                  }`}
+                >
+                  <div className="min-w-0 pr-2">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-semibold text-xs truncate">{m.name}</span>
+                      {m.contextLength && (
+                        <span
+                          className={`text-[9px] px-1.5 py-0.2 rounded font-mono font-medium ${
+                            isDark
+                              ? 'bg-white/[0.08] text-white/60'
+                              : 'bg-black/[0.06] text-black/60'
+                          }`}
+                        >
+                          {m.contextLength}
+                        </span>
+                      )}
+                      {m.supportsVision && (
+                        <span
+                          className={`text-[9px] px-1.5 py-0.2 rounded font-mono font-medium ${
+                            isDark
+                              ? 'bg-emerald-500/10 text-emerald-400/90'
+                              : 'bg-emerald-50 text-emerald-700'
+                          }`}
+                        >
+                          Vision
+                        </span>
+                      )}
+                    </div>
+                    <div
+                      className={`text-[11px] mt-0.5 truncate ${
+                        isDark ? 'text-white/50' : 'text-black/50'
+                      }`}
+                    >
+                      {m.description}
+                    </div>
+                  </div>
+                  {isSelected && (
+                    <Check
+                      className={`w-4 h-4 flex-shrink-0 ${
+                        isDark ? 'text-white' : 'text-black'
+                      }`}
+                    />
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
     </div>
   );
 };
-
