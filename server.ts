@@ -3754,6 +3754,7 @@ async function analyzeImageWithVisionModel(
 
   // 2. Secondary: Apinex OpenAI-compatible multimodal endpoint if available
   if (!isPdf && !isAudio && !isVideo) {
+    console.log('APINEX_VISION: trying, key present:', !!APINEX_API_KEY, 'url:', APINEX_BASE_URL);
     try {
       const resp = await fetch(`${APINEX_BASE_URL}/chat/completions`, {
         method: 'POST',
