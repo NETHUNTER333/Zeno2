@@ -3734,20 +3734,22 @@ async function analyzeImageWithVisionModel(
       `3. **Extracted Text & Data**: Transcribe all visible text, headings, labels, numbers, code, equations, or captions accurately.\n` +
       `4. **Technical / Contextual Insights**: Explain the context, meaning, or technical details of what is depicted.`;
 
-  // 1. Primary: Use server-side GoogleGenAI client with fallback models
-  try {
-    const { resp } = await generateGeminiContentWithFallback([
-      {
-        parts: [
-          { text: analysisInstruction },
-          { inlineData: { mimeType: resolvedMime, data: rawBase64 } },
-        ],
-      },
-    ]);
-    const text = resp.text?.trim();
-    if (text) return text;
-  } catch {
-    // Fallback silently to secondary multimodal provider if Gemini quota is reached
+  // 1. Primary: Use server-side GoogleGenAI client with fallback models (only if configured)
+  if (geminiClient || process.env.GEMINI_API_KEY) {
+    try {
+      const { resp } = await generateGeminiContentWithFallback([
+        {
+          parts: [
+            { text: analysisInstruction },
+            { inlineData: { mimeType: resolvedMime, data: rawBase64 } },
+          ],
+        },
+      ]);
+      const text = resp.text?.trim();
+      if (text) return text;
+    } catch {
+      // Fallback silently to secondary multimodal provider
+    }
   }
 
   // 2. Secondary: Apinex OpenAI-compatible multimodal endpoint if available
