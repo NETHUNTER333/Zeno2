@@ -3657,6 +3657,7 @@ function resolveCoreTopic(
 
 // Extract text from an uploaded image or PDF via OCR.space Engine 2 (with Engine 1 fallback)
 async function extractImageOrPdfOcr(base64DataUrl: string, mimeType = 'image/jpeg'): Promise<string> {
+  console.log('ANALYZE_IMG: startswith_data=', base64DataUrl?.startsWith('data:'), 'len=', base64DataUrl?.length);
   if (!base64DataUrl || !base64DataUrl.startsWith('data:')) return '';
   const runOcr = async (engine: '1' | '2') => {
     const form = new FormData();
@@ -3702,6 +3703,7 @@ async function analyzeImageWithVisionModel(
   userPrompt = '',
   fileName = 'file'
 ): Promise<string> {
+  console.log('ANALYZE_IMG: startswith_data=', base64DataUrl?.startsWith('data:'), 'len=', base64DataUrl?.length);
   if (!base64DataUrl || !base64DataUrl.startsWith('data:')) return '';
   const match = base64DataUrl.match(/^data:([^;]+);base64,(.+)$/);
   if (!match) return '';
