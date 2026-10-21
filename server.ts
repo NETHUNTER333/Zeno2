@@ -3829,7 +3829,7 @@ async function processMessageAttachments(
         extractedTopicHint = cleanedFileName;
       }
 
-      console.log('IMG_BRANCH: type=', type, 'keys=', Object.keys(att||{}), 'hasUrl=', !!att?.url, 'hasText=', !!att?.textContent);
+      console.log('IMG_BRANCH: type=', type, 'keys=', Object.keys(att||{}), 'hasDataUrl=', !!att?.dataUrl, 'hasUrl=', !!att?.url);
       const attUrl = att.dataUrl || att.url;
       if (type.startsWith('image/') && attUrl) {
         imageUrls.push(attUrl);
