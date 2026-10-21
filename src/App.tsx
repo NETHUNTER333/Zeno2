@@ -666,7 +666,7 @@ export default function App() {
     let chatCompleted = false;
     if (computedLoadingMode === 'search') {
       getAuthHeaders().then((authHeaders) =>
-        fetch('/api/search/live', {
+        fetch('https://prod-main-zeno-api-c257d4-00gfx3c9932.compute.instacloud-edge.com/api/search/live', {
           method: 'POST',
           headers: authHeaders,
           signal: controller.signal,
