@@ -3829,7 +3829,7 @@ async function processMessageAttachments(
         extractedTopicHint = cleanedFileName;
       }
 
-      console.log('IMG_BRANCH: type=', type, 'hasUrl=', !!att?.url, 'urlPrefix=', String(att?.url||'').slice(0,20));
+      console.log('IMG_BRANCH: type=', type, 'keys=', Object.keys(att||{}), 'hasUrl=', !!att?.url, 'hasText=', !!att?.textContent);
       if (type.startsWith('image/') && att.url) {
         imageUrls.push(att.url);
         const dims = att.width && att.height ? `${att.width}×${att.height}px` : 'high resolution';
