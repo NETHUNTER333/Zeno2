@@ -3830,8 +3830,9 @@ async function processMessageAttachments(
       }
 
       console.log('IMG_BRANCH: type=', type, 'keys=', Object.keys(att||{}), 'hasUrl=', !!att?.url, 'hasText=', !!att?.textContent);
-      if (type.startsWith('image/') && att.url) {
-        imageUrls.push(att.url);
+      const attUrl = att.dataUrl || att.url;
+      if (type.startsWith('image/') && attUrl) {
+        imageUrls.push(attUrl);
         const dims = att.width && att.height ? `${att.width}×${att.height}px` : 'high resolution';
         toolsUsed.push({
           tool: 'zeno.vision.upload',
@@ -3843,8 +3844,8 @@ async function processMessageAttachments(
         });
 
         const analyzeStart = Date.now();
-        const visionReport = await analyzeImageWithVisionModel(att.url, type, userPrompt, name);
-        const ocrText = visionReport ? '' : await extractImageOrPdfOcr(att.url, type);
+        const visionReport = await analyzeImageWithVisionModel(attUrl, type, userPrompt, name);
+        const ocrText = visionReport ? '' : await extractImageOrPdfOcr(attUrl, type);
 
         if (visionReport) {
           directVisionAnalyses.push(visionReport);
@@ -3881,7 +3882,7 @@ async function processMessageAttachments(
           org: TREG_ORG,
         });
         return `[Attached File ${i + 1}: "${name}" (${type}, ${sizeStr})]\nFull File Contents:\n\`\`\`\n${contentSlice}\n\`\`\``;
-      } else if (att.url && (type.includes('pdf') || name.toLowerCase().endsWith('.pdf'))) {
+      } else if (attUrl && (type.includes('pdf') || name.toLowerCase().endsWith('.pdf'))) {
         toolsUsed.push({
           tool: 'zeno.file.upload',
           query: `${name} (${sizeStr})`,
@@ -3891,8 +3892,8 @@ async function processMessageAttachments(
           org: TREG_ORG,
         });
         const pdfStart = Date.now();
-        const visionPdfReport = await analyzeImageWithVisionModel(att.url, 'application/pdf', userPrompt, name);
-        const pdfText = visionPdfReport ? '' : await extractImageOrPdfOcr(att.url, 'application/pdf');
+        const visionPdfReport = await analyzeImageWithVisionModel(attUrl, 'application/pdf', userPrompt, name);
+        const pdfText = visionPdfReport ? '' : await extractImageOrPdfOcr(attUrl, 'application/pdf');
         if (visionPdfReport) {
           directVisionAnalyses.push(visionPdfReport);
         }
@@ -3911,9 +3912,9 @@ async function processMessageAttachments(
             ? `Extracted PDF Text:\n"""\n${pdfText.slice(0, 20000)}\n"""`
             : `PDF Document "${name}" (${sizeStr}) attached.`)
         );
-      } else if (att.url && (type.startsWith('audio/') || type.startsWith('video/'))) {
+      } else if (attUrl && (type.startsWith('audio/') || type.startsWith('video/'))) {
         const mediaStart = Date.now();
-        const mediaReport = await analyzeImageWithVisionModel(att.url, type, userPrompt, name);
+        const mediaReport = await analyzeImageWithVisionModel(attUrl, type, userPrompt, name);
         toolsUsed.push({
           tool: 'zeno.media.analyzer',
           query: name,
