@@ -211,6 +211,7 @@ async function processUploadedFile(file: File): Promise<ChatAttachment> {
     size: file.size,
     type: file.type || 'application/octet-stream',
     url: dataUrl,
+    dataUrl: dataUrl,
     textContent,
     width,
     height,

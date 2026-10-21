@@ -110,6 +110,8 @@ export function validateMessageAttachments(rawAttachments: unknown): {
     const dataUrl =
       typeof (item as any).dataUrl === 'string'
         ? (item as any).dataUrl.slice(0, 14_000_000)
+        : typeof (item as any).url === 'string'
+        ? (item as any).url.slice(0, 14_000_000)
         : undefined;
     const textContent =
       typeof (item as any).textContent === 'string'
