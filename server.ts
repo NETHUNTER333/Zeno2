@@ -177,6 +177,8 @@ const BEAT_SUPPORTED_MODELS = [
 
 const APINEX_BASE_URL = process.env.APINEX_BASE_URL || 'https://api.apinex.bond/v1';
 const APINEX_API_KEY = process.env.APINEX_API_KEY || '';
+const ITERACOMPUTE_BASE_URL = process.env.ITERACOMPUTE_BASE_URL || 'https://api.iteracompute.com/v1';
+const ITERACOMPUTE_API_KEY = process.env.ITERACOMPUTE_API_KEY || '';
 const APINEX_DEFAULT_MODEL = process.env.APINEX_MODEL || 'free/glm-5.3';
 const FLM_BASE_URL = process.env.FLM_BASE_URL || 'https://flm.stonech.at/v1';
 
@@ -3752,7 +3754,36 @@ async function analyzeImageWithVisionModel(
     }
   }
 
-  // 2. Secondary: Apinex OpenAI-compatible multimodal endpoint if available
+  // 2. Secondary: IteraCompute (Qwen3.8-27B, vision-capable, no check-in) if available
+  if (!isPdf && !isAudio && !isVideo && ITERACOMPUTE_API_KEY) {
+    try {
+      const resp = await fetch(`${ITERACOMPUTE_BASE_URL}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${ITERACOMPUTE_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'qwen/qwen3.8-27b',
+          messages: [
+            {
+              role: 'user',
+              content: [
+                { type: 'text', text: analysisInstruction },
+                { type: 'image_url', image_url: { url: base64DataUrl } },
+              ],
+            },
+          ],
+          max_tokens: 1024,
+        }),
+      });
+      const data: any = await resp.json();
+      const content = data?.choices?.[0]?.message?.content?.trim();
+      if (content) return content;
+    } catch {}
+  }
+
+  // 3. Tertiary: Apinex OpenAI-compatible multimodal endpoint if available
   if (!isPdf && !isAudio && !isVideo) {
       try {
       const resp = await fetch(`${APINEX_BASE_URL}/chat/completions`, {
