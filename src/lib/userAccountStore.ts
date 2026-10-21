@@ -337,8 +337,8 @@ export const UserAccountStore = {
         if (parsed && (parsed.id || parsed.email)) return true;
       }
     } catch {}
-    // By default, if the user hasn't explicitly signed out, allow entering the workspace
-    return true;
+    // Require explicit sign-in to enter the workspace
+    return false;
   },
   async signIn() {
     const user = await signInWithGoogle();
