@@ -3795,6 +3795,7 @@ async function processMessageAttachments(
   extractedTopicHint: string;
   directVisionAnalyses: string[];
 }> {
+  console.log('PROCESS_ATTACHMENTS: count=', attachments?.length, 'types=', attachments?.map((a:any)=>a?.type));
   if (!attachments || !Array.isArray(attachments) || attachments.length === 0) {
     return {
       attachmentContext: '',
