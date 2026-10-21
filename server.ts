@@ -3657,7 +3657,6 @@ function resolveCoreTopic(
 
 // Extract text from an uploaded image or PDF via OCR.space Engine 2 (with Engine 1 fallback)
 async function extractImageOrPdfOcr(base64DataUrl: string, mimeType = 'image/jpeg'): Promise<string> {
-  console.log('ANALYZE_IMG: startswith_data=', base64DataUrl?.startsWith('data:'), 'len=', base64DataUrl?.length);
   if (!base64DataUrl || !base64DataUrl.startsWith('data:')) return '';
   const runOcr = async (engine: '1' | '2') => {
     const form = new FormData();
@@ -3703,7 +3702,6 @@ async function analyzeImageWithVisionModel(
   userPrompt = '',
   fileName = 'file'
 ): Promise<string> {
-  console.log('ANALYZE_IMG: startswith_data=', base64DataUrl?.startsWith('data:'), 'len=', base64DataUrl?.length);
   if (!base64DataUrl || !base64DataUrl.startsWith('data:')) return '';
   const match = base64DataUrl.match(/^data:([^;]+);base64,(.+)$/);
   if (!match) return '';
@@ -3756,8 +3754,7 @@ async function analyzeImageWithVisionModel(
 
   // 2. Secondary: Apinex OpenAI-compatible multimodal endpoint if available
   if (!isPdf && !isAudio && !isVideo) {
-    console.log('APINEX_VISION: trying, key present:', !!APINEX_API_KEY, 'url:', APINEX_BASE_URL);
-    try {
+      try {
       const resp = await fetch(`${APINEX_BASE_URL}/chat/completions`, {
         method: 'POST',
         headers: {
@@ -3797,7 +3794,6 @@ async function processMessageAttachments(
   extractedTopicHint: string;
   directVisionAnalyses: string[];
 }> {
-  console.log('PROCESS_ATTACHMENTS: count=', attachments?.length, 'types=', attachments?.map((a:any)=>a?.type));
   if (!attachments || !Array.isArray(attachments) || attachments.length === 0) {
     return {
       attachmentContext: '',
@@ -3829,7 +3825,6 @@ async function processMessageAttachments(
         extractedTopicHint = cleanedFileName;
       }
 
-      console.log('IMG_BRANCH: type=', type, 'keys=', Object.keys(att||{}), 'hasDataUrl=', !!att?.dataUrl, 'hasUrl=', !!att?.url);
       const attUrl = att.dataUrl || att.url;
       if (type.startsWith('image/') && attUrl) {
         imageUrls.push(attUrl);
