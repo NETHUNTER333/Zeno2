@@ -109,6 +109,28 @@ async function readImageFileAsDataUrl(file: File): Promise<{ url: string; width:
       const rawDataUrl = String(reader.result || '');
       // For images under 15MB or SVGs, preserve 100% native resolution and quality
       if (file.size < 15 * 1024 * 1024 || file.type.includes('svg')) {
+        // Compress large images (>500KB) to max 1024px to avoid edge/proxy body limits
+        if (file.size > 500 * 1024 && !file.type.includes('svg')) {
+          const img = new Image();
+          img.onerror = () => resolve({ url: rawDataUrl, width: 0, height: 0 });
+          img.onload = () => {
+            const maxDim = 1024;
+            let { width, height } = img;
+            if (width > maxDim || height > maxDim) {
+              if (width >= height) { height = Math.round((height * maxDim) / width); width = maxDim; }
+              else { width = Math.round((width * maxDim) / height); height = maxDim; }
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            if (ctx) ctx.drawImage(img, 0, 0, width, height);
+            const compressed = canvas.toDataURL('image/jpeg', 0.8);
+            resolve({ url: compressed, width, height });
+          };
+          img.src = rawDataUrl;
+          return;
+        }
         const img = new Image();
         img.onerror = () => resolve({ url: rawDataUrl, width: 0, height: 0 });
         img.onload = () =>
