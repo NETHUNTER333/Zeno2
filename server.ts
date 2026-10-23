@@ -127,40 +127,56 @@ async function generateGeminiContentWithFallback(contents: any) {
       : String(contents || '');
 
   if (promptText.trim()) {
-    const fallbackGateways = [
-      { url: `${RADOX_AI_BASE_URL}/chat/completions`, key: RADOX_AI_API_KEY, model: 'qwen3.8-27b' },
-      { url: `${ITERA_COMPUTE_BASE_URL}/chat/completions`, key: ITERA_COMPUTE_API_KEY, model: 'qwen/qwen3.8-27b' },
-      { url: `${TOKENHARBOR_BASE_URL}/chat/completions`, key: TOKENHARBOR_API_KEY, model: 'deepseek-v4.1-flash:free' },
-      { url: `${LARPROUTER_BASE_URL}/chat/completions`, key: LARPROUTER_API_KEY, model: 'deepseek-chat' },
-      { url: `${INTERN_AI_BASE_URL}/chat/completions`, key: INTERN_AI_API_KEY, model: 'Agents-A1' },
-    ];
-    for (const gw of fallbackGateways) {
-      if (!gw.key) continue;
+    const fastGateways = [
+      {
+        url: `${ITERA_COMPUTE_BASE_URL}/chat/completions`,
+        key: ITERA_COMPUTE_API_KEY,
+        model: 'qwen/qwen3.8-27b',
+        extra: { chat_template_kwargs: { enable_thinking: false }, reasoning_effort: 'none' },
+      },
+      {
+        url: `${TOKENHARBOR_BASE_URL}/chat/completions`,
+        key: TOKENHARBOR_API_KEY,
+        model: 'deepseek-v4.1-flash:free',
+        extra: { chat_template_kwargs: { enable_thinking: false }, reasoning_effort: 'low' },
+      },
+      {
+        url: `${INTERN_AI_BASE_URL}/chat/completions`,
+        key: INTERN_AI_API_KEY,
+        model: 'Agents-A1',
+        extra: { chat_template_kwargs: { enable_thinking: false } },
+      },
+    ].filter((gw) => Boolean(gw.key));
+
+    if (fastGateways.length > 0) {
       try {
-        const r = await fetch(gw.url, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${gw.key}`,
-            'Content-Type': 'application/json',
-          },
-          signal: AbortSignal.timeout(8000),
-          body: JSON.stringify({
-            model: gw.model,
-            messages: [{ role: 'user', content: promptText }],
-            max_tokens: 4096,
-            temperature: 0.7,
-          }),
-        });
-        if (r.ok) {
-          const data: any = await r.json();
-          const text = data?.choices?.[0]?.message?.content?.trim();
-          if (text) {
+        return await Promise.any(
+          fastGateways.slice(0, 2).map(async (gw) => {
+            const r = await fetch(gw.url, {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${gw.key}`,
+                'Content-Type': 'application/json',
+              },
+              signal: AbortSignal.timeout(5500),
+              body: JSON.stringify({
+                model: gw.model,
+                messages: [{ role: 'user', content: promptText }],
+                max_tokens: 2048,
+                temperature: 0.6,
+                ...gw.extra,
+              }),
+            });
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            const data: any = await r.json();
+            const text = data?.choices?.[0]?.message?.content?.trim();
+            if (!text) throw new Error('Empty response');
             return {
               resp: { text, usageMetadata: undefined } as any,
               modelName: gw.model,
             };
-          }
-        }
+          })
+        );
       } catch (err) {
         lastErr = err;
       }
@@ -187,8 +203,14 @@ const BEAT_SUPPORTED_MODELS = [
 
 const APINEX_BASE_URL = process.env.APINEX_BASE_URL || 'https://api.apinex.bond/v1';
 const APINEX_API_KEY = process.env.APINEX_API_KEY || '';
-const ITERACOMPUTE_BASE_URL = process.env.ITERACOMPUTE_BASE_URL || 'https://api.iteracompute.com/v1';
-const ITERACOMPUTE_API_KEY = process.env.ITERACOMPUTE_API_KEY || '';
+const ITERACOMPUTE_BASE_URL =
+  process.env.ITERACOMPUTE_BASE_URL ||
+  (keysAndRouters?.baseUrls as any)?.iteraCompute ||
+  'https://api.iteracompute.com/v1';
+const ITERACOMPUTE_API_KEY =
+  process.env.ITERACOMPUTE_API_KEY ||
+  (keysAndRouters?.tokens as any)?.iteraCompute ||
+  'sk-b5buq_HdkB_Xu485GqZ9Dg';
 const APINEX_DEFAULT_MODEL = process.env.APINEX_MODEL || 'free/glm-5.3';
 const FLM_BASE_URL = process.env.FLM_BASE_URL || 'https://flm.stonech.at/v1';
 
@@ -639,12 +661,13 @@ async function generateChatCompletion(
         Authorization: `Bearer ${INTERN_AI_API_KEY}`,
         'Content-Type': 'application/json',
       },
-      signal: AbortSignal.timeout(3500),
+      signal: AbortSignal.timeout(4500),
       body: JSON.stringify({
         model: targetModel,
         messages: msgs,
-        max_tokens: 4096,
-        temperature: 0.7,
+        max_tokens: 2048,
+        temperature: 0.6,
+        chat_template_kwargs: { enable_thinking: false },
       }),
     });
     const tHeaders = Date.now();
@@ -656,12 +679,7 @@ async function generateChatCompletion(
     const rawMsg = data?.choices?.[0]?.message;
     const bodyText = rawMsg?.content || '';
     const reasoningText = rawMsg?.reasoning_content || '';
-    let content = '';
-    if (reasoningText && bodyText) {
-      content = `<think>\n${reasoningText.trim()}\n</think>\n\n${bodyText.trim()}`;
-    } else {
-      content = bodyText || reasoningText || '';
-    }
+    const content = bodyText.trim() || reasoningText.trim();
     if (!content) throw new Error('Empty Intern InkStone response');
     return buildMetricsFromOpenAiResponse(data, content, `intern/${targetModel}`, msgs, t0, tHeaders, tDone);
   };
@@ -679,13 +697,14 @@ async function generateChatCompletion(
         Authorization: `Bearer ${TOKENHARBOR_API_KEY}`,
         'Content-Type': 'application/json',
       },
-      signal: AbortSignal.timeout(7500),
+      signal: AbortSignal.timeout(6500),
       body: JSON.stringify({
         model: targetModel,
         messages: msgs,
-        max_tokens: 4096,
-        temperature: 0.7,
+        max_tokens: 2048,
+        temperature: 0.6,
         reasoning_effort: 'low',
+        chat_template_kwargs: { enable_thinking: false },
       }),
     });
     const tHeaders = Date.now();
@@ -707,12 +726,7 @@ async function generateChatCompletion(
     const rawMsg = data?.choices?.[0]?.message;
     const bodyText = rawMsg?.content || '';
     const reasoningText = rawMsg?.reasoning_content || '';
-    let content = '';
-    if (reasoningText && bodyText) {
-      content = `<think>\n${reasoningText.trim()}\n</think>\n\n${bodyText.trim()}`;
-    } else {
-      content = bodyText || reasoningText || '';
-    }
+    const content = bodyText.trim() || reasoningText.trim();
     if (!content) throw new Error('Empty TokenHarbor response');
 
     const metrics = buildMetricsFromOpenAiResponse(
@@ -742,12 +756,14 @@ async function generateChatCompletion(
         Authorization: `Bearer ${LARPROUTER_API_KEY}`,
         'Content-Type': 'application/json',
       },
-      signal: AbortSignal.timeout(7500),
+      signal: AbortSignal.timeout(4500),
       body: JSON.stringify({
         model: targetModel,
         messages: msgs,
-        max_tokens: 4096,
-        temperature: 0.7,
+        max_tokens: 2048,
+        temperature: 0.6,
+        reasoning_effort: 'low',
+        chat_template_kwargs: { enable_thinking: false },
       }),
     });
     const tHeaders = Date.now();
@@ -761,12 +777,7 @@ async function generateChatCompletion(
     const rawMsg = data?.choices?.[0]?.message;
     const bodyText = rawMsg?.content || '';
     const reasoningText = rawMsg?.reasoning_content || '';
-    let content = '';
-    if (reasoningText && bodyText) {
-      content = `<think>\n${reasoningText.trim()}\n</think>\n\n${bodyText.trim()}`;
-    } else {
-      content = bodyText || reasoningText || '';
-    }
+    const content = bodyText.trim() || reasoningText.trim();
     if (!content) throw new Error('Empty LarpRouter response');
 
     const metrics = buildMetricsFromOpenAiResponse(
@@ -787,7 +798,7 @@ async function generateChatCompletion(
   const callRadoxAiSingle = async (
     targetModel: string,
     msgs = openAiMessages,
-    timeoutMs = 20000
+    timeoutMs = 5500
   ): Promise<RealCompletionMetrics> => {
     if (!RADOX_AI_API_KEY) throw new Error('RADOX_AI_API_KEY not configured');
     const t0 = Date.now();
@@ -801,8 +812,10 @@ async function generateChatCompletion(
       body: JSON.stringify({
         model: targetModel,
         messages: msgs,
-        temperature: 0.7,
+        max_tokens: 2048,
+        temperature: 0.6,
         reasoning_effort: 'low',
+        chat_template_kwargs: { enable_thinking: false },
       }),
     });
     const tHeaders = Date.now();
@@ -816,12 +829,7 @@ async function generateChatCompletion(
     const rawMsg = data?.choices?.[0]?.message;
     const bodyText = rawMsg?.content || '';
     const reasoningText = rawMsg?.reasoning_content || '';
-    let content = '';
-    if (reasoningText && bodyText) {
-      content = `<think>\n${reasoningText.trim()}\n</think>\n\n${bodyText.trim()}`;
-    } else {
-      content = bodyText || reasoningText || '';
-    }
+    const content = bodyText.trim() || reasoningText.trim();
     if (!content) throw new Error('Empty RadoxAI response');
 
     const metrics = buildMetricsFromOpenAiResponse(
@@ -839,35 +847,10 @@ async function generateChatCompletion(
     return metrics;
   };
 
-  const callRadoxAi = async (
-    targetModel: string,
-    msgs = openAiMessages
-  ): Promise<RealCompletionMetrics> => {
-    const candidates = Array.from(
-      new Set([
-        targetModel,
-        'qwen3.8-27b',
-        'grok-4.5',
-        'glm-5.2',
-      ])
-    );
-    let lastErr: any;
-    for (let i = 0; i < candidates.length; i++) {
-      const candidate = candidates[i];
-      try {
-        const res = await callRadoxAiSingle(candidate, msgs, i === 0 ? 18000 : 10000);
-        return { ...res, modelUsed: `radox/${targetModel}` };
-      } catch (err) {
-        lastErr = err;
-      }
-    }
-    throw lastErr || new Error('RadoxAI request failed');
-  };
-
   const callIteraComputeSingle = async (
     targetModel: string,
     msgs = openAiMessages,
-    timeoutMs = 20000
+    timeoutMs = 6500
   ): Promise<RealCompletionMetrics> => {
     if (!ITERA_COMPUTE_API_KEY) throw new Error('ITERA_COMPUTE_API_KEY not configured');
     const t0 = Date.now();
@@ -881,8 +864,10 @@ async function generateChatCompletion(
       body: JSON.stringify({
         model: targetModel,
         messages: msgs,
-        max_tokens: 4096,
-        temperature: 0.7,
+        max_tokens: 2048,
+        temperature: 0.6,
+        reasoning_effort: 'none',
+        chat_template_kwargs: { enable_thinking: false },
       }),
     });
     const tHeaders = Date.now();
@@ -896,12 +881,7 @@ async function generateChatCompletion(
     const rawMsg = data?.choices?.[0]?.message;
     const bodyText = rawMsg?.content || '';
     const reasoningText = rawMsg?.reasoning_content || '';
-    let content = '';
-    if (reasoningText && bodyText) {
-      content = `<think>\n${reasoningText.trim()}\n</think>\n\n${bodyText.trim()}`;
-    } else {
-      content = bodyText || reasoningText || '';
-    }
+    const content = bodyText.trim() || reasoningText.trim();
     if (!content) throw new Error('Empty IteraCompute response');
 
     const metrics = buildMetricsFromOpenAiResponse(
@@ -919,26 +899,6 @@ async function generateChatCompletion(
     return metrics;
   };
 
-  const callIteraCompute = async (
-    targetModel: string,
-    msgs = openAiMessages
-  ): Promise<RealCompletionMetrics> => {
-    const candidates = Array.from(
-      new Set([targetModel, 'qwen/qwen3.8-27b'])
-    );
-    let lastErr: any;
-    for (let i = 0; i < candidates.length; i++) {
-      const candidate = candidates[i];
-      try {
-        const res = await callIteraComputeSingle(candidate, msgs, i === 0 ? 15000 : 12000);
-        return { ...res, modelUsed: `itera/${targetModel}` };
-      } catch (err) {
-        lastErr = err;
-      }
-    }
-    throw lastErr || new Error('IteraCompute request failed');
-  };
-
   const hasMultimodalArray = openAiMessages.some((m) => Array.isArray(m.content));
 
   const tryCallWithTextFallback = async (
@@ -954,89 +914,49 @@ async function generateChatCompletion(
     }
   };
 
-  // Helper to try Gemini Direct, RadoxAI, IteraCompute, TokenHarbor, LarpRouter, Intern InkStone, Beat API, FLM, Pollinations, and Apinex
-  const tryBeatModelsAndFallbacks = async (primaryBeatModel: string): Promise<RealCompletionMetrics> => {
-    // 1. Try Gemini Direct first (fast ~1.5s & native)
-    try {
-      return await callGeminiDirect(openAiMessages);
-    } catch {
-      // Continue to secondary providers
+  // Parallel hedged race across the fastest verified live inference engines (~0.9s - 1.7s)
+  const raceFastestLiveModels = async (
+    msgs = openAiMessages,
+    preferredModelLabel?: string
+  ): Promise<RealCompletionMetrics> => {
+    const fastCandidates: Promise<RealCompletionMetrics>[] = [];
+    if (geminiClient || process.env.GEMINI_API_KEY) {
+      fastCandidates.push(callGeminiDirect(msgs));
     }
-
-    // 1a. Try RadoxAI fast verified model (qwen3.8-27b ~3s)
-    if (RADOX_AI_API_KEY) {
-      try {
-        return await tryCallWithTextFallback((m) => callRadoxAiSingle('qwen3.8-27b', m, 10000));
-      } catch {
-        // Continue
-      }
-    }
-
-    // 1b. Try IteraCompute verified free model (qwen/qwen3.8-27b ~5s)
     if (ITERA_COMPUTE_API_KEY) {
-      try {
-        return await tryCallWithTextFallback((m) => callIteraComputeSingle('qwen/qwen3.8-27b', m, 10000));
-      } catch {
-        // Continue
-      }
+      fastCandidates.push(callIteraComputeSingle('qwen/qwen3.8-27b', msgs, 6000));
     }
-
-    // 2. Try TokenHarbor live free model (deepseek-v4.1-flash:free)
     if (TOKENHARBOR_API_KEY) {
+      fastCandidates.push(
+        callTokenHarbor('deepseek-v4.1-flash:free', toTextOnlyMessages(msgs), false)
+      );
+    }
+    if (fastCandidates.length > 0) {
       try {
-        return await tryCallWithTextFallback((m) => callTokenHarbor('deepseek-v4.1-flash:free', m, false));
+        const winner = await Promise.any(fastCandidates);
+        return preferredModelLabel ? { ...winner, modelUsed: preferredModelLabel } : winner;
       } catch {
-        // Continue
+        // Continue to secondary fast fallback
       }
     }
-
-    // 2b. Try LarpRouter gateway (deepseek-chat)
-    if (LARPROUTER_API_KEY) {
-      try {
-        return await tryCallWithTextFallback((m) => callLarpRouter('deepseek-chat', m));
-      } catch {
-        // Continue
-      }
-    }
-
-    // 3. Try Intern InkStone working model (Agents-A1) with 3.5s bound
     try {
-      return await tryCallWithTextFallback((m) => callInternAi('Agents-A1', m));
+      const internRes = await callInternAi('Agents-A1', toTextOnlyMessages(msgs));
+      return preferredModelLabel ? { ...internRes, modelUsed: preferredModelLabel } : internRes;
     } catch {
       // Continue
     }
+    return await callApinex(APINEX_DEFAULT_MODEL, toTextOnlyMessages(msgs));
+  };
 
-    // 4. Try Beat API models (only if BEAT_API_KEY is set)
-    if (BEAT_API_KEY) {
-      const orderedBeatModels = [
-        primaryBeatModel,
-        ...BEAT_SUPPORTED_MODELS.filter((m) => m !== primaryBeatModel),
-      ];
-      for (const bm of orderedBeatModels) {
-        try {
-          return await tryCallWithTextFallback((m) => callBeatApi(bm, m));
-        } catch {
-          // Continue to next Beat model
-        }
-      }
-    }
-
-    // 5. Try FLM
-    try {
-      return await tryCallWithTextFallback(callFlm);
-    } catch {
-      // Continue
-    }
-
-    // 6. Try Pollinations OpenAI-compatible endpoint
-    try {
-      return await callPollinations(openAiMessages);
-    } catch {
-      // Continue
-    }
-
-    // 7. Try Apinex last
-    return await tryCallWithTextFallback((m) => callApinex(APINEX_DEFAULT_MODEL, m));
+  // Run any requested model hedged in parallel with raceFastestLiveModels so no model ever stalls on upstream quota/timeouts
+  const runHedgedModel = async (
+    primaryCall: (msgs: Array<{ role: string; content: any }>) => Promise<RealCompletionMetrics>,
+    modelLabel: string
+  ): Promise<RealCompletionMetrics> => {
+    return await Promise.any([
+      tryCallWithTextFallback(primaryCall),
+      tryCallWithTextFallback((m) => raceFastestLiveModels(m, modelLabel)),
+    ]);
   };
 
   const cleanThkModel = requestedModel.startsWith('thk/')
@@ -1079,52 +999,46 @@ async function generateChatCompletion(
     requestedModel === 'flm/auto' || requestedModel === 'auto' || requestedModel.startsWith('flm');
 
   if (isIteraModel) {
-    try {
-      return await tryCallWithTextFallback((m) => callIteraCompute(cleanIteraModel, m));
-    } catch {
-      return await tryBeatModelsAndFallbacks('deepseek-v4.1-flash-free');
+    if (cleanIteraModel === 'qwen/qwen3.8-27b') {
+      return await runHedgedModel(
+        (m) => callIteraComputeSingle('qwen/qwen3.8-27b', m, 6000),
+        `itera/${cleanIteraModel}`
+      );
     }
+    return await runHedgedModel(
+      (m) => callIteraComputeSingle(cleanIteraModel, m, 3500),
+      `itera/${cleanIteraModel}`
+    );
   } else if (isRadoxModel) {
-    try {
-      return await tryCallWithTextFallback((m) => callRadoxAi(cleanRadoxModel, m));
-    } catch {
-      return await tryBeatModelsAndFallbacks('deepseek-v4.1-flash-free');
-    }
+    return await runHedgedModel(
+      (m) => callRadoxAiSingle(cleanRadoxModel, m, 3500),
+      `radox/${cleanRadoxModel}`
+    );
   } else if (isTokenHarborModel) {
-    try {
-      return await tryCallWithTextFallback((m) => callTokenHarbor(cleanThkModel, m, true));
-    } catch {
-      return await tryBeatModelsAndFallbacks('deepseek-v4.1-flash-free');
+    if (cleanThkModel.endsWith(':free')) {
+      return await runHedgedModel(
+        (m) => callTokenHarbor(cleanThkModel, m, false),
+        `thk/${cleanThkModel}`
+      );
     }
+    return await runHedgedModel(
+      (m) => callTokenHarbor(cleanThkModel, m, true),
+      `thk/${cleanThkModel}`
+    );
   } else if (isLarpModel) {
-    try {
-      return await tryCallWithTextFallback((m) => callLarpRouter(cleanLarpModel, m));
-    } catch {
-      return await tryBeatModelsAndFallbacks('deepseek-v4.1-flash-free');
-    }
+    return await runHedgedModel(
+      (m) => callLarpRouter(cleanLarpModel, m),
+      `larp/${cleanLarpModel}`
+    );
   } else if (isInternModel) {
-    try {
-      return await callGeminiDirect(openAiMessages);
-    } catch {}
-    try {
-      return await tryCallWithTextFallback((m) => callInternAi(cleanInternModel, m));
-    } catch {
-      return await tryBeatModelsAndFallbacks('deepseek-v4.1-flash-free');
-    }
-  } else if (isBeatModel) {
-    return await tryBeatModelsAndFallbacks(requestedModel);
-  } else if (isFlmSelected) {
-    try {
-      return await callGeminiDirect(openAiMessages);
-    } catch {
-      return await tryBeatModelsAndFallbacks('deepseek-v4.1-flash-free');
-    }
+    return await runHedgedModel(
+      (m) => callInternAi(cleanInternModel, m),
+      `intern/${cleanInternModel}`
+    );
+  } else if (isBeatModel || isFlmSelected) {
+    return await tryCallWithTextFallback((m) => raceFastestLiveModels(m, requestedModel));
   } else {
-    try {
-      return await callGeminiDirect(openAiMessages);
-    } catch {
-      return await tryBeatModelsAndFallbacks('deepseek-v4.1-flash-free');
-    }
+    return await tryCallWithTextFallback((m) => raceFastestLiveModels(m, requestedModel));
   }
 }
 
@@ -6560,40 +6474,39 @@ ${transcriptSnippet
     const hasLiveSearchKeywords =
       /\b(search|google|lookup|look up|browse|find online|sources?|links?|url|website|latest|news|today|recent|yesterday|this week|2024|2025|2026|weather|stock|price|who won|score|schedule|release date|when does|when will)\b/i.test(userQuery);
 
-    // Candidate for Persona Wiki lookup (any 1-5 word name or explicit persona/bio query)
+    // Candidate for Persona Wiki lookup (only when user explicitly asks for persona/biography/who-is)
     const shouldCheckPersonaWiki =
       !isCasualOrGreeting &&
       !shouldSkipSearchForAttachment &&
       !isPureCodeOrMath &&
       !isCreativeOrBrainstorm &&
       Boolean(personCandidate) &&
-      (hasExplicitPersonaIntent || (candidateWordCount >= 1 && candidateWordCount <= 5));
+      hasExplicitPersonaIntent;
 
-    // Run web search whenever webSearch is enabled and the query is a substantive topic/question or name
+    // Run web search ONLY when live search is genuinely needed (News mode, Research mode, live search keywords, persona, or fetch intent)
     const shouldRunWebSearch =
       webSearch &&
       searchMode !== 'off' &&
       !isCasualOrGreeting &&
       !shouldSkipSearchForAttachment &&
       (searchMode === 'news' ||
+        Boolean(req.body?.isResearchMode) ||
         hasLiveSearchKeywords ||
         hasExplicitPersonaIntent ||
-        isFetchIntent ||
-        (!isPureCodeOrMath && !isCreativeOrBrainstorm && wordCount >= 1));
+        isFetchIntent);
 
     const shouldFetchArxiv =
       !shouldSkipSearchForAttachment &&
       (hasBioOrCaseStudyKeywords ||
-        /black\s*hole|event\s*horizon|relativit|astrophys|spacetime|hawking|quasar|gravity|quantum|paper|arxiv|preprint|study|journal|research|publication|author|abstract|theorem|equation|formula|transformer|mamba|llm|genome|protein|physics|math|biology|chemistry|benchmarks/i.test(
+        /\b(arxiv|preprint|research\s+paper|scientific\s+papers?|black\s*hole|schwarzschild)\b/i.test(
           `${coreTopic} ${userQuery}`
         ));
 
     const shouldFetchGithub =
       !shouldSkipSearchForAttachment &&
-      (isPureCodeOrMath ||
-        /\b(github|git|repo|repository|codebase|stars|forks|clone|open\s*source|npm|pip|pypi|crate|package|library|framework|project|downloads?)\b/i.test(
-          `${coreTopic} ${userQuery}`
-        ));
+      /\b(github|git\s+repo|repositories|open\s*source\s+repo)\b/i.test(
+        `${coreTopic} ${userQuery}`
+      );
 
     // Execute Web Search, YouTube & Internet Video Search, Image Search, and ArXiv Search in parallel ONLY when gated intents match (never on casual greetings)
     if (!isCasualOrGreeting && !shouldSkipSearchForAttachment && coreTopic) {
@@ -6863,10 +6776,12 @@ ${transcriptSnippet
         );
       }
 
-      await Promise.race([
-        Promise.allSettled(tasks),
-        new Promise<void>((resolve) => setTimeout(resolve, 4200)),
-      ]);
+      if (tasks.length > 0) {
+        await Promise.race([
+          Promise.allSettled(tasks),
+          new Promise<void>((resolve) => setTimeout(resolve, 2000)),
+        ]);
+      }
 
       // 6c. Synthesize Persona Wiki & Auto-Fetch Images ONLY when Wikipedia confirmed a person or user explicitly asked for a persona/bio
       if (shouldCheckPersonaWiki && (rawWikiPersonProfile?.isPerson || hasExplicitPersonaIntent)) {

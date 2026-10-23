@@ -30,6 +30,28 @@ interface SavedThread extends ChatThread {
   messages: ChatMessageType[];
 }
 
+const INSTACLOUD_API_BASE = 'https://prod-main-zeno-api-c257d4-00gfx3c9932.compute.instacloud-edge.com';
+
+async function fetchZenoApi(path: string, init?: RequestInit): Promise<Response> {
+  const isStaticHost =
+    typeof window !== 'undefined' &&
+    (window.location.hostname.includes('vercel.app') ||
+      window.location.hostname.includes('netlify.app'));
+  if (isStaticHost) {
+    return fetch(`${INSTACLOUD_API_BASE}${path}`, init);
+  }
+  try {
+    const localRes = await fetch(path, init);
+    const contentType = localRes.headers.get('content-type') || '';
+    if (localRes.ok && contentType.includes('application/json')) {
+      return localRes;
+    }
+  } catch (err: any) {
+    if (err?.name === 'AbortError') throw err;
+  }
+  return fetch(`${INSTACLOUD_API_BASE}${path}`, init);
+}
+
 const DEFAULT_SUGGESTIONS = [
   'What are the latest breakthroughs in artificial intelligence this week?',
   'Explain quantum error correction and surface codes from first principles',
@@ -535,7 +557,7 @@ export default function App() {
 
         // Maxed out fast streaming cadence with zero lag
         const remaining = totalLength - currentPos;
-        const step = Math.min(remaining, Math.max(48, Math.floor(remaining / 2)));
+        const step = Math.min(remaining, Math.max(96, Math.floor(remaining * 0.65)));
 
         currentPos = Math.min(totalLength, currentPos + step);
         const chunk = fullText.slice(0, currentPos);
@@ -565,8 +587,8 @@ export default function App() {
           return;
         }
 
-        // Ultra-fast 6ms tick rate
-        const delay = 6;
+        // Ultra-fast 4ms tick rate
+        const delay = 4;
         timer = setTimeout(streamNext, delay);
       };
 
@@ -601,10 +623,9 @@ export default function App() {
       (effectiveMode !== 'off' &&
         !isCasualOrGreeting &&
         (effectiveMode === 'news' ||
-          /\b(search|browse|find online|sources?|links?|url|website|latest|news|today|recent|2024|2025|2026|weather|stock|price|who won|score|release date|images?|photos?|pics?|pictures?|videos?|youtube|tweets?|x\.com|twitter|handle|from|reddit|github|arxiv|persona|wiki|specs|age|height|nationality|https?:\/\/|[a-z0-9.-]+\.[a-z]{2,})\b/i.test(
+          /\b(search|google|browse|find online|sources?|links?|url|website|latest|news|today|recent|yesterday|this week|2024|2025|2026|weather|stock|price|who won|score|schedule|release date|images?|photos?|pics?|pictures?|videos?|youtube|tweets?|x\.com|twitter|handle|reddit|github|arxiv|persona|wiki|who is|fentch|fetch|scrape|https?:\/\/|[a-z0-9.-]+\.(?:com|org|net|io|ai|edu|gov))\b/i.test(
             query
-          ) ||
-          query.trim().length >= 2));
+          )));
 
     const computedLoadingMode: 'vision' | 'file' | 'search' | 'thinking' = hasImageAtt
       ? 'vision'
@@ -666,7 +687,7 @@ export default function App() {
     let chatCompleted = false;
     if (computedLoadingMode === 'search') {
       getAuthHeaders().then((authHeaders) =>
-        fetch('https://prod-main-zeno-api-c257d4-00gfx3c9932.compute.instacloud-edge.com/api/search/live', {
+        fetchZenoApi('/api/search/live', {
           method: 'POST',
           headers: authHeaders,
           signal: controller.signal,
@@ -710,7 +731,7 @@ export default function App() {
     try {
       const allPriorMessages = activeThread ? activeThread.messages : [];
       const authHeaders = await getAuthHeaders();
-      const response = await fetch('https://prod-main-zeno-api-c257d4-00gfx3c9932.compute.instacloud-edge.com/api/chat', {
+      const response = await fetchZenoApi('/api/chat', {
         method: 'POST',
         headers: authHeaders,
         signal: controller.signal,
@@ -720,7 +741,7 @@ export default function App() {
             content: m.content,
             attachments: m.attachments,
           })),
-          webSearch: isResearchMode || effectiveMode !== 'off',
+          webSearch: hasSearchIntent,
           searchMode: effectiveMode,
           model: activeModel.geminiModel,
           nsfwMode,
@@ -909,7 +930,7 @@ export default function App() {
 
     try {
       const authHeaders = await getAuthHeaders();
-      const response = await fetch('https://prod-main-zeno-api-c257d4-00gfx3c9932.compute.instacloud-edge.com/api/chat', {
+      const response = await fetchZenoApi('/api/chat', {
         method: 'POST',
         headers: authHeaders,
         signal: controller.signal,
@@ -919,7 +940,7 @@ export default function App() {
             content: m.content,
             attachments: m.attachments,
           })),
-          webSearch: searchMode !== 'off',
+          webSearch: searchMode === 'news' || isResearchMode,
           searchMode,
           model: targetModel.geminiModel,
           nsfwMode,
@@ -1028,7 +1049,7 @@ export default function App() {
 
     try {
       const authHeaders = await getAuthHeaders();
-      const response = await fetch('https://prod-main-zeno-api-c257d4-00gfx3c9932.compute.instacloud-edge.com/api/chat', {
+      const response = await fetchZenoApi('/api/chat', {
         method: 'POST',
         headers: authHeaders,
         signal: controller.signal,
@@ -1038,7 +1059,7 @@ export default function App() {
             content: m.content,
             attachments: m.attachments,
           })),
-          webSearch: searchMode !== 'off',
+          webSearch: searchMode === 'news' || isResearchMode,
           searchMode,
           model: selectedModel.geminiModel,
           nsfwMode,
