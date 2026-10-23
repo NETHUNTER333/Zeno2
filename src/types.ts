@@ -252,6 +252,25 @@ export interface PersonaWiki {
   socialLinks?: { platform: string; url: string; label?: string }[];
 }
 
+export interface FinanceQuote {
+  symbol: string;
+  name: string;
+  assetType: 'stock' | 'crypto';
+  currency: string;
+  price: number;
+  change: number;
+  changePercent: number;
+  high24h: number;
+  low24h: number;
+  marketCap?: string;
+  volume24h?: string;
+  high52w?: number;
+  low52w?: number;
+  exchange?: string;
+  updatedAt: string;
+  sparkline: Array<{ time: string; price: number }>;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
@@ -279,6 +298,7 @@ export interface ChatMessage {
   arxivPapers?: ArxivPaper[];
   githubRepos?: GithubRepo[];
   xPosts?: XPost[];
+  financeQuotes?: FinanceQuote[];
   webSearchSteps?: {
     label: string;
     query?: string;

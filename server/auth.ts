@@ -71,6 +71,7 @@ export const PUBLIC_API_ROUTES = [
   '/media/stream',
   '/media/embed-proxy',
   '/media/download',
+  '/finance/quote',
 ] as const;
 
 let cachedAdminApp: FirebaseAdminApp | null = null;

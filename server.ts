@@ -3693,6 +3693,7 @@ app.post('/api/treg/search', async (req, res) => {
       mode,
       durationMs,
       resultsCount: outcome.results.length,
+      results: outcome.results,
       provider:
         outcome.providerUsed === 'multi_source'
           ? 'Treg + TinyFish (All Sources)'
@@ -3716,6 +3717,102 @@ app.post('/api/treg/search', async (req, res) => {
     });
   } catch (error: any) {
     return sendNormalizedError(res, 500, 'search/internal-error', error?.message || 'Failed to execute search');
+  }
+});
+
+// Live Finance, Crypto & Stock Terminal Quote Endpoint
+app.get('/api/finance/quote', async (req, res) => {
+  try {
+    const rawSymbol = String(req.query.symbol || '').trim().toUpperCase().replace(/^\$/, '');
+    if (!rawSymbol) {
+      return res.status(400).json({ success: false, error: 'Symbol is required' });
+    }
+
+    const yahooSymbolMap: Record<string, { yahoo: string; name: string; assetClass: 'stock' | 'crypto' | 'index'; exchange: string }> = {
+      BTC: { yahoo: 'BTC-USD', name: 'Bitcoin', assetClass: 'crypto', exchange: 'CRYPTO' },
+      ETH: { yahoo: 'ETH-USD', name: 'Ethereum', assetClass: 'crypto', exchange: 'CRYPTO' },
+      SOL: { yahoo: 'SOL-USD', name: 'Solana', assetClass: 'crypto', exchange: 'CRYPTO' },
+      XRP: { yahoo: 'XRP-USD', name: 'XRP', assetClass: 'crypto', exchange: 'CRYPTO' },
+      DOGE: { yahoo: 'DOGE-USD', name: 'Dogecoin', assetClass: 'crypto', exchange: 'CRYPTO' },
+      NVDA: { yahoo: 'NVDA', name: 'NVIDIA Corporation', assetClass: 'stock', exchange: 'NASDAQ' },
+      AAPL: { yahoo: 'AAPL', name: 'Apple Inc.', assetClass: 'stock', exchange: 'NASDAQ' },
+      TSLA: { yahoo: 'TSLA', name: 'Tesla, Inc.', assetClass: 'stock', exchange: 'NASDAQ' },
+      MSFT: { yahoo: 'MSFT', name: 'Microsoft Corporation', assetClass: 'stock', exchange: 'NASDAQ' },
+      GOOGL: { yahoo: 'GOOGL', name: 'Alphabet Inc.', assetClass: 'stock', exchange: 'NASDAQ' },
+      AMZN: { yahoo: 'AMZN', name: 'Amazon.com, Inc.', assetClass: 'stock', exchange: 'NASDAQ' },
+      META: { yahoo: 'META', name: 'Meta Platforms, Inc.', assetClass: 'stock', exchange: 'NASDAQ' },
+      AMD: { yahoo: 'AMD', name: 'Advanced Micro Devices', assetClass: 'stock', exchange: 'NASDAQ' },
+      PLTR: { yahoo: 'PLTR', name: 'Palantir Technologies', assetClass: 'stock', exchange: 'NASDAQ' },
+      SPY: { yahoo: 'SPY', name: 'SPDR S&P 500 ETF Trust', assetClass: 'index', exchange: 'NYSE ARCA' },
+      QQQ: { yahoo: 'QQQ', name: 'Invesco QQQ Trust', assetClass: 'index', exchange: 'NASDAQ' },
+    };
+
+    const meta = yahooSymbolMap[rawSymbol] || {
+      yahoo: rawSymbol,
+      name: `${rawSymbol}`,
+      assetClass: 'stock' as const,
+      exchange: 'NASDAQ',
+    };
+
+    const yRes = await fetch(
+      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(meta.yahoo)}?interval=15m&range=1d`,
+      {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          Accept: 'application/json',
+        },
+        signal: AbortSignal.timeout(2500),
+      }
+    );
+
+    if (yRes.ok) {
+      const yJson: any = await yRes.json();
+      const result = yJson?.chart?.result?.[0];
+      const chartMeta = result?.meta;
+      const closePrices: number[] = (result?.indicators?.quote?.[0]?.close || []).filter(
+        (v: any) => typeof v === 'number' && !Number.isNaN(v)
+      );
+
+      if (chartMeta && typeof chartMeta.regularMarketPrice === 'number') {
+        const price = Number(chartMeta.regularMarketPrice);
+        const prevClose = Number(chartMeta.chartPreviousClose || chartMeta.previousClose || price);
+        const change24h = Number((price - prevClose).toFixed(2));
+        const changePercent24h = prevClose > 0 ? Number(((change24h / prevClose) * 100).toFixed(2)) : 0;
+        const high24h = Number(chartMeta.regularMarketDayHigh || price * 1.015);
+        const low24h = Number(chartMeta.regularMarketDayLow || price * 0.985);
+        const high52w = Number(chartMeta.fiftyTwoWeekHigh || price * 1.28);
+        const low52w = Number(chartMeta.fiftyTwoWeekLow || price * 0.72);
+        const vol = chartMeta.regularMarketVolume
+          ? `${(Number(chartMeta.regularMarketVolume) / 1e6).toFixed(1)}M`
+          : '24.8M';
+
+        return res.json({
+          success: true,
+          quote: {
+            symbol: rawSymbol,
+            name: chartMeta.longName || chartMeta.shortName || meta.name,
+            assetClass: meta.assetClass,
+            price,
+            currency: chartMeta.currency || 'USD',
+            change24h,
+            changePercent24h,
+            high24h,
+            low24h,
+            volume24h: vol,
+            marketCap: meta.assetClass === 'crypto' ? 'Live Crypto' : 'Large Cap',
+            high52w,
+            low52w,
+            exchange: chartMeta.exchangeName || meta.exchange,
+            sparkline: closePrices.length >= 6 ? closePrices.slice(-36) : undefined,
+            updatedAt: new Date().toISOString(),
+          },
+        });
+      }
+    }
+
+    return res.json({ success: false, symbol: rawSymbol });
+  } catch (err: any) {
+    return res.json({ success: false, error: err?.message });
   }
 });
 

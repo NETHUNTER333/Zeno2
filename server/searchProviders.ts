@@ -605,7 +605,7 @@ export async function searchWebReliable(
  */
 export async function extractUrlSafely(
   rawUrl: string,
-  timeoutMs = 5_000
+  timeoutMs = 6_000
 ): Promise<{
   ok: boolean;
   content: string;
@@ -621,6 +621,50 @@ export async function extractUrlSafely(
       provider: 'direct_http',
       error: check.reason || 'Unsafe or invalid URL',
     };
+  }
+
+  // Special handling for GitHub repository URLs (fetch repo metadata + raw README.md)
+  const ghMatch = check.url.href.match(/^https?:\/\/(?:www\.)?github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)(?:\/|$)/i);
+  if (ghMatch && !check.url.pathname.includes('/blob/') && !check.url.pathname.includes('/issues/') && !check.url.pathname.includes('/pull/')) {
+    const owner = ghMatch[1];
+    const repo = ghMatch[2].replace(/\.git$/i, '');
+    try {
+      const [metaRes, readmeRes] = await Promise.allSettled([
+        fetch(`https://api.github.com/repos/${owner}/${repo}`, {
+          headers: { 'User-Agent': 'Zeno-Reader/1.0', Accept: 'application/vnd.github.v3+json' },
+          signal: AbortSignal.timeout(3500),
+        }),
+        fetch(`https://api.github.com/repos/${owner}/${repo}/readme`, {
+          headers: { 'User-Agent': 'Zeno-Reader/1.0', Accept: 'application/vnd.github.v3.raw' },
+          signal: AbortSignal.timeout(4000),
+        }),
+      ]);
+
+      let headerMd = `# ${owner}/${repo}\n\n`;
+      if (metaRes.status === 'fulfilled' && metaRes.value.ok) {
+        const meta: any = await metaRes.value.json();
+        headerMd += `${meta.description ? `> ${meta.description}\n\n` : ''}`;
+        headerMd += `- **Stars**: ${meta.stargazers_count ?? 0} | **Forks**: ${meta.forks_count ?? 0} | **Language**: ${meta.language || 'N/A'}\n`;
+        if (Array.isArray(meta.topics) && meta.topics.length > 0) {
+          headerMd += `- **Topics**: ${meta.topics.join(', ')}\n`;
+        }
+        headerMd += `- **Repository URL**: ${meta.html_url || check.url.href}\n\n---\n\n`;
+      }
+
+      if (readmeRes.status === 'fulfilled' && readmeRes.value.ok) {
+        const readmeText = await readmeRes.value.text();
+        if (readmeText && readmeText.trim().length > 20) {
+          return {
+            ok: true,
+            content: `${headerMd}${readmeText.trim()}`.slice(0, 50_000),
+            provider: 'direct_http',
+            status: 200,
+          };
+        }
+      }
+    } catch {
+      // Fall through to standard HTTP extraction
+    }
   }
 
   try {
@@ -645,17 +689,38 @@ export async function extractUrlSafely(
     }
 
     const html = await resp.text();
-    const cleanHtml = html
+    const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    const pageTitle = titleMatch ? titleMatch[1].replace(/\s+/g, ' ').trim() : '';
+
+    const structuredMd = html
       .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
       .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
+      .replace(/<noscript\b[^<]*(?:(?!<\/noscript>)<[^<]*)*<\/noscript>/gi, '')
+      .replace(/<svg\b[^<]*(?:(?!<\/svg>)<[^<]*)*<\/svg>/gi, '')
+      .replace(/<h1[^>]*>([\s\S]*?)<\/h1>/gi, '\n\n# $1\n\n')
+      .replace(/<h2[^>]*>([\s\S]*?)<\/h2>/gi, '\n\n## $1\n\n')
+      .replace(/<h3[^>]*>([\s\S]*?)<\/h3>/gi, '\n\n### $1\n\n')
+      .replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, '\n- $1')
+      .replace(/<(?:p|div|section|article|br|tr)[^>]*>/gi, '\n')
       .replace(/<[^>]+>/g, ' ')
-      .replace(/\s+/g, ' ')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/[ \t]+/g, ' ')
+      .replace(/\n\s*\n\s*\n+/g, '\n\n')
       .trim()
       .slice(0, 50_000);
 
+    const finalContent = pageTitle && !structuredMd.startsWith('# ')
+      ? `# ${pageTitle}\n\n${structuredMd}`
+      : structuredMd;
+
     return {
       ok: true,
-      content: cleanHtml,
+      content: finalContent,
       provider: 'direct_http',
       status: resp.status,
     };

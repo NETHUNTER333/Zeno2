@@ -127,23 +127,69 @@ export const ArxivPaperCard: React.FC<ArxivPaperCardProps> = ({
           </button>
         )}
 
-        {/* Read Online in Inbuilt Viewer */}
+        {/* Read Online in Split Deep Reader */}
         <button
           type="button"
           onClick={() => setIsPdfViewerOpen(true)}
-          className={`hover:underline cursor-pointer font-medium ${
-            isDark ? 'text-neutral-300 hover:text-white' : 'text-neutral-700 hover:text-black'
+          className={`hover:underline cursor-pointer font-semibold ${
+            isDark ? 'text-white' : 'text-black'
           }`}
-          title="Open in Inbuilt PDF & Readability Reader"
+          title="Open in Academic Paper & ArXiv Split Deep Reader"
         >
-          <span>Read PDF Online</span>
+          <span>Open Split Deep Reader</span>
         </button>
+
+        {onAskZeno && (
+          <>
+            <button
+              type="button"
+              onClick={() =>
+                onAskZeno(
+                  `Explain the core mathematical formulations, equations, and theoretical derivations of arXiv:${paper.id} ("${paper.title}"). Abstract: ${paper.summary.slice(0, 600)}`
+                )
+              }
+              className={`hover:underline cursor-pointer ${
+                isDark ? 'hover:text-white' : 'hover:text-black'
+              }`}
+            >
+              Explain Math/Formulas
+            </button>
+
+            <button
+              type="button"
+              onClick={() =>
+                onAskZeno(
+                  `Summarize the Key Contributions, empirical benchmarks, and novelty of arXiv:${paper.id} ("${paper.title}"). Abstract: ${paper.summary.slice(0, 600)}`
+                )
+              }
+              className={`hover:underline cursor-pointer ${
+                isDark ? 'hover:text-white' : 'hover:text-black'
+              }`}
+            >
+              Key Contributions
+            </button>
+
+            <button
+              type="button"
+              onClick={() =>
+                onAskZeno(
+                  `Provide a step-by-step Methodology & Architecture Breakdown of arXiv:${paper.id} ("${paper.title}"). Abstract: ${paper.summary.slice(0, 600)}`
+                )
+              }
+              className={`hover:underline cursor-pointer ${
+                isDark ? 'hover:text-white' : 'hover:text-black'
+              }`}
+            >
+              Methodology Breakdown
+            </button>
+          </>
+        )}
 
         {hasRepos && (
           <button
             type="button"
             onClick={() => setIsReposOpen(!isReposOpen)}
-            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border transition-all cursor-pointer font-sans ${
+            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg border transition-all cursor-pointer font-sans ${
               isDark
                 ? 'bg-[#007aff]/10 hover:bg-[#007aff]/20 border-[#007aff]/30 text-[#38bdf8]'
                 : 'bg-[#007aff]/10 hover:bg-[#007aff]/20 border-[#007aff]/20 text-[#0284c7]'
@@ -157,20 +203,6 @@ export const ArxivPaperCard: React.FC<ArxivPaperCardProps> = ({
                 isReposOpen ? 'rotate-180' : ''
               }`}
             />
-          </button>
-        )}
-
-        {onAskZeno && (
-          <button
-            type="button"
-            onClick={() =>
-              onAskZeno(`Analyze arXiv:${paper.id} ("${paper.title}") and summarize its methodology, findings, and code implementations.`)
-            }
-            className={`hover:underline cursor-pointer ${
-              isDark ? 'hover:text-white' : 'hover:text-black'
-            }`}
-          >
-            Ask Zeno
           </button>
         )}
 

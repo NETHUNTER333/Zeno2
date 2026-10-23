@@ -533,3 +533,99 @@ export async function deleteUserStudySessionFromFirestore(videoId: string) {
   }
 }
 
+export interface SharedThreadSnapshotDoc {
+  id: string;
+  ownerId: string;
+  title: string;
+  createdAt: number;
+  messages: any[];
+}
+
+export async function publishSharedThreadToFirestore(thread: {
+  id: string;
+  title: string;
+  createdAt: number;
+  messages: any[];
+}): Promise<string> {
+  const rawShareId = `sh_${String(thread.id || Date.now()).replace(/[^a-zA-Z0-9_-]/g, '')}_${Math.random()
+    .toString(36)
+    .slice(2, 8)}`;
+  const shareId = rawShareId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 96);
+
+  const sanitizedMessages = (thread.messages || [])
+    .filter((m) => !m.isStreaming)
+    .slice(0, 120)
+    .map((m) =>
+      stripUndefined({
+        id: String(m.id || `msg-${Date.now()}`),
+        role: m.role === 'user' ? 'user' : 'assistant',
+        content: String(m.content || '').slice(0, 18000),
+        timestamp: Number(m.timestamp) || Date.now(),
+        modelUsed: m.modelUsed ? String(m.modelUsed).slice(0, 80) : undefined,
+        sources: Array.isArray(m.sources) ? m.sources.slice(0, 8) : undefined,
+        arxivPapers: Array.isArray(m.arxivPapers) ? m.arxivPapers.slice(0, 4) : undefined,
+        githubRepos: Array.isArray(m.githubRepos) ? m.githubRepos.slice(0, 4) : undefined,
+        financeQuotes: Array.isArray(m.financeQuotes) ? m.financeQuotes.slice(0, 4) : undefined,
+      })
+    );
+
+  const snapshotPayload: SharedThreadSnapshotDoc = {
+    id: shareId,
+    ownerId: auth.currentUser?.uid || 'guest_owner',
+    title: String(thread.title || 'Shared Zeno Thread').slice(0, 200),
+    createdAt: Number(thread.createdAt) || Date.now(),
+    messages: sanitizedMessages,
+  };
+
+  // Always cache locally so instant preview works even offline or without Firebase Auth
+  try {
+    localStorage.setItem(`zeno_shared_${shareId}`, JSON.stringify(snapshotPayload));
+  } catch {}
+
+  const user = auth.currentUser;
+  if (user && user.uid) {
+    const path = `shared_threads/${shareId}`;
+    try {
+      await setDoc(doc(db, 'shared_threads', shareId), {
+        ...snapshotPayload,
+        ownerId: user.uid,
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, path);
+    }
+  }
+
+  return shareId;
+}
+
+export async function loadSharedThreadFromFirestore(
+  shareId: string
+): Promise<SharedThreadSnapshotDoc | null> {
+  const safeId = String(shareId || '')
+    .replace(/[^a-zA-Z0-9_-]/g, '_')
+    .slice(0, 128);
+  if (!safeId) return null;
+
+  try {
+    const localRaw = localStorage.getItem(`zeno_shared_${safeId}`);
+    if (localRaw) {
+      const parsed = JSON.parse(localRaw);
+      if (parsed && Array.isArray(parsed.messages)) {
+        return parsed as SharedThreadSnapshotDoc;
+      }
+    }
+  } catch {}
+
+  const path = `shared_threads/${safeId}`;
+  try {
+    const snap = await getDoc(doc(db, 'shared_threads', safeId));
+    if (snap.exists()) {
+      return snap.data() as SharedThreadSnapshotDoc;
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.GET, path);
+  }
+  return null;
+}
+
+

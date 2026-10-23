@@ -297,3 +297,257 @@ export function exportConversationAsPdf(thread: ExportableThread): void {
 
   doc.save(`${sanitizeFilename(thread.title)}.pdf`);
 }
+
+export function buildNotionReadyMarkdown(thread: ExportableThread): string {
+  const exportedDate = new Date().toISOString().split('T')[0];
+  const createdDate = new Date(thread.createdAt || Date.now()).toLocaleString();
+
+  const lines: string[] = [
+    `# ${thread.title || 'Zeno Research Thread'}`,
+    '',
+    `> **Workspace Export** · Created ${createdDate} · Exported ${exportedDate} · ${thread.messages.length} messages`,
+    '',
+    '---',
+    '',
+  ];
+
+  thread.messages.forEach((msg, index) => {
+    const isUser = msg.role === 'user';
+    if (isUser) {
+      lines.push(`## Prompt ${(index / 2 + 1) | 0}`);
+      lines.push(`> **Question:** ${msg.content.replace(/\n/g, '\n> ')}`);
+      lines.push('');
+    } else {
+      const metaParts = [
+        msg.modelUsed ? `Model: \`${msg.modelUsed}\`` : null,
+        msg.timing?.totalSec ? `Latency: \`${msg.timing.totalSec}s\`` : null,
+        msg.sources?.length ? `Sources: \`${msg.sources.length}\`` : null,
+      ].filter(Boolean);
+
+      if (metaParts.length > 0) {
+        lines.push(`_${metaParts.join(' · ')}_`);
+        lines.push('');
+      }
+
+      lines.push(stripGenerativeUiBlocks(msg.content) || '_(No content)_');
+      lines.push('');
+
+      if (msg.sources && msg.sources.length > 0) {
+        lines.push('#### Citations & Web Sources');
+        msg.sources.forEach((src, sIdx) => {
+          lines.push(`- **[${sIdx + 1}]** [${src.title || src.domain || src.url}](${src.url}) — _${src.domain || 'web'}_`);
+        });
+        lines.push('');
+      }
+
+      if (msg.arxivPapers && msg.arxivPapers.length > 0) {
+        lines.push('#### Academic ArXiv Papers');
+        msg.arxivPapers.forEach((paper) => {
+          lines.push(`- **arXiv:${paper.id}** [${paper.title}](${paper.absUrl}) — ${paper.authors.slice(0, 3).join(', ')}`);
+        });
+        lines.push('');
+      }
+
+      lines.push('---');
+      lines.push('');
+    }
+  });
+
+  return lines.join('\n');
+}
+
+export interface QuoteCardConfig {
+  title: string;
+  promptText?: string;
+  answerText: string;
+  modelName?: string;
+  sourcesCount?: number;
+  dateStr?: string;
+  theme: 'carbon' | 'ivory' | 'slate';
+}
+
+export function renderQuoteCardToCanvas(
+  canvas: HTMLCanvasElement,
+  config: QuoteCardConfig
+): void {
+  const scale = 2; // 2x Retina High-Res PNG
+  const width = 900;
+  const padding = 56;
+  const contentWidth = width - padding * 2;
+
+  const palette =
+    config.theme === 'ivory'
+      ? {
+          bg: '#FAF8F5',
+          surface: '#F1EDE6',
+          border: '#E2DDD5',
+          textPrimary: '#141413',
+          textSecondary: '#575550',
+          textMuted: '#87847E',
+          accent: '#0F172A',
+        }
+      : config.theme === 'slate'
+      ? {
+          bg: '#0F172A',
+          surface: '#1E293B',
+          border: '#334155',
+          textPrimary: '#F8FAFC',
+          textSecondary: '#CBD5E1',
+          textMuted: '#64748B',
+          accent: '#38BDF8',
+        }
+      : {
+          bg: '#0A0A0C',
+          surface: '#141418',
+          border: '#26262E',
+          textPrimary: '#F4F4F6',
+          textSecondary: '#D4D4D8',
+          textMuted: '#71717A',
+          accent: '#FFFFFF',
+        };
+
+  const tempCtx = canvas.getContext('2d');
+  if (!tempCtx) return;
+
+  const wrapCanvasText = (
+    ctx: CanvasRenderingContext2D,
+    text: string,
+    maxWidth: number,
+    maxLines: number
+  ): string[] => {
+    const clean = stripMarkdownForPdf(text).replace(/\s+/g, ' ').trim();
+    const words = clean.split(' ');
+    const lines: string[] = [];
+    let current = '';
+
+    for (const word of words) {
+      const candidate = current ? `${current} ${word}` : word;
+      if (ctx.measureText(candidate).width <= maxWidth) {
+        current = candidate;
+      } else {
+        if (current) lines.push(current);
+        current = word;
+        if (lines.length >= maxLines - 1) break;
+      }
+    }
+    if (current && lines.length < maxLines) {
+      lines.push(current);
+    }
+    if (lines.length === maxLines && words.length > lines.join(' ').split(' ').length) {
+      lines[maxLines - 1] = lines[maxLines - 1].replace(/[.,;:!?]?$/, '…');
+    }
+    return lines;
+  };
+
+  tempCtx.font = '600 22px "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif';
+  const promptLines = config.promptText
+    ? wrapCanvasText(tempCtx, config.promptText, contentWidth - 36, 3)
+    : [];
+
+  tempCtx.font = '400 21px "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif';
+  const answerLines = wrapCanvasText(tempCtx, config.answerText || '', contentWidth, 12);
+
+  const promptBlockHeight = promptLines.length > 0 ? promptLines.length * 32 + 44 : 0;
+  const answerBlockHeight = Math.max(1, answerLines.length) * 34 + 24;
+  const height = Math.max(460, padding * 2 + 76 + promptBlockHeight + answerBlockHeight + 68);
+
+  canvas.width = width * scale;
+  canvas.height = height * scale;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+
+  ctx.scale(scale, scale);
+
+  // Outer background
+  ctx.fillStyle = palette.bg;
+  ctx.fillRect(0, 0, width, height);
+
+  // Subtle 1px frame border
+  ctx.strokeStyle = palette.border;
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(18, 18, width - 36, height - 36);
+
+  let y = padding;
+
+  // Header brand + metadata
+  ctx.fillStyle = palette.textPrimary;
+  ctx.font = '700 20px "Plus Jakarta Sans", -apple-system, sans-serif';
+  ctx.fillText('ZENO', padding, y + 18);
+
+  ctx.fillStyle = palette.textMuted;
+  ctx.font = '500 13px "JetBrains Mono", monospace';
+  const headerMeta = [
+    config.modelName || 'Zeno Synthesis',
+    config.sourcesCount ? `${config.sourcesCount} cited sources` : null,
+    config.dateStr || new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+  ]
+    .filter(Boolean)
+    .join('  ·  ');
+  const metaWidth = ctx.measureText(headerMeta).width;
+  ctx.fillText(headerMeta, width - padding - metaWidth, y + 17);
+
+  y += 42;
+  ctx.strokeStyle = palette.border;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(padding, y);
+  ctx.lineTo(width - padding, y);
+  ctx.stroke();
+  y += 28;
+
+  // Optional Prompt Box
+  if (promptLines.length > 0) {
+    const boxH = promptLines.length * 32 + 24;
+    ctx.fillStyle = palette.surface;
+    ctx.beginPath();
+    ctx.roundRect(padding, y, contentWidth, boxH, 12);
+    ctx.fill();
+    ctx.strokeStyle = palette.border;
+    ctx.stroke();
+
+    ctx.fillStyle = palette.textPrimary;
+    ctx.font = '600 20px "Plus Jakarta Sans", -apple-system, sans-serif';
+    promptLines.forEach((line, idx) => {
+      ctx.fillText(line, padding + 18, y + 30 + idx * 32);
+    });
+    y += boxH + 26;
+  }
+
+  // Answer Prose
+  ctx.fillStyle = palette.textSecondary;
+  ctx.font = '400 21px "Plus Jakarta Sans", -apple-system, sans-serif';
+  answerLines.forEach((line, idx) => {
+    ctx.fillText(line, padding, y + 22 + idx * 34);
+  });
+
+  // Footer
+  const footerY = height - padding + 6;
+  ctx.strokeStyle = palette.border;
+  ctx.beginPath();
+  ctx.moveTo(padding, footerY - 26);
+  ctx.lineTo(width - padding, footerY - 26);
+  ctx.stroke();
+
+  ctx.fillStyle = palette.textMuted;
+  ctx.font = '500 13px "Plus Jakarta Sans", -apple-system, sans-serif';
+  const cleanTitle = (config.title || 'Zeno Research Conversation').slice(0, 68);
+  ctx.fillText(cleanTitle, padding, footerY);
+
+  const rightWatermark = 'zeno · verified research snapshot';
+  ctx.font = '500 12px "JetBrains Mono", monospace';
+  const rwWidth = ctx.measureText(rightWatermark).width;
+  ctx.fillText(rightWatermark, width - padding - rwWidth, footerY);
+}
+
+export function downloadQuoteCardPng(config: QuoteCardConfig): void {
+  const canvas = document.createElement('canvas');
+  renderQuoteCardToCanvas(canvas, config);
+  const dataUrl = canvas.toDataURL('image/png');
+  const a = document.createElement('a');
+  a.href = dataUrl;
+  a.download = `${sanitizeFilename(config.title)}-quote-card.png`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+

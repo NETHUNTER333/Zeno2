@@ -27,20 +27,27 @@ import {
   File,
   Pin,
   BookOpen,
-  ListChecks
+  ListChecks,
+  Share2
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
-import { ChatMessage as ChatMessageType, YouTubeVideoInfo } from '../types';
+import { ChatMessage as ChatMessageType, YouTubeVideoInfo, FinanceQuote } from '../types';
 import { GrokTimingTooltip } from './GrokTimingTooltip';
 import { GenerativeUiViewer } from './GenerativeUiViewer';
 import { ArxivPaperCard } from './ArxivPaperCard';
 import { GithubRepoCard } from './GithubRepoCard';
 import { PersonaWikiCard } from './PersonaWikiCard';
 import { InbuiltPdfViewer } from './InbuiltPdfViewer';
+import { FinanceTerminalCard } from './FinanceTerminalCard';
+import {
+  detectFinanceSymbolsInText,
+  buildFallbackFinanceQuote,
+  fetchLiveFinanceQuoteClient,
+} from '../lib/financeMarket';
 import { getAuthHeaders } from '../lib/firebase';
 import { WebSearch, WebSearchCitation, CitationModal, WebSearchSource } from './ui/web-search';
 import { LoadingBreadcrumb } from './ui/animated-loading-svg-text-shimmer';
@@ -66,6 +73,7 @@ interface GrokChatMessageProps {
   onRetry?: (modelOverride?: ModelOption) => void;
   onEdit?: (content: string) => void;
   onAskZeno?: (prompt: string) => void;
+  onOpenShareStudio?: (messageId: string, tab?: 'share' | 'export' | 'quote') => void;
   theme?: 'dark' | 'light';
   nsfwMode?: boolean;
 }
@@ -278,6 +286,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
   onRetry,
   onEdit,
   onAskZeno,
+  onOpenShareStudio,
   theme = 'dark',
 }) => {
   const [copied, setCopied] = useState(false);
@@ -299,12 +308,41 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
   const [previewAttachmentUrl, setPreviewAttachmentUrl] = useState<{ url: string; name: string } | null>(null);
   const [pdfViewerData, setPdfViewerData] = useState<{ isOpen: boolean; pdfUrl?: string; pdfName?: string; extractedText?: string } | null>(null);
   const [selectedCitation, setSelectedCitation] = useState<WebSearchSource | null>(null);
-
+  const [liveFinanceQuotes, setLiveFinanceQuotes] = useState<FinanceQuote[]>(
+    message.financeQuotes || []
+  );
 
   const videoCarouselRef = React.useRef<HTMLDivElement>(null);
 
   const isDark = theme === 'dark';
   const isUser = message.role === 'user';
+
+  // Auto-detect stock & crypto tickers ($NVDA, $AAPL, BTC, SOL, etc.) in assistant messages
+  useEffect(() => {
+    if (isUser) return;
+    if (message.financeQuotes && message.financeQuotes.length > 0) {
+      setLiveFinanceQuotes(message.financeQuotes);
+      return;
+    }
+    const combinedText = `${(message.searchQueries || []).join(' ')} ${(message.content || '').slice(0, 600)}`;
+    const symbols = detectFinanceSymbolsInText(combinedText);
+    if (symbols.length === 0) {
+      setLiveFinanceQuotes([]);
+      return;
+    }
+    setLiveFinanceQuotes(symbols.map((s) => buildFallbackFinanceQuote(s)));
+    let cancelled = false;
+    Promise.all(symbols.map((s) => fetchLiveFinanceQuoteClient(s)))
+      .then((quotes) => {
+        if (!cancelled && quotes.length > 0) {
+          setLiveFinanceQuotes(quotes);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [isUser, message.financeQuotes, message.searchQueries, message.content]);
 
   // Extract detected YouTube ID from videos or message text for quick Study Workspace access
   const detectedYtId = useMemo(() => {
@@ -542,13 +580,13 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
   };
 
   return (
-    <div id={`msg-${message.id}`} data-message-id={message.id} className="group/msg py-6 px-4 md:px-0 max-w-3xl mx-auto w-full transition-all duration-300 rounded-2xl">
+    <div id={`msg-${message.id}`} data-message-id={message.id} className="group/msg py-6 px-4 md:px-0 max-w-3xl mx-auto w-full min-w-0 overflow-hidden transition-all duration-300 rounded-2xl">
       {/* User Message Layout */}
       {isUser ? (
-        <div className="flex flex-col items-end">
+        <div className="flex flex-col items-end w-full min-w-0">
           {/* Attached Images & Files on Sent User Message */}
           {message.attachments && message.attachments.length > 0 && (
-            <div className="flex flex-wrap items-center justify-end gap-2 mb-2 max-w-2xl">
+            <div className="flex flex-wrap items-center justify-end gap-2 mb-2 max-w-full sm:max-w-2xl">
               {message.attachments.map((att, idx) => {
                 const isImg = att.type?.startsWith('image/') && Boolean(att.url);
                 if (isImg && att.url) {
@@ -647,7 +685,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
 
           {isEditing ? (
             <div
-              className={`w-full max-w-2xl rounded-2xl border backdrop-blur-2xl p-3.5 space-y-2.5 transition-all ${
+              className={`w-full max-w-full sm:max-w-2xl rounded-2xl border backdrop-blur-2xl p-3.5 space-y-2.5 transition-all ${
                 isDark
                   ? 'bg-white/[0.06] border-white/[0.16] shadow-[0_12px_36px_rgba(0,0,0,0.55)]'
                   : 'bg-white/80 border-black/[0.12] shadow-[0_12px_36px_rgba(0,0,0,0.08)]'
@@ -666,7 +704,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                   }
                 }}
                 autoFocus
-                className={`w-full border rounded-xl p-3 text-sm focus:outline-none font-sans resize-y ${
+                className={`w-full border rounded-xl p-3 text-xs sm:text-sm focus:outline-none font-sans resize-y ${
                   isDark
                     ? 'bg-black/40 border-white/[0.12] text-white focus:border-white/30'
                     : 'bg-white/90 border-black/[0.1] text-[#0d0d0d] focus:border-black/30'
@@ -707,9 +745,15 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
               </div>
             </div>
           ) : (
-            <div className="flex flex-col items-end max-w-2xl">
+            <div className="flex flex-col items-end w-full max-w-[88%] sm:max-w-[78%] min-w-0">
               <div
-                className={`text-[15px] font-normal leading-relaxed px-4 py-2.5 rounded-3xl backdrop-blur-2xl border transition-all ${
+                className={`${
+                  (message.content || '').length > 280
+                    ? 'text-[11.5px] sm:text-[12.5px] leading-[1.5]'
+                    : (message.content || '').length > 120
+                    ? 'text-[12.5px] sm:text-[13px] leading-[1.55]'
+                    : 'text-[13px] sm:text-[14px] leading-relaxed'
+                } font-normal px-3.5 py-2.5 rounded-2xl sm:rounded-3xl backdrop-blur-2xl border transition-all w-fit max-w-full min-w-0 overflow-hidden whitespace-pre-wrap break-words [overflow-wrap:anywhere] [word-break:break-word] ${
                   isDark
                     ? 'bg-white/[0.07] border-white/[0.14] text-white shadow-[0_8px_28px_rgba(0,0,0,0.45)]'
                     : 'bg-white/75 border-black/[0.08] text-[#000000] shadow-[0_8px_24px_rgba(0,0,0,0.06)]'
@@ -1251,6 +1295,25 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Live Finance, Crypto & Stock Terminal Cards */}
+          {liveFinanceQuotes.length > 0 && (
+            <div className={`mt-4 pt-3 border-t ${isDark ? 'border-[#1f1f1f]' : 'border-[#e5e5e5]'}`}>
+              <div className={`text-[11px] mb-1 ${isDark ? 'text-[#666666]' : 'text-[#8a8a8a]'}`}>
+                Live Market Terminal
+              </div>
+              <div className="space-y-3">
+                {liveFinanceQuotes.map((quote) => (
+                  <FinanceTerminalCard
+                    key={quote.symbol}
+                    quote={quote}
+                    isDark={isDark}
+                    onAskZeno={onAskZeno}
+                  />
+                ))}
+              </div>
             </div>
           )}
 
@@ -1849,9 +1912,19 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                   <Pin className={`w-3.5 h-3.5 ${isPinned ? 'fill-current' : ''}`} />
                 </button>
 
-
-
-
+                {onOpenShareStudio && (
+                  <button
+                    type="button"
+                    onClick={() => onOpenShareStudio(message.id, 'quote')}
+                    className={`p-1 rounded transition-colors cursor-pointer ${
+                      isDark ? 'hover:text-white' : 'hover:text-[#0d0d0d]'
+                    }`}
+                    title="Share link or export high-res PNG quote card"
+                    aria-label="Share or export quote card"
+                  >
+                    <Share2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
 
               {/* Timing Tooltip */}

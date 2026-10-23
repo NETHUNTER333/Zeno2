@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, PanelLeft, Download, FileText } from 'lucide-react';
+import { Plus, PanelLeft, Download, FileText, Share2, GitFork, Layers, Link2, GraduationCap } from 'lucide-react';
 import { ChatMessage as ChatMessageType, SearchMode } from './types';
 import { GrokLogo } from './components/GrokLogo';
 import { ChatInput, ChatHistoryItem, ChatHistoryMessageItem, MessageScroller } from './components/kobra';
@@ -12,6 +12,10 @@ import { YouTubeVideoInfo } from './types';
 import { QuickOnboardingModal } from './components/QuickOnboardingModal';
 import { UserAccountStore } from './lib/userAccountStore';
 import { exportConversationAsMarkdown, exportConversationAsPdf } from './lib/exportChat';
+import { ShareExportStudioModal } from './components/ShareExportStudioModal';
+import { DeepResearchModal } from './components/DeepResearchModal';
+import { PageExtractModal } from './components/PageExtractModal';
+import { InbuiltPdfViewer } from './components/InbuiltPdfViewer';
 
 import { ReadingProgressBar } from './components/ReadingProgressBar';
 import { AnalyticsDashboardModal } from './components/AnalyticsDashboardModal';
@@ -23,6 +27,7 @@ import {
   loadUserChatThreadsFromFirestore,
   deleteChatThreadFromFirestore,
   clearAllChatThreadsFromFirestore,
+  loadSharedThreadFromFirestore,
 } from './lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 
@@ -155,7 +160,52 @@ export default function App() {
   });
   const [isResearchMode, setIsResearchMode] = useState(false);
 
+  // Studio & Research Tool Modals
+  const [shareStudioState, setShareStudioState] = useState<{
+    isOpen: boolean;
+    initialTab?: 'share' | 'export' | 'quote';
+    quoteMessage?: ChatMessageType | null;
+  }>({ isOpen: false });
+  const [deepResearchState, setDeepResearchState] = useState<{
+    isOpen: boolean;
+    initialTopic?: string;
+  }>({ isOpen: false });
+  const [urlReaderState, setUrlReaderState] = useState<{
+    isOpen: boolean;
+    initialUrl?: string;
+    title?: string;
+  }>({ isOpen: false });
+  const [isArxivReaderOpen, setIsArxivReaderOpen] = useState(false);
+  const [sharedBannerId, setSharedBannerId] = useState<string | null>(null);
+
   const [isSignedIn, setIsSignedIn] = useState(() => UserAccountStore.isUserSignedIn());
+
+  // Load Public Shared Thread snapshot when ?share=<shareId> is present in URL
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const shareId = params.get('share')?.trim();
+      if (!shareId) return;
+      loadSharedThreadFromFirestore(shareId).then((sharedSnap) => {
+        if (sharedSnap && Array.isArray(sharedSnap.messages) && sharedSnap.messages.length > 0) {
+          setIsSignedIn(true);
+          const importedThread: SavedThread = {
+            id: sharedSnap.id,
+            title: sharedSnap.title || 'Shared Thread',
+            createdAt: sharedSnap.createdAt || Date.now(),
+            messages: sharedSnap.messages,
+          };
+          setThreads((prev) => {
+            const filtered = prev.filter((t) => t.id !== importedThread.id);
+            return [importedThread, ...filtered];
+          });
+          setActiveThreadId(importedThread.id);
+          setSharedBannerId(shareId);
+          setCurrentView('chat');
+        }
+      });
+    } catch {}
+  }, []);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -1221,8 +1271,29 @@ export default function App() {
                   />
                 </div>
 
-                {/* Top Right Controls: New Chat Button */}
-                <div className="flex items-center gap-2 pointer-events-auto">
+                {/* Top Right Controls: Share & Export Studio + New Chat Button */}
+                <div className="flex items-center gap-1.5 pointer-events-auto">
+                  {!isThreadEmpty && activeThread && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setShareStudioState({
+                          isOpen: true,
+                          initialTab: 'share',
+                          quoteMessage: null,
+                        })
+                      }
+                      className={`pointer-events-auto flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] font-medium backdrop-blur-2xl transition-all cursor-pointer whitespace-nowrap ${
+                        isDark
+                          ? 'bg-white/[0.06] hover:bg-white/[0.12] border-white/[0.15] text-white shadow-[0_8px_32px_rgba(0,0,0,0.5)]'
+                          : 'bg-white/70 hover:bg-white/90 border-black/[0.08] text-[#000000] shadow-[0_8px_32px_rgba(0,0,0,0.08)]'
+                      }`}
+                      title="Share public link, export PDF/Notion Markdown, or create PNG quote card"
+                    >
+                      <Share2 className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Share & Export</span>
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={handleNewChat}
@@ -1248,8 +1319,50 @@ export default function App() {
                     <GrokLogo size="lg" isDark={isDark} />
                   </div>
 
-                  {/* Bottom Anchored Area: Prompt Input at the bottom */}
+                  {/* Bottom Anchored Area: Quick Research Tools + Prompt Input at the bottom */}
                   <div className="w-full max-w-3xl flex flex-col items-center mt-auto">
+                    {/* Quick Action Bar for Deep Research, URL Reader, and ArXiv Reader */}
+                    <div className="flex flex-wrap items-center justify-center gap-1.5 mb-2.5">
+                      <button
+                        type="button"
+                        onClick={() => setDeepResearchState({ isOpen: true })}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[11px] font-medium transition-colors cursor-pointer whitespace-nowrap ${
+                          isDark
+                            ? 'bg-white/[0.04] hover:bg-white/[0.09] border-white/10 text-neutral-300 hover:text-white'
+                            : 'bg-black/[0.03] hover:bg-black/[0.07] border-black/10 text-neutral-700 hover:text-black'
+                        }`}
+                      >
+                        <Layers className="w-3.5 h-3.5 text-purple-400" />
+                        <span>Deep Research Report</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setUrlReaderState({ isOpen: true })}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[11px] font-medium transition-colors cursor-pointer whitespace-nowrap ${
+                          isDark
+                            ? 'bg-white/[0.04] hover:bg-white/[0.09] border-white/10 text-neutral-300 hover:text-white'
+                            : 'bg-black/[0.03] hover:bg-black/[0.07] border-black/10 text-neutral-700 hover:text-black'
+                        }`}
+                      >
+                        <Link2 className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>URL & Website Reader</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setIsArxivReaderOpen(true)}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[11px] font-medium transition-colors cursor-pointer whitespace-nowrap ${
+                          isDark
+                            ? 'bg-white/[0.04] hover:bg-white/[0.09] border-white/10 text-neutral-300 hover:text-white'
+                            : 'bg-black/[0.03] hover:bg-black/[0.07] border-black/10 text-neutral-700 hover:text-black'
+                        }`}
+                      >
+                        <GraduationCap className="w-3.5 h-3.5 text-rose-400" />
+                        <span>ArXiv Paper Reader</span>
+                      </button>
+                    </div>
+
                     {/* ChatInput (@kobra/chat-input with @kobra/chat-history & upward model selector) */}
                     <div className="w-full">
                       <ChatInput
@@ -1271,6 +1384,13 @@ export default function App() {
                         messages={activeThread ? activeThread.messages : []}
                         isResearchMode={isResearchMode}
                         onToggleResearchMode={(enabled) => setIsResearchMode(enabled)}
+                        onOpenDeepResearch={(topic) =>
+                          setDeepResearchState({ isOpen: true, initialTopic: topic })
+                        }
+                        onOpenUrlReader={(url) =>
+                          setUrlReaderState({ isOpen: true, initialUrl: url })
+                        }
+                        onOpenArxivReader={() => setIsArxivReaderOpen(true)}
                       />
                     </div>
 
@@ -1293,6 +1413,48 @@ export default function App() {
                   {/* Scrollable Messages Viewport with bottom padding so content flows beneath the floating composer */}
                   <div ref={messagesContainerRef} className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden px-3 sm:px-4 pb-36 scrollbar-thin">
                     <div className="py-4 max-w-3xl mx-auto w-full min-w-0">
+                      {/* Shared Public Thread Read-Only Snapshot Banner */}
+                      {sharedBannerId && activeThread && (
+                        <div
+                          className={`mt-10 mb-4 px-4 py-3 rounded-2xl border flex flex-wrap items-center justify-between gap-3 ${
+                            isDark
+                              ? 'bg-[#121212] border-white/15 text-neutral-200'
+                              : 'bg-neutral-50 border-black/10 text-neutral-800'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <Share2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                            <div className="min-w-0">
+                              <div className="text-xs font-semibold truncate">
+                                Viewing Shared Conversation Snapshot: {activeThread.title}
+                              </div>
+                              <div className="text-[11px] opacity-60">
+                                Public read-only link • You can continue asking follow-up questions below to fork this thread
+                              </div>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSharedBannerId(null);
+                              try {
+                                const url = new URL(window.location.href);
+                                url.searchParams.delete('share');
+                                window.history.replaceState({}, '', url.toString());
+                              } catch {}
+                            }}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap ${
+                              isDark
+                                ? 'bg-white text-black hover:bg-neutral-200'
+                                : 'bg-black text-white hover:bg-neutral-800'
+                            }`}
+                          >
+                            <GitFork className="w-3.5 h-3.5" />
+                            <span>Fork & Continue Chatting</span>
+                          </button>
+                        </div>
+                      )}
+
                       {messages.map((msg) => (
                         <GrokChatMessage
                           key={msg.id}
@@ -1302,6 +1464,13 @@ export default function App() {
                           onRetry={(modelOverride) => handleRegenerateMessage(msg.id, modelOverride)}
                           onEdit={(content) => handleEditMessage(msg.id, content)}
                           onAskZeno={(prompt) => handleSend(prompt)}
+                          onOpenShareStudio={(targetMsg, tab) =>
+                            setShareStudioState({
+                              isOpen: true,
+                              initialTab: tab || 'quote',
+                              quoteMessage: targetMsg,
+                            })
+                          }
                           theme={theme}
                           nsfwMode={nsfwMode}
                         />
@@ -1338,6 +1507,13 @@ export default function App() {
                         messages={activeThread ? activeThread.messages : []}
                         isResearchMode={isResearchMode}
                         onToggleResearchMode={(enabled) => setIsResearchMode(enabled)}
+                        onOpenDeepResearch={(topic) =>
+                          setDeepResearchState({ isOpen: true, initialTopic: topic })
+                        }
+                        onOpenUrlReader={(url) =>
+                          setUrlReaderState({ isOpen: true, initialUrl: url })
+                        }
+                        onOpenArxivReader={() => setIsArxivReaderOpen(true)}
                       />
 
                       <div
@@ -1353,6 +1529,94 @@ export default function App() {
               )}
             </div>
           )}
+
+          {/* Shareable Public Thread Links & Export Studio Modal */}
+          {shareStudioState.isOpen && (
+            <ShareExportStudioModal
+              isOpen={shareStudioState.isOpen}
+              onClose={() => setShareStudioState({ isOpen: false })}
+              thread={
+                activeThread || {
+                  id: 'thread-preview',
+                  title: 'Zeno Research Session',
+                  createdAt: Date.now(),
+                  messages: messages,
+                }
+              }
+              initialQuoteMessage={shareStudioState.quoteMessage}
+              initialTab={shareStudioState.initialTab}
+              isDark={isDark}
+            />
+          )}
+
+          {/* Multi-Step Deep Research Report Generator Modal */}
+          <DeepResearchModal
+            isOpen={deepResearchState.isOpen}
+            onClose={() => setDeepResearchState({ isOpen: false })}
+            initialTopic={deepResearchState.initialTopic}
+            isDark={isDark}
+            onInsertReportIntoChat={(topic, reportMarkdown, sources) => {
+              const userMsg: ChatMessageType = {
+                id: `user-${Date.now()}`,
+                role: 'user',
+                content: `Deep Research Report: ${topic}`,
+                timestamp: Date.now(),
+              };
+              const assistantMsg: ChatMessageType = {
+                id: `assistant-${Date.now() + 1}`,
+                role: 'assistant',
+                content: reportMarkdown,
+                timestamp: Date.now() + 1,
+                sources,
+                modelUsed: 'Zeno Deep Research Agent',
+              };
+              if (!activeThreadId) {
+                const newId = `thread-${Date.now()}`;
+                setThreads((prev) => [
+                  {
+                    id: newId,
+                    title: `Research: ${topic.slice(0, 32)}`,
+                    createdAt: Date.now(),
+                    messages: [userMsg, assistantMsg],
+                  },
+                  ...prev,
+                ]);
+                setActiveThreadId(newId);
+              } else {
+                setThreads((prev) =>
+                  prev.map((t) =>
+                    t.id === activeThreadId
+                      ? { ...t, messages: [...t.messages, userMsg, assistantMsg] }
+                      : t
+                  )
+                );
+              }
+            }}
+          />
+
+          {/* URL / Website Reader & Page Summarizer Modal */}
+          <PageExtractModal
+            isOpen={urlReaderState.isOpen}
+            onClose={() => setUrlReaderState({ isOpen: false })}
+            url={urlReaderState.initialUrl}
+            title={urlReaderState.title}
+            isDark={isDark}
+            onAskZeno={(prompt) => handleSend(prompt)}
+          />
+
+          {/* Academic Paper & ArXiv Deep Reader Modal */}
+          <InbuiltPdfViewer
+            isOpen={isArxivReaderOpen}
+            onClose={() => setIsArxivReaderOpen(false)}
+            pdfUrl="https://arxiv.org/pdf/1706.03762.pdf"
+            title="Attention Is All You Need"
+            arxivId="1706.03762"
+            authors={['Ashish Vaswani', 'Noam Shazeer', 'Niki Parmar', 'Jakob Uszkoreit']}
+            published="2017-06-12"
+            summary="The dominant sequence transduction models are based on complex recurrent or convolutional neural networks that include an encoder and a decoder. We propose a new simple network architecture, the Transformer, based solely on attention mechanisms, dispensing with recurrence and convolutions entirely."
+            isDark={isDark}
+            onAskZeno={(prompt) => handleSend(prompt)}
+          />
 
           {/* Quick Frictionless 3-Step Onboarding Modal */}
           <QuickOnboardingModal
