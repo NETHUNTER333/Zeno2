@@ -1,5 +1,6 @@
 // Rumik AI Silk Read Out Loud Engine with Language & Male/Female Audio Preferences
 import { getAuthHeaders } from './firebase';
+import { isPhononSupported, speakWithPhonon, stopPhononSpeech } from './phononTTS';
 
 export type TtsVoiceGender = 'female' | 'male';
 
@@ -68,6 +69,7 @@ let activeAudioElement: HTMLAudioElement | null = null;
 let activeAbortController: AbortController | null = null;
 
 export function stopSmallestSpeech() {
+  stopPhononSpeech();
   if (activeAbortController) {
     try {
       activeAbortController.abort();
@@ -119,6 +121,13 @@ export async function speakTextWithSmallestAi(
       : getSavedTtsLanguage();
   const gender = selectedGender || getSavedTtsGender();
   const bcp47 = TTS_LANGUAGES.find((l) => l.code === language)?.bcp47 || 'en-US';
+
+  // Prefer the on-device Phonon model for English: free, private, no network.
+  const isEnglish = language === 'english' || language === 'en' || bcp47.startsWith('en');
+  if (isEnglish && isPhononSupported()) {
+    const handled = await speakWithPhonon(cleanText, { onStart, onEnd, onError });
+    if (handled) return;
+  }
 
   const controller = new AbortController();
   activeAbortController = controller;
