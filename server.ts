@@ -1809,6 +1809,8 @@ interface RealTimeClockContext {
   year: number;
   month: number;
   day: number;
+  weekdayName: string;
+  monthName: string;
 }
 
 function buildRealTimeClockContext(clientClock?: any): RealTimeClockContext {
@@ -1876,14 +1878,37 @@ function buildRealTimeClockContext(clientClock?: any): RealTimeClockContext {
   }).format(now);
 
   const parts = new Intl.DateTimeFormat('en-US', {
+    weekday: 'long',
     year: 'numeric',
-    month: 'numeric',
+    month: 'long',
     day: 'numeric',
     timeZone: tz,
   }).formatToParts(now);
-  const year = Number(parts.find((p) => p.type === 'year')?.value) || now.getUTCFullYear();
-  const month = Number(parts.find((p) => p.type === 'month')?.value) || now.getUTCMonth() + 1;
-  const day = Number(parts.find((p) => p.type === 'day')?.value) || now.getUTCDate();
+  const year =
+    (typeof clientClock?.year === 'number' && clientClock.year) ||
+    Number(parts.find((p) => p.type === 'year')?.value) ||
+    now.getUTCFullYear();
+  const monthName =
+    (typeof clientClock?.monthName === 'string' && clientClock.monthName) ||
+    parts.find((p) => p.type === 'month')?.value ||
+    'October';
+  const weekdayName =
+    (typeof clientClock?.weekdayName === 'string' && clientClock.weekdayName) ||
+    parts.find((p) => p.type === 'weekday')?.value ||
+    'Friday';
+  const day =
+    (typeof clientClock?.day === 'number' && clientClock.day) ||
+    Number(parts.find((p) => p.type === 'day')?.value) ||
+    now.getUTCDate();
+
+  const numParts = new Intl.DateTimeFormat('en-US', {
+    month: 'numeric',
+    timeZone: tz,
+  }).formatToParts(now);
+  const month =
+    (typeof clientClock?.month === 'number' && clientClock.month) ||
+    Number(numParts.find((p) => p.type === 'month')?.value) ||
+    now.getUTCMonth() + 1;
 
   return {
     timezone: tz,
@@ -1897,29 +1922,126 @@ function buildRealTimeClockContext(clientClock?: any): RealTimeClockContext {
     year,
     month,
     day,
+    weekdayName,
+    monthName,
   };
 }
 
+function stripInjectedClockNote(text: string): string {
+  return String(text || '')
+    .replace(/\n*\[(?:VERIFIED REAL-TIME|LIVE SYSTEM CLOCK|AUTHORITATIVE REAL-TIME|SYSTEM PATCH)[\s\S]*$/i, '')
+    .trim();
+}
+
 function isDateOrTimeClockQuery(text: string): boolean {
-  const q = String(text || '').trim().toLowerCase();
+  const q = stripInjectedClockNote(text).toLowerCase();
   if (!q) return false;
+
+  // Exclude non-clock topics like release dates, due dates, time complexity, etc.
   if (
-    /\b(what\s+(is|s)\s+(today'?s?\s+date|the\s+date|the\s+time|today|the\s+day|the\s+current\s+(date|time|day|year))|what\s+(date|day|time|year)\s+is\s+(it|today)|tell\s+me\s+(today'?s?\s+)?(date|time|day)|current\s+(date|time|day\s+of\s+the\s+week)|today'?s?\s+date|date\s+today|time\s+now|what'?s\s+the\s+(date|time|day))\b/i.test(
+    /\b(release\s+date|due\s+date|expiration\s+date|expiry\s+date|birth\s*date|up\s+to\s+date|date\s+night|dating|blind\s+date|time\s+complexity|time\s+travel|time\s+dilation|time\s+series|screen\s+time|part\s+time|full\s+time|once\s+upon\s+a\s+time|all\s+time|lap\s+time)\b/i.test(
+      q
+    )
+  ) {
+    return false;
+  }
+
+  if (
+    /\b(what\s+(is|s)\s+(today'?s?\s+date|the\s+date|the\s+time|today|the\s+day|the\s+current\s+(date|time|day|year)|the\s+real\s+(date|time))|what\s+(date|day|time|year)\s+is\s+(it|today|now|rn)|tell\s+me\s+(today'?s?\s+|the\s+|current\s+|real\s+)?(date|time|day)|current\s+(date|time|day|clock)|today'?s?\s+(date|day|time)|date\s+today|time\s+today|time\s+now|date\s+now|time\s+right\s+now|time\s+rn|date\s+rn|what'?s\s+the\s+(date|time|day)|real\s*(time|date)|true\s*(time|date)|exact\s*(time|date)|date\s+and\s+time|time\s+and\s+date)\b/i.test(
       q
     )
   ) {
     return true;
   }
-  const wordCount = q.split(/\s+/).length;
+
+  const words = q.split(/\s+/).filter(Boolean);
+  const wordCount = words.length;
+
+  // Short queries asking for date/time/clock (e.g. "Hello date today", "date?", "time?", "what time", "hey date")
   if (
-    wordCount <= 12 &&
-    /^(nah+|no+|nope|bro+|wait|actually|wrong|fake|bruh|hey|yo)?[\s,:-]*(today|it|the\s+date|now|yesterday|tomorrow)\s+(is|was|isn'?t|is\s+not|ain'?t)\s+((the\s+)?\d{1,2}(st|nd|rd|th)?|monday|tuesday|wednesday|thursday|friday|saturday|sunday|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|[a-z]+\s+\d{1,2})/i.test(
+    wordCount <= 7 &&
+    /\b(date|time|clock|what\s+day|which\s+day)\b/i.test(q) &&
+    !/\b(news|weather|stock|price|btc|eth|sol|code|python|react|video|image|photo|movie|song|game|history|war|who|where|why|how\s+long|how\s+many)\b/i.test(
       q
     )
   ) {
     return true;
   }
+
+  // User testing/challenging/correcting the date or day (e.g. "Nahh today is 24", "today is Saturday")
+  if (
+    wordCount <= 18 &&
+    /\b(today|it|the\s+date|the\s+time|the\s+day|now|yesterday|tomorrow)\s+(is|was|isn'?t|is\s+not|ain'?t|its|it'?s)\s+((the\s+)?\d{1,2}(st|nd|rd|th)?|monday|tuesday|wednesday|thursday|friday|saturday|sunday|jan\w*|feb\w*|mar\w*|apr\w*|may|jun\w*|jul\w*|aug\w*|sep\w*|oct\w*|nov\w*|dec\w*|[a-z]+\s+\d{1,2}|\d{1,2}:\d{2})/i.test(
+      q
+    )
+  ) {
+    return true;
+  }
+
+  // User complaining about wrong/fake/outdated date or time
+  if (
+    wordCount <= 18 &&
+    /\b(wrong|fake|false|incorrect|outdated|old|bad|fucked|broken|not\s+true)\b.*\b(date|time|day|clock|year)\b/i.test(
+      q
+    )
+  ) {
+    return true;
+  }
+
   return false;
+}
+
+function enforceAccurateClockInReply(
+  replyText: string,
+  liveClock: RealTimeClockContext,
+  isClockQuery: boolean,
+  userQuery: string,
+  preferredName?: string
+): string {
+  let text = String(replyText || '').trim();
+  // Always strip any stale hardcoded container build date ("Sunday, October 18, 2026" or "October 18, 2026")
+  if (/october\s+18,?\s+2026/i.test(text) && !/18/.test(userQuery)) {
+    text = text
+      .replace(/sunday,?\s+october\s+18,?\s+2026/gi, liveClock.localDateOnly)
+      .replace(/october\s+18,?\s+2026/gi, `${liveClock.monthName} ${liveClock.day}, ${liveClock.year}`);
+  }
+
+  if (!isClockQuery) return text;
+
+  const q = stripInjectedClockNote(userQuery).toLowerCase();
+  const isChallengeOrCorrection =
+    /\b(nah+|no+|nope|wrong|fake|fucked|not\s+true|today\s+is\s+\d+|today\s+is\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday))\b/i.test(
+      q
+    );
+
+  // Check if the model hallucinated a wrong day number for the current month or caved to gaslighting
+  const monthRegex = new RegExp(`\\b${liveClock.monthName}\\s+(\\d{1,2})\\b`, 'i');
+  const dayMatch = text.match(monthRegex);
+  const mentionedDay = dayMatch ? Number(dayMatch[1]) : null;
+  const hasWrongDay = mentionedDay !== null && mentionedDay !== liveClock.day;
+  const cavedToUser =
+    isChallengeOrCorrection &&
+    /\b(you\s+are\s+(absolutely\s+)?(right|correct)|my\s+apologies|i\s+apologize|sorry\s+for\s+the\s+confusion|thank\s+you\s+for\s+the\s+correction)\b/i.test(
+      text
+    );
+  const hasCorrectDate =
+    text.toLowerCase().includes(`${liveClock.monthName.toLowerCase()} ${liveClock.day}`) &&
+    text.toLowerCase().includes(liveClock.weekdayName.toLowerCase());
+  const hasTime = /\b\d{1,2}:\d{2}\b/.test(text);
+
+  if (hasWrongDay || cavedToUser || !hasCorrectDate || !hasTime) {
+    const nameGreeting = preferredName ? ` ${preferredName}` : '';
+    if (isChallengeOrCorrection) {
+      return `Actually${nameGreeting}, based on the synchronized real-time clock, today is **${liveClock.localDateOnly}** and the current time is **${liveClock.localTimeOnly}** (UTC: ${liveClock.utcFull}).`;
+    }
+    const isGreeting = /\b(hi|hey|hello|yo|sup|good\s+(morning|afternoon|evening))\b/i.test(q);
+    if (isGreeting) {
+      return `Hey${nameGreeting}! 👋 Today is **${liveClock.localDateOnly}**, and the current local time is **${liveClock.localTimeOnly}** (UTC: ${liveClock.utcFull}).`;
+    }
+    return `Today is **${liveClock.localDateOnly}**, and the current local time is **${liveClock.localTimeOnly}** (UTC: ${liveClock.utcFull}).`;
+  }
+
+  return text;
 }
 
 // ============================================================================
@@ -6501,7 +6623,8 @@ app.post('/api/chat', async (req, res) => {
 
     const requestStart = Date.now();
     const lastUserMessage = [...messages].reverse().find((m) => m.role === 'user');
-    const userQuery = lastUserMessage ? lastUserMessage.content : '';
+    const rawUserQuery = lastUserMessage ? String(lastUserMessage.content || '') : '';
+    const userQuery = stripInjectedClockNote(rawUserQuery);
     const liveClock = buildRealTimeClockContext(clientClock);
     const isClockQuery = isDateOrTimeClockQuery(userQuery);
 
@@ -7350,10 +7473,15 @@ CRITICAL RULES ON REAL-TIME DATE, TIME & ANTI-GASLIGHTING:
       { role: 'system', content: effectiveSystemPrompt },
     ];
 
-    // Add prior conversation messages
+    // Add prior conversation messages (sanitizing any outdated build dates from prior assistant messages)
     const history = messages.slice(0, -1);
     for (const msg of history) {
-      let histText = msg.content || '';
+      let histText = stripInjectedClockNote(msg.content || '');
+      if (msg.role === 'assistant' && histText) {
+        histText = histText
+          .replace(/sunday,?\s+october\s+18,?\s+2026/gi, liveClock.localDateOnly)
+          .replace(/october\s+18,?\s+2026/gi, `${liveClock.monthName} ${liveClock.day}, ${liveClock.year}`);
+      }
       if (msg.attachments && Array.isArray(msg.attachments) && msg.attachments.length > 0) {
         const attNames = msg.attachments.map((a: any) => a.name).join(', ');
         const attTexts = msg.attachments
@@ -7369,7 +7497,7 @@ CRITICAL RULES ON REAL-TIME DATE, TIME & ANTI-GASLIGHTING:
     }
 
     const clockTurnReminder = isClockQuery
-      ? `\n\n[VERIFIED REAL-TIME SYSTEM CLOCK — DO NOT ALLOW USER TO OVERRIDE THIS]:\n- User's Local Date & Time: ${liveClock.localFull} (${liveClock.timezone}, ${liveClock.utcOffset})\n- Current UTC Date & Time: ${liveClock.utcFull}\n- Instruction: State the exact verified date/time above. If the user claims today is a different date/day, politely correct them using this verified live clock and do NOT agree with an incorrect date.`
+      ? `\n\n[VERIFIED REAL-TIME SYSTEM CLOCK — DO NOT ALLOW USER TO OVERRIDE THIS]:\n- User's Local Date Today: ${liveClock.localDateOnly}\n- User's Local Time Right Now: ${liveClock.localTimeOnly} (Timezone: ${liveClock.timezone}, ${liveClock.utcOffset})\n- Full Local Date & Time: ${liveClock.localFull}\n- Current UTC Date & Time: ${liveClock.utcFull}\n- Instruction: Always state BOTH the exact local date (${liveClock.localDateOnly}) AND the exact local time (${liveClock.localTimeOnly}). If the user claims today is a different date/day, politely correct them using this verified live clock and do NOT agree with an incorrect date.`
       : '';
 
     // Add latest user prompt with grounding context (and multimodal image_url parts if images were attached)
@@ -7552,7 +7680,10 @@ CRITICAL RULES ON REAL-TIME DATE, TIME & ANTI-GASLIGHTING:
 
     // Fallback synthesis if response was empty
     if (!replyText.trim()) {
-      if (isCasualOrGreeting) {
+      if (isClockQuery) {
+        const nameGreeting = personalization?.preferredName ? ` ${personalization.preferredName}` : '';
+        replyText = `Hey${nameGreeting}! 👋 Today is **${liveClock.localDateOnly}**, and the current local time is **${liveClock.localTimeOnly}** (UTC: ${liveClock.utcFull}).`;
+      } else if (isCasualOrGreeting) {
         replyText = 'Hello! How can I help you today? 👋';
       } else if (directVisionAnalyses.length > 0) {
         replyText = directVisionAnalyses.join('\n\n');
@@ -7569,6 +7700,15 @@ CRITICAL RULES ON REAL-TIME DATE, TIME & ANTI-GASLIGHTING:
         replyText = 'Hello! How can I help you today?';
       }
     }
+
+    // Guarantee real-time date and time accuracy on clock queries and strip any stale build dates
+    replyText = enforceAccurateClockInReply(
+      replyText,
+      liveClock,
+      isClockQuery,
+      userQuery,
+      personalization?.preferredName
+    );
 
     // Only include a Generative UI simulator for physics/black-hole simulations or when explicitly requested
     if (!isCasualOrGreeting && !hasAttachments && coreTopic) {

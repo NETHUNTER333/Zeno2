@@ -39,40 +39,59 @@ const INSTACLOUD_API_BASE = 'https://prod-main-zeno-api-c257d4-00gfx3c9932.compu
 
 function getClientRealTimeClock() {
   const now = new Date();
-  let timezone = 'UTC';
+  const offsetMin = -now.getTimezoneOffset();
+  const sign = offsetMin >= 0 ? '+' : '-';
+  const absMin = Math.abs(offsetMin);
+  const utcOffset = `UTC${sign}${String(Math.floor(absMin / 60)).padStart(2, '0')}:${String(
+    absMin % 60
+  ).padStart(2, '0')}`;
+
+  let timezone = utcOffset;
   try {
-    timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    const resolvedTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (resolvedTz && (resolvedTz !== 'UTC' || offsetMin === 0)) {
+      timezone = resolvedTz;
+    } else if (offsetMin === 330) {
+      timezone = 'Asia/Kolkata';
+    }
   } catch {
-    timezone = 'UTC';
+    timezone = utcOffset;
   }
 
-  const localFull = new Intl.DateTimeFormat('en-US', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    timeZone: timezone,
-    timeZoneName: 'short',
-  }).format(now);
+  const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const months = [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ];
 
-  const localDateOnly = new Intl.DateTimeFormat('en-US', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    timeZone: timezone,
-  }).format(now);
+  // Use native device wall-clock methods so mobile WebViews never default to UTC
+  const weekdayName = weekdays[now.getDay()];
+  const monthName = months[now.getMonth()];
+  const day = now.getDate();
+  const month = now.getMonth() + 1;
+  const year = now.getFullYear();
 
-  const localTimeOnly = new Intl.DateTimeFormat('en-US', {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    timeZone: timezone,
-    timeZoneName: 'short',
-  }).format(now);
+  const hours24 = now.getHours();
+  const minutes = now.getMinutes();
+  const seconds = now.getSeconds();
+  const ampm = hours24 >= 12 ? 'PM' : 'AM';
+  const hours12 = hours24 % 12 || 12;
+
+  const localTime12h = `${hours12}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')} ${ampm}`;
+  const localTime24h = `${String(hours24).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+  const localDateOnly = `${weekdayName}, ${monthName} ${day}, ${year}`;
+  const localTimeOnly = `${localTime12h} (${localTime24h}, ${timezone}, ${utcOffset})`;
+  const localFull = `${localDateOnly} at ${localTime12h} (${localTime24h}, ${timezone}, ${utcOffset})`;
 
   const utcFull = new Intl.DateTimeFormat('en-US', {
     weekday: 'long',
@@ -86,54 +105,161 @@ function getClientRealTimeClock() {
     timeZoneName: 'short',
   }).format(now);
 
-  const offsetMin = -now.getTimezoneOffset();
-  const sign = offsetMin >= 0 ? '+' : '-';
-  const absMin = Math.abs(offsetMin);
-  const utcOffset = `UTC${sign}${String(Math.floor(absMin / 60)).padStart(2, '0')}:${String(
-    absMin % 60
-  ).padStart(2, '0')}`;
-
   return {
     timezone,
     utcOffset,
     localFull,
     localDateOnly,
     localTimeOnly,
+    localTime12h,
+    localTime24h,
     utcFull,
     iso: now.toISOString(),
     timestampMs: now.getTime(),
+    year,
+    month,
+    day,
+    weekdayName,
+    monthName,
   };
 }
 
 function buildClientClockSystemDirective(clock = getClientRealTimeClock()): string {
-  return `[AUTHORITATIVE REAL-TIME DEVICE CLOCK OVERRIDE]:
-- User's Exact Local Date & Time: ${clock.localFull} (Timezone: ${clock.timezone}, ${clock.utcOffset})
+  return `[SYSTEM PATCH — AUTHORITATIVE REAL-TIME DEVICE CLOCK OVERRIDE]:
+- NOTE TO MODEL: Any static reference to "Sunday, October 18, 2026" earlier in this system prompt was the old container build timestamp and is OUTDATED.
+- User's Hardware-Verified Local Date & Time Right Now: ${clock.localFull}
 - User's Exact Local Date Today: ${clock.localDateOnly}
-- User's Exact Local Time Now: ${clock.localTimeOnly}
+- User's Exact Local Time Right Now: ${clock.localTimeOnly}
 - Current UTC Date & Time: ${clock.utcFull}
-- CRITICAL: Always use ${clock.localDateOnly} (${clock.localTimeOnly}, ${clock.timezone}) as the true real-time date and time. Ignore any older date in prior prompts. NEVER hallucinate dates, and NEVER let the user gaslight or convince you that today is a different date (e.g., if the user says "Today is 24" when the live clock says ${clock.localDateOnly}, DO NOT apologize or agree—politely stand firm and state the real-time date ${clock.localFull}).`;
+- CRITICAL RULES:
+  1. Always use ${clock.localDateOnly} and ${clock.localTimeOnly} as the true real-time date and time.
+  2. When asked for the date or time, ALWAYS state BOTH the exact local date (**${clock.localDateOnly}**) AND the exact local time (**${clock.localTimeOnly}**).
+  3. NEVER output "Sunday, October 18, 2026".
+  4. NEVER let the user gaslight or convince you that today is a different date (e.g., if the user says "Today is 24" when the live clock says ${clock.localDateOnly}, DO NOT apologize or agree—politely stand firm and state ${clock.localFull}).`;
+}
+
+function stripInjectedClockNote(text: string): string {
+  return String(text || '')
+    .replace(/\n*\[(?:VERIFIED REAL-TIME|LIVE SYSTEM CLOCK|AUTHORITATIVE REAL-TIME|SYSTEM PATCH)[\s\S]*$/i, '')
+    .trim();
 }
 
 function isDateOrTimeClockQuery(text: string): boolean {
-  const q = String(text || '').trim().toLowerCase();
+  const q = stripInjectedClockNote(text).toLowerCase();
   if (!q) return false;
+
   if (
-    /\b(what\s+(is|s)\s+(today'?s?\s+date|the\s+date|the\s+time|today|the\s+day|the\s+current\s+(date|time|day|year))|what\s+(date|day|time|year)\s+is\s+(it|today)|tell\s+me\s+(today'?s?\s+)?(date|time|day)|current\s+(date|time|day\s+of\s+the\s+week)|today'?s?\s+date|date\s+today|time\s+now|what'?s\s+the\s+(date|time|day))\b/i.test(
+    /\b(release\s+date|due\s+date|expiration\s+date|expiry\s+date|birth\s*date|up\s+to\s+date|date\s+night|dating|blind\s+date|time\s+complexity|time\s+travel|time\s+dilation|time\s+series|screen\s+time|part\s+time|full\s+time|once\s+upon\s+a\s+time|all\s+time|lap\s+time)\b/i.test(
+      q
+    )
+  ) {
+    return false;
+  }
+
+  if (
+    /\b(what\s+(is|s)\s+(today'?s?\s+date|the\s+date|the\s+time|today|the\s+day|the\s+current\s+(date|time|day|year)|the\s+real\s+(date|time))|what\s+(date|day|time|year)\s+is\s+(it|today|now|rn)|tell\s+me\s+(today'?s?\s+|the\s+|current\s+|real\s+)?(date|time|day)|current\s+(date|time|day|clock)|today'?s?\s+(date|day|time)|date\s+today|time\s+today|time\s+now|date\s+now|time\s+right\s+now|time\s+rn|date\s+rn|what'?s\s+the\s+(date|time|day)|real\s*(time|date)|true\s*(time|date)|exact\s*(time|date)|date\s+and\s+time|time\s+and\s+date)\b/i.test(
       q
     )
   ) {
     return true;
   }
-  const wordCount = q.split(/\s+/).length;
+
+  const words = q.split(/\s+/).filter(Boolean);
+  const wordCount = words.length;
+
   if (
-    wordCount <= 12 &&
-    /^(nah+|no+|nope|bro+|wait|actually|wrong|fake|bruh|hey|yo)?[\s,:-]*(today|it|the\s+date|now|yesterday|tomorrow)\s+(is|was|isn'?t|is\s+not|ain'?t)\s+((the\s+)?\d{1,2}(st|nd|rd|th)?|monday|tuesday|wednesday|thursday|friday|saturday|sunday|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|[a-z]+\s+\d{1,2})/i.test(
+    wordCount <= 7 &&
+    /\b(date|time|clock|what\s+day|which\s+day)\b/i.test(q) &&
+    !/\b(news|weather|stock|price|btc|eth|sol|code|python|react|video|image|photo|movie|song|game|history|war|who|where|why|how\s+long|how\s+many)\b/i.test(
       q
     )
   ) {
     return true;
   }
+
+  if (
+    wordCount <= 18 &&
+    /\b(today|it|the\s+date|the\s+time|the\s+day|now|yesterday|tomorrow)\s+(is|was|isn'?t|is\s+not|ain'?t|its|it'?s)\s+((the\s+)?\d{1,2}(st|nd|rd|th)?|monday|tuesday|wednesday|thursday|friday|saturday|sunday|jan\w*|feb\w*|mar\w*|apr\w*|may|jun\w*|jul\w*|aug\w*|sep\w*|oct\w*|nov\w*|dec\w*|[a-z]+\s+\d{1,2}|\d{1,2}:\d{2})/i.test(
+      q
+    )
+  ) {
+    return true;
+  }
+
+  if (
+    wordCount <= 18 &&
+    /\b(wrong|fake|false|incorrect|outdated|old|bad|fucked|broken|not\s+true)\b.*\b(date|time|day|clock|year)\b/i.test(
+      q
+    )
+  ) {
+    return true;
+  }
+
   return false;
+}
+
+function enforceClientClockInReply(
+  data: any,
+  clock: ReturnType<typeof getClientRealTimeClock>,
+  isClockQuery: boolean,
+  userQuery: string
+) {
+  if (!data || typeof data !== 'object') return data;
+  let text = String(data.text || '').trim();
+
+  // Strip any <think>...</think> reasoning block before checking visible date/time so stale dates in <think> don't mislead
+  const thinkMatch = text.match(/^<think>[\s\S]*?<\/think>\s*/i);
+  const thinkPrefix = thinkMatch ? thinkMatch[0] : '';
+  let visibleText = thinkMatch ? text.slice(thinkPrefix.length).trim() : text;
+
+  // Always replace stale build date "Sunday, October 18, 2026" or "October 18, 2026" in visible text
+  if (/october\s+18,?\s+2026/i.test(visibleText) && !/18/.test(userQuery)) {
+    visibleText = visibleText
+      .replace(/sunday,?\s+october\s+18,?\s+2026/gi, clock.localDateOnly)
+      .replace(/october\s+18,?\s+2026/gi, `${clock.monthName} ${clock.day}, ${clock.year}`);
+  }
+
+  if (isClockQuery) {
+    // Never show web search sources on a clock/date query
+    data.sources = [];
+    data.webSearchSteps = [];
+    data.searchQueries = [];
+
+    const q = stripInjectedClockNote(userQuery).toLowerCase();
+    const isChallengeOrCorrection =
+      /\b(nah+|no+|nope|wrong|fake|fucked|not\s+true|today\s+is\s+\d+|today\s+is\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday))\b/i.test(
+        q
+      );
+
+    const monthRegex = new RegExp(`\\b${clock.monthName}\\s+(\\d{1,2})\\b`, 'i');
+    const dayMatch = visibleText.match(monthRegex);
+    const mentionedDay = dayMatch ? Number(dayMatch[1]) : null;
+    const hasWrongDay = mentionedDay !== null && mentionedDay !== clock.day;
+    const cavedToUser =
+      isChallengeOrCorrection &&
+      /\b(you\s+are\s+(absolutely\s+)?(right|correct)|my\s+apologies|i\s+apologize|sorry\s+for\s+the\s+confusion|thank\s+you\s+for\s+the\s+correction)\b/i.test(
+        visibleText
+      );
+    const hasCorrectDate =
+      visibleText.toLowerCase().includes(`${clock.monthName.toLowerCase()} ${clock.day}`) &&
+      visibleText.toLowerCase().includes(clock.weekdayName.toLowerCase());
+    const hasTime = /\b\d{1,2}:\d{2}\b/.test(visibleText);
+
+    if (hasWrongDay || cavedToUser || !hasCorrectDate || !hasTime) {
+      const prefName = UserAccountStore.getPersonalization()?.preferredName;
+      const nameGreeting = prefName ? ` ${prefName}` : '';
+      if (isChallengeOrCorrection) {
+        visibleText = `Actually${nameGreeting}, based on the synchronized real-time clock, today is **${clock.localDateOnly}** and the current local time is **${clock.localTimeOnly}** (UTC: ${clock.utcFull}).`;
+      } else if (/\b(hi|hey|hello|yo|sup|good\s+(morning|afternoon|evening))\b/i.test(q)) {
+        visibleText = `Hey${nameGreeting}! 👋 Today is **${clock.localDateOnly}**, and the current local time is **${clock.localTimeOnly}** (UTC: ${clock.utcFull}).`;
+      } else {
+        visibleText = `Today is **${clock.localDateOnly}**, and the current local time is **${clock.localTimeOnly}** (UTC: ${clock.utcFull}).`;
+      }
+    }
+  }
+
+  data.text = thinkPrefix ? `${thinkPrefix}${visibleText}` : visibleText;
+  return data;
 }
 
 async function fetchZenoApi(path: string, init?: RequestInit): Promise<Response> {
@@ -889,19 +1015,27 @@ export default function App() {
         headers: authHeaders,
         signal: controller.signal,
         body: JSON.stringify({
-          messages: [...allPriorMessages, userMessage].map((m, idx, arr) => ({
-            role: m.role,
-            content:
-              idx === arr.length - 1 && m.role === 'user' && isClockQuery
-                ? `${m.content}\n\n[VERIFIED REAL-TIME DEVICE CLOCK: Today is ${clientClock.localFull} (${clientClock.timezone}, ${clientClock.utcOffset}) / UTC: ${clientClock.utcFull}. State this exact real-time date/time and do NOT agree if the user claims today is a different date.]`
-                : m.content,
-            attachments: m.attachments,
-          })),
-          webSearch: hasSearchIntent,
-          searchMode: effectiveMode,
+          messages: [...allPriorMessages, userMessage].map((m, idx, arr) => {
+            let cleanContent = stripInjectedClockNote(m.content || '');
+            if (m.role === 'assistant' && cleanContent) {
+              cleanContent = cleanContent
+                .replace(/sunday,?\s+october\s+18,?\s+2026/gi, clientClock.localDateOnly)
+                .replace(/october\s+18,?\s+2026/gi, `${clientClock.monthName} ${clientClock.day}, ${clientClock.year}`);
+            }
+            return {
+              role: m.role,
+              content:
+                idx === arr.length - 1 && m.role === 'user' && isClockQuery
+                  ? `${cleanContent}\n\n[VERIFIED REAL-TIME DEVICE CLOCK: Today is ${clientClock.localDateOnly} and the current local time is ${clientClock.localTimeOnly} / UTC: ${clientClock.utcFull}. State BOTH this exact real-time date and time, and do NOT agree if the user claims today is a different date.]`
+                  : cleanContent,
+              attachments: m.attachments,
+            };
+          }),
+          webSearch: isClockQuery ? false : hasSearchIntent,
+          searchMode: isClockQuery ? 'off' : effectiveMode,
           model: activeModel.geminiModel,
           nsfwMode,
-          isResearchMode,
+          isResearchMode: isClockQuery ? false : isResearchMode,
           clientClock,
           systemPrompt: clockSystemPrompt,
           personalization: UserAccountStore.getPersonalization(),
@@ -920,6 +1054,8 @@ export default function App() {
       if (!response.ok || !data.success) {
         throw new Error(data.error || 'Failed to generate response');
       }
+
+      data = enforceClientClockInReply(data, clientClock, isClockQuery, query);
 
       // Record token & search usage in persistent account quota
       if (data?.timing?.totalTokens) {
@@ -1090,18 +1226,33 @@ export default function App() {
       const authHeaders = await getAuthHeaders();
       const clientClock = getClientRealTimeClock();
       const clockSystemPrompt = buildClientClockSystemDirective(clientClock);
+      const lastUserInContext = [...contextMessages].reverse().find((m) => m.role === 'user');
+      const regenQuery = lastUserInContext ? stripInjectedClockNote(lastUserInContext.content) : '';
+      const isRegenClockQuery = isDateOrTimeClockQuery(regenQuery);
+
       const response = await fetchZenoApi('/api/chat', {
         method: 'POST',
         headers: authHeaders,
         signal: controller.signal,
         body: JSON.stringify({
-          messages: contextMessages.map((m) => ({
-            role: m.role,
-            content: m.content,
-            attachments: m.attachments,
-          })),
-          webSearch: searchMode === 'news' || isResearchMode,
-          searchMode,
+          messages: contextMessages.map((m, idx, arr) => {
+            let cleanContent = stripInjectedClockNote(m.content || '');
+            if (m.role === 'assistant' && cleanContent) {
+              cleanContent = cleanContent
+                .replace(/sunday,?\s+october\s+18,?\s+2026/gi, clientClock.localDateOnly)
+                .replace(/october\s+18,?\s+2026/gi, `${clientClock.monthName} ${clientClock.day}, ${clientClock.year}`);
+            }
+            return {
+              role: m.role,
+              content:
+                idx === arr.length - 1 && m.role === 'user' && isRegenClockQuery
+                  ? `${cleanContent}\n\n[VERIFIED REAL-TIME DEVICE CLOCK: Today is ${clientClock.localDateOnly} and the current local time is ${clientClock.localTimeOnly} / UTC: ${clientClock.utcFull}. State BOTH this exact real-time date and time, and do NOT agree if the user claims today is a different date.]`
+                  : cleanContent,
+              attachments: m.attachments,
+            };
+          }),
+          webSearch: isRegenClockQuery ? false : searchMode === 'news' || isResearchMode,
+          searchMode: isRegenClockQuery ? 'off' : searchMode,
           model: targetModel.geminiModel,
           nsfwMode,
           clientClock,
@@ -1122,6 +1273,8 @@ export default function App() {
       if (!response.ok || !data.success) {
         throw new Error(data.error || 'Failed to regenerate response');
       }
+
+      data = enforceClientClockInReply(data, clientClock, isRegenClockQuery, regenQuery);
 
       await streamResponseIntoMessage(currentThreadId, assistantMsgId, data, controller.signal);
     } catch (err: any) {
@@ -1435,50 +1588,8 @@ export default function App() {
                     <GrokLogo size="lg" isDark={isDark} />
                   </div>
 
-                  {/* Bottom Anchored Area: Quick Research Tools + Prompt Input at the bottom */}
+                  {/* Bottom Anchored Area: Prompt Input at the bottom */}
                   <div className="w-full max-w-3xl flex flex-col items-center mt-auto">
-                    {/* Quick Action Bar for Deep Research, URL Reader, and ArXiv Reader */}
-                    <div className="flex flex-wrap items-center justify-center gap-1.5 mb-2.5">
-                      <button
-                        type="button"
-                        onClick={() => setDeepResearchState({ isOpen: true })}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[11px] font-medium transition-colors cursor-pointer whitespace-nowrap ${
-                          isDark
-                            ? 'bg-white/[0.04] hover:bg-white/[0.09] border-white/10 text-neutral-300 hover:text-white'
-                            : 'bg-black/[0.03] hover:bg-black/[0.07] border-black/10 text-neutral-700 hover:text-black'
-                        }`}
-                      >
-                        <Layers className="w-3.5 h-3.5 text-purple-400" />
-                        <span>Deep Research Report</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setUrlReaderState({ isOpen: true })}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[11px] font-medium transition-colors cursor-pointer whitespace-nowrap ${
-                          isDark
-                            ? 'bg-white/[0.04] hover:bg-white/[0.09] border-white/10 text-neutral-300 hover:text-white'
-                            : 'bg-black/[0.03] hover:bg-black/[0.07] border-black/10 text-neutral-700 hover:text-black'
-                        }`}
-                      >
-                        <Link2 className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>URL & Website Reader</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setIsArxivReaderOpen(true)}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[11px] font-medium transition-colors cursor-pointer whitespace-nowrap ${
-                          isDark
-                            ? 'bg-white/[0.04] hover:bg-white/[0.09] border-white/10 text-neutral-300 hover:text-white'
-                            : 'bg-black/[0.03] hover:bg-black/[0.07] border-black/10 text-neutral-700 hover:text-black'
-                        }`}
-                      >
-                        <GraduationCap className="w-3.5 h-3.5 text-rose-400" />
-                        <span>ArXiv Paper Reader</span>
-                      </button>
-                    </div>
-
                     {/* ChatInput (@kobra/chat-input with @kobra/chat-history & upward model selector) */}
                     <div className="w-full">
                       <ChatInput
