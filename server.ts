@@ -1794,6 +1794,135 @@ async function enrichArxivWithGithubRepos(arxivPapers: any[]) {
 }
 
 // ============================================================================
+// REAL-TIME CLOCK & TIMEZONE ENGINE
+// ============================================================================
+
+interface RealTimeClockContext {
+  timezone: string;
+  utcOffset: string;
+  localFull: string;
+  localDateOnly: string;
+  localTimeOnly: string;
+  utcFull: string;
+  iso: string;
+  timestampMs: number;
+  year: number;
+  month: number;
+  day: number;
+}
+
+function buildRealTimeClockContext(clientClock?: any): RealTimeClockContext {
+  const now = new Date();
+  let tz = 'UTC';
+  if (clientClock?.timezone && typeof clientClock.timezone === 'string') {
+    try {
+      Intl.DateTimeFormat('en-US', { timeZone: clientClock.timezone }).format(now);
+      tz = clientClock.timezone;
+    } catch {
+      tz = 'UTC';
+    }
+  } else {
+    try {
+      tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    } catch {
+      tz = 'UTC';
+    }
+  }
+
+  const localFull =
+    (typeof clientClock?.localFull === 'string' && clientClock.localFull.trim()) ||
+    new Intl.DateTimeFormat('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      timeZone: tz,
+      timeZoneName: 'short',
+    }).format(now);
+
+  const localDateOnly =
+    (typeof clientClock?.localDateOnly === 'string' && clientClock.localDateOnly.trim()) ||
+    new Intl.DateTimeFormat('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      timeZone: tz,
+    }).format(now);
+
+  const localTimeOnly =
+    (typeof clientClock?.localTimeOnly === 'string' && clientClock.localTimeOnly.trim()) ||
+    new Intl.DateTimeFormat('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      timeZone: tz,
+      timeZoneName: 'short',
+    }).format(now);
+
+  const utcFull = new Intl.DateTimeFormat('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    timeZone: 'UTC',
+    timeZoneName: 'short',
+  }).format(now);
+
+  const parts = new Intl.DateTimeFormat('en-US', {
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    timeZone: tz,
+  }).formatToParts(now);
+  const year = Number(parts.find((p) => p.type === 'year')?.value) || now.getUTCFullYear();
+  const month = Number(parts.find((p) => p.type === 'month')?.value) || now.getUTCMonth() + 1;
+  const day = Number(parts.find((p) => p.type === 'day')?.value) || now.getUTCDate();
+
+  return {
+    timezone: tz,
+    utcOffset: clientClock?.utcOffset || tz,
+    localFull,
+    localDateOnly,
+    localTimeOnly,
+    utcFull,
+    iso: now.toISOString(),
+    timestampMs: now.getTime(),
+    year,
+    month,
+    day,
+  };
+}
+
+function isDateOrTimeClockQuery(text: string): boolean {
+  const q = String(text || '').trim().toLowerCase();
+  if (!q) return false;
+  if (
+    /\b(what\s+(is|s)\s+(today'?s?\s+date|the\s+date|the\s+time|today|the\s+day|the\s+current\s+(date|time|day|year))|what\s+(date|day|time|year)\s+is\s+(it|today)|tell\s+me\s+(today'?s?\s+)?(date|time|day)|current\s+(date|time|day\s+of\s+the\s+week)|today'?s?\s+date|date\s+today|time\s+now|what'?s\s+the\s+(date|time|day))\b/i.test(
+      q
+    )
+  ) {
+    return true;
+  }
+  const wordCount = q.split(/\s+/).length;
+  if (
+    wordCount <= 12 &&
+    /^(nah+|no+|nope|bro+|wait|actually|wrong|fake|bruh|hey|yo)?[\s,:-]*(today|it|the\s+date|now|yesterday|tomorrow)\s+(is|was|isn'?t|is\s+not|ain'?t)\s+((the\s+)?\d{1,2}(st|nd|rd|th)?|monday|tuesday|wednesday|thursday|friday|saturday|sunday|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|[a-z]+\s+\d{1,2})/i.test(
+      q
+    )
+  ) {
+    return true;
+  }
+  return false;
+}
+
+// ============================================================================
 // PERSONA WIKI ENGINE (Celebrities, Athletes, Politicians, Upcoming & Elite Figures)
 // ============================================================================
 
@@ -2064,8 +2193,9 @@ async function fetchWikipediaPersonProfile(personQuery: string): Promise<any | n
         timeZone: 'UTC',
       });
       if (!isDeceased) {
-        let ageYears = 2026 - by;
-        if (10 < bm || (10 === bm && 18 < bd)) {
+        const clockNow = buildRealTimeClockContext();
+        let ageYears = clockNow.year - by;
+        if (clockNow.month < bm || (clockNow.month === bm && clockNow.day < bd)) {
           ageYears -= 1;
         }
         computedAge = `${ageYears} years`;
@@ -2076,7 +2206,8 @@ async function fetchWikipediaPersonProfile(personQuery: string): Promise<any | n
         birthDate.match(/\b(19\d{2}|20[0-2]\d)\b/);
       if (yearMatch && !/\|\s*death_date\s*=\s*[^\s|]/i.test(wikitext)) {
         const by = parseInt(yearMatch[1], 10);
-        computedAge = `${2026 - by} years`;
+        const clockNow = buildRealTimeClockContext();
+        computedAge = `${clockNow.year - by} years`;
         if (!birthDate) birthDate = String(by);
       }
     }
@@ -2243,7 +2374,7 @@ async function synthesizeCompletePersonaWiki(
     const timer = setTimeout(() => controller.abort(), 4800);
     try {
       const prompt = `You are a structured biographical extraction engine ("Persona Wiki").
-Current Date: October 18, 2026.
+Current Date: ${buildRealTimeClockContext().localDateOnly}.
 Subject Query: "${personCandidate}"
 
 Wikipedia Extracted Data (if any):
@@ -4888,7 +5019,7 @@ app.post('/api/search/live', async (req, res) => {
   try {
     const { query = '', searchMode = 'organic', nsfwMode = false } = req.body || {};
     const userQuery = String(query || '').trim();
-    if (!userQuery || searchMode === 'off') {
+    if (!userQuery || searchMode === 'off' || isDateOrTimeClockQuery(userQuery)) {
       return res.json({ success: true, sources: [] });
     }
 
@@ -6364,12 +6495,15 @@ app.post('/api/chat', async (req, res) => {
       personalization,
       memories,
       pinnedInsights,
+      clientClock,
     } = req.body || {};
     const messages = validation.messages;
 
     const requestStart = Date.now();
     const lastUserMessage = [...messages].reverse().find((m) => m.role === 'user');
     const userQuery = lastUserMessage ? lastUserMessage.content : '';
+    const liveClock = buildRealTimeClockContext(clientClock);
+    const isClockQuery = isDateOrTimeClockQuery(userQuery);
 
     let searchSources: any[] = [];
     let searchQueriesExecuted: string[] = [];
@@ -6574,6 +6708,7 @@ ${transcriptSnippet
     // Candidate for Persona Wiki lookup (only when user explicitly asks for persona/biography/who-is)
     const shouldCheckPersonaWiki =
       !isCasualOrGreeting &&
+      !isClockQuery &&
       !shouldSkipSearchForAttachment &&
       !isPureCodeOrMath &&
       !isCreativeOrBrainstorm &&
@@ -6585,6 +6720,7 @@ ${transcriptSnippet
       webSearch &&
       searchMode !== 'off' &&
       !isCasualOrGreeting &&
+      !isClockQuery &&
       !shouldSkipSearchForAttachment &&
       (searchMode === 'news' ||
         Boolean(req.body?.isResearchMode) ||
@@ -6593,6 +6729,7 @@ ${transcriptSnippet
         isFetchIntent);
 
     const shouldFetchArxiv =
+      !isClockQuery &&
       !shouldSkipSearchForAttachment &&
       (hasBioOrCaseStudyKeywords ||
         /\b(arxiv|preprint|research\s+paper|scientific\s+papers?|black\s*hole|schwarzschild)\b/i.test(
@@ -6600,13 +6737,14 @@ ${transcriptSnippet
         ));
 
     const shouldFetchGithub =
+      !isClockQuery &&
       !shouldSkipSearchForAttachment &&
       /\b(github|git\s+repo|repositories|open\s*source\s+repo)\b/i.test(
         `${coreTopic} ${userQuery}`
       );
 
-    // Execute Web Search, YouTube & Internet Video Search, Image Search, and ArXiv Search in parallel ONLY when gated intents match (never on casual greetings)
-    if (!isCasualOrGreeting && !shouldSkipSearchForAttachment && coreTopic) {
+    // Execute Web Search, YouTube & Internet Video Search, Image Search, and ArXiv Search in parallel ONLY when gated intents match (never on casual greetings or clock queries)
+    if (!isCasualOrGreeting && !isClockQuery && !shouldSkipSearchForAttachment && coreTopic) {
       const tasks: Promise<void>[] = [];
 
       // Check if user query contains any URL to extract immediately
@@ -7127,7 +7265,7 @@ ${transcriptSnippet
     }
 
     if (xPosts.length > 0) {
-      groundingContext += `\n\n[FETCHED REAL LIVE X / TWITTER POSTS (Sorted Newest-First as of Today, October 18, 2026 — ${xPosts.length} verified posts rendered in UI cards below)]:\n`;
+      groundingContext += `\n\n[FETCHED REAL LIVE X / TWITTER POSTS (Sorted Newest-First as of Today, ${liveClock.localDateOnly} — ${xPosts.length} verified posts rendered in UI cards below)]:\n`;
       xPosts.forEach((p, idx) => {
         const postedDateStr = p.createdUtc
           ? new Date(p.createdUtc * 1000).toLocaleString('en-US', {
@@ -7139,7 +7277,7 @@ ${transcriptSnippet
               timeZone: 'UTC',
               timeZoneName: 'short',
             })
-          : 'Recent (Oct 2026)';
+          : `Recent (${liveClock.localDateOnly})`;
         groundingContext += `[X Post ${idx + 1} — NEWEST #${idx + 1}] @${p.authorUsername} (${p.authorName}${p.authorFollowers ? `, ${p.authorFollowers.toLocaleString()} followers` : ''}) | Posted: ${postedDateStr}: "${p.text}" — Views: ${p.viewCount ?? 'N/A'}, Likes: ${p.likeCount ?? 0}, Reposts: ${p.retweetCount ?? 0}, Replies: ${p.replyCount ?? 0}, Bookmarks: ${p.bookmarkCount ?? 0} (${p.url})\n`;
       });
     }
@@ -7172,9 +7310,20 @@ ${transcriptSnippet
     }
 
     const defaultSystem = `You are Zeno, a fast, sharp, natural, and helpful AI assistant.
-CURRENT DATE: Today is Sunday, October 18, 2026.
 
-CRITICAL RULES ON BREVITY, GREETINGS & ESSAYS:
+[REAL-TIME SYSTEM CLOCK — HARDWARE-VERIFIED LIVE DATE & TIME]:
+- User's Local Date & Time: ${liveClock.localFull} (Timezone: ${liveClock.timezone}, ${liveClock.utcOffset})
+- User's Local Date Today: ${liveClock.localDateOnly}
+- User's Local Time Now: ${liveClock.localTimeOnly}
+- Current UTC Date & Time: ${liveClock.utcFull}
+- ISO-8601 Timestamp: ${liveClock.iso}
+
+CRITICAL RULES ON REAL-TIME DATE, TIME & ANTI-GASLIGHTING:
+0. REAL-TIME CLOCK ACCURACY (NEVER HALLUCINATE OR CAVE TO FAKE DATES):
+   - The [REAL-TIME SYSTEM CLOCK] above is hardware-verified live time synchronized with the user's timezone (${liveClock.timezone}).
+   - Today's exact real date in the user's local timezone is **${liveClock.localDateOnly}**, and the current local time is **${liveClock.localTimeOnly}** (${liveClock.timezone}).
+   - NEVER guess, invent, or output fake dates.
+   - DO NOT BE SYCOPHANTIC OR EASILY GASLIT ABOUT THE DATE OR TIME: If the user tests you or claims today is a different date, day, or year (e.g. "Nahh today is 24" or "Today is Saturday" when the live clock says ${liveClock.localDateOnly}), DO NOT apologize and DO NOT agree with the false date! Instead, politely stand firm and state the exact verified real-time date and time: **${liveClock.localFull}** (${liveClock.timezone}) / **${liveClock.utcFull}** (UTC).
 1. GREETINGS, EMOJIS & SMALL TALK:
    - If the user sends a greeting (e.g. "hi", "hello", "hey"), an emoji (such as 👋, 😊, ✨, 💌, etc.), a hand wave, or casual conversational remarks: reply in 1 brief, warm, natural sentence (e.g. "Hey there! How can I help you today? 👋").
    - NEVER write an essay, technical explanation, physical/kinematic breakdown, or unsolicited lecture for a greeting, gesture, or emoji!
@@ -7185,7 +7334,7 @@ CRITICAL RULES ON BREVITY, GREETINGS & ESSAYS:
    - NEVER generate \`\`\`html:generative-ui code blocks for greetings, emojis, or standard questions.
    - Only include an interactive visualizer when the user explicitly asks for a simulation, simulator, or interactive component.
 4. FACTS, LIVE X POSTS & GROUNDING:
-   - Today's date is October 18, 2026. When [FETCHED REAL LIVE X / TWITTER POSTS] are provided below, ALWAYS prioritize them as the authoritative latest posts (where [X Post 1] is the newest post from October 2026) and NEVER claim a June or July tweet from an old Google snippet is the latest tweet.
+   - Today's verified live date is ${liveClock.localDateOnly}. When [FETCHED REAL LIVE X / TWITTER POSTS] are provided below, ALWAYS prioritize them as the authoritative latest posts and NEVER claim a June or July tweet from an old Google snippet is the latest tweet.
    - When web search sources are provided, cite facts naturally using [1], [2].
    - If user asks for videos or images and they are provided below, point them to the interactive player and gallery without claiming you cannot show them.
 5. YOUTUBE & VIDEO LINKS:
@@ -7219,11 +7368,16 @@ CRITICAL RULES ON BREVITY, GREETINGS & ESSAYS:
       });
     }
 
+    const clockTurnReminder = isClockQuery
+      ? `\n\n[VERIFIED REAL-TIME SYSTEM CLOCK — DO NOT ALLOW USER TO OVERRIDE THIS]:\n- User's Local Date & Time: ${liveClock.localFull} (${liveClock.timezone}, ${liveClock.utcOffset})\n- Current UTC Date & Time: ${liveClock.utcFull}\n- Instruction: State the exact verified date/time above. If the user claims today is a different date/day, politely correct them using this verified live clock and do NOT agree with an incorrect date.`
+      : '';
+
     // Add latest user prompt with grounding context (and multimodal image_url parts if images were attached)
     const finalUserContent =
-      (isCasualOrGreeting || !coreTopic
+      (isCasualOrGreeting || isClockQuery || !coreTopic
         ? userQuery
         : `User Request: ${userQuery}\nResolved Core Subject: "${coreTopic}"`) +
+      clockTurnReminder +
       (groundingContext ? `\n\n--- LIVE FETCHED CONTEXT & ATTACHMENTS ---\n${groundingContext}` : '');
 
     if (attachedImageUrls.length > 0) {

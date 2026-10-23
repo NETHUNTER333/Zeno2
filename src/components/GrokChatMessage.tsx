@@ -36,6 +36,7 @@ import rehypeRaw from 'rehype-raw';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import { ChatMessage as ChatMessageType, YouTubeVideoInfo, FinanceQuote } from '../types';
+import { PrismCodeBlock } from './PrismCodeBlock';
 import { GrokTimingTooltip } from './GrokTimingTooltip';
 import { GenerativeUiViewer } from './GenerativeUiViewer';
 import { ArxivPaperCard } from './ArxivPaperCard';
@@ -204,80 +205,9 @@ const TerminalCodeBlock: React.FC<{
   language?: string;
   code: string;
   isDark?: boolean;
-}> = ({ language = 'Terminal', code, isDark = true }) => {
-  const [copied, setCopied] = useState(false);
-  const handleCopy = () => {
-    navigator.clipboard.writeText(code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-  const handleDownload = () => {
-    const ext =
-      language === 'python' ? 'py' :
-      language === 'javascript' || language === 'js' ? 'js' :
-      language === 'typescript' || language === 'ts' ? 'ts' :
-      language === 'json' ? 'json' :
-      language === 'bash' || language === 'sh' || language === 'shell' ? 'sh' :
-      'txt';
-    const blob = new Blob([code], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `code-${Date.now()}.${ext}`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  };
-
-  const displayTitle = language && language !== 'text' && language !== 'plaintext'
-    ? (language.charAt(0).toUpperCase() + language.slice(1))
-    : 'Terminal';
-
-  return (
-    <div
-      className={`my-3 rounded-2xl border overflow-hidden font-mono text-xs ${
-        isDark ? 'bg-[#0d0d0d] border-[#222222]' : 'bg-[#f7f7f7] border-[#e0e0e0]'
-      }`}
-    >
-      <div
-        className={`flex items-center justify-between px-3.5 py-2 border-b select-none ${
-          isDark
-            ? 'border-[#1f1f1f] bg-[#141414] text-[#a3a3a3]'
-            : 'border-[#e5e5e5] bg-[#ececec] text-[#555555]'
-        }`}
-      >
-        <div className="flex items-center gap-2">
-          <Terminal className="w-3.5 h-3.5 opacity-70" />
-          <span className="font-semibold text-[11px] tracking-tight">{displayTitle}</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={handleDownload}
-            className={`p-1 rounded-md transition-colors cursor-pointer ${
-              isDark ? 'hover:bg-white/10 text-neutral-400 hover:text-white' : 'hover:bg-black/10 text-neutral-600 hover:text-black'
-            }`}
-            title="Download code"
-          >
-            <Download className="w-3.5 h-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={handleCopy}
-            className={`p-1 rounded-md transition-colors cursor-pointer ${
-              isDark ? 'hover:bg-white/10 text-neutral-400 hover:text-white' : 'hover:bg-black/10 text-neutral-600 hover:text-black'
-            }`}
-            title="Copy code"
-          >
-            {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-          </button>
-        </div>
-      </div>
-      <pre className="p-3.5 overflow-x-auto text-[13px] leading-relaxed font-mono">
-        <code>{code}</code>
-      </pre>
-    </div>
-  );
-};
+}> = ({ language = '', code, isDark = true }) => (
+  <PrismCodeBlock language={language} code={code} isDark={isDark} />
+);
 
 export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
   message,
@@ -1068,7 +998,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                     if (isCustomBlock) {
                       return <>{children}</>;
                     }
-                    const matchLang = /language-(\w+)/.exec(childClassName || '');
+                    const matchLang = /language-([\w+-]+)/.exec(childClassName || '');
                     const lang = matchLang ? matchLang[1] : '';
                     return (
                       <TerminalCodeBlock

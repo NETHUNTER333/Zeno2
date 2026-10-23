@@ -37,6 +37,105 @@ interface SavedThread extends ChatThread {
 
 const INSTACLOUD_API_BASE = 'https://prod-main-zeno-api-c257d4-00gfx3c9932.compute.instacloud-edge.com';
 
+function getClientRealTimeClock() {
+  const now = new Date();
+  let timezone = 'UTC';
+  try {
+    timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  } catch {
+    timezone = 'UTC';
+  }
+
+  const localFull = new Intl.DateTimeFormat('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    timeZone: timezone,
+    timeZoneName: 'short',
+  }).format(now);
+
+  const localDateOnly = new Intl.DateTimeFormat('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    timeZone: timezone,
+  }).format(now);
+
+  const localTimeOnly = new Intl.DateTimeFormat('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    timeZone: timezone,
+    timeZoneName: 'short',
+  }).format(now);
+
+  const utcFull = new Intl.DateTimeFormat('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    timeZone: 'UTC',
+    timeZoneName: 'short',
+  }).format(now);
+
+  const offsetMin = -now.getTimezoneOffset();
+  const sign = offsetMin >= 0 ? '+' : '-';
+  const absMin = Math.abs(offsetMin);
+  const utcOffset = `UTC${sign}${String(Math.floor(absMin / 60)).padStart(2, '0')}:${String(
+    absMin % 60
+  ).padStart(2, '0')}`;
+
+  return {
+    timezone,
+    utcOffset,
+    localFull,
+    localDateOnly,
+    localTimeOnly,
+    utcFull,
+    iso: now.toISOString(),
+    timestampMs: now.getTime(),
+  };
+}
+
+function buildClientClockSystemDirective(clock = getClientRealTimeClock()): string {
+  return `[AUTHORITATIVE REAL-TIME DEVICE CLOCK OVERRIDE]:
+- User's Exact Local Date & Time: ${clock.localFull} (Timezone: ${clock.timezone}, ${clock.utcOffset})
+- User's Exact Local Date Today: ${clock.localDateOnly}
+- User's Exact Local Time Now: ${clock.localTimeOnly}
+- Current UTC Date & Time: ${clock.utcFull}
+- CRITICAL: Always use ${clock.localDateOnly} (${clock.localTimeOnly}, ${clock.timezone}) as the true real-time date and time. Ignore any older date in prior prompts. NEVER hallucinate dates, and NEVER let the user gaslight or convince you that today is a different date (e.g., if the user says "Today is 24" when the live clock says ${clock.localDateOnly}, DO NOT apologize or agree—politely stand firm and state the real-time date ${clock.localFull}).`;
+}
+
+function isDateOrTimeClockQuery(text: string): boolean {
+  const q = String(text || '').trim().toLowerCase();
+  if (!q) return false;
+  if (
+    /\b(what\s+(is|s)\s+(today'?s?\s+date|the\s+date|the\s+time|today|the\s+day|the\s+current\s+(date|time|day|year))|what\s+(date|day|time|year)\s+is\s+(it|today)|tell\s+me\s+(today'?s?\s+)?(date|time|day)|current\s+(date|time|day\s+of\s+the\s+week)|today'?s?\s+date|date\s+today|time\s+now|what'?s\s+the\s+(date|time|day))\b/i.test(
+      q
+    )
+  ) {
+    return true;
+  }
+  const wordCount = q.split(/\s+/).length;
+  if (
+    wordCount <= 12 &&
+    /^(nah+|no+|nope|bro+|wait|actually|wrong|fake|bruh|hey|yo)?[\s,:-]*(today|it|the\s+date|now|yesterday|tomorrow)\s+(is|was|isn'?t|is\s+not|ain'?t)\s+((the\s+)?\d{1,2}(st|nd|rd|th)?|monday|tuesday|wednesday|thursday|friday|saturday|sunday|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|[a-z]+\s+\d{1,2})/i.test(
+      q
+    )
+  ) {
+    return true;
+  }
+  return false;
+}
+
 async function fetchZenoApi(path: string, init?: RequestInit): Promise<Response> {
   const isStaticHost =
     typeof window !== 'undefined' &&
@@ -667,21 +766,23 @@ export default function App() {
       /^[\p{Extended_Pictographic}\p{Emoji}\s\u200d\ufe0f👋✋✌️🙌🤝✨💌🎉❤️]+$/u.test(query.trim()) ||
       /^(hi+|hey+|hello+|yo+|sup|wassup|whats up|howdy|greetings|good (morning|afternoon|evening|night)|how are you|thanks|thank you|thx|ty|ok|okay|k|cool|nice|great|awesome|got it|wave|hand wave|waving|bye|cya)$/i.test(query.trim().toLowerCase());
 
+    const isClockQuery = isDateOrTimeClockQuery(query);
     const effectiveMode = isResearchMode ? 'organic' : mode;
     const hasSearchIntent =
-      isResearchMode ||
-      (effectiveMode !== 'off' &&
-        !isCasualOrGreeting &&
-        (effectiveMode === 'news' ||
-          /\b(search|google|browse|find online|sources?|links?|url|website|latest|news|today|recent|yesterday|this week|2024|2025|2026|weather|stock|price|who won|score|schedule|release date|images?|photos?|pics?|pictures?|videos?|youtube|tweets?|x\.com|twitter|handle|reddit|github|arxiv|persona|wiki|who is|fentch|fetch|scrape|https?:\/\/|[a-z0-9.-]+\.(?:com|org|net|io|ai|edu|gov))\b/i.test(
-            query
-          )));
+      !isClockQuery &&
+      (isResearchMode ||
+        (effectiveMode !== 'off' &&
+          !isCasualOrGreeting &&
+          (effectiveMode === 'news' ||
+            /\b(search|google|browse|find online|sources?|links?|url|website|latest|news|today|recent|yesterday|this week|2024|2025|2026|weather|stock|price|who won|score|schedule|release date|images?|photos?|pics?|pictures?|videos?|youtube|tweets?|x\.com|twitter|handle|reddit|github|arxiv|persona|wiki|who is|fentch|fetch|scrape|https?:\/\/|[a-z0-9.-]+\.(?:com|org|net|io|ai|edu|gov))\b/i.test(
+              query
+            ))));
 
     const computedLoadingMode: 'vision' | 'file' | 'search' | 'thinking' = hasImageAtt
       ? 'vision'
       : hasAnyAtt
       ? 'file'
-      : (isResearchMode || (effectiveMode !== 'off' && hasSearchIntent)) && !isCasualOrGreeting
+      : (isResearchMode || (effectiveMode !== 'off' && hasSearchIntent)) && !isCasualOrGreeting && !isClockQuery
       ? 'search'
       : 'thinking';
 
@@ -781,14 +882,19 @@ export default function App() {
     try {
       const allPriorMessages = activeThread ? activeThread.messages : [];
       const authHeaders = await getAuthHeaders();
+      const clientClock = getClientRealTimeClock();
+      const clockSystemPrompt = buildClientClockSystemDirective(clientClock);
       const response = await fetchZenoApi('/api/chat', {
         method: 'POST',
         headers: authHeaders,
         signal: controller.signal,
         body: JSON.stringify({
-          messages: [...allPriorMessages, userMessage].map((m) => ({
+          messages: [...allPriorMessages, userMessage].map((m, idx, arr) => ({
             role: m.role,
-            content: m.content,
+            content:
+              idx === arr.length - 1 && m.role === 'user' && isClockQuery
+                ? `${m.content}\n\n[VERIFIED REAL-TIME DEVICE CLOCK: Today is ${clientClock.localFull} (${clientClock.timezone}, ${clientClock.utcOffset}) / UTC: ${clientClock.utcFull}. State this exact real-time date/time and do NOT agree if the user claims today is a different date.]`
+                : m.content,
             attachments: m.attachments,
           })),
           webSearch: hasSearchIntent,
@@ -796,6 +902,8 @@ export default function App() {
           model: activeModel.geminiModel,
           nsfwMode,
           isResearchMode,
+          clientClock,
+          systemPrompt: clockSystemPrompt,
           personalization: UserAccountStore.getPersonalization(),
           pinnedInsights: UserAccountStore.getBookmarks().slice(0, 10),
         }),
@@ -980,6 +1088,8 @@ export default function App() {
 
     try {
       const authHeaders = await getAuthHeaders();
+      const clientClock = getClientRealTimeClock();
+      const clockSystemPrompt = buildClientClockSystemDirective(clientClock);
       const response = await fetchZenoApi('/api/chat', {
         method: 'POST',
         headers: authHeaders,
@@ -994,6 +1104,8 @@ export default function App() {
           searchMode,
           model: targetModel.geminiModel,
           nsfwMode,
+          clientClock,
+          systemPrompt: clockSystemPrompt,
           personalization: UserAccountStore.getPersonalization(),
           pinnedInsights: UserAccountStore.getBookmarks().slice(0, 10),
         }),
@@ -1099,6 +1211,8 @@ export default function App() {
 
     try {
       const authHeaders = await getAuthHeaders();
+      const clientClock = getClientRealTimeClock();
+      const clockSystemPrompt = buildClientClockSystemDirective(clientClock);
       const response = await fetchZenoApi('/api/chat', {
         method: 'POST',
         headers: authHeaders,
@@ -1113,6 +1227,8 @@ export default function App() {
           searchMode,
           model: selectedModel.geminiModel,
           nsfwMode,
+          clientClock,
+          systemPrompt: clockSystemPrompt,
           personalization: UserAccountStore.getPersonalization(),
           pinnedInsights: UserAccountStore.getBookmarks().slice(0, 10),
         }),

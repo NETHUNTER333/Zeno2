@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { PrismCodeBlock } from './PrismCodeBlock';
 import { SearchSource, ArxivPaper, ChatMessage } from '../types';
 import { getAuthHeaders } from '../lib/firebase';
 import { exportConversationAsPdf, exportConversationAsMarkdown } from '../lib/exportChat';
@@ -669,7 +670,19 @@ Structure your report with clear Markdown headings:
               </div>
 
               <div className="p-6 prose-custom max-w-none text-sm leading-relaxed">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    pre: ({ children }) => {
+                      const child = React.Children.toArray(children)[0] as React.ReactElement<any>;
+                      const childClassName = child?.props?.className || '';
+                      const childContent = String(child?.props?.children || '').trim();
+                      const matchLang = /language-([\w+-]+)/.exec(childClassName || '');
+                      const lang = matchLang ? matchLang[1] : '';
+                      return <PrismCodeBlock language={lang} code={childContent} isDark={isDark} />;
+                    },
+                  }}
+                >
                   {reportMarkdown}
                 </ReactMarkdown>
               </div>

@@ -8,6 +8,7 @@ import { ChatMessage as ChatMessageType } from '../types';
 import { SourceCard } from './SourceCard';
 import { ToolExecutionBadge } from './ToolExecutionBadge';
 import { PeleDiagram } from './PeleDiagram';
+import { PrismCodeBlock } from './PrismCodeBlock';
 import { LoadingBreadcrumb } from './ui/animated-loading-svg-text-shimmer';
 
 interface ChatMessageProps {
@@ -138,7 +139,9 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ message, onExtractUrl,
                     ) {
                       return <PeleDiagram code={childContent} isDark={true} />;
                     }
-                    return <pre {...props}>{children}</pre>;
+                    const matchLang = /language-([\w+-]+)/.exec(childClassName || '');
+                    const lang = matchLang ? matchLang[1] : '';
+                    return <PrismCodeBlock language={lang} code={childContent} isDark={true} />;
                   },
                   code: ({ node, className, children, ...props }) => {
                     const isInline = !className && typeof children === 'string' && !children.includes('\n');
