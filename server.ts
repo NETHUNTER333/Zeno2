@@ -210,7 +210,7 @@ const ITERACOMPUTE_BASE_URL =
 const ITERACOMPUTE_API_KEY =
   process.env.ITERACOMPUTE_API_KEY ||
   (keysAndRouters?.tokens as any)?.iteraCompute ||
-  'sk-b5buq_HdkB_Xu485GqZ9Dg';
+  '';
 const APINEX_DEFAULT_MODEL = process.env.APINEX_MODEL || 'free/glm-5.3';
 const FLM_BASE_URL = process.env.FLM_BASE_URL || 'https://flm.stonech.at/v1';
 
@@ -222,7 +222,7 @@ const INTERN_AI_BASE_URL =
 const INTERN_AI_API_KEY =
   process.env.INTERN_AI_API_KEY ||
   keysAndRouters?.tokens?.internAi ||
-  'sk-fd15650f5caec01e7ac7b27ee50c130cddd8c0d9efb9be85865cb81e709f0dc1';
+  '';
 const INTERN_SUPPORTED_MODELS = [
   'Agents-A1',
   'Atria-Dawn',
@@ -246,7 +246,7 @@ const TOKENHARBOR_BASE_URL =
 const TOKENHARBOR_API_KEY =
   process.env.TOKENHARBOR_API_KEY ||
   keysAndRouters?.tokens?.tokenHarbour ||
-  'thk_live_N01K1qzLlsOd_3kMQ1vmD6iXGlRkezxwDv1yzHVDndwdyAUMLdxZJ01Eh_mCDGMS';
+  '';
 const TOKENHARBOR_FREE_MODELS = [
   'deepseek-v4.1-flash:free',
   'deepseek-v4-flash:free',
@@ -262,7 +262,7 @@ const LARPROUTER_BASE_URL =
 const LARPROUTER_API_KEY =
   process.env.LARPROUTER_API_KEY ||
   keysAndRouters?.tokens?.larpRouter ||
-  'lrsk-22e48d93c031bd11594a6d662abdf6e580ebaa923c79ee966b8f17f621ec4300';
+  '';
 
 // RadoxAI Gateway (https://radoxai.com/v1)
 const RADOX_AI_BASE_URL =
@@ -272,7 +272,7 @@ const RADOX_AI_BASE_URL =
 const RADOX_AI_API_KEY =
   process.env.RADOX_AI_API_KEY ||
   (keysAndRouters?.tokens as any)?.radoxAi ||
-  'cc_LJObev7AfX0EgPkH8KAd46CGoumngCZAP5gMcbH1v0pPd53k';
+  '';
 const RADOX_SUPPORTED_MODELS = [
   'claude-opus-5.5',
   'claude-mythos-preview',
@@ -317,7 +317,7 @@ const ITERA_COMPUTE_BASE_URL =
 const ITERA_COMPUTE_API_KEY =
   process.env.ITERA_COMPUTE_API_KEY ||
   (keysAndRouters?.tokens as any)?.iteraCompute ||
-  'sk-b5buq_HdkB_Xu485GqZ9Dg';
+  '';
 const ITERA_SUPPORTED_MODELS = [
   'moonshotai/kimi-k3-free',
   'qwen/qwen3.8-27b',

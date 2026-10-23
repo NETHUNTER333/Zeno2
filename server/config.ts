@@ -22,16 +22,13 @@ export function getFirebaseProjectId(): string {
   );
 }
 
-const DEFAULT_TREG_TOKEN =
-  'eyJ1aWQiOjM5ODEwLCJ0diI6MCwiYXVkIjoiaWRlbnRpdHkiLCJvcmciOiJzeW50cm9mb2kiLCJrZyI6MCwic2NwIjoidGVhbSJ9.k69O2b8K1_U2uDTUGQGbSGz_H79bRURQURo8y2h9JT8';
 const DEFAULT_TREG_ORG = 'syntrofoi';
-const DEFAULT_TINYFISH_KEY = 'sk-tinyfish-Q0s1odJ8_hBYBjxgoFSlF7OcKnrcsx5U';
 
 export function getTregToken(): string {
   if (process.env.NODE_ENV === 'test' || process.env.VITEST === 'true') {
     return (process.env.TREG_TOKEN || '').trim();
   }
-  return (process.env.TREG_TOKEN || DEFAULT_TREG_TOKEN).trim();
+  return (process.env.TREG_TOKEN || '').trim();
 }
 
 export function getTregOrg(): string {
@@ -46,7 +43,7 @@ export function getTinyfishApiKey(): string {
   if (process.env.NODE_ENV === 'test' || process.env.VITEST === 'true') {
     return (process.env.TINYFISH_API_KEY || '').trim();
   }
-  return (process.env.TINYFISH_API_KEY || DEFAULT_TINYFISH_KEY).trim();
+  return (process.env.TINYFISH_API_KEY || '').trim();
 }
 
 export function getTinyfishBaseUrl(): string {
