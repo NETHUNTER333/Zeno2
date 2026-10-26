@@ -8,11 +8,9 @@ export interface ModelOption {
   geminiModel: string;
   supportsVision: boolean;
   contextLength?: string;
-  category?: 'core' | 'tokenharbor' | 'intern' | 'larp' | 'radox' | 'itera' | 'anyrouter';
 }
 
 export const GROK_MODELS: ModelOption[] = [
-  // --- Fastest Default Reply Models ---
   {
     id: 'deepseek-v4.1-flash-free',
     name: 'DeepSeek V4.1 Flash',
@@ -20,7 +18,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'thk/deepseek-v4.1-flash:free',
     supportsVision: false,
     contextLength: '1M',
-    category: 'core',
   },
   {
     id: 'itera-qwen3.8-27b-free',
@@ -29,7 +26,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'itera/qwen/qwen3.8-27b',
     supportsVision: true,
     contextLength: '256K',
-    category: 'core',
   },
   {
     id: 'deepseek-v4-flash-0731-free',
@@ -38,7 +34,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'thk/deepseek-v4-flash:free',
     supportsVision: false,
     contextLength: '1M',
-    category: 'core',
   },
   {
     id: 'glm-5.3-flash-free',
@@ -47,7 +42,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'glm-5.3-flash-free',
     supportsVision: true,
     contextLength: '128K',
-    category: 'core',
   },
   {
     id: 'mimo-v2.6-flash-free',
@@ -56,7 +50,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'thk/mimo-v2.6-flash:free',
     supportsVision: false,
     contextLength: '1M',
-    category: 'core',
   },
   {
     id: 'mimo-v2.5-free',
@@ -65,7 +58,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'thk/mimo-v2.5:free',
     supportsVision: false,
     contextLength: '1M',
-    category: 'core',
   },
   {
     id: 'agents-a1',
@@ -74,7 +66,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'intern/Agents-A1',
     supportsVision: true,
     contextLength: '256K',
-    category: 'core',
   },
   {
     id: 'atria-dawn',
@@ -83,7 +74,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'intern/Atria-Dawn',
     supportsVision: false,
     contextLength: '512K',
-    category: 'core',
   },
   {
     id: 'glm-5.3-free',
@@ -92,7 +82,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'glm-5.3-free',
     supportsVision: true,
     contextLength: '1M',
-    category: 'core',
   },
   {
     id: 'flm-auto',
@@ -101,7 +90,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'flm/auto',
     supportsVision: false,
     contextLength: 'Auto',
-    category: 'core',
   },
   {
     id: 'gpt-6-luna',
@@ -110,7 +98,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'thk/gpt-6-luna-fast',
     supportsVision: true,
     contextLength: '1.05M',
-    category: 'core',
   },
   {
     id: 'claude-sonnet-4.6',
@@ -119,9 +106,7 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'thk/claude-sonnet-4.6',
     supportsVision: true,
     contextLength: '1M',
-    category: 'core',
   },
-  // --- Frontier Models ---
   {
     id: 'thk-gpt-6.1-sol-fast',
     name: 'GPT-6.1 Sol Fast',
@@ -129,7 +114,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'thk/gpt-6.1-sol-fast',
     supportsVision: true,
     contextLength: '1.05M',
-    category: 'tokenharbor',
   },
   {
     id: 'thk-gpt-6-astra-fast',
@@ -138,7 +122,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'thk/gpt-6-astra-fast',
     supportsVision: true,
     contextLength: '1.05M',
-    category: 'tokenharbor',
   },
   {
     id: 'thk-kimi-k3-fast',
@@ -147,7 +130,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'thk/kimi-k3-fast',
     supportsVision: true,
     contextLength: '1M',
-    category: 'tokenharbor',
   },
   {
     id: 'thk-claude-sonnet-5.5',
@@ -156,7 +138,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'thk/claude-sonnet-5.5',
     supportsVision: true,
     contextLength: '1M',
-    category: 'tokenharbor',
   },
   {
     id: 'thk-claude-opus-5.5',
@@ -165,7 +146,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'thk/claude-opus-5.5',
     supportsVision: true,
     contextLength: '1M',
-    category: 'tokenharbor',
   },
   {
     id: 'thk-grok-4.7',
@@ -174,7 +154,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'thk/grok-4.7',
     supportsVision: true,
     contextLength: '500K',
-    category: 'tokenharbor',
   },
   {
     id: 'thk-gemini-4-argon',
@@ -183,7 +162,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'thk/gemini-4-argon',
     supportsVision: true,
     contextLength: '1M',
-    category: 'tokenharbor',
   },
   {
     id: 'thk-mistral-large-4',
@@ -192,9 +170,7 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'thk/mistral-large-4',
     supportsVision: true,
     contextLength: '512K',
-    category: 'tokenharbor',
   },
-  // --- Scientific & Research Models ---
   {
     id: 'atria-dawn-preview',
     name: 'Atria-Dawn Preview',
@@ -202,7 +178,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'intern/Atria-Dawn-Preview',
     supportsVision: false,
     contextLength: '512K',
-    category: 'intern',
   },
   {
     id: 'deepseek-v4-flash-vision',
@@ -211,7 +186,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'intern/deepseek-v4-flash-vision',
     supportsVision: true,
     contextLength: '1M',
-    category: 'intern',
   },
   {
     id: 'deepseek-v4-pro-0813',
@@ -220,7 +194,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'intern/deepseek-v4-pro-0813',
     supportsVision: false,
     contextLength: '1M',
-    category: 'intern',
   },
   {
     id: 'intern-decision-4b',
@@ -229,7 +202,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'intern/intern-decision-4b',
     supportsVision: false,
     contextLength: '8K',
-    category: 'intern',
   },
   {
     id: 'intern-s2',
@@ -238,7 +210,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'intern/intern-s2',
     supportsVision: true,
     contextLength: '256K',
-    category: 'intern',
   },
   {
     id: 'kimi-k2.6',
@@ -247,7 +218,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'intern/kimi-k2.6',
     supportsVision: true,
     contextLength: '256K',
-    category: 'intern',
   },
   {
     id: 'minimax-m3',
@@ -256,7 +226,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'intern/minimax-m3',
     supportsVision: false,
     contextLength: '1M',
-    category: 'intern',
   },
   {
     id: 'qwen3.8-27b',
@@ -265,9 +234,7 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'itera/qwen/qwen3.8-27b',
     supportsVision: true,
     contextLength: '256K',
-    category: 'intern',
   },
-  // --- Extended Models ---
   {
     id: 'larp-deepseek-v4',
     name: 'DeepSeek V4',
@@ -275,7 +242,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'larp/deepseek-v4',
     supportsVision: false,
     contextLength: '1M',
-    category: 'larp',
   },
   {
     id: 'larp-claude-sonnet',
@@ -284,7 +250,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'larp/claude-sonnet',
     supportsVision: true,
     contextLength: '1M',
-    category: 'larp',
   },
   {
     id: 'larp-gpt-6',
@@ -293,7 +258,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'larp/gpt-6',
     supportsVision: true,
     contextLength: '1.05M',
-    category: 'larp',
   },
   {
     id: 'larp-glm-5',
@@ -302,7 +266,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'larp/glm-5',
     supportsVision: true,
     contextLength: '1M',
-    category: 'larp',
   },
   {
     id: 'larp-auto',
@@ -311,9 +274,7 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'larp/auto',
     supportsVision: false,
     contextLength: 'Auto',
-    category: 'larp',
   },
-  // --- Pro & Next-Gen Models ---
   {
     id: 'radox-gemini-3.7-flash',
     name: 'Gemini 3.7 Flash',
@@ -321,7 +282,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'radox/gemini-3.7-flash',
     supportsVision: true,
     contextLength: '1M',
-    category: 'radox',
   },
   {
     id: 'radox-claude-sonnet-5',
@@ -330,7 +290,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'radox/claude-sonnet-5',
     supportsVision: true,
     contextLength: '1M',
-    category: 'radox',
   },
   {
     id: 'radox-claude-opus-5.5',
@@ -339,7 +298,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'radox/claude-opus-5.5',
     supportsVision: true,
     contextLength: '1M',
-    category: 'radox',
   },
   {
     id: 'radox-claude-mythos-preview',
@@ -348,7 +306,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'radox/claude-mythos-preview',
     supportsVision: true,
     contextLength: '1M',
-    category: 'radox',
   },
   {
     id: 'radox-claude-fable-5.1',
@@ -357,7 +314,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'radox/claude-fable-5.1',
     supportsVision: true,
     contextLength: '1M',
-    category: 'radox',
   },
   {
     id: 'radox-gpt-5.6-sol',
@@ -366,7 +322,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'radox/gpt-5.6-sol',
     supportsVision: true,
     contextLength: '1.05M',
-    category: 'radox',
   },
   {
     id: 'radox-gpt-5.6-terra',
@@ -375,7 +330,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'radox/gpt-5.6-terra',
     supportsVision: true,
     contextLength: '1.05M',
-    category: 'radox',
   },
   {
     id: 'radox-gpt-5.6-luna',
@@ -384,7 +338,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'radox/gpt-5.6-luna',
     supportsVision: true,
     contextLength: '1.05M',
-    category: 'radox',
   },
   {
     id: 'radox-deepseek-v4-pro-max',
@@ -393,7 +346,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'radox/deepseek-v4-pro-max',
     supportsVision: false,
     contextLength: '1M',
-    category: 'radox',
   },
   {
     id: 'radox-gemini-3.1-pro',
@@ -402,7 +354,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'radox/gemini-3.1-pro',
     supportsVision: true,
     contextLength: '2M',
-    category: 'radox',
   },
   {
     id: 'radox-grok-4.6',
@@ -411,7 +362,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'radox/grok-4.6',
     supportsVision: true,
     contextLength: '500K',
-    category: 'radox',
   },
   {
     id: 'radox-qwen3.8-max',
@@ -420,7 +370,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'radox/qwen3.8-max',
     supportsVision: true,
     contextLength: '1M',
-    category: 'radox',
   },
   {
     id: 'radox-kimi-k3',
@@ -429,7 +378,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'radox/kimi-k3',
     supportsVision: true,
     contextLength: '1M',
-    category: 'radox',
   },
   {
     id: 'radox-seed-2.1-pro',
@@ -438,7 +386,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'radox/seed-2.1-pro',
     supportsVision: true,
     contextLength: '512K',
-    category: 'radox',
   },
   {
     id: 'radox-muse-spark-1.1',
@@ -447,9 +394,7 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'radox/muse-spark-1.1',
     supportsVision: false,
     contextLength: '256K',
-    category: 'radox',
   },
-  // --- Compute & High-Effort Models ---
   {
     id: 'itera-claude-haiku-5.5',
     name: 'Claude Haiku 5.5',
@@ -457,7 +402,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'itera/anthropic/claude-haiku-5-5',
     supportsVision: true,
     contextLength: '1M',
-    category: 'itera',
   },
   {
     id: 'itera-deepseek-v4.1-flash-1017',
@@ -466,7 +410,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'itera/deepseek/deepseek-v4.1-flash-1017',
     supportsVision: false,
     contextLength: '1M',
-    category: 'itera',
   },
   {
     id: 'itera-claude-sonnet-5.5',
@@ -475,7 +418,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'itera/anthropic/claude-sonnet-5-5',
     supportsVision: true,
     contextLength: '1M',
-    category: 'itera',
   },
   {
     id: 'itera-kimi-k3-free',
@@ -484,7 +426,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'itera/moonshotai/kimi-k3-free',
     supportsVision: true,
     contextLength: '1M',
-    category: 'itera',
   },
   {
     id: 'itera-claude-opus-5.5',
@@ -493,7 +434,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'itera/anthropic/claude-opus-5-5',
     supportsVision: true,
     contextLength: '1M',
-    category: 'itera',
   },
   {
     id: 'itera-claude-fable-5.1',
@@ -502,7 +442,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'itera/anthropic/claude-fable-5-1',
     supportsVision: true,
     contextLength: '1M',
-    category: 'itera',
   },
   {
     id: 'itera-gpt-6.1-sol',
@@ -511,7 +450,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'itera/openai/gpt-6.1-sol',
     supportsVision: true,
     contextLength: '922K',
-    category: 'itera',
   },
   {
     id: 'itera-gpt-6-astra',
@@ -520,7 +458,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'itera/openai/gpt-6-astra',
     supportsVision: true,
     contextLength: '922K',
-    category: 'itera',
   },
   {
     id: 'itera-gpt-6-luna',
@@ -529,7 +466,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'itera/openai/gpt-6-luna',
     supportsVision: true,
     contextLength: '922K',
-    category: 'itera',
   },
   {
     id: 'itera-gemini-4-argon',
@@ -538,7 +474,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'itera/gemini/gemini-4-argon',
     supportsVision: true,
     contextLength: '1M',
-    category: 'itera',
   },
   {
     id: 'itera-deepseek-v4-pro-0813',
@@ -547,7 +482,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'itera/deepseek/deepseek-v4-pro-0813',
     supportsVision: false,
     contextLength: '1M',
-    category: 'itera',
   },
   {
     id: 'itera-qwen3.8-2.4t',
@@ -556,7 +490,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'itera/qwen/qwen3.8-2.4t-a95b',
     supportsVision: true,
     contextLength: '1M',
-    category: 'itera',
   },
   {
     id: 'itera-kimi-k2.7-code',
@@ -565,7 +498,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'itera/moonshotai/kimi-k2.7-code',
     supportsVision: false,
     contextLength: '256K',
-    category: 'itera',
   },
   {
     id: 'itera-minimax-m3',
@@ -574,7 +506,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'itera/minimax/minimax-m3',
     supportsVision: false,
     contextLength: '1M',
-    category: 'itera',
   },
   {
     id: 'itera-glm-5.3',
@@ -583,288 +514,254 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'itera/z-ai/glm-5.3',
     supportsVision: true,
     contextLength: '1M',
-    category: 'itera',
   },
-
-  // --- AnyRouter Free Models (anyrouter.dev) ---
   {
     id: 'ar-anyrouter-free',
-    name: 'AnyRouter Free',
-    description: 'AnyRouter Zero-Cost Unified Router',
+    name: 'Unified Free Router',
+    description: 'Zero-Cost Unified Smart Router',
     geminiModel: 'ar/anyrouter/free',
     supportsVision: false,
     contextLength: '1M',
-    category: 'anyrouter',
   },
   {
     id: 'ar-anyrouter-auto',
-    name: 'AnyRouter Auto',
-    description: 'AnyRouter Multimodal & Coding Auto-Router',
+    name: 'Auto Multimodal Router',
+    description: 'Multimodal & Coding Auto-Router',
     geminiModel: 'ar/anyrouter/auto',
     supportsVision: true,
     contextLength: '1M',
-    category: 'anyrouter',
   },
   {
     id: 'ar-anyrouter-latest',
-    name: 'AnyRouter Latest',
-    description: 'AnyRouter Frontier Flagship Router',
+    name: 'Frontier Latest Router',
+    description: 'Frontier Flagship Router',
     geminiModel: 'ar/anyrouter/latest',
     supportsVision: true,
     contextLength: '1M',
-    category: 'anyrouter',
   },
   {
     id: 'ar-anyrouter-hermes',
-    name: 'AnyRouter Hermes',
-    description: 'AnyRouter Agentic & Coding Router',
+    name: 'Hermes Agent Router',
+    description: 'Agentic & Coding Router',
     geminiModel: 'ar/anyrouter/hermes',
     supportsVision: false,
     contextLength: '1M',
-    category: 'anyrouter',
   },
   {
     id: 'ar-anyrouter-cowork',
-    name: 'AnyRouter Cowork',
-    description: 'AnyRouter Collaborative Vision Router',
+    name: 'Cowork Vision Router',
+    description: 'Collaborative Vision Router',
     geminiModel: 'ar/anyrouter/cowork',
     supportsVision: true,
     contextLength: '1M',
-    category: 'anyrouter',
   },
   {
     id: 'ar-nemotron-3.5-super-vl-120b',
     name: 'Nemotron 3.5 Super VL 120B',
-    description: 'NVIDIA 120B A12B Multimodal & Code (Free)',
+    description: '120B A12B Multimodal & Code',
     geminiModel: 'ar/nvidia/nemotron-3.5-super-vl-120b-a12b',
     supportsVision: true,
     contextLength: '1M',
-    category: 'anyrouter',
   },
   {
     id: 'ar-nemotron-3.5-lightning-30b',
     name: 'Nemotron 3.5 Lightning 30B',
-    description: 'NVIDIA Ultra-Fast 30B A3B MoE (Free)',
+    description: 'Ultra-Fast 30B A3B MoE',
     geminiModel: 'ar/nvidia/nemotron-3.5-lightning-30b-a3b',
     supportsVision: false,
     contextLength: '1M',
-    category: 'anyrouter',
   },
   {
     id: 'ar-nemotron-3.5-bolt-e4b',
     name: 'Nemotron 3.5 Bolt E4B',
-    description: 'NVIDIA Instant Sub-Second Flash (Free)',
+    description: 'Instant Sub-Second Flash',
     geminiModel: 'ar/nvidia/nemotron-3.5-bolt-e4b',
     supportsVision: false,
     contextLength: '64K',
-    category: 'anyrouter',
   },
   {
     id: 'ar-nemotron-3-ultra-550b',
     name: 'Nemotron 3 Ultra 550B',
-    description: 'NVIDIA 550B A55B Frontier MoE (Free)',
+    description: '550B A55B Frontier MoE',
     geminiModel: 'ar/nvidia/nemotron-3-ultra-550b-a55b',
     supportsVision: false,
     contextLength: '1M',
-    category: 'anyrouter',
   },
   {
     id: 'ar-nemotron-3.5-content-safety',
     name: 'Nemotron 3.5 Content Safety VL',
-    description: 'NVIDIA Vision & Guardrail Analysis (Free)',
+    description: 'Vision & Guardrail Analysis',
     geminiModel: 'ar/nvidia/nemotron-3.5-content-safety',
     supportsVision: true,
     contextLength: '128K',
-    category: 'anyrouter',
   },
   {
     id: 'ar-nemotron-parse-2.0',
     name: 'Nemotron Parse 2.0',
-    description: 'NVIDIA Document & Vision Parser (Free)',
+    description: 'Document & Vision Parser',
     geminiModel: 'ar/nvidia/nemotron-parse-2.0',
     supportsVision: true,
     contextLength: '8K',
-    category: 'anyrouter',
   },
   {
     id: 'ar-riva-translate-4b-v2',
     name: 'Riva Translate 4B v2',
-    description: 'NVIDIA Fast Neural Translation (Free)',
+    description: 'Fast Neural Translation',
     geminiModel: 'ar/nvidia/riva-translate-4b-instruct-v2',
     supportsVision: false,
     contextLength: '4K',
-    category: 'anyrouter',
   },
   {
     id: 'ar-minimax-m3.1-flash',
     name: 'MiniMax M3.1 Flash',
-    description: '1M Context Multimodal & Coding (Free)',
+    description: '1M Context Multimodal & Coding',
     geminiModel: 'ar/minimax/minimax-m3.1-flash',
     supportsVision: true,
     contextLength: '1M',
-    category: 'anyrouter',
   },
   {
     id: 'ar-longcat-2.5-preview',
     name: 'LongCat 2.5 Preview',
-    description: 'Meituan 1M Vision & Code Synthesis (Free)',
+    description: '1M Vision & Code Synthesis',
     geminiModel: 'ar/meituan/longcat-2.5-preview',
     supportsVision: true,
     contextLength: '1M',
-    category: 'anyrouter',
   },
   {
     id: 'ar-meta-muse-glimmer-30b',
-    name: 'Meta Muse Glimmer 30B',
-    description: 'Meta Multimodal Vision & Code (Free)',
+    name: 'Muse Glimmer 30B',
+    description: 'Multimodal Vision & Code',
     geminiModel: 'ar/meta/muse-glimmer-30b',
     supportsVision: true,
     contextLength: '128K',
-    category: 'anyrouter',
   },
   {
     id: 'ar-cohere-north-mini-code',
-    name: 'Cohere North Mini Code',
-    description: 'Cohere Specialized Code & Reasoning (Free)',
+    name: 'North Mini Code',
+    description: 'Specialized Code & Reasoning',
     geminiModel: 'ar/cohere/north-mini-code',
     supportsVision: false,
     contextLength: '256K',
-    category: 'anyrouter',
   },
   {
     id: 'ar-dots-3-note-preview',
     name: 'Dots 3 Note Preview',
-    description: 'Dots Studio Multimodal Research (Free)',
+    description: 'Multimodal Research & Reasoning',
     geminiModel: 'ar/dots-studio/dots-3-note-preview',
     supportsVision: true,
     contextLength: '512K',
-    category: 'anyrouter',
   },
   {
     id: 'ar-liquid-lfm-2.5-2.6b',
-    name: 'Liquid LFM 2.5 2.6B',
-    description: 'Liquid AI Fast Foundation Model (Free)',
+    name: 'LFM 2.5 2.6B',
+    description: 'Fast Foundation Model',
     geminiModel: 'ar/liquid/lfm-2.5-2.6b',
     supportsVision: false,
     contextLength: '128K',
-    category: 'anyrouter',
   },
   {
     id: 'ar-liquid-d1',
-    name: 'Liquid d1',
-    description: 'Liquid AI Reasoning Architecture (Free)',
+    name: 'd1 Reasoning',
+    description: 'Compact Reasoning Architecture',
     geminiModel: 'ar/liquid/d1',
     supportsVision: false,
     contextLength: '32K',
-    category: 'anyrouter',
   },
   {
     id: 'ar-openai-gpt-oss-20b',
     name: 'GPT-OSS 20B',
-    description: 'OpenAI Open-Weights Code & Chat (Free)',
+    description: 'Open-Weights Code & Chat',
     geminiModel: 'ar/openai/gpt-oss-20b',
     supportsVision: false,
     contextLength: '128K',
-    category: 'anyrouter',
   },
   {
     id: 'ar-poolside-laguna-s-2.1',
-    name: 'Poolside Laguna S 2.1',
-    description: 'Poolside 1M Software Engineering (Free)',
+    name: 'Laguna S 2.1',
+    description: '1M Software Engineering',
     geminiModel: 'ar/poolside/laguna-s-2.1',
     supportsVision: false,
     contextLength: '1M',
-    category: 'anyrouter',
   },
   {
     id: 'ar-poolside-laguna-xs-2.1',
-    name: 'Poolside Laguna XS 2.1',
-    description: 'Poolside Fast Code Synthesis (Free)',
+    name: 'Laguna XS 2.1',
+    description: 'Fast Code Synthesis',
     geminiModel: 'ar/poolside/laguna-xs-2.1',
     supportsVision: false,
     contextLength: '256K',
-    category: 'anyrouter',
   },
   {
     id: 'ar-recursive-flint-v1',
-    name: 'Recursive Flint v1.0',
-    description: 'Recursive Code & Analytical Engine (Free)',
+    name: 'Flint v1.0',
+    description: 'Code & Analytical Engine',
     geminiModel: 'ar/recursive/flint-v1.0',
     supportsVision: false,
     contextLength: '256K',
-    category: 'anyrouter',
   },
   {
     id: 'ar-reflection-beam-1.0',
-    name: 'Reflection Beam 1.0',
-    description: 'Reflection AI 1M Code & Synthesis (Free)',
+    name: 'Beam 1.0',
+    description: '1M Code & Synthesis',
     geminiModel: 'ar/reflection/beam-1.0',
     supportsVision: false,
     contextLength: '1M',
-    category: 'anyrouter',
   },
   {
     id: 'ar-stealth-glyph-cluster',
-    name: 'Stealth Glyph Cluster',
-    description: 'Stealth Cluster Reasoning Model (Free)',
+    name: 'Glyph Cluster',
+    description: 'Cluster Reasoning Model',
     geminiModel: 'ar/stealth/glyph-cluster',
     supportsVision: false,
     contextLength: '256K',
-    category: 'anyrouter',
   },
   {
     id: 'ar-apple-foundation-model',
-    name: 'Apple Foundation Model',
-    description: 'Apple Compact Intelligence (Free)',
+    name: 'Foundation Compact 3B',
+    description: 'Compact On-Device Intelligence',
     geminiModel: 'ar/apple/foundation-model',
     supportsVision: false,
     contextLength: '4K',
-    category: 'anyrouter',
   },
   {
     id: 'ar-glm-4.5-flash',
-    name: 'GLM 4.5 Flash (AnyRouter)',
-    description: 'Zhipu Fast Flash Intelligence (Free)',
+    name: 'GLM 4.5 Flash',
+    description: 'Fast Flash Intelligence',
     geminiModel: 'ar/z-ai/glm-4.5-flash',
     supportsVision: false,
     contextLength: '128K',
-    category: 'anyrouter',
   },
   {
     id: 'ar-glm-flash-latest',
-    name: 'GLM Flash Latest (AnyRouter)',
-    description: 'Zhipu Latest High-Speed Flash (Free)',
+    name: 'GLM Flash Latest',
+    description: 'Latest High-Speed Flash',
     geminiModel: 'ar/z-ai/glm-flash-latest',
     supportsVision: false,
     contextLength: '128K',
-    category: 'anyrouter',
   },
   {
     id: 'ar-pareto-code-router',
-    name: 'Pareto Code Router (2M)',
-    description: '2M Context Code Router (Free)',
+    name: 'Pareto Code (2M)',
+    description: '2M Context Code Synthesis',
     geminiModel: 'ar/openrouter/pareto-code',
     supportsVision: true,
     contextLength: '2M',
-    category: 'anyrouter',
   },
   {
     id: 'ar-bodybuilder-router',
-    name: 'BodyBuilder Agent Router',
-    description: 'Structured Output & Tool Router (Free)',
+    name: 'BodyBuilder Agent',
+    description: 'Structured Output & Tool Engine',
     geminiModel: 'ar/openrouter/bodybuilder',
     supportsVision: false,
     contextLength: '128K',
-    category: 'anyrouter',
   },
   {
     id: 'ar-inception-mercury-decide',
-    name: 'Inception Mercury Decide',
-    description: 'Diffusion LLM Ultra-Fast Generation (Free)',
+    name: 'Mercury Decide',
+    description: 'Diffusion LLM Ultra-Fast Generation',
     geminiModel: 'ar/inception/mercury-decide',
     supportsVision: false,
     contextLength: '32K',
-    category: 'anyrouter',
   },
 ];
 
