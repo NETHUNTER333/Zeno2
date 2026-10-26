@@ -368,7 +368,7 @@ const ANYROUTER_BASE_URL =
 const ANYROUTER_API_KEY =
   process.env.ANYROUTER_API_KEY ||
   (keysAndRouters?.tokens as any)?.anyRouter ||
-  'sk-ar-v1-iw4ghkddzuhdn6whnjazi5sczkqdoclks3mwtn57pjgutuub';
+  '';
 const ANYROUTER_SUPPORTED_MODELS = [
   'anyrouter/free',
   'anyrouter/auto',

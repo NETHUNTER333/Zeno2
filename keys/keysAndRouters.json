@@ -1,14 +1,14 @@
 {
   "description": "Centralized API keys, authentication tokens, and router base URLs for Zeno AI. Maintained in the /keys folder for automated CLI agent updates and GitHub tracking.",
   "tokens": {
-    "iteraCompute": "sk-b5buq_HdkB_Xu485GqZ9Dg",
-    "radoxAi": "cc_LJObev7AfX0EgPkH8KAd46CGoumngCZAP5gMcbH1v0pPd53k",
-    "tokenHarbour": "thk_live_N01K1qzLlsOd_3kMQ1vmD6iXGlRkezxwDv1yzHVDndwdyAUMLdxZJ01Eh_mCDGMS",
-    "larpRouter": "lrsk-22e48d93c031bd11594a6d662abdf6e580ebaa923c79ee966b8f17f621ec4300",
-    "tinyfish": "sk-tinyfish-Q0s1odJ8_hBYBjxgoFSlF7OcKnrcsx5U",
-    "treg": "eyJ1aWQiOjM5ODEwLCJ0diI6MCwiYXVkIjoiaWRlbnRpdHkiLCJvcmciOiJzeW50cm9mb2kiLCJrZyI6MCwic2NwIjoidGVhbSJ9.k69O2b8K1_U2uDTUGQGbSGz_H79bRURQURo8y2h9JT8",
-    "internAi": "sk-fd15650f5caec01e7ac7b27ee50c130cddd8c0d9efb9be85865cb81e709f0dc1",
-    "anyRouter": "sk-ar-v1-iw4ghkddzuhdn6whnjazi5sczkqdoclks3mwtn57pjgutuub",
+    "iteraCompute": "",
+    "radoxAi": "",
+    "tokenHarbour": "",
+    "larpRouter": "",
+    "tinyfish": "",
+    "treg": "",
+    "internAi": "",
+    "anyRouter": "",
     "beatApi": "",
     "apinex": "",
     "rumik": ""
