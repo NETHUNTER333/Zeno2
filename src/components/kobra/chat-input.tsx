@@ -25,7 +25,15 @@ import {
 import { ModelOption, GROK_MODELS, getDefaultVisionModel } from '../GrokModelPicker';
 import { SearchMode, ChatAttachment, ChatMessage } from '../../types';
 import { ChatHistory, ChatHistoryItem, ChatHistoryMessageItem } from './chat-history';
+import { extractTextFromPdfFile } from '../../lib/pdfStudyEngine';
+import type { PdfStudioTab } from '../InbuiltPdfViewer';
 
+export interface PdfStudioLaunchPayload {
+  pdfUrl?: string;
+  pdfName?: string;
+  extractedText?: string;
+  initialTab?: PdfStudioTab;
+}
 
 interface ChatInputProps {
   onSend: (message: string, searchMode: SearchMode, attachments?: ChatAttachment[]) => void;
@@ -49,7 +57,7 @@ interface ChatInputProps {
   onToggleResearchMode?: (enabled: boolean) => void;
   onOpenDeepResearch?: (initialTopic?: string) => void;
   onOpenUrlReader?: (initialUrl?: string) => void;
-  onOpenArxivReader?: () => void;
+  onOpenArxivReader?: (payload?: PdfStudioLaunchPayload) => void;
 }
 
 // Format file sizes into human-readable strings
@@ -200,6 +208,7 @@ async function readTextFileAsString(file: File): Promise<string> {
 // Process any uploaded file with support for unlimited formats and large sizes
 async function processUploadedFile(file: File): Promise<ChatAttachment> {
   const isImage = file.type.startsWith('image/') || /\.(png|jpg|jpeg|webp|gif|svg|bmp|ico|tiff)$/i.test(file.name);
+  const isPdf = file.type.includes('pdf') || /\.pdf$/i.test(file.name);
   const isTextLike =
     file.type.startsWith('text/') ||
     /\.(md|txt|json|csv|tsv|ts|tsx|js|jsx|py|c|cpp|h|hpp|cs|go|rs|java|kt|swift|sql|html|css|scss|xml|yaml|yml|sh|bash|log|env|ini|conf|toml|diff|patch|vue|svelte|rb|php|r|m|scala)$/i.test(
@@ -218,12 +227,26 @@ async function processUploadedFile(file: File): Promise<ChatAttachment> {
       width = res.width;
       height = res.height;
     } catch {}
+  } else if (isPdf) {
+    try {
+      const [readDataUrl, extractedPdf] = await Promise.all([
+        new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result || ''));
+          reader.onerror = () => reject(new Error('Read error'));
+          reader.readAsDataURL(file);
+        }),
+        extractTextFromPdfFile(file, file.name),
+      ]);
+      dataUrl = readDataUrl;
+      textContent = extractedPdf.text;
+    } catch {}
   } else if (isTextLike) {
     try {
       textContent = await readTextFileAsString(file);
     } catch {}
   } else {
-    // PDF, Audio, Video, Datasets, Archives, Binaries
+    // Audio, Video, Datasets, Archives, Binaries
     try {
       dataUrl = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
@@ -498,15 +521,32 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             {attachments.map((file, idx) => {
               const { category, color } = getFileCategory(file.name, file.type);
               const isImg = category === 'image' && file.url;
+              const isStudylike = category === 'pdf' || category === 'document';
               return (
                 <div
                   key={idx}
+                  onClick={() => {
+                    if (isStudylike && onOpenArxivReader) {
+                      onOpenArxivReader({
+                        pdfUrl: file.url || file.dataUrl,
+                        pdfName: file.name,
+                        extractedText: file.textContent || '',
+                        initialTab: 'quiz',
+                      });
+                    }
+                  }}
                   className={`group/chip flex items-center gap-2 pl-2 pr-2.5 py-1 rounded-2xl border text-xs font-medium shadow-xs transition-all ${
+                    isStudylike ? 'cursor-pointer' : ''
+                  } ${
                     isDark
                       ? 'bg-[#18181b] border-white/15 text-white hover:border-white/30'
                       : 'bg-white border-[#e4e4e7] text-neutral-900 shadow-xs hover:border-neutral-400'
                   }`}
-                  title={`${file.name} (${formatFileSize(file.size)})`}
+                  title={
+                    isStudylike
+                      ? `Click to open ${file.name} in PDF Quiz & Flashcards Studio`
+                      : `${file.name} (${formatFileSize(file.size)})`
+                  }
                 >
                   {isImg ? (
                     <img
@@ -539,7 +579,10 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
                   <button
                     type="button"
-                    onClick={() => removeAttachment(idx)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeAttachment(idx);
+                    }}
                     className="p-0.5 rounded-full hover:opacity-100 opacity-50 transition-opacity cursor-pointer hover:bg-black/10 dark:hover:bg-white/10 shrink-0"
                     title={`Remove ${file.name}`}
                   >
@@ -556,6 +599,82 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               </div>
             )}
           </div>
+
+          {/* Padded PDF Study Studio Instant Pop-up Bar when a PDF or Document is uploaded */}
+          {onOpenArxivReader &&
+            attachments.some((a) => {
+              const cat = getFileCategory(a.name, a.type).category;
+              return cat === 'pdf' || cat === 'document';
+            }) && (() => {
+              const targetDoc =
+                attachments.find((a) => getFileCategory(a.name, a.type).category === 'pdf') ||
+                attachments.find((a) => getFileCategory(a.name, a.type).category === 'document');
+              if (!targetDoc) return null;
+              return (
+                <div
+                  className={`mt-1 p-2.5 sm:px-3.5 sm:py-2 rounded-2xl border flex flex-wrap items-center justify-between gap-2 backdrop-blur-2xl transition-all ${
+                    isDark
+                      ? 'bg-[#12151f]/95 border-white/[0.14] text-white shadow-[0_12px_32px_rgba(0,0,0,0.55)]'
+                      : 'bg-white/95 border-black/[0.1] text-neutral-900 shadow-sm'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div
+                      className={`size-7 rounded-xl border flex items-center justify-center shrink-0 ${
+                        isDark
+                          ? 'bg-red-500/15 border-red-500/30 text-red-400'
+                          : 'bg-red-50 border-red-200 text-red-600'
+                      }`}
+                    >
+                      <GraduationCap className="w-3.5 h-3.5" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-[11px] font-semibold truncate">
+                        PDF Study & Assessment Studio Ready
+                      </div>
+                      <div className="text-[10px] opacity-60 truncate">
+                        Launch padded pop-up for {targetDoc.name}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                    {(
+                      [
+                        { tab: 'quiz', label: 'Quiz' },
+                        { tab: 'flashcards', label: 'Flashcards' },
+                        { tab: 'summary', label: 'Summary' },
+                        { tab: 'cheatsheet', label: 'Cheatsheet' },
+                      ] as const
+                    ).map((btn) => (
+                      <button
+                        key={btn.tab}
+                        type="button"
+                        onClick={() =>
+                          onOpenArxivReader({
+                            pdfUrl: targetDoc.url || targetDoc.dataUrl,
+                            pdfName: targetDoc.name,
+                            extractedText: targetDoc.textContent || '',
+                            initialTab: btn.tab,
+                          })
+                        }
+                        className={`px-2.5 py-1 rounded-xl border text-[11px] font-semibold transition-all cursor-pointer whitespace-nowrap ${
+                          btn.tab === 'quiz'
+                            ? isDark
+                              ? 'bg-white text-black border-white hover:bg-neutral-200'
+                              : 'bg-black text-white border-black hover:bg-neutral-800'
+                            : isDark
+                            ? 'bg-white/[0.06] border-white/[0.12] text-neutral-200 hover:bg-white/[0.14]'
+                            : 'bg-black/[0.04] border-black/[0.1] text-neutral-800 hover:bg-black/[0.08]'
+                        }`}
+                      >
+                        {btn.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
         </div>
       )}
 
@@ -830,13 +949,25 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                 </button>
               )}
 
-              {/* Academic Paper & ArXiv Deep Reader */}
+              {/* Academic Paper & PDF Quiz/Flashcards Studio */}
               {onOpenArxivReader && (
                 <button
                   type="button"
                   onClick={() => {
                     setIsPlusMenuOpen(false);
-                    onOpenArxivReader();
+                    const attachedPdf = attachments.find(
+                      (a) => getFileCategory(a.name, a.type).category === 'pdf'
+                    );
+                    if (attachedPdf) {
+                      onOpenArxivReader({
+                        pdfUrl: attachedPdf.url || attachedPdf.dataUrl,
+                        pdfName: attachedPdf.name,
+                        extractedText: attachedPdf.textContent || '',
+                        initialTab: 'quiz',
+                      });
+                    } else {
+                      onOpenArxivReader({ initialTab: 'quiz' });
+                    }
                   }}
                   className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left transition-colors cursor-pointer ${
                     isDark ? 'hover:bg-white/[0.08]' : 'hover:bg-black/[0.05]'
@@ -844,9 +975,11 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                 >
                   <GraduationCap className="w-4 h-4 text-rose-400 shrink-0" />
                   <div className="min-w-0">
-                    <div className="font-semibold text-xs truncate">ArXiv Paper Deep Reader</div>
+                    <div className="font-semibold text-xs truncate">
+                      PDF Quiz, Flashcards & Study Studio
+                    </div>
                     <div className={`text-[10px] truncate ${isDark ? 'text-white/50' : 'text-black/50'}`}>
-                      Split PDF reader • Explain math & methodology
+                      Upload PDF • Quiz, Flashcards, Cheatsheet & ArXiv
                     </div>
                   </div>
                 </button>

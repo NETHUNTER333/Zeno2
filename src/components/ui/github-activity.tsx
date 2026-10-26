@@ -574,7 +574,12 @@ const GitHubActivity = ({
   );
   const parsedYear = Number(contributions.at(-1)?.date.slice(0, 4));
   const displayYear = year ?? (Number.isFinite(parsedYear) ? parsedYear : null);
-  const heading = `${total} contributions${displayYear ? ` in ${displayYear}` : ""}`;
+  const heading =
+    total > 0
+      ? `${total.toLocaleString()} contributions${displayYear ? ` in ${displayYear}` : ""}`
+      : username
+        ? `@${username} Activity`
+        : `GitHub Activity${displayYear ? ` (${displayYear})` : ""}`;
 
   const gap = gapFor(cellSize);
   const columns = Math.min(
@@ -582,7 +587,7 @@ const GitHubActivity = ({
     weeksFor(months),
   );
   const width = Math.max(
-    MIN_CARD_WIDTH,
+    260,
     columns * (cellSize + gap) - gap + CARD_PADDING,
   );
 
@@ -590,15 +595,15 @@ const GitHubActivity = ({
     <div
       data-slot="github-activity"
       className={cn(
-        "relative max-w-full overflow-hidden rounded-[28px] bg-white p-4 dark:bg-black border border-black/10 dark:border-white/10",
-        repos.length > 0 && "pb-[76px]",
+        "relative w-full max-w-[min(100%,calc(100vw-2rem))] box-border overflow-hidden rounded-[22px] bg-white p-3.5 sm:p-4 dark:bg-[#121215] border border-black/10 dark:border-white/10",
+        repos.length > 0 && "pb-[72px]",
         className,
       )}
-      style={{ width, ...style }}
+      style={{ width: "100%", maxWidth: width, ...style }}
       {...props}
     >
-      <div className="mb-4 flex items-center justify-between gap-2 px-1.5">
-        <p className="text-base font-medium text-foreground !mb-0">
+      <div className="mb-3 flex items-center justify-between gap-2 px-1">
+        <p className="text-xs sm:text-sm font-semibold text-foreground truncate !mb-0">
           {heading}
         </p>
         {username && (
@@ -606,7 +611,7 @@ const GitHubActivity = ({
             href={`https://github.com/${username}`}
             target="_blank"
             rel="noreferrer"
-            className="text-xs font-mono text-foreground/50 hover:text-foreground !no-underline"
+            className="text-[11px] font-mono text-foreground/60 hover:text-foreground shrink-0 !no-underline"
           >
             @{username}
           </a>

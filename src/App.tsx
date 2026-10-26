@@ -15,7 +15,7 @@ import { exportConversationAsMarkdown, exportConversationAsPdf } from './lib/exp
 import { ShareExportStudioModal } from './components/ShareExportStudioModal';
 import { DeepResearchModal } from './components/DeepResearchModal';
 import { PageExtractModal } from './components/PageExtractModal';
-import { InbuiltPdfViewer } from './components/InbuiltPdfViewer';
+import { InbuiltPdfViewer, PdfStudioTab } from './components/InbuiltPdfViewer';
 
 import { ReadingProgressBar } from './components/ReadingProgressBar';
 import { AnalyticsDashboardModal } from './components/AnalyticsDashboardModal';
@@ -400,7 +400,13 @@ export default function App() {
     initialUrl?: string;
     title?: string;
   }>({ isOpen: false });
-  const [isArxivReaderOpen, setIsArxivReaderOpen] = useState(false);
+  const [pdfStudioState, setPdfStudioState] = useState<{
+    isOpen: boolean;
+    pdfUrl?: string;
+    pdfName?: string;
+    extractedText?: string;
+    initialTab?: PdfStudioTab;
+  }>({ isOpen: false });
   const [sharedBannerId, setSharedBannerId] = useState<string | null>(null);
 
   const [isSignedIn, setIsSignedIn] = useState(() => UserAccountStore.isUserSignedIn());
@@ -727,16 +733,15 @@ export default function App() {
     setIsExportMenuOpen(false);
   };
 
-  // Progressive streaming assistant text output using @kobra/streaming-text
+  // Instantaneous assistant text & metadata rendering with zero artificial streaming lag
   const streamResponseIntoMessage = async (
     threadId: string,
     messageId: string,
     data: any,
-    signal?: AbortSignal
+    _signal?: AbortSignal
   ) => {
-    const fullText = data.text || '';
+    const fullText = (data.text || '').replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '').trim();
 
-    // Deliver rich metadata payload while streaming (preserve live search sources if already populated and data.sources is empty)
     setThreads((prev) =>
       prev.map((t) =>
         t.id === threadId
@@ -746,7 +751,7 @@ export default function App() {
                 m.id === messageId
                   ? {
                       ...m,
-                      content: '',
+                      content: fullText,
                       sources:
                         Array.isArray(data.sources) && data.sources.length > 0
                           ? data.sources
@@ -764,7 +769,7 @@ export default function App() {
                       toolsUsed: data.toolsUsed,
                       timing: data.timing,
                       modelUsed: m.modelUsed || data.modelUsed,
-                      isStreaming: true,
+                      isStreaming: false,
                     }
                   : m
               ),
@@ -772,103 +777,6 @@ export default function App() {
           : t
       )
     );
-
-    if (!fullText || fullText.length <= 1 || signal?.aborted) {
-      setThreads((prev) =>
-        prev.map((t) =>
-          t.id === threadId
-            ? {
-                ...t,
-                messages: t.messages.map((m) =>
-                  m.id === messageId
-                    ? {
-                        ...m,
-                        content: fullText,
-                        isStreaming: false,
-                      }
-                    : m
-                ),
-              }
-            : t
-        )
-      );
-      return;
-    }
-
-    const totalLength = fullText.length;
-    let currentPos = 0;
-
-    await new Promise<void>((resolve) => {
-      let timer: any = null;
-
-      const streamNext = () => {
-        if (signal?.aborted) {
-          resolve();
-          return;
-        }
-
-        if (currentPos >= totalLength) {
-          setThreads((prev) =>
-            prev.map((t) =>
-              t.id === threadId
-                ? {
-                    ...t,
-                    messages: t.messages.map((m) =>
-                      m.id === messageId
-                        ? {
-                            ...m,
-                            content: fullText,
-                            isStreaming: false,
-                          }
-                        : m
-                    ),
-                  }
-                : t
-            )
-          );
-          resolve();
-          return;
-        }
-
-        // Maxed out fast streaming cadence with zero lag
-        const remaining = totalLength - currentPos;
-        const step = Math.min(remaining, Math.max(96, Math.floor(remaining * 0.65)));
-
-        currentPos = Math.min(totalLength, currentPos + step);
-        const chunk = fullText.slice(0, currentPos);
-        const isDone = currentPos >= totalLength;
-
-        setThreads((prev) =>
-          prev.map((t) =>
-            t.id === threadId
-              ? {
-                  ...t,
-                  messages: t.messages.map((m) =>
-                    m.id === messageId
-                      ? {
-                          ...m,
-                          content: chunk,
-                          isStreaming: !isDone,
-                        }
-                      : m
-                  ),
-                }
-              : t
-          )
-        );
-
-        if (isDone) {
-          resolve();
-          return;
-        }
-
-        // Ultra-fast 4ms tick rate
-        const delay = 4;
-        timer = setTimeout(streamNext, delay);
-      };
-
-      streamNext();
-    });
   };
 
   const handleSend = async (
@@ -978,28 +886,28 @@ export default function App() {
       )
         .then((r) => r.json())
         .then((liveData) => {
-          if (liveData?.success && Array.isArray(liveData.sources) && liveData.sources.length > 0) {
-            liveData.sources.forEach((_: any, idx: number) => {
-              setTimeout(() => {
-                if (controller.signal.aborted || chatCompleted) return;
-                const partialSources = liveData.sources.slice(0, idx + 1);
-                setThreads((prev) =>
-                  prev.map((t) =>
-                    t.id === currentThreadId
-                      ? {
-                          ...t,
-                          messages: t.messages.map((m) =>
-                            m.id === streamingMessage.id &&
-                            (!m.sources || m.sources.length < partialSources.length)
-                              ? { ...m, sources: partialSources }
-                              : m
-                          ),
-                        }
-                      : t
-                  )
-                );
-              }, idx * 55);
-            });
+          if (
+            !controller.signal.aborted &&
+            !chatCompleted &&
+            liveData?.success &&
+            Array.isArray(liveData.sources) &&
+            liveData.sources.length > 0
+          ) {
+            setThreads((prev) =>
+              prev.map((t) =>
+                t.id === currentThreadId
+                  ? {
+                      ...t,
+                      messages: t.messages.map((m) =>
+                        m.id === streamingMessage.id &&
+                        (!m.sources || m.sources.length < liveData.sources.length)
+                          ? { ...m, sources: liveData.sources }
+                          : m
+                      ),
+                    }
+                  : t
+              )
+            );
           }
         })
         .catch(() => {});
@@ -1087,6 +995,7 @@ export default function App() {
         UserAccountStore.saveFiles(currentFiles);
       }
 
+      chatCompleted = true;
       await streamResponseIntoMessage(currentThreadId, streamingMessage.id, data, controller.signal);
     } catch (err: any) {
       const errorText =
@@ -1540,8 +1449,33 @@ export default function App() {
                   />
                 </div>
 
-                {/* Top Right Controls: Share & Export Studio + New Chat Button */}
+                {/* Top Right Controls: Study Studio + Share & Export Studio + New Chat Button */}
                 <div className="flex items-center gap-1.5 pointer-events-auto">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setPdfStudioState({
+                        isOpen: true,
+                        initialTab: 'quiz',
+                      })
+                    }
+                    className={`pointer-events-auto flex items-center gap-1.5 pl-2 pr-2.5 py-1.5 rounded-full border text-[11px] font-semibold tracking-tight transition-all cursor-pointer whitespace-nowrap active:scale-95 ${
+                      isDark
+                        ? 'bg-[#171922] hover:bg-[#212430] border-white/[0.18] text-white shadow-[0_8px_28px_rgba(0,0,0,0.65)]'
+                        : 'bg-[#111111] hover:bg-[#242424] border-black text-white shadow-[0_6px_20px_rgba(0,0,0,0.16)]'
+                    }`}
+                    title="Open PDF Upload, Quiz & Flashcards Studio"
+                  >
+                    <span
+                      className={`size-4 rounded-full flex items-center justify-center shrink-0 ${
+                        isDark ? 'bg-white/15 text-white' : 'bg-white/20 text-white'
+                      }`}
+                    >
+                      <GraduationCap className="w-2.5 h-2.5" />
+                    </span>
+                    <span>Study</span>
+                    <span className="hidden sm:inline">Studio</span>
+                  </button>
                   {!isThreadEmpty && activeThread && (
                     <button
                       type="button"
@@ -1617,7 +1551,15 @@ export default function App() {
                         onOpenUrlReader={(url) =>
                           setUrlReaderState({ isOpen: true, initialUrl: url })
                         }
-                        onOpenArxivReader={() => setIsArxivReaderOpen(true)}
+                        onOpenArxivReader={(payload) =>
+                          setPdfStudioState({
+                            isOpen: true,
+                            pdfUrl: payload?.pdfUrl,
+                            pdfName: payload?.pdfName,
+                            extractedText: payload?.extractedText,
+                            initialTab: payload?.initialTab || 'quiz',
+                          })
+                        }
                       />
                     </div>
 
@@ -1740,7 +1682,15 @@ export default function App() {
                         onOpenUrlReader={(url) =>
                           setUrlReaderState({ isOpen: true, initialUrl: url })
                         }
-                        onOpenArxivReader={() => setIsArxivReaderOpen(true)}
+                        onOpenArxivReader={(payload) =>
+                          setPdfStudioState({
+                            isOpen: true,
+                            pdfUrl: payload?.pdfUrl,
+                            pdfName: payload?.pdfName,
+                            extractedText: payload?.extractedText,
+                            initialTab: payload?.initialTab || 'quiz',
+                          })
+                        }
                       />
 
                       <div
@@ -1831,16 +1781,23 @@ export default function App() {
             onAskZeno={(prompt) => handleSend(prompt)}
           />
 
-          {/* Academic Paper & ArXiv Deep Reader Modal */}
+          {/* Full-Page PDF Upload, Quiz, Flashcards & ArXiv Study Studio */}
           <InbuiltPdfViewer
-            isOpen={isArxivReaderOpen}
-            onClose={() => setIsArxivReaderOpen(false)}
-            pdfUrl="https://arxiv.org/pdf/1706.03762.pdf"
-            title="Attention Is All You Need"
-            arxivId="1706.03762"
-            authors={['Ashish Vaswani', 'Noam Shazeer', 'Niki Parmar', 'Jakob Uszkoreit']}
-            published="2017-06-12"
-            summary="The dominant sequence transduction models are based on complex recurrent or convolutional neural networks that include an encoder and a decoder. We propose a new simple network architecture, the Transformer, based solely on attention mechanisms, dispensing with recurrence and convolutions entirely."
+            isOpen={pdfStudioState.isOpen}
+            onClose={() => setPdfStudioState({ isOpen: false })}
+            pdfUrl={pdfStudioState.pdfUrl || 'https://arxiv.org/pdf/1706.03762.pdf'}
+            pdfName={pdfStudioState.pdfName}
+            title={pdfStudioState.pdfName || 'Attention Is All You Need'}
+            arxivId={pdfStudioState.pdfName ? undefined : '1706.03762'}
+            authors={
+              pdfStudioState.pdfName
+                ? undefined
+                : ['Ashish Vaswani', 'Noam Shazeer', 'Niki Parmar', 'Jakob Uszkoreit']
+            }
+            published={pdfStudioState.pdfName ? undefined : '2017-06-12'}
+            extractedText={pdfStudioState.extractedText}
+            initialTab={pdfStudioState.initialTab || 'quiz'}
+            summary="We propose a new simple network architecture, the Transformer, based solely on attention mechanisms, dispensing with recurrence and convolutions entirely. Scaled dot-product attention computes the dot products of the query with all keys, divides each by the square root of the key dimension d_k to prevent vanishing gradients in the softmax, and applies a softmax function to obtain weights on the values. Multi-head attention allows the model to jointly attend to information from different representation subspaces at different positions in parallel. Because the Transformer contains no recurrence and no convolution, positional encodings using sine and cosine functions of different frequencies are added to the input embeddings to inject sequence order. On both WMT 2014 English-to-German and English-to-French translation benchmarks, the Transformer achieves state-of-the-art BLEU scores while requiring significantly less training time and enabling full parallelization across sequence tokens."
             isDark={isDark}
             onAskZeno={(prompt) => handleSend(prompt)}
           />

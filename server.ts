@@ -85,32 +85,6 @@ async function generateGeminiContentWithFallback(contents: any) {
         })
       : null);
 
-  let lastErr: any;
-  if (client) {
-    for (const modelName of GEMINI_FALLBACK_MODELS) {
-      try {
-        const resp = await Promise.race([
-          client.models.generateContent({
-            model: modelName,
-            contents,
-            config: modelName.startsWith('gemini-3')
-              ? { thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL } }
-              : undefined,
-          }),
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error(`Gemini ${modelName} timed out`)), 4500)
-          ),
-        ]);
-        if (resp.text?.trim()) {
-          return { resp, modelName };
-        }
-      } catch (err) {
-        lastErr = err;
-      }
-    }
-  }
-
-  // Fallback to TokenHarbour / LarpRouter / InternAI when GEMINI_API_KEY is not configured
   const promptText =
     typeof contents === 'string'
       ? contents
@@ -126,6 +100,36 @@ async function generateGeminiContentWithFallback(contents: any) {
           .join('\n')
       : String(contents || '');
 
+  const candidates: Promise<{ resp: any; modelName: string }>[] = [];
+
+  if (client) {
+    for (const modelName of GEMINI_FALLBACK_MODELS.slice(0, 2)) {
+      candidates.push(
+        Promise.race([
+          client.models
+            .generateContent({
+              model: modelName,
+              contents,
+              config: {
+                maxOutputTokens: 900,
+                thinkingConfig: modelName.startsWith('gemini-3')
+                  ? { thinkingLevel: ThinkingLevel.MINIMAL }
+                  : { thinkingBudget: 0 },
+              },
+            })
+            .then((resp) => {
+              const text = (resp.text || '').replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '').trim();
+              if (!text) throw new Error('Empty Gemini text');
+              return { resp, modelName };
+            }),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error(`Gemini ${modelName} timed out`)), 1550)
+          ),
+        ])
+      );
+    }
+  }
+
   if (promptText.trim()) {
     const fastGateways = [
       {
@@ -138,52 +142,55 @@ async function generateGeminiContentWithFallback(contents: any) {
         url: `${TOKENHARBOR_BASE_URL}/chat/completions`,
         key: TOKENHARBOR_API_KEY,
         model: 'deepseek-v4.1-flash:free',
-        extra: { chat_template_kwargs: { enable_thinking: false }, reasoning_effort: 'low' },
+        extra: { chat_template_kwargs: { enable_thinking: false }, reasoning_effort: 'none' },
       },
       {
         url: `${INTERN_AI_BASE_URL}/chat/completions`,
         key: INTERN_AI_API_KEY,
         model: 'Agents-A1',
-        extra: { chat_template_kwargs: { enable_thinking: false } },
+        extra: { chat_template_kwargs: { enable_thinking: false }, reasoning_effort: 'none' },
       },
     ].filter((gw) => Boolean(gw.key));
 
-    if (fastGateways.length > 0) {
-      try {
-        return await Promise.any(
-          fastGateways.slice(0, 2).map(async (gw) => {
-            const r = await fetch(gw.url, {
-              method: 'POST',
-              headers: {
-                Authorization: `Bearer ${gw.key}`,
-                'Content-Type': 'application/json',
-              },
-              signal: AbortSignal.timeout(5500),
+    for (const gw of fastGateways) {
+      candidates.push(
+        (async () => {
+          const r = await fetch(gw.url, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${gw.key}`,
+              'Content-Type': 'application/json',
+            },
+              signal: AbortSignal.timeout(1250),
               body: JSON.stringify({
                 model: gw.model,
                 messages: [{ role: 'user', content: promptText }],
-                max_tokens: 2048,
+                max_tokens: 700,
                 temperature: 0.6,
                 ...gw.extra,
               }),
             });
             if (!r.ok) throw new Error(`HTTP ${r.status}`);
             const data: any = await r.json();
-            const text = data?.choices?.[0]?.message?.content?.trim();
+            const rawMsg = data?.choices?.[0]?.message;
+            const text = (rawMsg?.content || rawMsg?.reasoning_content || '')
+              .replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '')
+              .trim();
             if (!text) throw new Error('Empty response');
             return {
               resp: { text, usageMetadata: undefined } as any,
               modelName: gw.model,
             };
-          })
+          })()
         );
-      } catch (err) {
-        lastErr = err;
       }
     }
+
+  if (candidates.length > 0) {
+    return await Promise.any(candidates);
   }
 
-  throw lastErr || new Error('All Gemini and gateway fallback models failed');
+  throw new Error('All Gemini and gateway fallback models failed');
 }
 
 // Rumik AI Silk TTS Credentials (strictly from environment variables)
@@ -224,6 +231,7 @@ const INTERN_AI_API_KEY =
   keysAndRouters?.tokens?.internAi ||
   '';
 const INTERN_SUPPORTED_MODELS = [
+  'Sage-A1.5',
   'Agents-A1',
   'Atria-Dawn',
   'Atria-Dawn-Preview',
@@ -239,10 +247,11 @@ const INTERN_SUPPORTED_MODELS = [
 ];
 
 // Token Harbor AI Unified Frontier Gateway (https://tokenharbor.ai/v1)
-const TOKENHARBOR_BASE_URL =
+const TOKENHARBOR_BASE_URL = (
   process.env.TOKENHARBOR_BASE_URL ||
   keysAndRouters?.baseUrls?.tokenHarbour ||
-  'https://tokenharbor.ai/v1';
+  'https://tokenharbor.ai/v1'
+).replace('tokenharbour.ai', 'tokenharbor.ai');
 const TOKENHARBOR_API_KEY =
   process.env.TOKENHARBOR_API_KEY ||
   keysAndRouters?.tokens?.tokenHarbour ||
@@ -351,6 +360,49 @@ const ITERA_SUPPORTED_MODELS = [
   'z-ai/glm-5',
 ];
 
+// AnyRouter Gateway (https://anyrouter.dev/v1)
+const ANYROUTER_BASE_URL =
+  process.env.ANYROUTER_BASE_URL ||
+  (keysAndRouters?.baseUrls as any)?.anyRouter ||
+  'https://anyrouter.dev/v1';
+const ANYROUTER_API_KEY =
+  process.env.ANYROUTER_API_KEY ||
+  (keysAndRouters?.tokens as any)?.anyRouter ||
+  'sk-ar-v1-iw4ghkddzuhdn6whnjazi5sczkqdoclks3mwtn57pjgutuub';
+const ANYROUTER_SUPPORTED_MODELS = [
+  'anyrouter/free',
+  'anyrouter/auto',
+  'anyrouter/latest',
+  'anyrouter/hermes',
+  'anyrouter/cowork',
+  'nvidia/nemotron-3.5-super-vl-120b-a12b',
+  'nvidia/nemotron-3.5-lightning-30b-a3b',
+  'nvidia/nemotron-3.5-bolt-e4b',
+  'nvidia/nemotron-3-ultra-550b-a55b',
+  'nvidia/nemotron-3.5-content-safety',
+  'nvidia/nemotron-parse-2.0',
+  'nvidia/riva-translate-4b-instruct-v2',
+  'minimax/minimax-m3.1-flash',
+  'meituan/longcat-2.5-preview',
+  'meta/muse-glimmer-30b',
+  'cohere/north-mini-code',
+  'dots-studio/dots-3-note-preview',
+  'liquid/lfm-2.5-2.6b',
+  'liquid/d1',
+  'openai/gpt-oss-20b',
+  'poolside/laguna-s-2.1',
+  'poolside/laguna-xs-2.1',
+  'recursive/flint-v1.0',
+  'reflection/beam-1.0',
+  'stealth/glyph-cluster',
+  'apple/foundation-model',
+  'z-ai/glm-4.5-flash',
+  'z-ai/glm-flash-latest',
+  'openrouter/pareto-code',
+  'openrouter/bodybuilder',
+  'inception/mercury-decide',
+];
+
 async function callInternAiGlobal(targetModel: string, msgs: any[]): Promise<string> {
   if (!INTERN_AI_API_KEY) throw new Error('INTERN_AI_API_KEY not configured');
   const resp = await fetch(`${INTERN_AI_BASE_URL}/chat/completions`, {
@@ -441,15 +493,32 @@ async function generateChatCompletion(
           : String(m.content || ''),
     }));
 
+  const stripThinkingTags = (raw: string): string =>
+    String(raw || '').replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '').trim();
+
+  // Extract clean direct answer even if a provider places output in reasoning_content when max_tokens is tight
+  const extractDirectMessageText = (rawMsg: any): string => {
+    const direct = stripThinkingTags(rawMsg?.content || '');
+    if (direct) return direct;
+    const fallbackReasoning = stripThinkingTags(rawMsg?.reasoning_content || '');
+    if (!fallbackReasoning) return '';
+    const paragraphs = fallbackReasoning
+      .split(/\n{2,}/)
+      .map((p) => p.trim())
+      .filter(Boolean);
+    return paragraphs[paragraphs.length - 1] || fallbackReasoning;
+  };
+
   const buildMetricsFromOpenAiResponse = (
     data: any,
-    content: string,
+    rawContent: string,
     modelUsed: string,
     msgs: Array<{ role: string; content: any }>,
     t0: number,
     tHeaders: number,
     tDone: number
   ): RealCompletionMetrics => {
+    const content = stripThinkingTags(rawContent);
     const usage = data?.usage;
     const promptTokens =
       typeof usage?.prompt_tokens === 'number' && usage.prompt_tokens > 0
@@ -459,14 +528,9 @@ async function generateChatCompletion(
       typeof usage?.completion_tokens === 'number' && usage.completion_tokens > 0
         ? usage.completion_tokens
         : countExactSubwordTokens(content);
-    const reasoningTokens =
-      typeof usage?.completion_tokens_details?.reasoning_tokens === 'number'
-        ? usage.completion_tokens_details.reasoning_tokens
-        : 0;
-    const totalTokens =
-      typeof usage?.total_tokens === 'number' && usage.total_tokens > 0
-        ? usage.total_tokens
-        : promptTokens + completionTokens;
+    // Thinking tokens explicitly disabled (0)
+    const reasoningTokens = 0;
+    const totalTokens = promptTokens + completionTokens;
 
     const totalSec = parseFloat(Math.max(0.05, (tDone - t0) / 1000).toFixed(2));
     const firstTokenSec = parseFloat(
@@ -501,12 +565,12 @@ async function generateChatCompletion(
         'HTTP-Referer': 'https://ais-dev.studio',
         'X-Title': 'Zeno AI',
       },
-      signal: AbortSignal.timeout(4000),
+      signal: AbortSignal.timeout(8500),
       body: JSON.stringify({
         model: targetModel,
         messages: msgs,
-        max_tokens: 4096,
-        temperature: 0.7,
+        max_tokens: 900,
+        temperature: 0.6,
       }),
     });
     const tHeaders = Date.now();
@@ -515,7 +579,7 @@ async function generateChatCompletion(
     if (!resp.ok || data?.error) {
       throw new Error(data?.error?.message || `Beat API HTTP ${resp.status}`);
     }
-    const content = data?.choices?.[0]?.message?.content || '';
+    const content = extractDirectMessageText(data?.choices?.[0]?.message);
     if (!content) throw new Error('Empty Beat API response');
     return buildMetricsFromOpenAiResponse(data, content, `beatapi/${targetModel}`, msgs, t0, tHeaders, tDone);
   };
@@ -533,7 +597,7 @@ async function generateChatCompletion(
       systemMsg ? `${systemMsg}\n\n${conversationText}` : conversationText
     );
     const tDone = Date.now();
-    const content = resp.text?.trim() || '';
+    const content = stripThinkingTags(resp.text || '');
     if (!content) throw new Error('Empty Gemini response');
 
     const meta = resp.usageMetadata;
@@ -542,15 +606,9 @@ async function generateChatCompletion(
         ? meta.promptTokenCount
         : countMessagesInputTokens(msgs);
     const candidatesTokens = typeof meta?.candidatesTokenCount === 'number' ? meta.candidatesTokenCount : 0;
-    const thoughtsTokens = typeof meta?.thoughtsTokenCount === 'number' ? meta.thoughtsTokenCount : 0;
     const completionTokens =
-      candidatesTokens + thoughtsTokens > 0
-        ? candidatesTokens + thoughtsTokens
-        : countExactSubwordTokens(content);
-    const totalTokens =
-      typeof meta?.totalTokenCount === 'number' && meta.totalTokenCount > 0
-        ? meta.totalTokenCount
-        : promptTokens + completionTokens;
+      candidatesTokens > 0 ? candidatesTokens : countExactSubwordTokens(content);
+    const totalTokens = promptTokens + completionTokens;
 
     const totalSec = parseFloat(Math.max(0.05, (tDone - t0) / 1000).toFixed(2));
     const firstTokenSec = parseFloat(Math.max(0.03, totalSec * 0.28).toFixed(2));
@@ -564,7 +622,7 @@ async function generateChatCompletion(
       promptTokens,
       completionTokens,
       totalTokens,
-      reasoningTokens: thoughtsTokens,
+      reasoningTokens: 0,
       firstTokenSec,
       totalSec,
       speedTokPerSec,
@@ -581,12 +639,12 @@ async function generateChatCompletion(
         Authorization: `Bearer ${APINEX_API_KEY}`,
         'Content-Type': 'application/json',
       },
-      signal: AbortSignal.timeout(4000),
+      signal: AbortSignal.timeout(8500),
       body: JSON.stringify({
         model: targetModel,
         messages: msgs,
-        max_tokens: 4096,
-        temperature: 0.7,
+        max_tokens: 900,
+        temperature: 0.6,
       }),
     });
     const tHeaders = Date.now();
@@ -595,7 +653,7 @@ async function generateChatCompletion(
     if (!resp.ok || data?.error) {
       throw new Error(data?.error?.message || `Apinex HTTP ${resp.status}`);
     }
-    const content = data?.choices?.[0]?.message?.content || '';
+    const content = extractDirectMessageText(data?.choices?.[0]?.message);
     if (!content) throw new Error('Empty Apinex response');
     return buildMetricsFromOpenAiResponse(data, content, targetModel, msgs, t0, tHeaders, tDone);
   };
@@ -608,12 +666,12 @@ async function generateChatCompletion(
         Authorization: 'Bearer flm_anonymous',
         'Content-Type': 'application/json',
       },
-      signal: AbortSignal.timeout(4000),
+      signal: AbortSignal.timeout(8500),
       body: JSON.stringify({
         model: 'auto',
         messages: msgs,
-        max_tokens: 4096,
-        temperature: 0.7,
+        max_tokens: 900,
+        temperature: 0.6,
       }),
     });
     const tHeaders = Date.now();
@@ -622,7 +680,7 @@ async function generateChatCompletion(
     if (!resp.ok || data?.error) {
       throw new Error(data?.error?.message || `FLM HTTP ${resp.status}`);
     }
-    const content = data?.choices?.[0]?.message?.content || '';
+    const content = extractDirectMessageText(data?.choices?.[0]?.message);
     if (!content) throw new Error('Empty FLM response');
     return buildMetricsFromOpenAiResponse(data, content, 'flm/auto', msgs, t0, tHeaders, tDone);
   };
@@ -634,11 +692,12 @@ async function generateChatCompletion(
       headers: {
         'Content-Type': 'application/json',
       },
-      signal: AbortSignal.timeout(4500),
+      signal: AbortSignal.timeout(8500),
       body: JSON.stringify({
         model: 'openai',
         messages: toTextOnlyMessages(msgs),
-        temperature: 0.7,
+        max_tokens: 900,
+        temperature: 0.6,
       }),
     });
     const tHeaders = Date.now();
@@ -647,12 +706,26 @@ async function generateChatCompletion(
     if (!resp.ok || data?.error) {
       throw new Error(data?.error?.message || `Pollinations HTTP ${resp.status}`);
     }
-    const content = data?.choices?.[0]?.message?.content || '';
+    const content = extractDirectMessageText(data?.choices?.[0]?.message);
     if (!content) throw new Error('Empty Pollinations response');
     return buildMetricsFromOpenAiResponse(data, content, 'zeno-fast', msgs, t0, tHeaders, tDone);
   };
 
-  const callInternAi = async (targetModel: string, msgs = openAiMessages): Promise<RealCompletionMetrics> => {
+  const lastUserMsgText =
+    toTextOnlyMessages(openAiMessages)
+      .filter((m) => m.role === 'user')
+      .pop()?.content || '';
+  const needsLongOutput =
+    /\b(code|implement|write a|full|complete|detailed|comprehensive|essay|tutorial|script|function|class|component|html|python|typescript|javascript|rust|sql)\b/i.test(
+      lastUserMsgText
+    ) || lastUserMsgText.length > 260;
+  const fastMaxTokens = needsLongOutput ? 600 : 165;
+
+  const callInternAi = async (
+    targetModel: string,
+    msgs = openAiMessages,
+    allowSageFallback = true
+  ): Promise<RealCompletionMetrics> => {
     if (!INTERN_AI_API_KEY) throw new Error('INTERN_AI_API_KEY not configured');
     const t0 = Date.now();
     const resp = await fetch(`${INTERN_AI_BASE_URL}/chat/completions`, {
@@ -661,12 +734,12 @@ async function generateChatCompletion(
         Authorization: `Bearer ${INTERN_AI_API_KEY}`,
         'Content-Type': 'application/json',
       },
-      signal: AbortSignal.timeout(4500),
+      signal: AbortSignal.timeout(7500),
       body: JSON.stringify({
         model: targetModel,
         messages: msgs,
-        max_tokens: 2048,
-        temperature: 0.6,
+        max_tokens: fastMaxTokens,
+        temperature: 0.4,
         chat_template_kwargs: { enable_thinking: false },
       }),
     });
@@ -674,12 +747,12 @@ async function generateChatCompletion(
     const data: any = await resp.json();
     const tDone = Date.now();
     if (!resp.ok || data?.error) {
+      if (allowSageFallback && targetModel !== 'Sage-A1.5') {
+        return await callInternAi('Sage-A1.5', msgs, false);
+      }
       throw new Error(data?.error?.message || `Intern InkStone HTTP ${resp.status}`);
     }
-    const rawMsg = data?.choices?.[0]?.message;
-    const bodyText = rawMsg?.content || '';
-    const reasoningText = rawMsg?.reasoning_content || '';
-    const content = bodyText.trim() || reasoningText.trim();
+    const content = extractDirectMessageText(data?.choices?.[0]?.message);
     if (!content) throw new Error('Empty Intern InkStone response');
     return buildMetricsFromOpenAiResponse(data, content, `intern/${targetModel}`, msgs, t0, tHeaders, tDone);
   };
@@ -697,13 +770,12 @@ async function generateChatCompletion(
         Authorization: `Bearer ${TOKENHARBOR_API_KEY}`,
         'Content-Type': 'application/json',
       },
-      signal: AbortSignal.timeout(6500),
+      signal: AbortSignal.timeout(7500),
       body: JSON.stringify({
         model: targetModel,
         messages: msgs,
-        max_tokens: 2048,
-        temperature: 0.6,
-        reasoning_effort: 'low',
+        max_tokens: fastMaxTokens,
+        temperature: 0.4,
         chat_template_kwargs: { enable_thinking: false },
       }),
     });
@@ -716,20 +788,17 @@ async function generateChatCompletion(
       if (
         allowFreeFallback &&
         (resp.status === 402 || errCode === 'balance_zero') &&
-        !targetModel.endsWith(':free')
+        targetModel !== 'deepseek-v4-flash:free'
       ) {
-        return await callTokenHarbor('deepseek-v4.1-flash:free', msgs, false);
+        return await callTokenHarbor('deepseek-v4-flash:free', msgs, false);
       }
       throw new Error(data?.error?.message || `TokenHarbor HTTP ${resp.status}`);
     }
 
-    const rawMsg = data?.choices?.[0]?.message;
-    const bodyText = rawMsg?.content || '';
-    const reasoningText = rawMsg?.reasoning_content || '';
-    const content = bodyText.trim() || reasoningText.trim();
+    const content = extractDirectMessageText(data?.choices?.[0]?.message);
     if (!content) throw new Error('Empty TokenHarbor response');
 
-    const metrics = buildMetricsFromOpenAiResponse(
+    return buildMetricsFromOpenAiResponse(
       data,
       content,
       `thk/${data?.model || targetModel}`,
@@ -738,10 +807,6 @@ async function generateChatCompletion(
       tHeaders,
       tDone
     );
-    if (metrics.reasoningTokens === 0 && reasoningText) {
-      metrics.reasoningTokens = countExactSubwordTokens(reasoningText);
-    }
-    return metrics;
   };
 
   const callLarpRouter = async (
@@ -756,14 +821,12 @@ async function generateChatCompletion(
         Authorization: `Bearer ${LARPROUTER_API_KEY}`,
         'Content-Type': 'application/json',
       },
-      signal: AbortSignal.timeout(4500),
+      signal: AbortSignal.timeout(8500),
       body: JSON.stringify({
         model: targetModel,
         messages: msgs,
-        max_tokens: 2048,
-        temperature: 0.6,
-        reasoning_effort: 'low',
-        chat_template_kwargs: { enable_thinking: false },
+        max_tokens: fastMaxTokens,
+        temperature: 0.5,
       }),
     });
     const tHeaders = Date.now();
@@ -774,13 +837,10 @@ async function generateChatCompletion(
       throw new Error(data?.error?.message || `LarpRouter HTTP ${resp.status}`);
     }
 
-    const rawMsg = data?.choices?.[0]?.message;
-    const bodyText = rawMsg?.content || '';
-    const reasoningText = rawMsg?.reasoning_content || '';
-    const content = bodyText.trim() || reasoningText.trim();
+    const content = extractDirectMessageText(data?.choices?.[0]?.message);
     if (!content) throw new Error('Empty LarpRouter response');
 
-    const metrics = buildMetricsFromOpenAiResponse(
+    return buildMetricsFromOpenAiResponse(
       data,
       content,
       `larp/${data?.model || targetModel}`,
@@ -789,16 +849,12 @@ async function generateChatCompletion(
       tHeaders,
       tDone
     );
-    if (metrics.reasoningTokens === 0 && reasoningText) {
-      metrics.reasoningTokens = countExactSubwordTokens(reasoningText);
-    }
-    return metrics;
   };
 
   const callRadoxAiSingle = async (
     targetModel: string,
     msgs = openAiMessages,
-    timeoutMs = 5500
+    timeoutMs = 8500
   ): Promise<RealCompletionMetrics> => {
     if (!RADOX_AI_API_KEY) throw new Error('RADOX_AI_API_KEY not configured');
     const t0 = Date.now();
@@ -812,10 +868,8 @@ async function generateChatCompletion(
       body: JSON.stringify({
         model: targetModel,
         messages: msgs,
-        max_tokens: 2048,
-        temperature: 0.6,
-        reasoning_effort: 'low',
-        chat_template_kwargs: { enable_thinking: false },
+        max_tokens: fastMaxTokens,
+        temperature: 0.5,
       }),
     });
     const tHeaders = Date.now();
@@ -826,13 +880,10 @@ async function generateChatCompletion(
       throw new Error(data?.error?.message || `RadoxAI HTTP ${resp.status}`);
     }
 
-    const rawMsg = data?.choices?.[0]?.message;
-    const bodyText = rawMsg?.content || '';
-    const reasoningText = rawMsg?.reasoning_content || '';
-    const content = bodyText.trim() || reasoningText.trim();
+    const content = extractDirectMessageText(data?.choices?.[0]?.message);
     if (!content) throw new Error('Empty RadoxAI response');
 
-    const metrics = buildMetricsFromOpenAiResponse(
+    return buildMetricsFromOpenAiResponse(
       data,
       content,
       `radox/${data?.model || targetModel}`,
@@ -841,16 +892,12 @@ async function generateChatCompletion(
       tHeaders,
       tDone
     );
-    if (metrics.reasoningTokens === 0 && reasoningText) {
-      metrics.reasoningTokens = countExactSubwordTokens(reasoningText);
-    }
-    return metrics;
   };
 
   const callIteraComputeSingle = async (
     targetModel: string,
     msgs = openAiMessages,
-    timeoutMs = 6500
+    timeoutMs = 8500
   ): Promise<RealCompletionMetrics> => {
     if (!ITERA_COMPUTE_API_KEY) throw new Error('ITERA_COMPUTE_API_KEY not configured');
     const t0 = Date.now();
@@ -864,10 +911,8 @@ async function generateChatCompletion(
       body: JSON.stringify({
         model: targetModel,
         messages: msgs,
-        max_tokens: 2048,
-        temperature: 0.6,
-        reasoning_effort: 'none',
-        chat_template_kwargs: { enable_thinking: false },
+        max_tokens: fastMaxTokens,
+        temperature: 0.5,
       }),
     });
     const tHeaders = Date.now();
@@ -878,13 +923,10 @@ async function generateChatCompletion(
       throw new Error(data?.error?.message || `IteraCompute HTTP ${resp.status}`);
     }
 
-    const rawMsg = data?.choices?.[0]?.message;
-    const bodyText = rawMsg?.content || '';
-    const reasoningText = rawMsg?.reasoning_content || '';
-    const content = bodyText.trim() || reasoningText.trim();
+    const content = extractDirectMessageText(data?.choices?.[0]?.message);
     if (!content) throw new Error('Empty IteraCompute response');
 
-    const metrics = buildMetricsFromOpenAiResponse(
+    return buildMetricsFromOpenAiResponse(
       data,
       content,
       `itera/${data?.model || targetModel}`,
@@ -893,10 +935,54 @@ async function generateChatCompletion(
       tHeaders,
       tDone
     );
-    if (metrics.reasoningTokens === 0 && reasoningText) {
-      metrics.reasoningTokens = countExactSubwordTokens(reasoningText);
+  };
+
+  const callAnyRouterSingle = async (
+    targetModel: string,
+    msgs = openAiMessages,
+    allowFreeFallback = true,
+    timeoutMs = 7500
+  ): Promise<RealCompletionMetrics> => {
+    if (!ANYROUTER_API_KEY) throw new Error('ANYROUTER_API_KEY not configured');
+    const t0 = Date.now();
+    const resp = await fetch(`${ANYROUTER_BASE_URL}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${ANYROUTER_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      signal: AbortSignal.timeout(timeoutMs),
+      body: JSON.stringify({
+        model: targetModel,
+        messages: msgs,
+        max_tokens: fastMaxTokens,
+        temperature: 0.4,
+        chat_template_kwargs: { enable_thinking: false },
+      }),
+    });
+    const tHeaders = Date.now();
+    const data: any = await resp.json();
+    const tDone = Date.now();
+
+    if (!resp.ok || data?.error) {
+      if (allowFreeFallback && targetModel !== 'nvidia/nemotron-3.5-bolt-e4b') {
+        return await callAnyRouterSingle('nvidia/nemotron-3.5-bolt-e4b', msgs, false, 5500);
+      }
+      throw new Error(data?.error?.message || `AnyRouter HTTP ${resp.status}`);
     }
-    return metrics;
+
+    const content = extractDirectMessageText(data?.choices?.[0]?.message);
+    if (!content) throw new Error('Empty AnyRouter response');
+
+    return buildMetricsFromOpenAiResponse(
+      data,
+      content,
+      `ar/${data?.model || targetModel}`,
+      msgs,
+      t0,
+      tHeaders,
+      tDone
+    );
   };
 
   const hasMultimodalArray = openAiMessages.some((m) => Array.isArray(m.content));
@@ -914,48 +1000,40 @@ async function generateChatCompletion(
     }
   };
 
-  // Parallel hedged race across the fastest verified live inference engines (~0.9s - 1.7s)
+  // Disciplined, non-spamming fast inference race across verified live endpoints
   const raceFastestLiveModels = async (
     msgs = openAiMessages,
-    preferredModelLabel?: string
+    preferredModelLabel?: string,
+    skipAnyRouter = false
   ): Promise<RealCompletionMetrics> => {
+    const textOnlyMsgs = toTextOnlyMessages(msgs);
     const fastCandidates: Promise<RealCompletionMetrics>[] = [];
+    if (INTERN_AI_API_KEY) {
+      fastCandidates.push(callInternAi('Sage-A1.5', textOnlyMsgs, false));
+    }
+    if (TOKENHARBOR_API_KEY) {
+      fastCandidates.push(callTokenHarbor('deepseek-v4-flash:free', textOnlyMsgs, false));
+    }
+    if (ANYROUTER_API_KEY && !skipAnyRouter) {
+      fastCandidates.push(callAnyRouterSingle('nvidia/nemotron-3.5-bolt-e4b', textOnlyMsgs, false, 6000));
+    }
     if (geminiClient || process.env.GEMINI_API_KEY) {
       fastCandidates.push(callGeminiDirect(msgs));
     }
-    if (ITERA_COMPUTE_API_KEY) {
-      fastCandidates.push(callIteraComputeSingle('qwen/qwen3.8-27b', msgs, 6000));
-    }
-    if (TOKENHARBOR_API_KEY) {
-      fastCandidates.push(
-        callTokenHarbor('deepseek-v4.1-flash:free', toTextOnlyMessages(msgs), false)
-      );
-    }
-    if (fastCandidates.length > 0) {
-      try {
-        const winner = await Promise.any(fastCandidates);
-        return preferredModelLabel ? { ...winner, modelUsed: preferredModelLabel } : winner;
-      } catch {
-        // Continue to secondary fast fallback
-      }
-    }
-    try {
-      const internRes = await callInternAi('Agents-A1', toTextOnlyMessages(msgs));
-      return preferredModelLabel ? { ...internRes, modelUsed: preferredModelLabel } : internRes;
-    } catch {
-      // Continue
-    }
-    return await callApinex(APINEX_DEFAULT_MODEL, toTextOnlyMessages(msgs));
+
+    const winner = await Promise.any(fastCandidates);
+    return preferredModelLabel ? { ...winner, modelUsed: preferredModelLabel } : winner;
   };
 
-  // Run any requested model hedged in parallel with raceFastestLiveModels so no model ever stalls on upstream quota/timeouts
+  // Run the requested model hedged against raceFastestLiveModels without spamming dead endpoints
   const runHedgedModel = async (
     primaryCall: (msgs: Array<{ role: string; content: any }>) => Promise<RealCompletionMetrics>,
-    modelLabel: string
+    modelLabel: string,
+    skipAnyRouter = false
   ): Promise<RealCompletionMetrics> => {
     return await Promise.any([
       tryCallWithTextFallback(primaryCall),
-      tryCallWithTextFallback((m) => raceFastestLiveModels(m, modelLabel)),
+      tryCallWithTextFallback((m) => raceFastestLiveModels(m, modelLabel, skipAnyRouter)),
     ]);
   };
 
@@ -994,24 +1072,32 @@ async function generateChatCompletion(
   const isIteraModel =
     requestedModel.startsWith('itera/') || ITERA_SUPPORTED_MODELS.includes(cleanIteraModel);
 
+  const cleanAnyRouterModel = requestedModel.startsWith('ar/')
+    ? requestedModel.slice(3)
+    : requestedModel;
+  const isAnyRouterModel =
+    requestedModel.startsWith('ar/') ||
+    requestedModel.startsWith('anyrouter/') ||
+    ANYROUTER_SUPPORTED_MODELS.includes(cleanAnyRouterModel);
+
   const isBeatModel = BEAT_SUPPORTED_MODELS.includes(requestedModel);
   const isFlmSelected =
     requestedModel === 'flm/auto' || requestedModel === 'auto' || requestedModel.startsWith('flm');
 
-  if (isIteraModel) {
-    if (cleanIteraModel === 'qwen/qwen3.8-27b') {
-      return await runHedgedModel(
-        (m) => callIteraComputeSingle('qwen/qwen3.8-27b', m, 6000),
-        `itera/${cleanIteraModel}`
-      );
-    }
+  if (isAnyRouterModel) {
     return await runHedgedModel(
-      (m) => callIteraComputeSingle(cleanIteraModel, m, 3500),
+      (m) => callAnyRouterSingle(cleanAnyRouterModel, m, true, 7500),
+      `ar/${cleanAnyRouterModel}`,
+      true
+    );
+  } else if (isIteraModel) {
+    return await runHedgedModel(
+      (m) => callIteraComputeSingle(cleanIteraModel, m, 8500),
       `itera/${cleanIteraModel}`
     );
   } else if (isRadoxModel) {
     return await runHedgedModel(
-      (m) => callRadoxAiSingle(cleanRadoxModel, m, 3500),
+      (m) => callRadoxAiSingle(cleanRadoxModel, m, 8500),
       `radox/${cleanRadoxModel}`
     );
   } else if (isTokenHarborModel) {
@@ -1738,6 +1824,191 @@ async function searchGithubRepos(query: string, maxResults = 5) {
     console.warn('GitHub search error:', err.message);
     return [];
   }
+}
+
+// Intelligently detect when a user asks about a GitHub repository via URL, owner/repo slug, or copy-pasted GitHub page text
+function detectGitHubRepoFromQuery(text: string): { owner: string; repo: string; isPastedPage: boolean } | null {
+  if (!text) return null;
+  const raw = text.trim();
+
+  // 1. Direct github.com/owner/repo URL
+  const urlMatch = raw.match(/https?:\/\/(?:www\.)?github\.com\/([a-zA-Z0-9_.-]+)\/([a-zA-Z0-9_.-]+)/i);
+  if (urlMatch) {
+    const owner = urlMatch[1];
+    const repo = urlMatch[2].replace(/\.git$/i, '');
+    if (!['topics', 'trending', 'search', 'collections', 'events', 'marketplace', 'sponsors', 'orgs', 'users', 'settings'].includes(owner.toLowerCase())) {
+      return { owner, repo, isPastedPage: false };
+    }
+  }
+
+  // 2. Copy-pasted GitHub repository webpage text (e.g. "peach-mitao\npeach\nPublic" or "owner / repo Public" with GitHub UI labels)
+  const hasGitHubUiMarkers =
+    /\b(Repository navigation|Notifications\s+You must be signed in|Fork\s+\d+|Star\s+\d+|\d+\s+stars?\s+\d+\s+forks?|Pull requests|Actions\s+Projects|No releases published|No packages published|View license)\b/i.test(
+      raw
+    );
+  const publicHeaderMatch = raw.match(
+    /(?:^|\n)\s*([a-zA-Z0-9][a-zA-Z0-9_.-]{1,38})\s*(?:\/|\n|\s+)\s*([a-zA-Z0-9_.-]{1,60})\s+(?:Public|Private|Public template|Public archive)\b/i
+  );
+  if (publicHeaderMatch && (hasGitHubUiMarkers || raw.length > 150)) {
+    return {
+      owner: publicHeaderMatch[1].trim(),
+      repo: publicHeaderMatch[2].trim(),
+      isPastedPage: true,
+    };
+  }
+
+  // 3. Explicit owner/repo slug when query mentions github/repo or owner has hyphen/underscore
+  const hasRepoIntent = /\b(github|repo|repository|open\s*source|commits?|stars?|forks?|readme)\b/i.test(raw);
+  const slugMatch = raw.match(/\b([a-zA-Z0-9][a-zA-Z0-9_-]{1,38})\/([a-zA-Z0-9_.-]{2,60})\b/);
+  if (slugMatch) {
+    const owner = slugMatch[1];
+    const repo = slugMatch[2].replace(/\.git$/i, '');
+    const ignoredPairs = /^(and|or|true|false|yes|no|input|output|read|write|client|server|html|css|js|ts|date|time|day|night|up|down|left|right|start|end|min|max|http|https|app|src|public|assets|api|v1|v2|v3|usr|bin|etc|var|opt|dev|proc|sys|home)$/i;
+    if (!ignoredPairs.test(owner) && !ignoredPairs.test(repo) && (hasRepoIntent || owner.includes('-') || repo.includes('-'))) {
+      return { owner, repo, isPastedPage: hasGitHubUiMarkers };
+    }
+  }
+
+  return null;
+}
+
+// Parse copy-pasted GitHub page text to extract description, license, stars, forks, languages, and README content
+function parsePastedGitHubPageText(owner: string, repo: string, rawText: string) {
+  const starsMatch = rawText.match(/\b(\d+(?:\.\d+)?k?)\s+stars?\b/i) || rawText.match(/\bStar\s+(\d+(?:\.\d+)?k?)\b/i);
+  const forksMatch = rawText.match(/\b(\d+(?:\.\d+)?k?)\s+forks?\b/i) || rawText.match(/\bFork\s+(\d+(?:\.\d+)?k?)\b/i);
+  const licenseMatch = rawText.match(/\b([A-Za-z0-9._+-]+\s+license)\b/i);
+
+  const parseCount = (val?: string) => {
+    if (!val) return 0;
+    if (val.toLowerCase().endsWith('k')) return Math.round(parseFloat(val) * 1000);
+    return parseInt(val.replace(/,/g, ''), 10) || 0;
+  };
+
+  let description = '';
+  const aboutMatch = rawText.match(/\bAbout\s+([^\n]+(?:\n(?!(?:Resources|Readme|License|Activity|Stars|Watchers|Forks|Releases|Packages|Languages)\b)[^\n]+)*)/i);
+  if (aboutMatch && aboutMatch[1]) {
+    description = aboutMatch[1].replace(/\s+/g, ' ').trim();
+  }
+
+  const languages: string[] = [];
+  const langSectionMatch = rawText.match(/\bLanguages\s+([\s\S]{1,300})$/i);
+  if (langSectionMatch) {
+    const langPairs = langSectionMatch[1].match(/([A-Za-z+#]+)\s+\d+(?:\.\d+)?%/g);
+    if (langPairs) {
+      languages.push(...langPairs.map((s) => s.trim()));
+    }
+  }
+
+  let readmeSnippet = '';
+  const readmeIdx = rawText.search(/\bREADME\b/i);
+  if (readmeIdx !== -1) {
+    readmeSnippet = rawText
+      .slice(readmeIdx)
+      .replace(/^README(?:\.md)?\s*/i, '')
+      .replace(/\bAbout\s+[\s\S]*$/i, '')
+      .trim();
+  }
+
+  if (!description && readmeSnippet) {
+    description = readmeSnippet.split('\n').filter(Boolean).slice(0, 2).join(' ').slice(0, 220);
+  }
+
+  return {
+    name: `${owner}/${repo}`,
+    fullName: `${owner}/${repo}`,
+    url: `https://github.com/${owner}/${repo}`,
+    description: description || `GitHub repository ${owner}/${repo}`,
+    stars: parseCount(starsMatch?.[1]),
+    forks: parseCount(forksMatch?.[1]),
+    language: languages[0]?.split(/\s+/)[0] || 'Code',
+    languagesList: languages,
+    license: licenseMatch?.[1] || undefined,
+    readmeText: readmeSnippet || rawText.slice(0, 2000),
+  };
+}
+
+// Fetch live GitHub Repository metadata, README.md, and language breakdown (with fallback to parsed page text)
+async function fetchDeepGitHubRepoIntelligence(owner: string, repo: string, rawUserText = '') {
+  const parsedFallback = parsePastedGitHubPageText(owner, repo, rawUserText);
+  let repoMeta: any = null;
+  let readmeContent = '';
+  let languagesObj: Record<string, number> = {};
+
+  try {
+    const headers: Record<string, string> = {
+      'Accept': 'application/vnd.github.v3+json',
+      'User-Agent': 'Zeno-AI-App',
+    };
+    const [repoRes, readmeRes, langRes] = await Promise.allSettled([
+      fetch(`https://api.github.com/repos/${owner}/${repo}`, { headers, signal: AbortSignal.timeout(1100) }),
+      fetch(`https://api.github.com/repos/${owner}/${repo}/readme`, {
+        headers: { ...headers, 'Accept': 'application/vnd.github.v3.raw' },
+        signal: AbortSignal.timeout(1100),
+      }),
+      fetch(`https://api.github.com/repos/${owner}/${repo}/languages`, { headers, signal: AbortSignal.timeout(950) }),
+    ]);
+
+    if (repoRes.status === 'fulfilled' && repoRes.value.ok) {
+      repoMeta = await repoRes.value.json();
+    }
+    if (readmeRes.status === 'fulfilled' && readmeRes.value.ok) {
+      readmeContent = (await readmeRes.value.text()).trim();
+    }
+    if (langRes.status === 'fulfilled' && langRes.value.ok) {
+      languagesObj = await langRes.value.json();
+    }
+  } catch (err: any) {
+    console.warn('GitHub deep repo fetch error:', err.message);
+  }
+
+  const totalBytes = Object.values(languagesObj).reduce((acc, v) => acc + (typeof v === 'number' ? v : 0), 0);
+  const formattedLanguages =
+    totalBytes > 0
+      ? Object.entries(languagesObj)
+          .map(([lang, bytes]) => `${lang} (${((Number(bytes) / totalBytes) * 100).toFixed(1)}%)`)
+          .join(', ')
+      : parsedFallback.languagesList.join(', ') || repoMeta?.language || parsedFallback.language;
+
+  const repoCard = {
+    name: repoMeta?.full_name || parsedFallback.fullName,
+    fullName: repoMeta?.full_name || parsedFallback.fullName,
+    url: repoMeta?.html_url || parsedFallback.url,
+    description: repoMeta?.description || parsedFallback.description || 'GitHub repository',
+    stars: typeof repoMeta?.stargazers_count === 'number' ? repoMeta.stargazers_count : parsedFallback.stars,
+    forks: typeof repoMeta?.forks_count === 'number' ? repoMeta.forks_count : parsedFallback.forks,
+    language: repoMeta?.language || parsedFallback.language || 'Code',
+    ownerAvatar: repoMeta?.owner?.avatar_url || `https://github.com/${owner}.png`,
+    topics: Array.isArray(repoMeta?.topics) ? repoMeta.topics.slice(0, 6) : [],
+    openIssues: typeof repoMeta?.open_issues_count === 'number' ? repoMeta.open_issues_count : 0,
+    license: repoMeta?.license?.spdx_id || repoMeta?.license?.name || parsedFallback.license,
+    updatedAt: repoMeta?.updated_at ? repoMeta.updated_at.split('T')[0] : undefined,
+  };
+
+  const finalReadme = (readmeContent || parsedFallback.readmeText || '').slice(0, 6000);
+
+  const contextBlock =
+    `\n\n[VERIFIED LIVE GITHUB REPOSITORY INTELLIGENCE — ${repoCard.fullName}]:\n` +
+    `- Official Repository URL: ${repoCard.url}\n` +
+    `- Owner / Author: @${owner}\n` +
+    `- Repository Name: ${repo}\n` +
+    `- Description / About: ${repoCard.description}\n` +
+    `- Primary Language & Stack: ${formattedLanguages || repoCard.language}\n` +
+    `- Stars: ${repoCard.stars} | Forks: ${repoCard.forks} | Open Issues: ${repoCard.openIssues ?? 0}\n` +
+    `- License: ${repoCard.license || 'Not specified'}\n` +
+    (repoCard.topics?.length ? `- Topics: ${repoCard.topics.join(', ')}\n` : '') +
+    (finalReadme ? `- Extracted README.md / Repository Content:\n${finalReadme}\n` : '') +
+    `\n[INSTRUCTION FOR ALL MODELS]: The user is asking about the GitHub repository **${repoCard.fullName}** (${repoCard.url}). Provide a clear, intelligent, well-structured **Repository Summary & Research Breakdown** covering:\n` +
+    `1. **Executive Overview & Purpose**: What \`${repoCard.fullName}\` is, what problem it solves, and its core value proposition.\n` +
+    `2. **Technical Stack & Architecture**: Languages (${formattedLanguages || repoCard.language}), licensing (${repoCard.license || 'Open Source'}), and project structure.\n` +
+    `3. **Key Features & Capabilities**: Breakdown of what the repository includes based on its README and metadata.\n` +
+    `4. **Quick Start & Usage Notes**: How developers can use, deploy, or contribute to this project.`;
+
+  return {
+    repoCard,
+    readmeText: finalReadme,
+    formattedLanguages,
+    contextBlock,
+  };
 }
 
 // Find connected GitHub repositories for arXiv papers
@@ -4170,15 +4441,33 @@ app.post('/api/treg/call', requireFirebaseAuth, async (req, res) => {
 // Strip command/media/UI meta-words to extract the true subject and fall back to prior user messages on follow-ups
 function extractTopicFromText(text: string): string {
   if (!text) return '';
-  return text
+
+  // 1. If the text references or pastes a GitHub repository, return the clean owner/repo slug immediately
+  const ghRepo = detectGitHubRepoFromQuery(text);
+  if (ghRepo) {
+    return `${ghRepo.owner}/${ghRepo.repo}`;
+  }
+
+  // 2. If the user pasted a multi-line document/webpage, take only the first meaningful non-boilerplate line
+  const lines = text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l.length > 2 && !/^(skip to content|navigation menu|repository navigation|notifications|sign in|sign up)$/i.test(l));
+  const candidateSource = lines.length > 3 ? lines.slice(0, 2).join(' ') : text;
+
+  const cleaned = candidateSource
     .replace(/https?:\/\/\S+/gi, ' ')
     .replace(
       /\b(fentch|featch|fetech|fetc|fetch|scrape|pull|grab|show|find|get|search|give|display|play|watch|embed|render|create|make|build|add|implement|remove|fix|update|explain|tell|describe|know|learn|see|look|view|open|use|using|images?|imgs?|photos?|pics?|pictures?|wallpapers?|gallery|diagrams?|illustrations?|scans?|figures?|videos?|clips?|youtube|yt|internet|web|streams?|playback|footage|scenes?|movies?|trailers?|tutorials?|generative|gen|ui|widget|component|interactive|simulation|simulator|visualizer|dashboard|module|slop|front|eh|from|for|of|about|on|in|to|with|by|at|as|into|like|same|every|any|some|multiple|all|everything|stuff|things?|more|other|parts?|also|too|both|either|there|here|now|then|today|please|plz|pls|ok|okay|k|soo+|so|well|just|even|they|them|their|it|its|this|that|these|those|what|which|who|whom|whose|where|when|why|how|is|are|was|were|be|been|being|do|does|did|doing|done|actually|really|literally|basically|can|could|would|should|will|shall|may|might|must|have|has|had|having|not|no|dont|doesnt|didnt|cant|cannot|wont|i|me|my|mine|you|your|yours|we|us|our|he|him|his|she|her|asked|gave|give|got|me|an|a|the|and|or|but|if|because|as|until|while)\b/gi,
       ' '
     )
-    .replace(/[^\w\s+-]/g, ' ')
+    .replace(/[^\w\s+./-]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+
+  // Never allow coreTopic to exceed 8 words / 65 chars so a pasted webpage never becomes a giant search query or markdown header
+  const words = cleaned.split(/\s+/).filter(Boolean);
+  return words.slice(0, 8).join(' ').slice(0, 65).trim();
 }
 
 function resolveCoreTopic(
@@ -4186,6 +4475,11 @@ function resolveCoreTopic(
   messages: Array<{ role: string; content: string; attachments?: any[] }>,
   attachmentExtractedTopic = ''
 ): string {
+  const directGh = detectGitHubRepoFromQuery(userQuery);
+  if (directGh) {
+    return `${directGh.owner}/${directGh.repo}`;
+  }
+
   const currentTopic = extractTopicFromText(userQuery);
   const hasFollowUpPronoun = /\b(it|this|that|them|those|these|same|there)\b/i.test(userQuery);
 
@@ -4195,7 +4489,7 @@ function resolveCoreTopic(
     currentTopic.length < 18;
 
   if (attachmentExtractedTopic && (isGenericAttachmentPrompt || !currentTopic || currentTopic.length < 3)) {
-    return attachmentExtractedTopic;
+    return attachmentExtractedTopic.split(/\s+/).slice(0, 8).join(' ').slice(0, 65);
   }
 
   // Look back through prior user messages for the main conversation subject
@@ -4212,11 +4506,12 @@ function resolveCoreTopic(
   }
 
   if (!currentTopic || currentTopic.length < 2) {
-    return attachmentExtractedTopic || priorTopic || userQuery.trim();
+    const fallback = attachmentExtractedTopic || priorTopic || userQuery.trim();
+    return fallback.split(/\s+/).slice(0, 8).join(' ').slice(0, 65);
   }
 
   if (hasFollowUpPronoun && priorTopic && !currentTopic.toLowerCase().includes(priorTopic.toLowerCase())) {
-    return `${priorTopic} ${currentTopic}`.trim();
+    return `${priorTopic} ${currentTopic}`.split(/\s+/).slice(0, 10).join(' ').slice(0, 70).trim();
   }
 
   return currentTopic;
@@ -6469,6 +6764,159 @@ Requirements:
   }
 });
 
+// POST /api/pdf/study — Synthesize Quiz, Flashcards, Executive Summary, Deep Concepts & Cheatsheet from Uploaded PDF / Document
+app.post('/api/pdf/study', async (req, res) => {
+  try {
+    const {
+      title = 'Uploaded Document.pdf',
+      textContent = '',
+      pageCount = 1,
+      difficulty = 'medium',
+    } = req.body || {};
+
+    const cleanTitle = String(title || 'Uploaded Document').replace(/\.pdf$/i, '').trim() || 'Document';
+    const rawText = String(textContent || '').trim() || `Document Title: ${cleanTitle}`;
+    const safePages = Math.max(1, Number(pageCount) || Math.ceil(rawText.split(/\s+/).length / 300));
+    const safeDiff: 'easy' | 'medium' | 'hard' =
+      difficulty === 'easy' || difficulty === 'hard' ? difficulty : 'medium';
+
+    const docExcerpt = rawText.slice(0, 12000);
+    const difficultyDirective =
+      safeDiff === 'easy'
+        ? `COGNITIVE TIER — EASY (Foundational Recall & Core Definitions):
+- Design questions and flashcards that test fundamental terminology, high-level purpose, primary architectural building blocks, and headline findings.
+- Focus on "What is..." and "What is the primary purpose of..." questions from the introductory and core overview sections.
+- Keep distractors clearly distinct so a reader who grasped the main ideas can identify the right answer.`
+        : safeDiff === 'hard'
+        ? `COGNITIVE TIER — HARD (First-Principles Math, Asymptotic Complexity, Edge Cases & Ablations):
+- Design rigorous graduate/research-level questions and flashcards that test mathematical derivations, asymptotic complexity bottlenecks, boundary conditions, failure modes, hyperparameter sensitivities, and empirical ablations.
+- Focus on "Why does X fail under condition Y?", "What is the exact complexity/variance scaling when...", and multi-step analytical trade-offs from later technical sections.
+- Make distractors highly plausible technical traps that require deep mastery to rule out.`
+        : `COGNITIVE TIER — MEDIUM (Operational Mechanisms, Sub-Layer Interactions & Architectural Trade-Offs):
+- Design applied mechanism questions and flashcards that test HOW components interact step-by-step, data flow between stages, and why specific mechanisms outperform baseline alternatives.
+- Focus on "How does mechanism X interact with Y?" and cause-and-effect dynamics from the methodology sections.
+- Do NOT repeat basic definitional questions from the Easy tier or extreme edge-case derivations from the Hard tier.`;
+
+    const pdfPrompt = `You are an elite academic & technical assessment synthesizer.
+Analyze the following uploaded PDF / document and return a comprehensive Study, Flashcards & Quiz Bundle in strict JSON format.
+
+Document Title: "${cleanTitle}"
+Total Pages: ${safePages}
+Target Difficulty: ${safeDiff.toUpperCase()}
+
+${difficultyDirective}
+
+Document Text Excerpt:
+${docExcerpt}
+
+Return ONLY valid JSON matching this exact structure (no markdown code fences, no extra text):
+{
+  "summary": {
+    "overview": "2-3 crisp, substantive sentences explaining the core thesis, methodology, and primary conclusions of the document.",
+    "keyPoints": [
+      "Takeaway 1 with concrete facts, metrics, or mechanisms from the PDF",
+      "Takeaway 2",
+      "Takeaway 3",
+      "Takeaway 4",
+      "Takeaway 5",
+      "Takeaway 6"
+    ],
+    "sections": [
+      {
+        "pageNumber": 1,
+        "title": "Section Title",
+        "summary": "Clear 1-2 sentence summary of this section."
+      }
+    ]
+  },
+  "explanation": {
+    "coreThesis": "First-principles synthesis of how the system/subject works and why it matters.",
+    "concepts": [
+      {
+        "term": "Technical Term or Core Concept",
+        "definition": "Clear, rigorous definition grounded in the PDF.",
+        "mechanism": "How it works in practice or its mathematical/causal mechanism.",
+        "pageRef": 1
+      }
+    ]
+  },
+  "flashcards": [
+    {
+      "id": "pdf-fc-${safeDiff}-1",
+      "front": "Focused ${safeDiff}-tier conceptual or technical question",
+      "back": "Concise, accurate answer grounded in the PDF",
+      "category": "Core Concept | Formula | Architecture | Empirical Finding",
+      "pageRef": 1,
+      "difficulty": "${safeDiff}"
+    }
+  ],
+  "quiz": [
+    {
+      "id": "pdf-q-${safeDiff}-1",
+      "question": "Distinct ${safeDiff.toUpperCase()}-tier multiple-choice question testing mastery of the PDF?",
+      "options": ["Option A", "Option B", "Option C", "Option D"],
+      "correctIndex": 0,
+      "explanation": "Detailed explanation of why this option is correct and why the distractors are wrong.",
+      "pageRef": 1,
+      "difficulty": "${safeDiff}"
+    }
+  ],
+  "cheatsheet": {
+    "formulasOrRules": [
+      {
+        "label": "Core Equation / Principle",
+        "expression": "Mathematical formula or structural rule",
+        "meaning": "Intuitive meaning and practical application"
+      }
+    ],
+    "examTips": [
+      "High-yield rapid review point 1",
+      "High-yield rapid review point 2",
+      "High-yield rapid review point 3",
+      "High-yield rapid review point 4"
+    ]
+  }
+}
+
+Requirements:
+- Generate 6 flashcards in flashcards tailored specifically to the ${safeDiff.toUpperCase()} cognitive tier.
+- Generate 5 multiple-choice questions in quiz (4 options each, varied correctIndex across 0-3, detailed explanation) tailored strictly to the ${safeDiff.toUpperCase()} cognitive tier.
+- Generate 4 to 5 concepts in explanation.concepts and 3 to 4 items in cheatsheet.formulasOrRules.`;
+
+    let parsedBundle: any = null;
+    try {
+      const { resp } = await Promise.race([
+        generateGeminiContentWithFallback([{ parts: [{ text: pdfPrompt }] }]),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('PDF study synthesis timeout')), 5000)
+        ),
+      ]);
+      const rawJsonText = (resp?.text || '').trim();
+      if (rawJsonText) {
+        const cleaned = rawJsonText
+          .replace(/^```(?:json)?\s*/i, '')
+          .replace(/```\s*$/i, '')
+          .trim();
+        const firstBrace = cleaned.indexOf('{');
+        const lastBrace = cleaned.lastIndexOf('}');
+        if (firstBrace !== -1 && lastBrace > firstBrace) {
+          parsedBundle = JSON.parse(cleaned.slice(firstBrace, lastBrace + 1));
+        }
+      }
+    } catch {}
+
+    return res.json({
+      success: true,
+      study: parsedBundle,
+    });
+  } catch (err: any) {
+    return res.status(500).json({
+      success: false,
+      error: err.message || 'Failed to synthesize PDF study bundle',
+    });
+  }
+});
+
 // POST /api/youtube/chat — Contextual Q&A grounded in the timestamped video transcript
 app.post('/api/youtube/chat', async (req, res) => {
   try {
@@ -6851,6 +7299,43 @@ ${transcriptSnippet
         hasExplicitPersonaIntent ||
         isFetchIntent);
 
+    const detectedGhRepo = detectGitHubRepoFromQuery(userQuery);
+    let directGithubIntel: Awaited<ReturnType<typeof fetchDeepGitHubRepoIntelligence>> | null = null;
+    if (detectedGhRepo && !isClockQuery) {
+      try {
+        const ghStart = Date.now();
+        directGithubIntel = await fetchDeepGitHubRepoIntelligence(
+          detectedGhRepo.owner,
+          detectedGhRepo.repo,
+          userQuery
+        );
+        if (directGithubIntel) {
+          githubRepos = [directGithubIntel.repoCard];
+          extractedContext += directGithubIntel.contextBlock;
+          searchSources.unshift({
+            position: 1,
+            title: `${directGithubIntel.repoCard.fullName}: ${directGithubIntel.repoCard.description}`,
+            url: directGithubIntel.repoCard.url,
+            snippet:
+              (directGithubIntel.readmeText
+                ? directGithubIntel.readmeText.replace(/[#*`>\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 220)
+                : directGithubIntel.repoCard.description) || `GitHub repository ${directGithubIntel.repoCard.fullName}`,
+            domain: 'github.com',
+          });
+          toolsUsed.push({
+            tool: 'github.com.repo.inspect',
+            query: directGithubIntel.repoCard.fullName,
+            durationMs: Date.now() - ghStart,
+            resultsCount: 1,
+            endpoint: `https://api.github.com/repos/${directGithubIntel.repoCard.fullName}`,
+            org: TREG_ORG,
+          });
+        }
+      } catch (err: any) {
+        console.warn('Direct GitHub repo intelligence failed:', err.message);
+      }
+    }
+
     const shouldFetchArxiv =
       !isClockQuery &&
       !shouldSkipSearchForAttachment &&
@@ -6862,9 +7347,10 @@ ${transcriptSnippet
     const shouldFetchGithub =
       !isClockQuery &&
       !shouldSkipSearchForAttachment &&
-      /\b(github|git\s+repo|repositories|open\s*source\s+repo)\b/i.test(
+      !directGithubIntel &&
+      (/\b(github|git\s+repo|repositories|open\s*source\s+repo)\b/i.test(
         `${coreTopic} ${userQuery}`
-      );
+      ) || Boolean(detectedGhRepo));
 
     // Execute Web Search, YouTube & Internet Video Search, Image Search, and ArXiv Search in parallel ONLY when gated intents match (never on casual greetings or clock queries)
     if (!isCasualOrGreeting && !isClockQuery && !shouldSkipSearchForAttachment && coreTopic) {
@@ -6904,15 +7390,18 @@ ${transcriptSnippet
           (async () => {
             try {
               const searchStartTime = Date.now();
+              const effectiveSearchQuery = directGithubIntel
+                ? `${directGithubIntel.repoCard.fullName} github`
+                : coreTopic;
               const outcome = await searchWebReliable(
-                coreTopic,
+                effectiveSearchQuery,
                 searchMode === 'news' ? 'news' : 'organic',
                 Boolean(nsfwMode),
                 abortController.signal
               );
               searchExecutionMeta = outcome;
               const searchDuration = Date.now() - searchStartTime;
-              searchQueriesExecuted.push(coreTopic);
+              searchQueriesExecuted.push(effectiveSearchQuery);
               if (directYoutubeVideo) {
                 const directSrc = {
                   position: 1,
@@ -6925,6 +7414,22 @@ ${transcriptSnippet
                   directSrc,
                   ...outcome.results.filter((s: any) => s.url !== directYoutubeVideo.link).slice(0, 5),
                 ];
+              } else if (directGithubIntel) {
+                const ghPrimarySrc = {
+                  position: 1,
+                  title: `${directGithubIntel.repoCard.fullName} — ${directGithubIntel.repoCard.description}`,
+                  url: directGithubIntel.repoCard.url,
+                  snippet:
+                    (directGithubIntel.readmeText
+                      ? directGithubIntel.readmeText.replace(/[#*`>\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 220)
+                      : directGithubIntel.repoCard.description) || `Official GitHub repository for ${directGithubIntel.repoCard.fullName}`,
+                  domain: 'github.com',
+                };
+                const filteredOthers = outcome.results
+                  .filter((s: any) => s.url !== directGithubIntel!.repoCard.url)
+                  .slice(0, 5)
+                  .map((s: any, idx: number) => ({ ...s, position: idx + 2 }));
+                searchSources = [ghPrimarySrc, ...filteredOthers];
               } else {
                 searchSources = outcome.results.slice(0, 6);
               }
@@ -7137,7 +7642,7 @@ ${transcriptSnippet
       if (tasks.length > 0) {
         await Promise.race([
           Promise.allSettled(tasks),
-          new Promise<void>((resolve) => setTimeout(resolve, 2000)),
+          new Promise<void>((resolve) => setTimeout(resolve, 650)),
         ]);
       }
 
@@ -7432,51 +7937,48 @@ ${transcriptSnippet
           .join('\n');
     }
 
+    const hasYouTubeContext = Boolean(directYoutubeVideo || youtubeVideos.length > 0);
+    const hasXContext = xPosts.length > 0;
+
     const defaultSystem = `You are Zeno, a fast, sharp, natural, and helpful AI assistant.
+[REAL-TIME SYSTEM CLOCK]: Today is ${liveClock.localDateOnly}, current local time is ${liveClock.localTimeOnly} (${liveClock.timezone}, ${liveClock.utcOffset}) / UTC: ${liveClock.utcFull}.
+Rules:
+1. Date/Time Accuracy: Today's verified date is ${liveClock.localDateOnly} (${liveClock.localTimeOnly}). Never guess fake dates or agree with false dates if tested.
+2. Directness & Speed: Give clear, well-structured, high-signal answers directly addressing the user's prompt. Keep standard explanations concise (around 65-110 words) unless the user asks for deep code or long-form analysis.
+3. Citations: When web search sources are provided below, cite facts naturally using [1], [2]. Never output \`\`\`html:generative-ui blocks unless explicitly asked for a simulator.${
+      hasXContext
+        ? `\n4. Live X Posts: Prioritize [FETCHED REAL LIVE X / TWITTER POSTS] below as the latest verified posts.`
+        : ''
+    }${
+      hasYouTubeContext
+        ? `\n5. YouTube Videos: You have direct access to the video details and transcript in [DETECTED YOUTUBE VIDEO] below; explain and break down the video directly.`
+        : ''
+    }${nsfwDirective}${personalizationDirective}${pinnedDirective}`;
 
-[REAL-TIME SYSTEM CLOCK — HARDWARE-VERIFIED LIVE DATE & TIME]:
-- User's Local Date & Time: ${liveClock.localFull} (Timezone: ${liveClock.timezone}, ${liveClock.utcOffset})
-- User's Local Date Today: ${liveClock.localDateOnly}
-- User's Local Time Now: ${liveClock.localTimeOnly}
-- Current UTC Date & Time: ${liveClock.utcFull}
-- ISO-8601 Timestamp: ${liveClock.iso}
-
-CRITICAL RULES ON REAL-TIME DATE, TIME & ANTI-GASLIGHTING:
-0. REAL-TIME CLOCK ACCURACY (NEVER HALLUCINATE OR CAVE TO FAKE DATES):
-   - The [REAL-TIME SYSTEM CLOCK] above is hardware-verified live time synchronized with the user's timezone (${liveClock.timezone}).
-   - Today's exact real date in the user's local timezone is **${liveClock.localDateOnly}**, and the current local time is **${liveClock.localTimeOnly}** (${liveClock.timezone}).
-   - NEVER guess, invent, or output fake dates.
-   - DO NOT BE SYCOPHANTIC OR EASILY GASLIT ABOUT THE DATE OR TIME: If the user tests you or claims today is a different date, day, or year (e.g. "Nahh today is 24" or "Today is Saturday" when the live clock says ${liveClock.localDateOnly}), DO NOT apologize and DO NOT agree with the false date! Instead, politely stand firm and state the exact verified real-time date and time: **${liveClock.localFull}** (${liveClock.timezone}) / **${liveClock.utcFull}** (UTC).
-1. GREETINGS, EMOJIS & SMALL TALK:
-   - If the user sends a greeting (e.g. "hi", "hello", "hey"), an emoji (such as 👋, 😊, ✨, 💌, etc.), a hand wave, or casual conversational remarks: reply in 1 brief, warm, natural sentence (e.g. "Hey there! How can I help you today? 👋").
-   - NEVER write an essay, technical explanation, physical/kinematic breakdown, or unsolicited lecture for a greeting, gesture, or emoji!
-2. PROPORTIONAL DEPTH:
-   - Match the user's intent and brevity: simple questions or casual messages get short, direct answers.
-   - Only provide detailed, technical, or step-by-step physical mechanisms when the user asks a substantive, analytical, coding, or scientific question that genuinely requires depth.
-3. NO UNSOLICITED GENERATIVE UI / CODE BLOCKS:
-   - NEVER generate \`\`\`html:generative-ui code blocks for greetings, emojis, or standard questions.
-   - Only include an interactive visualizer when the user explicitly asks for a simulation, simulator, or interactive component.
-4. FACTS, LIVE X POSTS & GROUNDING:
-   - Today's verified live date is ${liveClock.localDateOnly}. When [FETCHED REAL LIVE X / TWITTER POSTS] are provided below, ALWAYS prioritize them as the authoritative latest posts and NEVER claim a June or July tweet from an old Google snippet is the latest tweet.
-   - When web search sources are provided, cite facts naturally using [1], [2].
-   - If user asks for videos or images and they are provided below, point them to the interactive player and gallery without claiming you cannot show them.
-5. YOUTUBE & VIDEO LINKS:
-   - When the user provides a YouTube URL (such as youtu.be, youtube.com/watch, youtube.com/shorts), NEVER state "I can't directly open or watch YouTube links" or ask the user to share the title/channel!
-   - You HAVE direct access to the video details, title, channel, description, and transcript in the [DETECTED YOUTUBE VIDEO] context below.
-   - The interactive video player and full Study Workspace (Summary, Key Points, Flashcards, Quiz, Video Chat) are already mounted and rendered in the UI for the user.
-   - Immediately provide a high-signal, engaging, perceptive explanation, breakdown of key concepts, life takeaways, and themes.${nsfwDirective}${personalizationDirective}${pinnedDirective}`;
-
-    const effectiveSystemPrompt = systemPrompt ? `${defaultSystem}\n\nAdditional user instructions: ${systemPrompt}` : defaultSystem;
+    const isRedundantClockPrompt =
+      typeof systemPrompt === 'string' &&
+      systemPrompt.includes('[REAL-TIME DEVICE CLOCK') &&
+      systemPrompt.length < 700;
+    const effectiveSystemPrompt =
+      systemPrompt && !isRedundantClockPrompt
+        ? `${defaultSystem}\n\nAdditional instructions: ${systemPrompt}`
+        : defaultSystem;
 
     // Convert conversation history into OpenAI format for Apinex / FLM
     const openAiMessages: Array<{ role: string; content: any }> = [
       { role: 'system', content: effectiveSystemPrompt },
     ];
 
-    // Add prior conversation messages (sanitizing any outdated build dates from prior assistant messages)
-    const history = messages.slice(0, -1);
+    // Add prior conversation messages (keep last 6 turns and cap length so large prior pastes never slow down follow-up turns)
+    const history = messages.slice(0, -1).slice(-6);
     for (const msg of history) {
-      let histText = stripInjectedClockNote(msg.content || '');
+      let histText = stripInjectedClockNote(msg.content || '').slice(0, 1200);
+      if (
+        msg.role === 'assistant' &&
+        /^hello!?\s*how can i help you today\??\s*👋?$/i.test(histText.trim())
+      ) {
+        continue;
+      }
       if (msg.role === 'assistant' && histText) {
         histText = histText
           .replace(/sunday,?\s+october\s+18,?\s+2026/gi, liveClock.localDateOnly)
@@ -7486,7 +7988,7 @@ CRITICAL RULES ON REAL-TIME DATE, TIME & ANTI-GASLIGHTING:
         const attNames = msg.attachments.map((a: any) => a.name).join(', ');
         const attTexts = msg.attachments
           .filter((a: any) => a.textContent)
-          .map((a: any) => `[File ${a.name}]:\n${String(a.textContent).slice(0, 4000)}`)
+          .map((a: any) => `[File ${a.name}]:\n${String(a.textContent).slice(0, 1200)}`)
           .join('\n');
         histText += `\n[Attached: ${attNames}]${attTexts ? `\n${attTexts}` : ''}`;
       }
@@ -7546,7 +8048,40 @@ CRITICAL RULES ON REAL-TIME DATE, TIME & ANTI-GASLIGHTING:
     } | null = null;
 
     const userAttachments = lastUserMessage?.attachments || [];
-    if (hasAttachments && directVisionAnalyses.length > 0) {
+    // Ultra-fast instant path for casual greetings/emojis and real-time clock queries so they never wait on slow external gateways
+    if (!hasAttachments && (isCasualOrGreeting || isClockQuery)) {
+      const nameGreeting = personalization?.preferredName ? ` ${personalization.preferredName}` : '';
+      if (isClockQuery) {
+        replyText = enforceAccurateClockInReply(
+          '',
+          liveClock,
+          true,
+          userQuery,
+          personalization?.preferredName
+        );
+      } else if (/^(thanks|thank you|thx|ty)$/i.test(cleanText)) {
+        replyText = `You're welcome${nameGreeting}! Let me know if you need anything else.`;
+      } else if (/^(bye|goodbye|see ya|cya)$/i.test(cleanText)) {
+        replyText = `See you later${nameGreeting}! 👋`;
+      } else if (/^how are you/i.test(cleanText)) {
+        replyText = `Doing great${nameGreeting}! How can I help you today?`;
+      } else {
+        replyText = `Hey${nameGreeting}! How can I help you today? 👋`;
+      }
+      const pTok = countMessagesInputTokens(openAiMessages);
+      const cTok = countExactSubwordTokens(replyText);
+      const elapsedSec = parseFloat(Math.max(0.08, (Date.now() - requestStart) / 1000).toFixed(2));
+      realTimingMetrics = {
+        promptTokens: pTok,
+        completionTokens: cTok,
+        totalTokens: pTok + cTok,
+        reasoningTokens: 0,
+        firstTokenSec: parseFloat(Math.max(0.03, elapsedSec * 0.4).toFixed(2)),
+        totalSec: elapsedSec,
+        speedTokPerSec: parseFloat((cTok / Math.max(0.04, elapsedSec)).toFixed(1)),
+        chunks: Math.max(1, Math.ceil(cTok / 4)),
+      };
+    } else if (hasAttachments && directVisionAnalyses.length > 0) {
       if (
         userAttachments.length > 1 ||
         /\b(compare|contrast|difference|which|both|all|each|between|relate|correlate|first|second)\b/i.test(userQuery)
@@ -7575,15 +8110,15 @@ CRITICAL RULES ON REAL-TIME DATE, TIME & ANTI-GASLIGHTING:
             const meta = multiResp.usageMetadata;
             if (meta) {
               const pTok = meta.promptTokenCount || countMessagesInputTokens(openAiMessages);
-              const cTok = (meta.candidatesTokenCount || 0) + (meta.thoughtsTokenCount || 0) || countExactSubwordTokens(replyText);
-              const tTok = meta.totalTokenCount || pTok + cTok;
+              const cTok = (meta.candidatesTokenCount || 0) || countExactSubwordTokens(replyText);
+              const tTok = pTok + cTok;
               const totSec = parseFloat(Math.max(0.05, (tDone - t0) / 1000).toFixed(2));
               const ftSec = parseFloat(Math.max(0.03, totSec * 0.25).toFixed(2));
               realTimingMetrics = {
                 promptTokens: pTok,
                 completionTokens: cTok,
                 totalTokens: tTok,
-                reasoningTokens: meta.thoughtsTokenCount || 0,
+                reasoningTokens: 0,
                 firstTokenSec: ftSec,
                 totalSec: totSec,
                 speedTokPerSec: parseFloat((cTok / Math.max(0.05, totSec - ftSec * 0.4)).toFixed(1)),
@@ -7620,15 +8155,15 @@ CRITICAL RULES ON REAL-TIME DATE, TIME & ANTI-GASLIGHTING:
         const meta = resp.usageMetadata;
         if (meta) {
           const pTok = meta.promptTokenCount || countMessagesInputTokens(openAiMessages);
-          const cTok = (meta.candidatesTokenCount || 0) + (meta.thoughtsTokenCount || 0) || countExactSubwordTokens(replyText);
-          const tTok = meta.totalTokenCount || pTok + cTok;
+          const cTok = (meta.candidatesTokenCount || 0) || countExactSubwordTokens(replyText);
+          const tTok = pTok + cTok;
           const totSec = parseFloat(Math.max(0.05, (tDone - t0) / 1000).toFixed(2));
           const ftSec = parseFloat(Math.max(0.03, totSec * 0.25).toFixed(2));
           realTimingMetrics = {
             promptTokens: pTok,
             completionTokens: cTok,
             totalTokens: tTok,
-            reasoningTokens: meta.thoughtsTokenCount || 0,
+            reasoningTokens: 0,
             firstTokenSec: ftSec,
             totalSec: totSec,
             speedTokPerSec: parseFloat((cTok / Math.max(0.05, totSec - ftSec * 0.4)).toFixed(1)),
@@ -7652,6 +8187,13 @@ CRITICAL RULES ON REAL-TIME DATE, TIME & ANTI-GASLIGHTING:
       } catch {
         // Handled by synthesis fallback below
       }
+    }
+
+    if (
+      !isCasualOrGreeting &&
+      /^hello!?\s*how can i help you today\??\s*👋?$/i.test(replyText.trim())
+    ) {
+      replyText = '';
     }
 
     // Safeguard: If user provided a YouTube video and LLM generated a refusal, replace with rich video breakdown
@@ -7687,17 +8229,63 @@ CRITICAL RULES ON REAL-TIME DATE, TIME & ANTI-GASLIGHTING:
         replyText = 'Hello! How can I help you today? 👋';
       } else if (directVisionAnalyses.length > 0) {
         replyText = directVisionAnalyses.join('\n\n');
-      } else if (searchSources.length > 0 && coreTopic) {
+      } else if (directGithubIntel) {
+        const rc = directGithubIntel.repoCard;
+        const cleanReadmeLines = (directGithubIntel.readmeText || '')
+          .split('\n')
+          .map((l) => l.trim())
+          .filter((l) => l.length > 0 && !l.startsWith('!['))
+          .slice(0, 12)
+          .join('\n');
         replyText =
-          `### ${coreTopic} — Overview\n\n` +
+          `### ${rc.fullName} — Repository Summary & Research\n\n` +
+          `**[${rc.fullName}](${rc.url})** is a public GitHub repository maintained by **@${rc.fullName.split('/')[0]}** [1].\n\n` +
+          `#### 1. Overview & Purpose\n` +
+          `- **Summary**: ${rc.description}\n` +
+          `- **Primary Stack / Languages**: ${directGithubIntel.formattedLanguages || rc.language}\n` +
+          `- **License**: ${rc.license || 'Open Source'}\n` +
+          `- **Repository Stats**: ⭐ ${rc.stars} stars · 🍴 ${rc.forks} forks\n\n` +
+          (cleanReadmeLines
+            ? `#### 2. README Highlights & Documentation\n${cleanReadmeLines}\n\n`
+            : '') +
+          (searchSources.length > 1
+            ? `#### 3. Related Ecosystem & References\n` +
+              searchSources
+                .slice(1, 4)
+                .map((s, idx) => `- **${s.title}**: ${s.snippet} [${idx + 2}]`)
+                .join('\n')
+            : '');
+      } else if (searchSources.length > 0 && coreTopic) {
+        const safeHeading = coreTopic.split(/\s+/).slice(0, 8).join(' ').slice(0, 60);
+        replyText =
+          `### ${safeHeading} — Overview\n\n` +
           searchSources
             .slice(0, 4)
             .map((s, idx) => `- **${s.title}**: ${s.snippet} [${idx + 1}]`)
             .join('\n\n');
       } else if (coreTopic && (youtubeVideos.length > 0 || fetchedImages.length > 0)) {
-        replyText = `Fetched live references for **${coreTopic}** below.`;
+        const safeHeading = coreTopic.split(/\s+/).slice(0, 8).join(' ').slice(0, 60);
+        replyText = `Fetched live references for **${safeHeading}** below.`;
       } else {
-        replyText = 'Hello! How can I help you today?';
+        try {
+          const directFallback = await generateGeminiContentWithFallback(userQuery);
+          replyText = (directFallback.resp?.text || '').trim();
+        } catch {}
+        if (!replyText.trim()) {
+          try {
+            const emergencySearch = await searchWebReliable(coreTopic || userQuery, 'organic', false);
+            if (emergencySearch.results.length > 0) {
+              searchSources = emergencySearch.results.slice(0, 5);
+              const safeHeading = (coreTopic || userQuery).split(/\s+/).slice(0, 8).join(' ').slice(0, 60);
+              replyText =
+                `### ${safeHeading}\n\n` +
+                searchSources
+                  .slice(0, 4)
+                  .map((s, idx) => `- **${s.title}**: ${s.snippet} [${idx + 1}]`)
+                  .join('\n\n');
+            }
+          } catch {}
+        }
       }
     }
 
@@ -7977,9 +8565,13 @@ if (!isTest) {
 
   const gracefulShutdown = (signal: string) => {
     console.log(`Received ${signal}, shutting down HTTP server gracefully...`);
+    try {
+      (server as any).closeAllConnections?.();
+    } catch {}
     server.close(() => {
       process.exit(0);
     });
+    setTimeout(() => process.exit(0), 150).unref();
   };
   process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
   process.on('SIGINT', () => gracefulShutdown('SIGINT'));

@@ -58,6 +58,7 @@ export const OPTIONAL_AUTH_API_ROUTES = [
   '/treg/search',
   '/treg/extract',
   '/arxiv/search',
+  '/pdf/study',
 ] as const;
 
 export const PUBLIC_API_ROUTES = [

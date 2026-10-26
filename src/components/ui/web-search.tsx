@@ -64,21 +64,21 @@ const COLUMNS = 4;
 const STEP = 0.3;
 const START = 0.08;
 const CREEP = 0.25;
-const CREEP_SECONDS = 4;
-const RING_HOLD = 0.45;
+const CREEP_SECONDS = 1.5;
+const RING_HOLD = 0.05;
 const STACK = 4;
 // hover waits a beat before acting, so a pointer just passing through never triggers it
-const SPREAD_DELAY = 150;
-const PREVIEW_DELAY = 260;
-const LEAVE_DELAY = 150;
+const SPREAD_DELAY = 120;
+const PREVIEW_DELAY = 200;
+const LEAVE_DELAY = 120;
 
-const SWAP: Transition = { type: "spring", duration: 0.55, bounce: 0.1 };
-const POP: Transition = { type: "spring", duration: 0.5, bounce: 0.4 };
-const SPREAD: Transition = { type: "spring", duration: 0.35, bounce: 0 };
-const OPEN: Transition = { type: "spring", duration: 0.5, bounce: 0.08 };
-const CARD: Transition = { type: "spring", duration: 0.5, bounce: 0.1 };
-const STAGGER = 0.045;
-const RING: Transition = { type: "spring", duration: 0.6, bounce: 0 };
+const SWAP: Transition = { type: "spring", duration: 0.2, bounce: 0.05 };
+const POP: Transition = { type: "spring", duration: 0.22, bounce: 0.2 };
+const SPREAD: Transition = { type: "spring", duration: 0.2, bounce: 0 };
+const OPEN: Transition = { type: "spring", duration: 0.22, bounce: 0.05 };
+const CARD: Transition = { type: "spring", duration: 0.22, bounce: 0.05 };
+const STAGGER = 0.015;
+const RING: Transition = { type: "spring", duration: 0.22, bounce: 0 };
 const INSTANT: Transition = { duration: 0 };
 
 const swapVariants: Variants = {
@@ -801,7 +801,7 @@ function WebSearchCitation({
             role="tooltip"
             className={cn(
               "absolute bottom-full left-1/2 z-50 block whitespace-normal pb-2",
-              ghUser ? "w-[340px]" : "w-72",
+              ghUser ? "w-[min(320px,calc(100vw-2rem))]" : "w-[min(288px,calc(100vw-2rem))]",
             )}
             style={{ x: "-50%", originY: 1 }}
             initial={{ opacity: 0, y: 4, scale: 0.96, filter: "blur(4px)" }}
@@ -813,44 +813,26 @@ function WebSearchCitation({
                 : { type: "spring", duration: 0.35, bounce: 0.15 }
             }
           >
-            {ghUser ? (
-              <div className="shadow-2xl rounded-[28px]">
-                <GitHubActivity
-                  username={ghUser}
-                  months={6}
-                  cellSize={10}
-                  accent={["#0e4429", "#006d32", "#26a641", "#39d353"]}
-                  repos={[
-                    {
-                      name: source.title.split("/").pop()?.slice(0, 28) || ghUser,
-                      count: 1,
-                      href: source.url,
-                    },
-                  ]}
-                />
-              </div>
-            ) : (
-              <a
-                {...linkTo(source.url, linked)}
-                tabIndex={-1}
-                className="citation-badge block rounded-[16px] bg-white p-3 text-left font-sans !no-underline shadow-[0_12px_32px_-8px_rgba(0,0,0,0.18),0_0_0_1px_rgba(0,0,0,0.05)] dark:bg-[#1C1C1C] dark:shadow-[0_12px_32px_-8px_rgba(0,0,0,0.7),0_0_0_1px_rgba(255,255,255,0.07)]"
-              >
-                <span className="flex items-center gap-1.5">
-                  <Favicon source={source} size={18} />
-                  <span className="truncate text-[12px] font-medium text-[#868593]">
-                    {hostOf(source.url)}
-                  </span>
+            <a
+              {...linkTo(source.url, linked)}
+              tabIndex={-1}
+              className="citation-badge block rounded-[16px] bg-white p-3 text-left font-sans !no-underline shadow-[0_12px_32px_-8px_rgba(0,0,0,0.18),0_0_0_1px_rgba(0,0,0,0.05)] dark:bg-[#1C1C1C] dark:shadow-[0_12px_32px_-8px_rgba(0,0,0,0.7),0_0_0_1px_rgba(255,255,255,0.07)]"
+            >
+              <span className="flex items-center gap-1.5">
+                <Favicon source={source} size={18} />
+                <span className="truncate text-[12px] font-medium text-[#868593]">
+                  {ghUser ? `github.com/${ghUser}` : hostOf(source.url)}
                 </span>
-                <span className="mt-1.5 line-clamp-2 block text-[13.5px] font-semibold leading-[18px] text-black dark:text-white">
-                  {source.title}
+              </span>
+              <span className="mt-1.5 line-clamp-2 block text-[13.5px] font-semibold leading-[18px] text-black dark:text-white">
+                {source.title}
+              </span>
+              {source.snippet && (
+                <span className="mt-1 line-clamp-3 block text-[12.5px] font-medium leading-[17px] text-[#868593]">
+                  {source.snippet}
                 </span>
-                {source.snippet && (
-                  <span className="mt-1 line-clamp-3 block text-[12.5px] font-medium leading-[17px] text-[#868593]">
-                    {source.snippet}
-                  </span>
-                )}
-              </a>
-            )}
+              )}
+            </a>
           </motion.span>
         )}
       </AnimatePresence>
@@ -1015,7 +997,7 @@ function Caret({ reduced }: { reduced: boolean }) {
   );
 }
 
-// Compact Citation Card with real social media post metrics (used by inline-citations & CitationModal)
+// Compact Citation Card with real social media post metrics & GitHub preview (used by inline-citations & CitationModal)
 export const CompactCitationCard: React.FC<{
   source: WebSearchSource;
   onClose?: () => void;
@@ -1052,27 +1034,9 @@ export const CompactCitationCard: React.FC<{
   const social = liveSocial;
   const ghUser = extractGitHubUsername(source.url);
 
-  if (ghUser) {
-    return (
-      <div onClick={(e) => e.stopPropagation()} className="z-50">
-        <GitHubActivity
-          username={ghUser}
-          accent={["#0e4429", "#006d32", "#26a641", "#39d353"]}
-          repos={[
-            {
-              name: source.title.split("/").pop()?.slice(0, 28) || ghUser,
-              count: 1,
-              href: source.url,
-            },
-          ]}
-        />
-      </div>
-    );
-  }
-
   return (
     <div
-      className={`w-80 max-w-[330px] p-3.5 rounded-2xl border shadow-xl select-none z-50 ${
+      className={`w-[min(350px,calc(100vw-2rem))] max-w-full p-3.5 rounded-2xl border shadow-xl select-none z-50 overflow-hidden box-border ${
         isDark
           ? "bg-[#1C1C1C] border-white/10 text-white shadow-[0_12px_32px_-8px_rgba(0,0,0,0.7)]"
           : "bg-white border-neutral-200/90 text-neutral-900 shadow-[0_12px_32px_-8px_rgba(0,0,0,0.18)]"
@@ -1087,7 +1051,11 @@ export const CompactCitationCard: React.FC<{
             <Favicon source={source} size={16} />
           )}
           <span className={`font-medium text-xs truncate ${isDark ? "text-[#868593]" : "text-[#868593]"}`}>
-            {social ? `${social.platform.toUpperCase()} · @${social.authorUsername}` : dom}
+            {social
+              ? `${social.platform.toUpperCase()} · @${social.authorUsername}`
+              : ghUser
+                ? `github.com · @${ghUser}`
+                : dom}
           </span>
         </div>
         {pos !== undefined && (
@@ -1212,7 +1180,13 @@ export const CompactCitationCard: React.FC<{
             : "bg-neutral-100 hover:bg-neutral-200/90 text-neutral-900"
         }`}
       >
-        <span>{social ? `View on ${social.platform.toUpperCase()}` : "Visit source"}</span>
+        <span>
+          {social
+            ? `View on ${social.platform.toUpperCase()}`
+            : ghUser
+            ? `Open @${ghUser} on GitHub`
+            : "Visit source"}
+        </span>
         <ExternalLink className="w-3.5 h-3.5 opacity-70" />
       </a>
     </div>

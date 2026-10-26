@@ -42,7 +42,7 @@ import { GenerativeUiViewer } from './GenerativeUiViewer';
 import { ArxivPaperCard } from './ArxivPaperCard';
 import { GithubRepoCard } from './GithubRepoCard';
 import { PersonaWikiCard } from './PersonaWikiCard';
-import { InbuiltPdfViewer } from './InbuiltPdfViewer';
+import { InbuiltPdfViewer, PdfStudioTab } from './InbuiltPdfViewer';
 import { FinanceTerminalCard } from './FinanceTerminalCard';
 import {
   detectFinanceSymbolsInText,
@@ -191,6 +191,21 @@ const preprocessMessageContent = (content: string): string => {
         .replace(/\\\[([\s\S]*?)\\\]/g, '$$\n$1\n$$')
         .replace(/\\\(([\s\S]*?)\\\)/g, '$$$1$$');
 
+      // Prevent runaway markdown headings (#, ##, ###, ####) if a heading line exceeds 100 characters
+      processed = processed.replace(/^(#{1,6})\s+(.+)$/gm, (fullMatch, hashes, headingText) => {
+        const cleanHeading = headingText.trim();
+        if (cleanHeading.length > 100) {
+          // Split at the first em-dash, colon, or 75-char boundary so a full paragraph never becomes a giant bold heading
+          const dashSplit = cleanHeading.match(/^(.{3,75}?)\s+(?:—|--|:)\s+(.+)$/);
+          if (dashSplit) {
+            return `${hashes} ${dashSplit[1].trim()}\n\n${dashSplit[2].trim()}`;
+          }
+          const shortTitle = cleanHeading.split(/\s+/).slice(0, 8).join(' ');
+          return `${hashes} ${shortTitle}…\n\n${cleanHeading}`;
+        }
+        return fullMatch;
+      });
+
       // Convert standalone citations [1], [2], [1, 2], [2][3] into markdown links so ReactMarkdown triggers interactive WebSearchCitation
       processed = processed.replace(/\[(\d{1,2}(?:\s*,\s*\d{1,2})+)\](?!\()/g, (_, nums) =>
         nums.split(',').map((n: string) => `[${n.trim()}](#cite-${n.trim()})`).join(' ')
@@ -226,6 +241,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
   );
   const [isEditing, setIsEditing] = useState(false);
   const [editDraft, setEditDraft] = useState(message.content);
+  const [isUserMsgExpanded, setIsUserMsgExpanded] = useState(false);
   const [activeVideoIndex, setActiveVideoIndex] = useState<number | null>(null);
   const [videoPlayerMode, setVideoPlayerMode] = useState<'embed' | 'mp4'>('embed');
   const [resolvedVideos, setResolvedVideos] = useState<
@@ -236,7 +252,13 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
   const [activeStudyVideo, setActiveStudyVideo] = useState<YouTubeVideoInfo | null>(null);
   const [showActivityDetails, setShowActivityDetails] = useState(false);
   const [previewAttachmentUrl, setPreviewAttachmentUrl] = useState<{ url: string; name: string } | null>(null);
-  const [pdfViewerData, setPdfViewerData] = useState<{ isOpen: boolean; pdfUrl?: string; pdfName?: string; extractedText?: string } | null>(null);
+  const [pdfViewerData, setPdfViewerData] = useState<{
+    isOpen: boolean;
+    pdfUrl?: string;
+    pdfName?: string;
+    extractedText?: string;
+    initialTab?: PdfStudioTab;
+  } | null>(null);
   const [selectedCitation, setSelectedCitation] = useState<WebSearchSource | null>(null);
   const [liveFinanceQuotes, setLiveFinanceQuotes] = useState<FinanceQuote[]>(
     message.financeQuotes || []
@@ -311,55 +333,10 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
     setIsPinned(nextPinned);
   };
 
-  // Extract reasoning steps & thoughts (<think>...</think> or message.thoughts / message.reasoning)
-  let reasoningThoughts = (message as any).thoughts || (message as any).reasoning || '';
-  let cleanedContent = message.content || '';
-
-  const thinkMatch = cleanedContent.match(/<think>([\s\S]*?)(?:<\/think>|$)/i);
-  if (thinkMatch) {
-    if (!reasoningThoughts) {
-      reasoningThoughts = thinkMatch[1].trim();
-    }
-    const afterThink = cleanedContent.replace(/<think>[\s\S]*?(?:<\/think>|$)/i, '').trim();
-    cleanedContent = afterThink || reasoningThoughts;
-  }
-
-  const reasoningStages = (message as any).reasoningStages || (
-    message.toolsUsed && message.toolsUsed.length > 0
-      ? message.toolsUsed.map((t, idx) => ({
-          id: `stage-${idx}`,
-          title: t.tool.includes('youtube')
-            ? `Fetched video references (${t.resultsCount || 0} clips)`
-            : t.tool.includes('images')
-            ? `Retrieved visual references`
-            : t.tool.includes('arxiv')
-            ? `Queried arXiv scientific literature`
-            : t.tool.includes('vision')
-            ? `Analyzed uploaded media features`
-            : t.tool.includes('extract')
-            ? `Deep extraction of primary sources`
-            : t.tool.includes('serp') || t.tool.includes('search')
-            ? `Researched live web for "${t.query || 'topic'}"`
-            : `Synthesizing response and verify accuracy`,
-          detail: t.query || t.url,
-          sources: message.sources?.slice(0, 3).map((s) => ({
-            title: s.title,
-            url: s.url,
-          })),
-          status: 'done' as const,
-        }))
-      : undefined
-  );
-
-  const hasReasoning = Boolean(
-    reasoningThoughts ||
-    (reasoningStages && reasoningStages.length > 0) ||
-    (message.isStreaming && !cleanedContent)
-  );
-
-  const reasoningDurationSec = message.timing?.totalSec
-    ? Math.max(3, Math.round(message.timing.totalSec))
-    : 8;
+  // Thinking tokens are disabled; strip any <think>...</think> blocks directly
+  const cleanedContent = (message.content || '')
+    .replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '')
+    .trim();
 
   const scrollVideoCarousel = (direction: 'left' | 'right') => {
     if (!videoCarouselRef.current) return;
@@ -567,46 +544,90 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                   <div
                     key={idx}
                     onClick={() => {
-                      if (isPdf && att.url) {
+                      if (isPdf) {
                         setPdfViewerData({
                           isOpen: true,
                           pdfUrl: att.url,
                           pdfName: att.name || 'Document.pdf',
                           extractedText: att.textContent || '',
+                          initialTab: 'quiz',
                         });
                       }
                     }}
-                    className={`flex items-center gap-2.5 px-3.5 py-2 rounded-2xl border backdrop-blur-xl text-xs transition-all group/file ${
+                    className={`flex flex-col gap-2 px-3.5 py-2.5 rounded-2xl border backdrop-blur-xl text-xs transition-all group/file ${
                       isPdf ? 'cursor-pointer hover:border-red-500/50' : 'cursor-default'
                     } ${
                       isDark
                         ? 'bg-white/[0.06] border-white/[0.14] text-white'
                         : 'bg-white/75 border-black/[0.08] text-[#0d0d0d]'
                     }`}
-                    title={isPdf ? 'Click to open in Inbuilt PDF Viewer' : `${att.name} (${formattedSize})`}
+                    title={isPdf ? 'Click to open PDF Quiz, Flashcards & Study Studio' : `${att.name} (${formattedSize})`}
                   >
-                    {isPdf ? (
-                      <FileText className="w-4 h-4 text-red-500 shrink-0 group-hover/file:scale-110 transition-transform" />
-                    ) : isCode ? (
-                      <Code2 className="w-4 h-4 text-cyan-500 shrink-0" />
-                    ) : isData ? (
-                      <FileSpreadsheet className="w-4 h-4 text-emerald-500 shrink-0" />
-                    ) : isAudio ? (
-                      <Music className="w-4 h-4 text-amber-500 shrink-0" />
-                    ) : isVideo ? (
-                      <Film className="w-4 h-4 text-purple-500 shrink-0" />
-                    ) : (
-                      <File className="w-4 h-4 opacity-70 shrink-0" />
-                    )}
-                    <div className="min-w-0">
-                      <div className="font-medium truncate max-w-[200px]">
-                        {att.name}
-                      </div>
-                      <div className={`text-[10px] ${isDark ? 'text-white/50' : 'text-black/50'}`}>
-                        {formattedSize ? `${formattedSize} • ` : ''}
-                        {isPdf ? 'PDF Document' : isCode ? 'Source Code' : isData ? 'Data File' : isAudio ? 'Audio File' : isVideo ? 'Video File' : 'Attachment'}
+                    <div className="flex items-center gap-2.5">
+                      {isPdf ? (
+                        <FileText className="w-4 h-4 text-red-500 shrink-0 group-hover/file:scale-110 transition-transform" />
+                      ) : isCode ? (
+                        <Code2 className="w-4 h-4 text-cyan-500 shrink-0" />
+                      ) : isData ? (
+                        <FileSpreadsheet className="w-4 h-4 text-emerald-500 shrink-0" />
+                      ) : isAudio ? (
+                        <Music className="w-4 h-4 text-amber-500 shrink-0" />
+                      ) : isVideo ? (
+                        <Film className="w-4 h-4 text-purple-500 shrink-0" />
+                      ) : (
+                        <File className="w-4 h-4 opacity-70 shrink-0" />
+                      )}
+                      <div className="min-w-0">
+                        <div className="font-medium truncate max-w-[200px]">
+                          {att.name}
+                        </div>
+                        <div className={`text-[10px] ${isDark ? 'text-white/50' : 'text-black/50'}`}>
+                          {formattedSize ? `${formattedSize} · ` : ''}
+                          {isPdf ? 'PDF Study Studio' : isCode ? 'Source Code' : isData ? 'Data File' : isAudio ? 'Audio File' : isVideo ? 'Video File' : 'Attachment'}
+                        </div>
                       </div>
                     </div>
+
+                    {isPdf && (
+                      <div
+                        className="flex flex-wrap items-center gap-1 pt-1 border-t border-current/10"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {(
+                          [
+                            { tab: 'quiz', label: 'Quiz' },
+                            { tab: 'flashcards', label: 'Flashcards' },
+                            { tab: 'summary', label: 'Summary' },
+                            { tab: 'cheatsheet', label: 'Cheatsheet' },
+                          ] as const
+                        ).map((item) => (
+                          <button
+                            key={item.tab}
+                            type="button"
+                            onClick={() =>
+                              setPdfViewerData({
+                                isOpen: true,
+                                pdfUrl: att.url,
+                                pdfName: att.name || 'Document.pdf',
+                                extractedText: att.textContent || '',
+                                initialTab: item.tab,
+                              })
+                            }
+                            className={`px-2 py-0.5 rounded-lg border text-[10px] font-semibold transition-colors cursor-pointer whitespace-nowrap ${
+                              item.tab === 'quiz'
+                                ? isDark
+                                  ? 'bg-white text-black border-white hover:bg-neutral-200'
+                                  : 'bg-black text-white border-black hover:bg-neutral-800'
+                                : isDark
+                                ? 'bg-white/[0.06] border-white/[0.12] text-neutral-200 hover:bg-white/[0.14]'
+                                : 'bg-black/[0.04] border-black/[0.1] text-neutral-800 hover:bg-black/[0.08]'
+                            }`}
+                          >
+                            {item.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -675,22 +696,50 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
               </div>
             </div>
           ) : (
-            <div className="flex flex-col items-end w-full max-w-[88%] sm:max-w-[78%] min-w-0">
-              <div
-                className={`${
-                  (message.content || '').length > 280
-                    ? 'text-[11.5px] sm:text-[12.5px] leading-[1.5]'
-                    : (message.content || '').length > 120
-                    ? 'text-[12.5px] sm:text-[13px] leading-[1.55]'
-                    : 'text-[13px] sm:text-[14px] leading-relaxed'
-                } font-normal px-3.5 py-2.5 rounded-2xl sm:rounded-3xl backdrop-blur-2xl border transition-all w-fit max-w-full min-w-0 overflow-hidden whitespace-pre-wrap break-words [overflow-wrap:anywhere] [word-break:break-word] ${
-                  isDark
-                    ? 'bg-white/[0.07] border-white/[0.14] text-white shadow-[0_8px_28px_rgba(0,0,0,0.45)]'
-                    : 'bg-white/75 border-black/[0.08] text-[#000000] shadow-[0_8px_24px_rgba(0,0,0,0.06)]'
-                }`}
-              >
-                {message.content}
-              </div>
+            <div className="flex flex-col items-end w-full max-w-[90%] sm:max-w-[78%] min-w-0">
+              {(() => {
+                const rawUserText = message.content || '';
+                const lineCount = rawUserText.split('\n').length;
+                const isLongUserMessage = rawUserText.length > 420 || lineCount > 10;
+                const displayUserText =
+                  isLongUserMessage && !isUserMsgExpanded
+                    ? rawUserText.split('\n').slice(0, 8).join('\n').slice(0, 360).trim() + '…'
+                    : rawUserText;
+                return (
+                  <div
+                    className={`text-[13px] sm:text-[13.5px] leading-[1.55] font-normal px-3.5 py-2.5 rounded-2xl sm:rounded-3xl backdrop-blur-2xl border transition-all w-fit max-w-full min-w-0 overflow-hidden whitespace-pre-wrap break-words [overflow-wrap:anywhere] [word-break:break-word] ${
+                      isDark
+                        ? 'bg-white/[0.07] border-white/[0.14] text-white shadow-[0_8px_28px_rgba(0,0,0,0.45)]'
+                        : 'bg-white/75 border-black/[0.08] text-[#000000] shadow-[0_8px_24px_rgba(0,0,0,0.06)]'
+                    }`}
+                  >
+                    <div>{displayUserText}</div>
+                    {isLongUserMessage && (
+                      <button
+                        type="button"
+                        onClick={() => setIsUserMsgExpanded((prev) => !prev)}
+                        className={`mt-2 inline-flex items-center gap-1 text-[11.5px] font-semibold px-2.5 py-1 rounded-full border transition-colors cursor-pointer ${
+                          isDark
+                            ? 'bg-white/[0.08] hover:bg-white/[0.14] border-white/[0.14] text-sky-400'
+                            : 'bg-black/[0.05] hover:bg-black/[0.09] border-black/[0.1] text-sky-600'
+                        }`}
+                      >
+                        {isUserMsgExpanded ? (
+                          <>
+                            <ChevronUp className="w-3 h-3" />
+                            <span>Show less</span>
+                          </>
+                        ) : (
+                          <>
+                            <ChevronDown className="w-3 h-3" />
+                            <span>Show full message ({rawUserText.length.toLocaleString()} chars)</span>
+                          </>
+                        )}
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Copy and Edit Buttons Directly Under Sent User Message */}
               <div className="mt-1.5 flex items-center justify-end gap-1.5 px-1">
@@ -744,7 +793,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
         <div className="w-full">
           {/* Live Rare UI WebSearch Component showing actual sites being searched in real-time */}
           {((message.sources && message.sources.length > 0) ||
-            (message.isStreaming && message.loadingMode === 'search')) && (
+            (message.isStreaming && !cleanedContent && message.loadingMode === 'search')) && (
             <WebSearch
               sources={(message.sources || []).map((s, idx) => ({
                 id: s.url || `source-${idx}`,
@@ -759,7 +808,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
               status={
                 message.isStreaming &&
                 !cleanedContent &&
-                (!message.sources || message.sources.length < 4)
+                (!message.sources || message.sources.length === 0)
                   ? 'searching'
                   : 'done'
               }
@@ -769,22 +818,22 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
             />
           )}
 
-          {/* Live Synthesis Progress Indicator when sources are ready and summary is streaming in */}
-          {message.isStreaming && !cleanedContent && (
-            <div className="my-2.5">
-              <LoadingBreadcrumb
-                text={
-                  message.sources && message.sources.length > 0
-                    ? `Synthesizing summary from ${message.sources.length} live sources...`
-                    : message.loadingMode === 'vision'
-                    ? 'Analyzing image details...'
-                    : message.loadingMode === 'file'
-                    ? 'Reading document contents...'
-                    : 'Generating response...'
-                }
-              />
-            </div>
-          )}
+          {/* Fast single-line loading indicator only while waiting for text when WebSearch spinner isn't already active */}
+          {message.isStreaming &&
+            !cleanedContent &&
+            (message.loadingMode !== 'search' || (message.sources && message.sources.length > 0)) && (
+              <div className="my-1.5">
+                <LoadingBreadcrumb
+                  text={
+                    message.loadingMode === 'vision'
+                      ? 'Analyzing image...'
+                      : message.loadingMode === 'file'
+                      ? 'Reading file...'
+                      : 'Generating response...'
+                  }
+                />
+              </div>
+            )}
 
           {/* Persona Wiki Interactive Profile Card (Athletes, Celebrities, Politicians, Public Figures on any scale) */}
           {message.personaWiki && (
@@ -1897,7 +1946,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
         </div>
       )}
 
-      {/* Inbuilt Full-Page PDF & Readability Viewer */}
+      {/* Inbuilt Padded PDF Quiz, Flashcards & Study Studio Popup */}
       {pdfViewerData && (
         <InbuiltPdfViewer
           isOpen={pdfViewerData.isOpen}
@@ -1905,6 +1954,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
           pdfUrl={pdfViewerData.pdfUrl}
           pdfName={pdfViewerData.pdfName}
           extractedText={pdfViewerData.extractedText}
+          initialTab={pdfViewerData.initialTab}
           isDark={isDark}
           onAskZeno={onAskZeno}
         />
