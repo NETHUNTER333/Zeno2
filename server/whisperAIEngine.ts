@@ -1,9 +1,4 @@
 import { spawn } from 'child_process';
-import { pipeline, env } from '@xenova/transformers';
-
-// Configure transformers to not look for local models directory unless present
-env.allowLocalModels = false;
-env.useBrowserCache = false;
 
 export interface WhisperSegment {
   start_s: number;
@@ -29,6 +24,10 @@ export async function getWhisperPipeline(modelName = 'Xenova/whisper-tiny.en') {
   if (pipelineCache.has(modelName)) {
     return pipelineCache.get(modelName);
   }
+
+  const { pipeline, env } = await import('@xenova/transformers');
+  env.allowLocalModels = false;
+  env.useBrowserCache = false;
 
   const transcriber = await pipeline('automatic-speech-recognition', modelName, {
     quantized: true,

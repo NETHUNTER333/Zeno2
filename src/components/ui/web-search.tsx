@@ -126,12 +126,41 @@ const hostOf = (url: string) => {
 const linkTo = (url: string, linked: boolean) =>
   linked ? { href: url, target: "_blank", rel: "noreferrer" } : {};
 
+const SECOND_LEVEL_TLDS = new Set([
+  "co",
+  "com",
+  "org",
+  "net",
+  "edu",
+  "gov",
+  "ac",
+  "ind",
+  "nic",
+]);
+
+const extractBrandFromHost = (rawHost: string) => {
+  const host = rawHost.replace(/^www\./i, "").trim().toLowerCase();
+  if (!host.includes(".")) return host || "web";
+  const parts = host.split(".").filter(Boolean);
+  if (parts.length >= 3 && SECOND_LEVEL_TLDS.has(parts[parts.length - 2])) {
+    return parts[parts.length - 3];
+  }
+  if (parts.length >= 3 && parts[parts.length - 2] === "indiatimes") {
+    return parts[0];
+  }
+  return parts.length > 1 ? parts[parts.length - 2] : parts[0] || "web";
+};
+
 // developer.mozilla.org reads as "mozilla", the way people say it
 const siteName = (url: string, explicitDomain?: string) => {
-  if (explicitDomain && !explicitDomain.includes(".")) return explicitDomain;
-  const host = hostOf(url);
-  const parts = host.split(".");
-  return parts.length > 1 ? parts[parts.length - 2] : parts[0] || "web";
+  if (explicitDomain) {
+    if (!explicitDomain.includes(".")) return explicitDomain;
+    const fromExplicit = extractBrandFromHost(explicitDomain);
+    if (fromExplicit && fromExplicit !== "google" && fromExplicit !== "bing") {
+      return fromExplicit;
+    }
+  }
+  return extractBrandFromHost(hostOf(url));
 };
 
 export function getCleanDomain(url: string, explicitDomain?: string): string {
@@ -145,7 +174,7 @@ export function getCleanDomain(url: string, explicitDomain?: string): string {
 }
 
 export function getDomainIcon(domainName: string, _isDark?: boolean) {
-  return <Favicon source={{ title: domainName, url: `https://${domainName}` }} size={14} />;
+  return <Favicon source={{ title: domainName, url: `https://${domainName}`, domain: domainName }} size={14} />;
 }
 
 export type WebSearchProps = Omit<ComponentProps<"div">, "children"> & {
@@ -613,12 +642,15 @@ function FaviconStack({
 function Favicon({ source, size }: { source: WebSource; size: number }) {
   const [broken, setBroken] = useState(false);
   const name = siteName(source.url, source.domain);
-  const host = hostOf(source.url);
+  const rawHost =
+    source.domain && source.domain.includes(".")
+      ? source.domain.replace(/^www\./i, "")
+      : hostOf(source.url);
   const hue = hash(name) % 360;
   const resolvedFavicon =
     source.favicon ||
-    (host && host.includes(".") && host !== "web"
-      ? `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=64`
+    (rawHost && rawHost.includes(".") && rawHost !== "web"
+      ? `https://www.google.com/s2/favicons?domain=${encodeURIComponent(rawHost)}&sz=64`
       : undefined);
   const image = resolvedFavicon && !broken;
 

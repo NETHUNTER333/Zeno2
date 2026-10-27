@@ -128,119 +128,455 @@ export async function callTregEndpointReliable(
   throw lastError || new Error('Treg API request failed');
 }
 
+function decodeXmlEntities(str: string): string {
+  return String(str || '')
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(Number(dec)))
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 /**
- * Public fallback web search (DuckDuckGo HTML + Wikipedia OpenSearch) with explicit source attribution
- * and bounded timeouts. Never fabricates results.
+ * Public multi-source web & news search (Google News RSS, Bing Web/News RSS, DuckDuckGo HTML,
+ * HackerNews Algolia, Reddit JSON, StackExchange, and max-1 Wikipedia) with publisher domain
+ * attribution and domain-diversified ranking.
  */
 export async function fallbackPublicWebSearchWithStatus(
   query: string,
   signal?: AbortSignal
 ): Promise<{ results: SearchResultItem[]; error?: string; hadProviderFailure: boolean }> {
-  const results: SearchResultItem[] = [];
   const errors: string[] = [];
   let succeededProviders = 0;
+  const isNewsOrLatest = /\b(latest|news|today|recent|update|updates|current|breaking|2025|2026|headline|headlines)\b/i.test(
+    query
+  );
+  const isTechOrCode = /\b(code|programming|react|typescript|javascript|python|rust|error|bug|api|github|framework|library|sql|docker|linux)\b/i.test(
+    query
+  );
 
-  try {
-    const ddgRes = await fetch(
-      `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
-      {
+  // 1. Google News RSS (extracts real news outlets + publisher domains from <source url="...">)
+  const fetchGoogleNewsRss = async (): Promise<SearchResultItem[]> => {
+    const items: SearchResultItem[] = [];
+    try {
+      const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-IN&gl=IN&ceid=IN:en`;
+      const res = await fetch(rssUrl, {
         headers: {
           'User-Agent':
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          Accept: 'application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8',
         },
-        signal: signal || AbortSignal.timeout(4_000),
+        signal: signal || AbortSignal.timeout(3_500),
+      });
+      if (!res.ok) {
+        errors.push(`GoogleNews HTTP ${res.status}`);
+        return items;
       }
-    );
-    if (ddgRes.ok) {
       succeededProviders += 1;
-      const html = await ddgRes.text();
-      const blocks = html.split(/class="result__body"/i).slice(1, 9);
-      for (const b of blocks) {
-        const titleMatch = b.match(/class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
-        const snippetMatch = b.match(
-          /class="result__snippet"[^>]*>([\s\S]*?)<\/a>|class="result__snippet"[^>]*>([\s\S]*?)<\/div>/i
-        );
-        if (titleMatch) {
-          let rawHref = titleMatch[1];
-          const uddgMatch = rawHref.match(/[?&]uddg=([^&]+)/);
-          if (uddgMatch) {
-            try {
-              rawHref = decodeURIComponent(uddgMatch[1]);
-            } catch {}
-          }
-          if (rawHref.startsWith('http')) {
-            const cleanTitle = titleMatch[2]
-              .replace(/<[^>]+>/g, '')
-              .replace(/\s+/g, ' ')
-              .trim();
-            const rawSnip = (snippetMatch?.[1] || snippetMatch?.[2] || '')
-              .replace(/<[^>]+>/g, '')
-              .replace(/\s+/g, ' ')
-              .trim();
-            let domain = '';
-            try {
-              domain = new URL(rawHref).hostname.replace(/^www\./, '');
-            } catch {}
-            results.push({
-              position: results.length + 1,
-              title: cleanTitle || domain || 'Web Result',
-              url: rawHref,
-              snippet: rawSnip,
-              displayed_url: rawHref,
-              domain,
-              provider: 'duckduckgo',
-            });
+      const xml = await res.text();
+      const rawItems = xml.match(/<item>[\s\S]*?<\/item>/gi) || [];
+      for (const block of rawItems.slice(0, 10)) {
+        const titleRaw = block.match(/<title>([\s\S]*?)<\/title>/i)?.[1] || '';
+        const linkRaw = block.match(/<link>([\s\S]*?)<\/link>/i)?.[1] || '';
+        const pubDateRaw = block.match(/<pubDate>([\s\S]*?)<\/pubDate>/i)?.[1] || '';
+        const descRaw = block.match(/<description>([\s\S]*?)<\/description>/i)?.[1] || '';
+        const sourceMatch = block.match(/<source[^>]*url="([^"]+)"[^>]*>([\s\S]*?)<\/source>/i);
+
+        const sourceUrl = sourceMatch?.[1]?.trim() || '';
+        const publisherName = decodeXmlEntities(sourceMatch?.[2] || '');
+        const link = decodeXmlEntities(linkRaw);
+        if (!link.startsWith('http')) continue;
+
+        let domain = '';
+        if (sourceUrl) {
+          try {
+            domain = new URL(sourceUrl).hostname.replace(/^www\./i, '');
+          } catch {}
+        }
+        if (!domain) {
+          try {
+            domain = new URL(link).hostname.replace(/^www\./i, '');
+          } catch {}
+        }
+        if (!domain || domain.includes('wikipedia.org')) continue;
+
+        let cleanTitle = decodeXmlEntities(titleRaw);
+        if (publisherName && cleanTitle.endsWith(` - ${publisherName}`)) {
+          cleanTitle = cleanTitle.slice(0, -(` - ${publisherName}`).length).trim();
+        }
+        const cleanDesc = decodeXmlEntities(descRaw);
+        const dateStr = pubDateRaw
+          ? new Date(pubDateRaw).toLocaleDateString('en-US', {
+              month: 'short',
+              day: 'numeric',
+              year: 'numeric',
+            })
+          : '';
+        const snippetParts: string[] = [];
+        if (publisherName) snippetParts.push(`${publisherName}${dateStr ? ` (${dateStr})` : ''}`);
+        if (cleanDesc && cleanDesc.toLowerCase() !== cleanTitle.toLowerCase()) {
+          snippetParts.push(cleanDesc);
+        } else {
+          snippetParts.push(cleanTitle);
+        }
+
+        items.push({
+          position: items.length + 1,
+          title: publisherName ? `${cleanTitle} — ${publisherName}` : cleanTitle,
+          url: link,
+          snippet: snippetParts.join(' — ').slice(0, 320),
+          displayed_url: sourceUrl || link,
+          domain,
+          source: publisherName || domain,
+          date: dateStr || undefined,
+          provider: 'multi_source',
+        });
+      }
+    } catch (err: any) {
+      errors.push(`GoogleNews: ${err?.message || 'failed'}`);
+    }
+    return items;
+  };
+
+  // 2. Bing Web RSS (organic multi-domain web results)
+  const fetchBingWebRss = async (): Promise<SearchResultItem[]> => {
+    const items: SearchResultItem[] = [];
+    try {
+      const bingUrl = `https://www.bing.com/search?q=${encodeURIComponent(query)}&format=rss`;
+      const res = await fetch(bingUrl, {
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          Accept: 'application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8',
+        },
+        signal: signal || AbortSignal.timeout(3_500),
+      });
+      if (!res.ok) {
+        errors.push(`BingRSS HTTP ${res.status}`);
+        return items;
+      }
+      succeededProviders += 1;
+      const xml = await res.text();
+      const rawItems = xml.match(/<item>[\s\S]*?<\/item>/gi) || [];
+      for (const block of rawItems.slice(0, 8)) {
+        const title = decodeXmlEntities(block.match(/<title>([\s\S]*?)<\/title>/i)?.[1] || '');
+        const link = decodeXmlEntities(block.match(/<link>([\s\S]*?)<\/link>/i)?.[1] || '');
+        const desc = decodeXmlEntities(block.match(/<description>([\s\S]*?)<\/description>/i)?.[1] || '');
+        if (!link.startsWith('http') || !title) continue;
+        let domain = '';
+        try {
+          domain = new URL(link).hostname.replace(/^www\./i, '');
+        } catch {}
+        if (!domain || domain.includes('wikipedia.org')) continue;
+        items.push({
+          position: items.length + 1,
+          title,
+          url: link,
+          snippet: desc || title,
+          displayed_url: link,
+          domain,
+          source: domain,
+          provider: 'multi_source',
+        });
+      }
+    } catch (err: any) {
+      errors.push(`BingRSS: ${err?.message || 'failed'}`);
+    }
+    return items;
+  };
+
+  // 3. DuckDuckGo HTML organic search
+  const fetchDuckDuckGoHtml = async (): Promise<SearchResultItem[]> => {
+    const items: SearchResultItem[] = [];
+    try {
+      const ddgRes = await fetch(
+        `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
+        {
+          headers: {
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          },
+          signal: signal || AbortSignal.timeout(3_500),
+        }
+      );
+      if (ddgRes.ok) {
+        succeededProviders += 1;
+        const html = await ddgRes.text();
+        const blocks = html.split(/class="result__body"/i).slice(1, 9);
+        for (const b of blocks) {
+          const titleMatch = b.match(/class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
+          const snippetMatch = b.match(
+            /class="result__snippet"[^>]*>([\s\S]*?)<\/a>|class="result__snippet"[^>]*>([\s\S]*?)<\/div>/i
+          );
+          if (titleMatch) {
+            let rawHref = titleMatch[1];
+            const uddgMatch = rawHref.match(/[?&]uddg=([^&]+)/);
+            if (uddgMatch) {
+              try {
+                rawHref = decodeURIComponent(uddgMatch[1]);
+              } catch {}
+            }
+            if (rawHref.startsWith('http')) {
+              const cleanTitle = decodeXmlEntities(titleMatch[2]);
+              const rawSnip = decodeXmlEntities(snippetMatch?.[1] || snippetMatch?.[2] || '');
+              let domain = '';
+              try {
+                domain = new URL(rawHref).hostname.replace(/^www\./i, '');
+              } catch {}
+              if (!domain || domain.includes('wikipedia.org')) continue;
+              items.push({
+                position: items.length + 1,
+                title: cleanTitle || domain || 'Web Result',
+                url: rawHref,
+                snippet: rawSnip || cleanTitle,
+                displayed_url: rawHref,
+                domain,
+                source: domain,
+                provider: 'duckduckgo',
+              });
+            }
           }
         }
+      } else {
+        errors.push(`DuckDuckGo HTTP ${ddgRes.status}`);
       }
-    } else {
-      errors.push(`DuckDuckGo HTTP ${ddgRes.status}`);
+    } catch (err: any) {
+      errors.push(`DuckDuckGo: ${err?.message || 'failed'}`);
     }
-  } catch (err: any) {
-    errors.push(`DuckDuckGo: ${err?.message || 'failed'}`);
-  }
+    return items;
+  };
 
-  if (results.length < 4) {
+  // 4. HackerNews Algolia Search API (returns external tech/news URLs + discussions)
+  const fetchHackerNews = async (): Promise<SearchResultItem[]> => {
+    const items: SearchResultItem[] = [];
+    try {
+      const hnRes = await fetch(
+        `https://hn.algolia.com/api/v1/search?query=${encodeURIComponent(query)}&tags=story&hitsPerPage=5`,
+        {
+          headers: { 'User-Agent': 'ZenoSearch/1.0' },
+          signal: signal || AbortSignal.timeout(3_000),
+        }
+      );
+      if (hnRes.ok) {
+        succeededProviders += 1;
+        const hnJson: any = await hnRes.json();
+        const hits = Array.isArray(hnJson?.hits) ? hnJson.hits : [];
+        for (const hit of hits) {
+          const title = String(hit?.title || '').trim();
+          if (!title) continue;
+          const externalUrl = String(hit?.url || '').trim();
+          const hnUrl = `https://news.ycombinator.com/item?id=${hit?.objectID}`;
+          const targetUrl = externalUrl.startsWith('http') ? externalUrl : hnUrl;
+          let domain = 'news.ycombinator.com';
+          try {
+            domain = new URL(targetUrl).hostname.replace(/^www\./i, '');
+          } catch {}
+          if (domain.includes('wikipedia.org')) continue;
+          const dateStr = hit?.created_at
+            ? new Date(hit.created_at).toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+              })
+            : '';
+          items.push({
+            position: items.length + 1,
+            title,
+            url: targetUrl,
+            snippet: `${title} — Shared via ${domain} (${hit?.points ?? 0} pts, ${hit?.num_comments ?? 0} comments${dateStr ? `, ${dateStr}` : ''}).`,
+            displayed_url: targetUrl,
+            domain,
+            source: domain,
+            date: dateStr || undefined,
+            provider: 'multi_source',
+          });
+        }
+      }
+    } catch (err: any) {
+      errors.push(`HackerNews: ${err?.message || 'failed'}`);
+    }
+    return items;
+  };
+
+  // 5. Reddit Public JSON Search
+  const fetchRedditSearch = async (): Promise<SearchResultItem[]> => {
+    const items: SearchResultItem[] = [];
+    try {
+      const redditRes = await fetch(
+        `https://www.reddit.com/search.json?q=${encodeURIComponent(query)}&sort=relevance&t=year&limit=3`,
+        {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (compatible; ZenoSearch/1.0; +https://ais-dev.studio)',
+            Accept: 'application/json',
+          },
+          signal: signal || AbortSignal.timeout(3_000),
+        }
+      );
+      if (redditRes.ok) {
+        succeededProviders += 1;
+        const redditJson: any = await redditRes.json();
+        const children = redditJson?.data?.children || [];
+        for (const child of children) {
+          const post = child?.data;
+          if (!post?.title || !post?.permalink) continue;
+          const url = `https://www.reddit.com${post.permalink}`;
+          const sub = post.subreddit_name_prefixed || 'r/reddit';
+          const selftext = String(post.selftext || '')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .slice(0, 220);
+          items.push({
+            position: items.length + 1,
+            title: `${post.title} (${sub})`,
+            url,
+            snippet: selftext || `Discussion in ${sub} with ${post.ups ?? 0} upvotes and ${post.num_comments ?? 0} comments.`,
+            displayed_url: url,
+            domain: 'reddit.com',
+            source: 'Reddit',
+            provider: 'multi_source',
+          });
+        }
+      }
+    } catch (err: any) {
+      errors.push(`Reddit: ${err?.message || 'failed'}`);
+    }
+    return items;
+  };
+
+  // 6. StackExchange API (for technical/coding queries)
+  const fetchStackOverflow = async (): Promise<SearchResultItem[]> => {
+    if (!isTechOrCode) return [];
+    const items: SearchResultItem[] = [];
+    try {
+      const seRes = await fetch(
+        `https://api.stackexchange.com/2.3/search/advanced?order=desc&sort=relevance&q=${encodeURIComponent(query)}&site=stackoverflow&pagesize=2`,
+        {
+          headers: { 'User-Agent': 'ZenoSearch/1.0' },
+          signal: signal || AbortSignal.timeout(3_000),
+        }
+      );
+      if (seRes.ok) {
+        succeededProviders += 1;
+        const seJson: any = await seRes.json();
+        for (const q of seJson?.items || []) {
+          if (!q?.link || !q?.title) continue;
+          const cleanTitle = decodeXmlEntities(q.title);
+          items.push({
+            position: items.length + 1,
+            title: `${cleanTitle} - Stack Overflow`,
+            url: q.link,
+            snippet: `Stack Overflow Q&A (${q.answer_count ?? 0} answers, score ${q.score ?? 0}) tagged [${(q.tags || []).slice(0, 4).join(', ')}].`,
+            displayed_url: q.link,
+            domain: 'stackoverflow.com',
+            source: 'Stack Overflow',
+            provider: 'multi_source',
+          });
+        }
+      }
+    } catch {}
+    return items;
+  };
+
+  // 7. Wikipedia OpenSearch (strictly capped at max 1 background reference)
+  const fetchSingleWikipedia = async (): Promise<SearchResultItem[]> => {
+    const items: SearchResultItem[] = [];
     try {
       const wikiRes = await fetch(
-        `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&utf8=&format=json&srlimit=5`,
+        `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&utf8=&format=json&srlimit=1`,
         {
           headers: { 'User-Agent': 'ZenoAI/1.0' },
-          signal: signal || AbortSignal.timeout(3_500),
+          signal: signal || AbortSignal.timeout(2_800),
         }
       );
       if (wikiRes.ok) {
         succeededProviders += 1;
         const wikiJson: any = await wikiRes.json();
-        const searchItems = wikiJson?.query?.search || [];
-        for (const item of searchItems) {
-          const title = item.title;
-          const url = `https://en.wikipedia.org/wiki/${encodeURIComponent(String(title).replace(/ /g, '_'))}`;
-          if (!results.some((r) => r.url === url)) {
-            results.push({
-              position: results.length + 1,
-              title: `${title} - Wikipedia`,
-              url,
-              snippet: String(item.snippet || '')
-                .replace(/<[^>]+>/g, '')
-                .replace(/\s+/g, ' ')
-                .trim(),
-              displayed_url: url,
-              domain: 'en.wikipedia.org',
-              provider: 'wikipedia',
-            });
-          }
+        const item = wikiJson?.query?.search?.[0];
+        if (item?.title) {
+          const title = String(item.title);
+          const url = `https://en.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, '_'))}`;
+          items.push({
+            position: 1,
+            title: `${title} - Wikipedia`,
+            url,
+            snippet: decodeXmlEntities(String(item.snippet || '')),
+            displayed_url: url,
+            domain: 'en.wikipedia.org',
+            source: 'Wikipedia',
+            provider: 'wikipedia',
+          });
         }
-      } else {
-        errors.push(`Wikipedia HTTP ${wikiRes.status}`);
       }
     } catch (err: any) {
       errors.push(`Wikipedia: ${err?.message || 'failed'}`);
     }
+    return items;
+  };
+
+  const [
+    gnewsItems,
+    bingItems,
+    ddgItems,
+    hnItems,
+    redditItems,
+    soItems,
+    wikiItems,
+  ] = await Promise.all([
+    fetchGoogleNewsRss(),
+    fetchBingWebRss(),
+    fetchDuckDuckGoHtml(),
+    fetchHackerNews(),
+    fetchRedditSearch(),
+    fetchStackOverflow(),
+    fetchSingleWikipedia(),
+  ]);
+
+  // Combine in priority order depending on query intent
+  const nonWikiPool: SearchResultItem[] = isNewsOrLatest
+    ? [...gnewsItems, ...ddgItems, ...bingItems, ...redditItems, ...hnItems, ...soItems]
+    : [...ddgItems, ...bingItems, ...gnewsItems, ...soItems, ...hnItems, ...redditItems];
+
+  // Only include the single Wikipedia reference if not a news query or if we have < 4 non-wiki results
+  const combinedPool: SearchResultItem[] =
+    isNewsOrLatest && nonWikiPool.length >= 4
+      ? nonWikiPool
+      : [...nonWikiPool, ...wikiItems.slice(0, 1)];
+
+  // Deduplicate by URL and diversify by domain (pass 1: unique domains first; pass 2: up to 2 per domain)
+  const seenUrls = new Set<string>();
+  const domainCounts = new Map<string, number>();
+  const firstPass: SearchResultItem[] = [];
+  const secondPass: SearchResultItem[] = [];
+
+  for (const item of combinedPool) {
+    const normUrl = item.url.trim().replace(/\/+$/, '');
+    if (!normUrl || seenUrls.has(normUrl)) continue;
+    seenUrls.add(normUrl);
+
+    const dom = (item.domain || 'web').toLowerCase();
+    const count = domainCounts.get(dom) || 0;
+    if (dom.includes('wikipedia.org') && count >= 1) continue;
+    if (count === 0) {
+      domainCounts.set(dom, 1);
+      firstPass.push(item);
+    } else if (count === 1) {
+      domainCounts.set(dom, 2);
+      secondPass.push(item);
+    }
   }
 
+  const finalResults = [...firstPass, ...secondPass].slice(0, 8).map((item, idx) => ({
+    ...item,
+    position: idx + 1,
+  }));
+
   return {
-    results,
+    results: finalResults,
     error: errors.length > 0 ? errors.join('; ') : undefined,
     hadProviderFailure: succeededProviders === 0 && errors.length > 0,
   };

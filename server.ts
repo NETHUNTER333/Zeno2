@@ -70,8 +70,8 @@ export const geminiClient = process.env.GEMINI_API_KEY
   : null;
 
 const GEMINI_FALLBACK_MODELS = [
+  'gemini-2.5-flash',
   'gemini-3-flash-preview',
-  'gemini-3.1-flash-lite',
   'gemini-flash-latest',
 ];
 
@@ -103,7 +103,7 @@ async function generateGeminiContentWithFallback(contents: any) {
   const candidates: Promise<{ resp: any; modelName: string }>[] = [];
 
   if (client) {
-    for (const modelName of GEMINI_FALLBACK_MODELS.slice(0, 2)) {
+    for (const modelName of GEMINI_FALLBACK_MODELS) {
       candidates.push(
         Promise.race([
           client.models
@@ -123,7 +123,7 @@ async function generateGeminiContentWithFallback(contents: any) {
               return { resp, modelName };
             }),
           new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error(`Gemini ${modelName} timed out`)), 1550)
+            setTimeout(() => reject(new Error(`Gemini ${modelName} timed out`)), 6500)
           ),
         ])
       );
@@ -161,30 +161,58 @@ async function generateGeminiContentWithFallback(contents: any) {
               Authorization: `Bearer ${gw.key}`,
               'Content-Type': 'application/json',
             },
-              signal: AbortSignal.timeout(1250),
-              body: JSON.stringify({
-                model: gw.model,
-                messages: [{ role: 'user', content: promptText }],
-                max_tokens: 700,
-                temperature: 0.6,
-                ...gw.extra,
-              }),
-            });
-            if (!r.ok) throw new Error(`HTTP ${r.status}`);
-            const data: any = await r.json();
-            const rawMsg = data?.choices?.[0]?.message;
-            const text = (rawMsg?.content || rawMsg?.reasoning_content || '')
-              .replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '')
-              .trim();
-            if (!text) throw new Error('Empty response');
-            return {
-              resp: { text, usageMetadata: undefined } as any,
-              modelName: gw.model,
-            };
-          })()
-        );
-      }
+            signal: AbortSignal.timeout(4500),
+            body: JSON.stringify({
+              model: gw.model,
+              messages: [{ role: 'user', content: promptText }],
+              max_tokens: 750,
+              temperature: 0.5,
+              ...gw.extra,
+            }),
+          });
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          const data: any = await r.json();
+          const rawMsg = data?.choices?.[0]?.message;
+          const text = (rawMsg?.content || rawMsg?.reasoning_content || '')
+            .replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '')
+            .trim();
+          if (!text) throw new Error('Empty response');
+          return {
+            resp: { text, usageMetadata: undefined } as any,
+            modelName: gw.model,
+          };
+        })()
+      );
     }
+
+    // Zero-key public fallback so synthesis succeeds even when third-party keys are empty
+    candidates.push(
+      (async () => {
+        const r = await fetch('https://text.pollinations.ai/openai', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: AbortSignal.timeout(6500),
+          body: JSON.stringify({
+            model: 'openai',
+            messages: [{ role: 'user', content: promptText }],
+            max_tokens: 800,
+            temperature: 0.5,
+          }),
+        });
+        if (!r.ok) throw new Error(`Pollinations HTTP ${r.status}`);
+        const data: any = await r.json();
+        const rawMsg = data?.choices?.[0]?.message;
+        const text = (rawMsg?.content || rawMsg?.reasoning_content || '')
+          .replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '')
+          .trim();
+        if (!text) throw new Error('Empty Pollinations response');
+        return {
+          resp: { text, usageMetadata: undefined } as any,
+          modelName: 'zeno-fast',
+        };
+      })()
+    );
+  }
 
   if (candidates.length > 0) {
     return await Promise.any(candidates);
@@ -1020,6 +1048,8 @@ async function generateChatCompletion(
     if (geminiClient || process.env.GEMINI_API_KEY) {
       fastCandidates.push(callGeminiDirect(msgs));
     }
+    fastCandidates.push(callPollinations(textOnlyMsgs));
+    fastCandidates.push(callFlm(textOnlyMsgs));
 
     const winner = await Promise.any(fastCandidates);
     return preferredModelLabel ? { ...winner, modelUsed: preferredModelLabel } : winner;
@@ -8257,12 +8287,33 @@ Rules:
             : '');
       } else if (searchSources.length > 0 && coreTopic) {
         const safeHeading = coreTopic.split(/\s+/).slice(0, 8).join(' ').slice(0, 60);
-        replyText =
-          `### ${safeHeading} — Overview\n\n` +
-          searchSources
-            .slice(0, 4)
-            .map((s, idx) => `- **${s.title}**: ${s.snippet} [${idx + 1}]`)
+        try {
+          const sourcesBlock = searchSources
+            .slice(0, 6)
+            .map(
+              (s, idx) =>
+                `[${idx + 1}] ${s.title} (${s.domain || 'web'})\nURL: ${s.url}\nSummary: ${s.snippet}`
+            )
             .join('\n\n');
+          const synthPrompt =
+            `Answer the user's query using the live multi-source web search results below. ` +
+            `Write a clear, well-structured markdown synthesis with inline numeric citations like [1], [2], [3] matching the sources.\n\n` +
+            `User Query: ${userQuery}\n\nLive Web Sources:\n${sourcesBlock}`;
+          const synthResp = await generateGeminiContentWithFallback(synthPrompt);
+          replyText = (synthResp.resp?.text || '').trim();
+        } catch {}
+
+        if (!replyText.trim()) {
+          replyText =
+            `### ${safeHeading}\n\n` +
+            searchSources
+              .slice(0, 5)
+              .map(
+                (s, idx) =>
+                  `- **${s.title}**: ${s.snippet} [${idx + 1}]`
+              )
+              .join('\n\n');
+        }
       } else if (coreTopic && (youtubeVideos.length > 0 || fetchedImages.length > 0)) {
         const safeHeading = coreTopic.split(/\s+/).slice(0, 8).join(' ').slice(0, 60);
         replyText = `Fetched live references for **${safeHeading}** below.`;
@@ -8546,12 +8597,29 @@ app.get('/api/tokenharbor/models', async (_req, res) => {
 // Setup Vite or static serving and HTTP listener only when not imported by test runner
 if (!isTest) {
   if (!isProd) {
-    const { createServer } = await import('vite');
-    const vite = await createServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
+    let viteMiddleware: any = null;
+    const viteReadyPromise = import('vite')
+      .then(({ createServer }) =>
+        createServer({
+          server: { middlewareMode: true },
+          appType: 'spa',
+        })
+      )
+      .then((vite) => {
+        viteMiddleware = vite.middlewares;
+        return vite;
+      });
+
+    app.use(async (req, res, next) => {
+      try {
+        if (!viteMiddleware) {
+          await viteReadyPromise;
+        }
+        return viteMiddleware(req, res, next);
+      } catch (err) {
+        return next(err);
+      }
     });
-    app.use(vite.middlewares);
   } else {
     app.use(express.static(path.resolve(__dirname, 'dist')));
     app.get('*', (_req, res) => {
@@ -8576,4 +8644,5 @@ if (!isTest) {
   process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
   process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 }
+
 
