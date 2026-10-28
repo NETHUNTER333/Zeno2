@@ -48,6 +48,11 @@ import {
   runWhisperASR,
   getWhisperPipeline,
 } from './server/whisperAIEngine';
+import {
+  registerGrowthEngineRoutes,
+  injectSocialMetaIntoHtml,
+} from './server/growthEngine';
+import fs from 'fs';
 
 dotenv.config();
 
@@ -2940,8 +2945,8 @@ export const app = express();
 app.set('trust proxy', getTrustProxySetting());
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Zeno-Client-Id');
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 });
@@ -8594,9 +8599,27 @@ app.get('/api/tokenharbor/models', async (_req, res) => {
   }
 });
 
+// Register Zeno Growth Engine Routes (Discover, Public Artifacts, Referrals, Creator Profiles, Analytics)
+registerGrowthEngineRoutes(app);
+
+// Server-Rendered Open Graph & Twitter Card Metadata Preview Endpoint for Public Pages & Crawlers
+app.get('/api/growth/og-preview', (req, res) => {
+  try {
+    const htmlPath = path.resolve(__dirname, isProd ? 'dist/index.html' : 'index.html');
+    const rawHtml = fs.readFileSync(htmlPath, 'utf8');
+    const requestUrl = `${req.protocol}://${req.get('host') || 'zeno0x.vercel.app'}${req.originalUrl}`;
+    const enrichedHtml = injectSocialMetaIntoHtml(rawHtml, req.query as Record<string, unknown>, requestUrl);
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    return res.status(200).send(enrichedHtml);
+  } catch (err: any) {
+    return sendNormalizedError(res, 500, 'growth/og-preview-failed', sanitizeErrorMessage(err));
+  }
+});
+
 // Setup Vite or static serving and HTTP listener only when not imported by test runner
 if (!isTest) {
   if (!isProd) {
+    let viteInstance: any = null;
     let viteMiddleware: any = null;
     const viteReadyPromise = import('vite')
       .then(({ createServer }) =>
@@ -8606,6 +8629,7 @@ if (!isTest) {
         })
       )
       .then((vite) => {
+        viteInstance = vite;
         viteMiddleware = vite.middlewares;
         return vite;
       });
@@ -8615,15 +8639,45 @@ if (!isTest) {
         if (!viteMiddleware) {
           await viteReadyPromise;
         }
+        if (
+          req.method === 'GET' &&
+          (req.path === '/' || req.path === '/index.html') &&
+          (req.query.artifact || req.query.share || req.query.ref) &&
+          viteInstance
+        ) {
+          const rawHtml = fs.readFileSync(path.resolve(__dirname, 'index.html'), 'utf8');
+          const transformed = await viteInstance.transformIndexHtml(req.originalUrl, rawHtml);
+          const requestUrl = `${req.protocol}://${req.get('host') || 'zeno0x.vercel.app'}${req.originalUrl}`;
+          const enriched = injectSocialMetaIntoHtml(
+            transformed,
+            req.query as Record<string, unknown>,
+            requestUrl
+          );
+          res.setHeader('Content-Type', 'text/html; charset=utf-8');
+          return res.status(200).end(enriched);
+        }
         return viteMiddleware(req, res, next);
       } catch (err) {
         return next(err);
       }
     });
   } else {
-    app.use(express.static(path.resolve(__dirname, 'dist')));
-    app.get('*', (_req, res) => {
-      res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
+    app.use(express.static(path.resolve(__dirname, 'dist'), { index: false }));
+    app.get('*', (req, res) => {
+      try {
+        const htmlPath = path.resolve(__dirname, 'dist', 'index.html');
+        const rawHtml = fs.readFileSync(htmlPath, 'utf8');
+        const requestUrl = `${req.protocol}://${req.get('host') || 'zeno0x.vercel.app'}${req.originalUrl}`;
+        const enriched = injectSocialMetaIntoHtml(
+          rawHtml,
+          req.query as Record<string, unknown>,
+          requestUrl
+        );
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        return res.status(200).send(enriched);
+      } catch {
+        return res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
+      }
     });
   }
 

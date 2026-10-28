@@ -28,7 +28,9 @@ import {
   Pin,
   BookOpen,
   ListChecks,
-  Share2
+  Share2,
+  Bookmark,
+  Globe
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -64,6 +66,7 @@ import {
 import { PeleDiagram } from './PeleDiagram';
 import { TtsPopup } from './TtsPopup';
 import { UserAccountStore } from '../lib/userAccountStore';
+import { KnowledgeVaultStore } from '../lib/growthStore';
 import { YouTubeTranscriptModal, extractYouTubeIdFromInput } from './YouTubeTranscriptModal';
 import { ModelOption } from './GrokModelPicker';
 
@@ -74,7 +77,10 @@ interface GrokChatMessageProps {
   onRetry?: (modelOverride?: ModelOption) => void;
   onEdit?: (content: string) => void;
   onAskZeno?: (prompt: string) => void;
-  onOpenShareStudio?: (messageId: string, tab?: 'share' | 'export' | 'quote') => void;
+  onOpenShareStudio?: (
+    message: ChatMessageType,
+    tab?: 'share' | 'export' | 'quote' | 'publish'
+  ) => void;
   theme?: 'dark' | 'light';
   nsfwMode?: boolean;
 }
@@ -331,6 +337,28 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
       snippet: rawSnippet || 'Pinned response',
     });
     setIsPinned(nextPinned);
+  };
+
+  const [savedToVault, setSavedToVault] = useState(false);
+
+  const handleSaveToKnowledgeVault = () => {
+    const cleanBody = (message.content || '')
+      .replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '')
+      .trim();
+    if (!cleanBody) return;
+    KnowledgeVaultStore.saveItem({
+      title: threadTitle || cleanBody.replace(/[#*`~>\n]+/g, ' ').trim().slice(0, 72) || 'Zeno Insight',
+      summary: cleanBody.replace(/[#*`~>\n]+/g, ' ').trim().slice(0, 220),
+      content: cleanBody,
+      type: 'ai_response',
+      collectionId: 'col_explanations',
+      tags: ['chat-insight'],
+      sourceThreadId: threadId,
+      sourceMessageId: message.id,
+      sources: message.sources || [],
+    });
+    setSavedToVault(true);
+    setTimeout(() => setSavedToVault(false), 2200);
   };
 
   // Thinking tokens are disabled; strip any <think>...</think> blocks directly
@@ -1891,18 +1919,48 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                   <Pin className={`w-3.5 h-3.5 ${isPinned ? 'fill-current' : ''}`} />
                 </button>
 
+                <button
+                  type="button"
+                  onClick={handleSaveToKnowledgeVault}
+                  className={`p-1 rounded transition-colors cursor-pointer ${
+                    savedToVault
+                      ? 'text-emerald-400'
+                      : isDark
+                      ? 'hover:text-white'
+                      : 'hover:text-[#0d0d0d]'
+                  }`}
+                  title={savedToVault ? 'Saved to Knowledge Vault' : 'Save to Knowledge Vault'}
+                  aria-label="Save to Knowledge Vault"
+                >
+                  <Bookmark className={`w-3.5 h-3.5 ${savedToVault ? 'fill-current' : ''}`} />
+                </button>
+
                 {onOpenShareStudio && (
-                  <button
-                    type="button"
-                    onClick={() => onOpenShareStudio(message.id, 'quote')}
-                    className={`p-1 rounded transition-colors cursor-pointer ${
-                      isDark ? 'hover:text-white' : 'hover:text-[#0d0d0d]'
-                    }`}
-                    title="Share link or export high-res PNG quote card"
-                    aria-label="Share or export quote card"
-                  >
-                    <Share2 className="w-3.5 h-3.5" />
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => onOpenShareStudio(message, 'quote')}
+                      className={`p-1 rounded transition-colors cursor-pointer ${
+                        isDark ? 'hover:text-white' : 'hover:text-[#0d0d0d]'
+                      }`}
+                      title="Create Zeno Share Card or Export"
+                      aria-label="Create Zeno Share Card"
+                    >
+                      <Share2 className="w-3.5 h-3.5" />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => onOpenShareStudio(message, 'publish')}
+                      className={`p-1 rounded transition-colors cursor-pointer ${
+                        isDark ? 'hover:text-white' : 'hover:text-[#0d0d0d]'
+                      }`}
+                      title="Publish as a Public Zeno Page"
+                      aria-label="Publish as a Public Zeno Page"
+                    >
+                      <Globe className="w-3.5 h-3.5" />
+                    </button>
+                  </>
                 )}
               </div>
 

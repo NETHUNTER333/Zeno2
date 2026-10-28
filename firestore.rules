@@ -67,6 +67,39 @@ service cloud.firestore {
         data.messages is list && data.messages.size() <= 200;
     }
 
+    function isValidVaultItem(data, userId, itemId) {
+      return data.keys().hasAll(['id', 'userId', 'title', 'content', 'collectionId', 'sourceType', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'userId', 'title', 'content', 'summary', 'collectionId', 'sourceType', 'tags', 'isPinned', 'createdAt', 'updatedAt']) &&
+        data.id is string && data.id == itemId && data.id.size() <= 128 &&
+        data.userId is string && data.userId == userId && data.userId.size() <= 128 &&
+        data.title is string && data.title.size() <= 200 &&
+        data.content is string && data.content.size() <= 24000 &&
+        (!('summary' in data) || (data.summary is string && data.summary.size() <= 500)) &&
+        isValidId(data.collectionId) &&
+        data.sourceType is string && data.sourceType.size() <= 40 &&
+        (!('tags' in data) || (data.tags is list && data.tags.size() <= 10)) &&
+        (!('isPinned' in data) || data.isPinned is bool) &&
+        data.createdAt is number &&
+        data.updatedAt is number;
+    }
+
+    function isValidPublicArtifact(data, artifactId) {
+      return data.keys().hasAll(['id', 'ownerId', 'authorName', 'title', 'summary', 'content', 'category', 'visibility', 'outputType', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'ownerId', 'authorName', 'title', 'summary', 'content', 'category', 'visibility', 'outputType', 'tags', 'createdAt', 'updatedAt']) &&
+        data.id is string && data.id == artifactId && data.id.size() <= 128 &&
+        data.ownerId is string && data.ownerId == request.auth.uid && data.ownerId.size() <= 128 &&
+        data.authorName is string && data.authorName.size() <= 100 &&
+        data.title is string && data.title.size() <= 200 &&
+        data.summary is string && data.summary.size() <= 500 &&
+        data.content is string && data.content.size() <= 32000 &&
+        data.category is string && data.category.size() <= 50 &&
+        data.visibility in ['public', 'private'] &&
+        data.outputType is string && data.outputType.size() <= 50 &&
+        (!('tags' in data) || (data.tags is list && data.tags.size() <= 10)) &&
+        data.createdAt is number &&
+        data.updatedAt is number;
+    }
+
     match /users/{userId} {
       allow get: if isOwner(userId) && isValidId(userId);
       allow create: if isOwner(userId) && isValidId(userId) && isValidUserProfile(incoming(), userId);
@@ -106,6 +139,18 @@ service cloud.firestore {
         allow create, update: if isOwner(userId) && isValidId(userId) && isValidId(sessionId);
         allow delete: if isOwner(userId) && isValidId(userId) && isValidId(sessionId);
       }
+
+      match /vault_items/{itemId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(itemId);
+        allow list: if isOwner(userId) && existing().userId == request.auth.uid;
+        allow create: if isOwner(userId) && isValidId(userId) && isValidId(itemId) && isValidVaultItem(incoming(), userId, itemId);
+        allow update: if resource != null && isOwner(userId) && isValidId(userId) && isValidId(itemId) && isValidVaultItem(incoming(), userId, itemId) &&
+          incoming().id == existing().id &&
+          incoming().userId == existing().userId &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['title', 'content', 'summary', 'collectionId', 'tags', 'isPinned', 'updatedAt']);
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(itemId);
+      }
     }
 
     match /shared_threads/{shareId} {
@@ -114,6 +159,18 @@ service cloud.firestore {
       allow create: if isSignedIn() && isValidId(shareId) && isValidSharedThread(incoming(), shareId);
       allow update: if false;
       allow delete: if resource != null && isSignedIn() && isValidId(shareId) && existing().ownerId == request.auth.uid;
+    }
+
+    match /public_artifacts/{artifactId} {
+      allow get: if isValidId(artifactId) && resource != null && (existing().visibility == 'public' || (isSignedIn() && existing().ownerId == request.auth.uid));
+      allow list: if existing().visibility == 'public' || (isSignedIn() && existing().ownerId == request.auth.uid);
+      allow create: if isSignedIn() && isValidId(artifactId) && isValidPublicArtifact(incoming(), artifactId);
+      allow update: if resource != null && isSignedIn() && isValidId(artifactId) && existing().ownerId == request.auth.uid && isValidPublicArtifact(incoming(), artifactId) &&
+        incoming().id == existing().id &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['authorName', 'title', 'summary', 'content', 'category', 'visibility', 'outputType', 'tags', 'updatedAt']);
+      allow delete: if resource != null && isSignedIn() && isValidId(artifactId) && existing().ownerId == request.auth.uid;
     }
   }
 }

@@ -21,6 +21,9 @@ import {
   ChevronRight,
   Pin,
   BookOpen,
+  Compass,
+  Bookmark,
+  Share2,
 } from 'lucide-react';
 import { GrokLogo } from './GrokLogo';
 import { ChatMessage, SavedBookmark } from '../types';
@@ -50,6 +53,7 @@ interface SidebarProps {
   onOpenAnalytics: () => void;
   onOpenAccountModal?: (tab?: string) => void;
   onOpenOnboarding?: () => void;
+  onOpenGrowthHub?: (tab: 'discover' | 'vault' | 'weekly' | 'passes') => void;
   onSelectPinnedMessage?: (threadId: string, messageId: string, snippet: string) => void;
   theme: 'dark' | 'light';
   onToggleTheme: () => void;
@@ -269,6 +273,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenAnalytics,
   onOpenAccountModal,
   onOpenOnboarding,
+  onOpenGrowthHub,
   onSelectPinnedMessage,
   theme,
   onToggleTheme,
@@ -372,6 +377,49 @@ export const Sidebar: React.FC<SidebarProps> = ({
         if (window.innerWidth < 768) onClose();
       },
     });
+
+    if (onOpenGrowthHub) {
+      items.push({
+        id: 'action-discover',
+        label: 'Zeno Discover',
+        sublabel: 'Public research & study guides',
+        icon: <Compass className="w-3.5 h-3.5 text-sky-400" />,
+        onClick: () => {
+          onOpenGrowthHub('discover');
+          if (window.innerWidth < 768) onClose();
+        },
+      });
+      items.push({
+        id: 'action-vault',
+        label: 'Knowledge Vault',
+        sublabel: 'Saved insights & collections',
+        icon: <Bookmark className="w-3.5 h-3.5 text-emerald-400" />,
+        onClick: () => {
+          onOpenGrowthHub('vault');
+          if (window.innerWidth < 768) onClose();
+        },
+      });
+      items.push({
+        id: 'action-weekly',
+        label: 'Weekly Intelligence Brief',
+        sublabel: 'Progress & optional missions',
+        icon: <BarChart2 className="w-3.5 h-3.5 text-amber-400" />,
+        onClick: () => {
+          onOpenGrowthHub('weekly');
+          if (window.innerWidth < 768) onClose();
+        },
+      });
+      items.push({
+        id: 'action-passes',
+        label: 'Zeno Passes',
+        sublabel: 'Invite friends & creator profile',
+        icon: <Share2 className="w-3.5 h-3.5 text-purple-400" />,
+        onClick: () => {
+          onOpenGrowthHub('passes');
+          if (window.innerWidth < 768) onClose();
+        },
+      });
+    }
 
     if (filteredPinnedMessages.length > 0 || !normalizedQuery) {
       items.push({
@@ -497,6 +545,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     onClose,
     onSelectThread,
     onSelectPinnedMessage,
+    onOpenGrowthHub,
     onDeleteThread,
     onUpdateThreadTitle,
     onExportThread,
@@ -628,7 +677,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
           }`}
         >
           <div className="flex items-center gap-1">
-
             <button
               onClick={onOpenSettings}
               className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer ${
@@ -638,6 +686,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
             >
               <SettingsIcon className="w-4 h-4" />
               <span className="font-medium text-xs">Settings</span>
+            </button>
+
+            <button
+              onClick={onOpenAnalytics}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer ${
+                isDark ? 'hover:text-white hover:bg-[#222222]' : 'hover:text-[#0d0d0d] hover:bg-[#eaeaea]'
+              }`}
+              title="Open Workspace & Growth Analytics"
+            >
+              <BarChart2 className="w-4 h-4" />
+              <span className="font-medium text-xs">Analytics</span>
             </button>
           </div>
 

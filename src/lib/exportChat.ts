@@ -356,6 +356,15 @@ export function buildNotionReadyMarkdown(thread: ExportableThread): string {
   return lines.join('\n');
 }
 
+export type ShareCardTheme =
+  | 'carbon'
+  | 'ivory'
+  | 'slate'
+  | 'obsidian-gold'
+  | 'emerald-terminal';
+
+export type ShareCardAspectRatio = 'landscape' | 'square' | 'story';
+
 export interface QuoteCardConfig {
   title: string;
   promptText?: string;
@@ -363,7 +372,71 @@ export interface QuoteCardConfig {
   modelName?: string;
   sourcesCount?: number;
   dateStr?: string;
-  theme: 'carbon' | 'ivory' | 'slate';
+  authorName?: string;
+  publicUrl?: string;
+  aspectRatio?: ShareCardAspectRatio;
+  theme: ShareCardTheme;
+}
+
+function getSharePalette(theme: ShareCardTheme) {
+  switch (theme) {
+    case 'ivory':
+      return {
+        bg: '#FAF8F5',
+        surface: '#F1EDE6',
+        border: '#E2DDD5',
+        textPrimary: '#141413',
+        textSecondary: '#3E3C38',
+        textMuted: '#78756F',
+        accent: '#0F172A',
+        badgeBg: '#E6E1D8',
+      };
+    case 'slate':
+      return {
+        bg: '#0F172A',
+        surface: '#1E293B',
+        border: '#334155',
+        textPrimary: '#F8FAFC',
+        textSecondary: '#CBD5E1',
+        textMuted: '#64748B',
+        accent: '#38BDF8',
+        badgeBg: '#1E293B',
+      };
+    case 'obsidian-gold':
+      return {
+        bg: '#09090B',
+        surface: '#141311',
+        border: '#3A3120',
+        textPrimary: '#FAF5E8',
+        textSecondary: '#E4DBC5',
+        textMuted: '#9A8B6D',
+        accent: '#F59E0B',
+        badgeBg: '#1F1B12',
+      };
+    case 'emerald-terminal':
+      return {
+        bg: '#06110D',
+        surface: '#0C1F17',
+        border: '#193D2E',
+        textPrimary: '#ECFDF5',
+        textSecondary: '#A7F3D0',
+        textMuted: '#528E74',
+        accent: '#10B981',
+        badgeBg: '#0F291E',
+      };
+    case 'carbon':
+    default:
+      return {
+        bg: '#0A0A0C',
+        surface: '#141418',
+        border: '#26262E',
+        textPrimary: '#F4F4F6',
+        textSecondary: '#D4D4D8',
+        textMuted: '#71717A',
+        accent: '#FFFFFF',
+        badgeBg: '#18181D',
+      };
+  }
 }
 
 export function renderQuoteCardToCanvas(
@@ -371,40 +444,12 @@ export function renderQuoteCardToCanvas(
   config: QuoteCardConfig
 ): void {
   const scale = 2; // 2x Retina High-Res PNG
-  const width = 900;
-  const padding = 56;
+  const ratio: ShareCardAspectRatio = config.aspectRatio || 'landscape';
+  const width = ratio === 'story' ? 760 : ratio === 'square' ? 880 : 920;
+  const padding = ratio === 'story' ? 54 : 56;
   const contentWidth = width - padding * 2;
 
-  const palette =
-    config.theme === 'ivory'
-      ? {
-          bg: '#FAF8F5',
-          surface: '#F1EDE6',
-          border: '#E2DDD5',
-          textPrimary: '#141413',
-          textSecondary: '#575550',
-          textMuted: '#87847E',
-          accent: '#0F172A',
-        }
-      : config.theme === 'slate'
-      ? {
-          bg: '#0F172A',
-          surface: '#1E293B',
-          border: '#334155',
-          textPrimary: '#F8FAFC',
-          textSecondary: '#CBD5E1',
-          textMuted: '#64748B',
-          accent: '#38BDF8',
-        }
-      : {
-          bg: '#0A0A0C',
-          surface: '#141418',
-          border: '#26262E',
-          textPrimary: '#F4F4F6',
-          textSecondary: '#D4D4D8',
-          textMuted: '#71717A',
-          accent: '#FFFFFF',
-        };
+  const palette = getSharePalette(config.theme);
 
   const tempCtx = canvas.getContext('2d');
   if (!tempCtx) return;
@@ -439,17 +484,31 @@ export function renderQuoteCardToCanvas(
     return lines;
   };
 
+  const maxAnswerLines = ratio === 'story' ? 20 : ratio === 'square' ? 14 : 11;
+
   tempCtx.font = '600 22px "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif';
   const promptLines = config.promptText
-    ? wrapCanvasText(tempCtx, config.promptText, contentWidth - 36, 3)
+    ? wrapCanvasText(tempCtx, config.promptText, contentWidth - 36, ratio === 'story' ? 4 : 3)
     : [];
 
   tempCtx.font = '400 21px "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif';
-  const answerLines = wrapCanvasText(tempCtx, config.answerText || '', contentWidth, 12);
+  const answerLines = wrapCanvasText(
+    tempCtx,
+    config.answerText || '',
+    contentWidth,
+    maxAnswerLines
+  );
 
   const promptBlockHeight = promptLines.length > 0 ? promptLines.length * 32 + 44 : 0;
-  const answerBlockHeight = Math.max(1, answerLines.length) * 34 + 24;
-  const height = Math.max(460, padding * 2 + 76 + promptBlockHeight + answerBlockHeight + 68);
+  const answerBlockHeight = Math.max(1, answerLines.length) * 34 + 28;
+  const computedHeight = padding * 2 + 86 + promptBlockHeight + answerBlockHeight + 82;
+
+  const height =
+    ratio === 'story'
+      ? Math.max(1280, computedHeight)
+      : ratio === 'square'
+      ? Math.max(880, computedHeight)
+      : Math.max(520, computedHeight);
 
   canvas.width = width * scale;
   canvas.height = height * scale;
@@ -462,7 +521,7 @@ export function renderQuoteCardToCanvas(
   ctx.fillStyle = palette.bg;
   ctx.fillRect(0, 0, width, height);
 
-  // Subtle 1px frame border
+  // Subtle 1.5px frame border
   ctx.strokeStyle = palette.border;
   ctx.lineWidth = 1.5;
   ctx.strokeRect(18, 18, width - 36, height - 36);
@@ -479,14 +538,15 @@ export function renderQuoteCardToCanvas(
   const headerMeta = [
     config.modelName || 'Zeno Synthesis',
     config.sourcesCount ? `${config.sourcesCount} cited sources` : null,
-    config.dateStr || new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+    config.dateStr ||
+      new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
   ]
     .filter(Boolean)
     .join('  ·  ');
   const metaWidth = ctx.measureText(headerMeta).width;
   ctx.fillText(headerMeta, width - padding - metaWidth, y + 17);
 
-  y += 42;
+  y += 40;
   ctx.strokeStyle = palette.border;
   ctx.lineWidth = 1;
   ctx.beginPath();
@@ -495,9 +555,20 @@ export function renderQuoteCardToCanvas(
   ctx.stroke();
   y += 28;
 
+  // Card Title
+  if (config.title) {
+    ctx.fillStyle = palette.textPrimary;
+    ctx.font = '700 24px "Plus Jakarta Sans", -apple-system, sans-serif';
+    const titleLines = wrapCanvasText(ctx, config.title, contentWidth, 2);
+    titleLines.forEach((line, idx) => {
+      ctx.fillText(line, padding, y + 24 + idx * 32);
+    });
+    y += titleLines.length * 32 + 20;
+  }
+
   // Optional Prompt Box
   if (promptLines.length > 0) {
-    const boxH = promptLines.length * 32 + 24;
+    const boxH = promptLines.length * 31 + 24;
     ctx.fillStyle = palette.surface;
     ctx.beginPath();
     ctx.roundRect(padding, y, contentWidth, boxH, 12);
@@ -506,16 +577,16 @@ export function renderQuoteCardToCanvas(
     ctx.stroke();
 
     ctx.fillStyle = palette.textPrimary;
-    ctx.font = '600 20px "Plus Jakarta Sans", -apple-system, sans-serif';
+    ctx.font = '600 19px "Plus Jakarta Sans", -apple-system, sans-serif';
     promptLines.forEach((line, idx) => {
-      ctx.fillText(line, padding + 18, y + 30 + idx * 32);
+      ctx.fillText(line, padding + 18, y + 29 + idx * 31);
     });
     y += boxH + 26;
   }
 
   // Answer Prose
   ctx.fillStyle = palette.textSecondary;
-  ctx.font = '400 21px "Plus Jakarta Sans", -apple-system, sans-serif';
+  ctx.font = '400 20.5px "Plus Jakarta Sans", -apple-system, sans-serif';
   answerLines.forEach((line, idx) => {
     ctx.fillText(line, padding, y + 22 + idx * 34);
   });
@@ -524,16 +595,18 @@ export function renderQuoteCardToCanvas(
   const footerY = height - padding + 6;
   ctx.strokeStyle = palette.border;
   ctx.beginPath();
-  ctx.moveTo(padding, footerY - 26);
-  ctx.lineTo(width - padding, footerY - 26);
+  ctx.moveTo(padding, footerY - 28);
+  ctx.lineTo(width - padding, footerY - 28);
   ctx.stroke();
 
   ctx.fillStyle = palette.textMuted;
   ctx.font = '500 13px "Plus Jakarta Sans", -apple-system, sans-serif';
-  const cleanTitle = (config.title || 'Zeno Research Conversation').slice(0, 68);
-  ctx.fillText(cleanTitle, padding, footerY);
+  const leftFooter = config.authorName
+    ? `Shared by ${config.authorName.slice(0, 32)}  ·  Explore with Zeno`
+    : 'Explore with Zeno  →  zeno0x.vercel.app';
+  ctx.fillText(leftFooter, padding, footerY);
 
-  const rightWatermark = 'zeno · verified research snapshot';
+  const rightWatermark = 'zeno0x.vercel.app';
   ctx.font = '500 12px "JetBrains Mono", monospace';
   const rwWidth = ctx.measureText(rightWatermark).width;
   ctx.fillText(rightWatermark, width - padding - rwWidth, footerY);
@@ -545,9 +618,198 @@ export function downloadQuoteCardPng(config: QuoteCardConfig): void {
   const dataUrl = canvas.toDataURL('image/png');
   const a = document.createElement('a');
   a.href = dataUrl;
-  a.download = `${sanitizeFilename(config.title)}-quote-card.png`;
+  a.download = `${sanitizeFilename(config.title)}-zeno-card.png`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
 }
+
+export function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob | null> {
+  return new Promise((resolve) => {
+    try {
+      canvas.toBlob((blob) => resolve(blob), 'image/png');
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+export interface WeeklyReportCardConfig {
+  periodLabel: string;
+  conversationsCount: number;
+  researchSessionsCount: number;
+  savedVaultItemsCount: number;
+  studyGuidesCount: number;
+  publishedArtifactsCount: number;
+  activeDaysCount: number;
+  levelName: string;
+  topTopics: string[];
+  includeTopics: boolean;
+  theme: ShareCardTheme;
+}
+
+export function renderWeeklyReportCardToCanvas(
+  canvas: HTMLCanvasElement,
+  config: WeeklyReportCardConfig
+): void {
+  const scale = 2;
+  const width = 880;
+  const height = 880;
+  const padding = 56;
+  const contentWidth = width - padding * 2;
+  const palette = getSharePalette(config.theme);
+
+  canvas.width = width * scale;
+  canvas.height = height * scale;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+
+  ctx.scale(scale, scale);
+
+  ctx.fillStyle = palette.bg;
+  ctx.fillRect(0, 0, width, height);
+
+  ctx.strokeStyle = palette.border;
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(18, 18, width - 36, height - 36);
+
+  let y = padding;
+
+  // Brand + Period
+  ctx.fillStyle = palette.textPrimary;
+  ctx.font = '700 18px "JetBrains Mono", monospace';
+  ctx.fillText('ZENO // WEEKLY INTELLIGENCE BRIEF', padding, y + 16);
+
+  ctx.fillStyle = palette.textMuted;
+  ctx.font = '500 13px "JetBrains Mono", monospace';
+  const periodW = ctx.measureText(config.periodLabel).width;
+  ctx.fillText(config.periodLabel, width - padding - periodW, y + 16);
+
+  y += 38;
+  ctx.strokeStyle = palette.border;
+  ctx.beginPath();
+  ctx.moveTo(padding, y);
+  ctx.lineTo(width - padding, y);
+  ctx.stroke();
+
+  y += 48;
+
+  // Headline
+  ctx.fillStyle = palette.textPrimary;
+  ctx.font = '700 34px "Plus Jakarta Sans", -apple-system, sans-serif';
+  ctx.fillText('Your Week with Zeno', padding, y);
+
+  y += 30;
+  ctx.fillStyle = palette.textMuted;
+  ctx.font = '500 16px "Plus Jakarta Sans", -apple-system, sans-serif';
+  ctx.fillText(
+    `Intelligence Tier: ${config.levelName}  ·  ${config.activeDaysCount} active research days`,
+    padding,
+    y
+  );
+
+  y += 42;
+
+  // 2x2 Metrics Grid
+  const metrics = [
+    {
+      label: 'RESEARCH SESSIONS',
+      value: String(config.researchSessionsCount),
+      sub: `${config.conversationsCount} total threads`,
+    },
+    {
+      label: 'KNOWLEDGE VAULT',
+      value: String(config.savedVaultItemsCount),
+      sub: 'Saved insights & notes',
+    },
+    {
+      label: 'STUDY & DOCUMENTS',
+      value: String(config.studyGuidesCount),
+      sub: 'Study guides & PDFs analyzed',
+    },
+    {
+      label: 'PUBLISHED PAGES',
+      value: String(config.publishedArtifactsCount),
+      sub: 'Community resources shared',
+    },
+  ];
+
+  const cardW = (contentWidth - 24) / 2;
+  const cardH = 148;
+
+  metrics.forEach((m, idx) => {
+    const col = idx % 2;
+    const row = Math.floor(idx / 2);
+    const x = padding + col * (cardW + 24);
+    const cy = y + row * (cardH + 20);
+
+    ctx.fillStyle = palette.surface;
+    ctx.beginPath();
+    ctx.roundRect(x, cy, cardW, cardH, 14);
+    ctx.fill();
+    ctx.strokeStyle = palette.border;
+    ctx.stroke();
+
+    ctx.fillStyle = palette.textMuted;
+    ctx.font = '600 12px "JetBrains Mono", monospace';
+    ctx.fillText(m.label, x + 24, cy + 34);
+
+    ctx.fillStyle = palette.textPrimary;
+    ctx.font = '700 44px "JetBrains Mono", monospace';
+    ctx.fillText(m.value, x + 24, cy + 90);
+
+    ctx.fillStyle = palette.textSecondary;
+    ctx.font = '400 14px "Plus Jakarta Sans", -apple-system, sans-serif';
+    ctx.fillText(m.sub, x + 24, cy + 122);
+  });
+
+  y += cardH * 2 + 54;
+
+  // Domains explored (only if user opted to include them)
+  if (config.includeTopics && config.topTopics.length > 0) {
+    ctx.fillStyle = palette.textMuted;
+    ctx.font = '600 12px "JetBrains Mono", monospace';
+    ctx.fillText('DOMAINS EXPLORED THIS WEEK', padding, y);
+    y += 26;
+
+    ctx.fillStyle = palette.textSecondary;
+    ctx.font = '500 17px "Plus Jakarta Sans", -apple-system, sans-serif';
+    const topicsLine = config.topTopics.slice(0, 5).join('   ·   ');
+    ctx.fillText(topicsLine.slice(0, 74), padding, y);
+  } else {
+    ctx.fillStyle = palette.textSecondary;
+    ctx.font = '500 17px "Plus Jakarta Sans", -apple-system, sans-serif';
+    ctx.fillText('Your curiosity is compounding into structured knowledge.', padding, y + 12);
+  }
+
+  // Footer
+  const footerY = height - padding + 6;
+  ctx.strokeStyle = palette.border;
+  ctx.beginPath();
+  ctx.moveTo(padding, footerY - 28);
+  ctx.lineTo(width - padding, footerY - 28);
+  ctx.stroke();
+
+  ctx.fillStyle = palette.textMuted;
+  ctx.font = '500 13px "Plus Jakarta Sans", -apple-system, sans-serif';
+  ctx.fillText('Private conversation contents excluded by default', padding, footerY);
+
+  const rightWatermark = 'Explore with Zeno → zeno0x.vercel.app';
+  ctx.font = '600 13px "JetBrains Mono", monospace';
+  const rwW = ctx.measureText(rightWatermark).width;
+  ctx.fillText(rightWatermark, width - padding - rwW, footerY);
+}
+
+export function downloadWeeklyReportCardPng(config: WeeklyReportCardConfig): void {
+  const canvas = document.createElement('canvas');
+  renderWeeklyReportCardToCanvas(canvas, config);
+  const dataUrl = canvas.toDataURL('image/png');
+  const a = document.createElement('a');
+  a.href = dataUrl;
+  a.download = `zeno-weekly-brief.png`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
 

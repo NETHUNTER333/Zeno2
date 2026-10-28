@@ -73,6 +73,45 @@
         "notes": { "type": "string", "maxLength": 10000 }
       },
       "required": ["videoId", "userId", "title", "updatedAt"]
+    },
+    "KnowledgeVaultItem": {
+      "title": "Knowledge Vault Item",
+      "description": "A private saved knowledge item, study note, or research synthesis belonging to a user",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "title": { "type": "string", "maxLength": 200 },
+        "content": { "type": "string", "maxLength": 24000 },
+        "summary": { "type": "string", "maxLength": 500 },
+        "collectionId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "sourceType": { "type": "string", "maxLength": 40 },
+        "tags": { "type": "array" },
+        "isPinned": { "type": "boolean" },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["id", "userId", "title", "content", "collectionId", "sourceType", "createdAt", "updatedAt"]
+    },
+    "PublicArtifact": {
+      "title": "Public Artifact",
+      "description": "A user-published study guide, research synthesis, or workflow with explicit public/private visibility",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "authorName": { "type": "string", "maxLength": 100 },
+        "title": { "type": "string", "maxLength": 200 },
+        "summary": { "type": "string", "maxLength": 500 },
+        "content": { "type": "string", "maxLength": 32000 },
+        "category": { "type": "string", "maxLength": 50 },
+        "visibility": { "type": "string", "enum": ["public", "private"] },
+        "outputType": { "type": "string", "maxLength": 50 },
+        "tags": { "type": "array" },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["id", "ownerId", "authorName", "title", "summary", "content", "category", "visibility", "outputType", "createdAt", "updatedAt"]
     }
   },
   "firestore": {
@@ -92,9 +131,17 @@
       "schema": { "$ref": "#/entities/UserStudySession" },
       "description": "Stores saved video study workspace sessions for a user"
     },
+    "/users/{userId}/vault_items/{itemId}": {
+      "schema": { "$ref": "#/entities/KnowledgeVaultItem" },
+      "description": "Stores private personal knowledge vault items for a specific user"
+    },
     "/shared_threads/{shareId}": {
       "schema": { "$ref": "#/entities/SharedThreadSnapshot" },
       "description": "Stores explicitly shared read-only thread snapshots"
+    },
+    "/public_artifacts/{artifactId}": {
+      "schema": { "$ref": "#/entities/PublicArtifact" },
+      "description": "Stores published study guides, research summaries, and workflows with visibility controls"
     }
   }
 }

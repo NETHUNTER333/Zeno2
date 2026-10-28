@@ -214,6 +214,7 @@ export interface ChatAttachment {
   size: number;
   type: string;
   url?: string;
+  dataUrl?: string;
   textContent?: string;
   width?: number;
   height?: number;
@@ -454,4 +455,200 @@ export interface PrivacySettings {
   allowAiTraining: boolean;
   twoFactorEnabled: boolean;
 }
+
+// ============================================================================
+// ZENO GROWTH ENGINE TYPES
+// ============================================================================
+
+export type DiscoverCategory =
+  | 'Learning'
+  | 'Research'
+  | 'Science'
+  | 'Technology'
+  | 'Programming'
+  | 'Writing'
+  | 'Productivity'
+  | 'Study Resources';
+
+export type ArtifactOutputType =
+  | 'explanation'
+  | 'research_summary'
+  | 'study_guide'
+  | 'document_summary'
+  | 'structured_notes'
+  | 'workflow';
+
+export type PublicArtifactType = ArtifactOutputType;
+
+export type ArtifactVisibility = 'public' | 'private';
+
+export interface PublicArtifact {
+  id: string;
+  ownerId: string;
+  authorName: string;
+  authorUsername?: string;
+  authorBio?: string;
+  authorAvatar?: string;
+  showAuthorAttribution: boolean;
+  title: string;
+  summary: string;
+  content: string;
+  promptText?: string;
+  modelUsed?: string;
+  category: DiscoverCategory;
+  tags: string[];
+  visibility: ArtifactVisibility;
+  outputType: ArtifactOutputType;
+  sources?: SearchSource[];
+  createdAt: number;
+  updatedAt: number;
+  viewsCount: number;
+  savesCount: number;
+  forksCount: number;
+}
+
+export type KnowledgeSourceType =
+  | 'ai_response'
+  | 'research_summary'
+  | 'study_guide'
+  | 'pdf_insight'
+  | 'discover_resource'
+  | 'personal_note'
+  | 'note';
+
+export interface KnowledgeVaultItem {
+  id: string;
+  userId: string;
+  title: string;
+  content: string;
+  summary: string;
+  collectionId: string;
+  tags: string[];
+  sourceType: KnowledgeSourceType;
+  type?: KnowledgeSourceType;
+  threadId?: string;
+  sourceThreadId?: string;
+  messageId?: string;
+  sourceMessageId?: string;
+  artifactId?: string;
+  sources?: SearchSource[];
+  isPinned: boolean;
+  pinned?: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface KnowledgeCollection {
+  id: string;
+  name: string;
+  description?: string;
+  createdAt: number;
+}
+
+export interface CreatorPublicProfile {
+  uid: string;
+  displayName: string;
+  username: string;
+  bio: string;
+  avatarUrl?: string;
+  isPublic: boolean;
+  specialtyTags?: string[];
+  publishedCount?: number;
+  joinedAt?: number;
+  featuredArtifactIds: string[];
+  updatedAt: number;
+}
+
+export interface ZenoReferralStatus {
+  referralCode: string;
+  code?: string;
+  referrerUid: string;
+  inviteUrl: string;
+  referralUrl?: string;
+  visitsCount: number;
+  validatedSignupsCount: number;
+  verifiedReferralsCount?: number;
+  qualifiedActionsCount: number;
+  unlockedThemes: string[];
+  referredByCode?: string | null;
+  attributionWindowDays: number;
+  createdAt: number;
+}
+
+export interface ZenoMissionItem {
+  id: string;
+  title: string;
+  description: string;
+  xp: number;
+  progress: number;
+  target: number;
+  completed: boolean;
+  completedAt?: number;
+}
+
+export interface ZenoIntelligenceLevel {
+  level: number;
+  name: 'Explorer' | 'Researcher' | 'Analyst' | 'Scholar' | 'Architect' | 'Polymath';
+  achievement: string;
+  xp?: number;
+  currentXp: number;
+  nextLevelXp: number;
+}
+
+export interface ZenoNotificationPreferences {
+  enabled: boolean;
+  unfinishedResearchReminders: boolean;
+  weeklyIntelligenceBrief: boolean;
+  weeklyIntelligenceReport?: boolean;
+  referralMilestones: boolean;
+  frequency: 'daily' | 'weekly' | 'off';
+  updatedAt: number;
+}
+
+export type GrowthAnalyticsEventName =
+  | 'signup_completed'
+  | 'first_core_action_completed'
+  | 'knowledge_item_saved'
+  | 'share_card_created'
+  | 'share_action_initiated'
+  | 'public_artifact_created'
+  | 'public_artifact_opened'
+  | 'discover_resource_opened'
+  | 'referral_link_created'
+  | 'referral_visit_recorded'
+  | 'referral_signup_validated'
+  | 'weekly_report_viewed'
+  | 'returning_session_started';
+
+export interface GrowthFunnelSummary {
+  totalEvents: number;
+  totalRecordedEvents?: number;
+  countsByEvent: Record<GrowthAnalyticsEventName, number>;
+  acquisition: {
+    referralVisits: number;
+    publicArtifactOpens: number;
+    publicArtifactVisits?: number;
+    discoverOpens: number;
+    discoverResourceOpens?: number;
+  };
+  activation: {
+    signupsCompleted: number;
+    firstCoreActions: number;
+    knowledgeItemsSaved: number;
+  };
+  virality: {
+    shareCardsCreated: number;
+    shareActionsInitiated: number;
+    publicArtifactsCreated: number;
+    validatedReferrals: number;
+  };
+  retention: {
+    returningSessions: number;
+    weeklyReportsViewed: number;
+    activeDaysLast7: number;
+    activeDaysObserved?: number;
+  };
+}
+
+
 

@@ -11,7 +11,7 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "lint:rules": "eslint firestore.rules",
-    "test": "vitest run tests/auth-and-rate-limit.test.ts tests/firestore.rules.test.ts tests/search-and-chat-reliability.test.ts tests/staging-and-distributed-rate-limit.test.ts tests/load-and-sse-validation.test.ts tests/staging-rehearsal-and-rollout.test.ts",
+    "test": "vitest run tests/auth-and-rate-limit.test.ts tests/firestore.rules.test.ts tests/search-and-chat-reliability.test.ts tests/staging-and-distributed-rate-limit.test.ts tests/load-and-sse-validation.test.ts tests/staging-rehearsal-and-rollout.test.ts tests/growth-engine.test.ts",
     "test:emulator": "firebase emulators:exec --only firestore --project demo-zeno-security \"npx vitest run tests/firestore.emulator.test.ts\""
   },
   "dependencies": {

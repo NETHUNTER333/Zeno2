@@ -781,7 +781,7 @@ export async function searchWebReliable(
           if (tf.results.length > 0) {
             tinyfishResults = tf.results;
             if (!isTestEnv && tregResults.length > 0 && resolveEarly) {
-              resolveEarly();
+              (resolveEarly as () => void)();
             }
           } else if (tf.error) {
             tinyfishError = tf.error;

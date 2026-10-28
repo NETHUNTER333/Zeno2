@@ -628,4 +628,125 @@ export async function loadSharedThreadFromFirestore(
   return null;
 }
 
+export async function saveVaultItemToFirestore(item: {
+  id: string;
+  title: string;
+  content: string;
+  summary?: string;
+  collectionId: string;
+  sourceType: string;
+  tags?: string[];
+  isPinned?: boolean;
+  createdAt: number;
+  updatedAt: number;
+}) {
+  const user = auth.currentUser;
+  if (!user) return;
+  const safeId = String(item.id).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 128);
+  const safeCollectionId = String(item.collectionId || 'col_general')
+    .replace(/[^a-zA-Z0-9_-]/g, '_')
+    .slice(0, 128);
+  const path = `users/${user.uid}/vault_items/${safeId}`;
+  try {
+    const payload = stripUndefined({
+      id: safeId,
+      userId: user.uid,
+      title: String(item.title || 'Saved Insight').slice(0, 200),
+      content: String(item.content || '').slice(0, 24000),
+      summary: item.summary ? String(item.summary).slice(0, 500) : undefined,
+      collectionId: safeCollectionId,
+      sourceType: String(item.sourceType || 'ai_response').slice(0, 40),
+      tags: Array.isArray(item.tags) ? item.tags.slice(0, 10).map((t) => String(t).slice(0, 32)) : [],
+      isPinned: Boolean(item.isPinned),
+      createdAt: Number(item.createdAt) || Date.now(),
+      updatedAt: Number(item.updatedAt) || Date.now(),
+    });
+    await setDoc(doc(db, 'users', user.uid, 'vault_items', safeId), payload);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function deleteVaultItemFromFirestore(itemId: string) {
+  const user = auth.currentUser;
+  if (!user) return;
+  const safeId = String(itemId).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 128);
+  const path = `users/${user.uid}/vault_items/${safeId}`;
+  try {
+    await deleteDoc(doc(db, 'users', user.uid, 'vault_items', safeId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
+export async function loadUserVaultItemsFromFirestore(): Promise<any[]> {
+  const user = auth.currentUser;
+  if (!user) return [];
+  const path = `users/${user.uid}/vault_items`;
+  try {
+    const q = query(
+      collection(db, 'users', user.uid, 'vault_items'),
+      where('userId', '==', user.uid)
+    );
+    const snap = await getDocs(q);
+    const items = snap.docs.map((d) => d.data());
+    items.sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
+    return items;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, path);
+    return [];
+  }
+}
+
+export async function savePublicArtifactToFirestore(artifact: {
+  id: string;
+  authorName: string;
+  title: string;
+  summary: string;
+  content: string;
+  category: string;
+  visibility: 'public' | 'private';
+  outputType: string;
+  tags?: string[];
+  createdAt: number;
+  updatedAt: number;
+}) {
+  const user = auth.currentUser;
+  if (!user) return;
+  const safeId = String(artifact.id).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 128);
+  const path = `public_artifacts/${safeId}`;
+  try {
+    const payload = stripUndefined({
+      id: safeId,
+      ownerId: user.uid,
+      authorName: String(artifact.authorName || user.displayName || 'Zeno Researcher').slice(0, 100),
+      title: String(artifact.title || 'Zeno Resource').slice(0, 200),
+      summary: String(artifact.summary || '').slice(0, 500),
+      content: String(artifact.content || '').slice(0, 32000),
+      category: String(artifact.category || 'Research').slice(0, 50),
+      visibility: artifact.visibility === 'private' ? 'private' : 'public',
+      outputType: String(artifact.outputType || 'research_summary').slice(0, 50),
+      tags: Array.isArray(artifact.tags) ? artifact.tags.slice(0, 10).map((t) => String(t).slice(0, 32)) : [],
+      createdAt: Number(artifact.createdAt) || Date.now(),
+      updatedAt: Number(artifact.updatedAt) || Date.now(),
+    });
+    await setDoc(doc(db, 'public_artifacts', safeId), payload);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function deletePublicArtifactFromFirestore(artifactId: string) {
+  const user = auth.currentUser;
+  if (!user) return;
+  const safeId = String(artifactId).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 128);
+  const path = `public_artifacts/${safeId}`;
+  try {
+    await deleteDoc(doc(db, 'public_artifacts', safeId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
+
 

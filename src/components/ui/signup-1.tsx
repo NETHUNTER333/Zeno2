@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import { FcGoogle } from "react-icons/fc";
-import { ArrowRight, UserCheck, Sparkles } from "lucide-react";
 
 import { Button } from "./button";
 import { Input } from "./input";
@@ -60,7 +59,7 @@ const Signup1 = ({
     } catch (err: any) {
       const code = err?.code || "";
       if (code === "auth/invalid-credential" || code === "auth/wrong-password") {
-        setError("Incorrect email or password. You can also enter as Guest below.");
+        setError("Incorrect email or password.");
       } else if (code === "auth/user-not-found") {
         // If not found in login mode, auto-create account for them
         try {
@@ -68,12 +67,12 @@ const Signup1 = ({
           if (onSuccess) onSuccess();
           return;
         } catch {
-          setError("No account found with this email. Switch to Sign up or enter as Guest.");
+          setError("No account found with this email. Switch to Create an account.");
         }
       } else if (code === "auth/weak-password") {
         setError("Password must be at least 6 characters.");
       } else {
-        setError(err?.message || "Authentication failed. You can continue as Guest below.");
+        setError(err?.message || "Authentication failed. Please try again.");
       }
     } finally {
       setLoading(false);
@@ -115,8 +114,7 @@ const Signup1 = ({
       if (user && onSuccess) {
         onSuccess();
       } else if (!user) {
-        // User cancelled popup or popup closed
-        setError("Google sign-in was cancelled or closed. You can continue as Guest below.");
+        setError("Google sign-in was cancelled or closed.");
       }
     } catch (err: any) {
       const isPopupBlocked =
@@ -125,18 +123,13 @@ const Signup1 = ({
         /cross-origin/i.test(err?.message || "");
 
       if (isPopupBlocked) {
-        setError("Browser or preview iframe prevented opening the Google popup. Click 'Continue as Guest' below to enter immediately.");
+        setError("Browser prevented opening the Google popup. Please sign in with email and password.");
       } else {
-        setError(err?.message || "Google sign in failed. You can continue as Guest below.");
+        setError(err?.message || "Google sign in failed. Please try again.");
       }
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleContinueAsGuest = () => {
-    UserAccountStore.loginAsGuest();
-    if (onSuccess) onSuccess();
   };
 
   return (
@@ -165,44 +158,10 @@ const Signup1 = ({
             </p>
           </div>
 
-          {/* Quick Enter as Guest Banner / Button */}
-          <div className="w-full">
-            <button
-              type="button"
-              onClick={handleContinueAsGuest}
-              className="w-full flex items-center justify-between p-3 rounded-xl border border-primary/25 bg-primary/5 hover:bg-primary/10 transition-all text-xs font-semibold cursor-pointer group"
-            >
-              <div className="flex items-center gap-2">
-                <UserCheck className="w-4 h-4 text-emerald-500" />
-                <div className="text-left">
-                  <div className="text-foreground font-bold">Continue as Guest</div>
-                  <div className="text-[11px] text-muted-foreground font-normal">
-                    Instant access without signing in
-                  </div>
-                </div>
-              </div>
-              <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
-            </button>
-          </div>
-
-          <div className="relative w-full flex items-center justify-center">
-            <div className="border-t border-border w-full absolute" />
-            <span className="bg-background px-3 text-[11px] uppercase tracking-wider text-muted-foreground relative z-10">
-              Or sign in with account
-            </span>
-          </div>
-
           <form onSubmit={handleEmailAuth} className="flex w-full flex-col gap-4">
             {error && (
-              <div className="text-xs text-red-500 font-medium text-center bg-red-500/10 p-3 rounded-xl border border-red-500/20 space-y-2">
+              <div className="text-xs text-red-500 font-medium text-center bg-red-500/10 p-3 rounded-xl border border-red-500/20">
                 <div>{error}</div>
-                <button
-                  type="button"
-                  onClick={handleContinueAsGuest}
-                  className="inline-block text-[11px] underline font-bold text-red-400 hover:text-red-300 cursor-pointer"
-                >
-                  Enter Workspace as Guest now →
-                </button>
               </div>
             )}
             {resetSuccess && (

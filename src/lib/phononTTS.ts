@@ -1,12 +1,19 @@
 import { PhononTTS } from 'phonon-tts';
+import wasmUrl from 'phonon-tts/wasm/phonon_tts_bg.wasm?url';
+import simdWasmUrl from 'phonon-tts/wasm/phonon_tts_simd_bg.wasm?url';
+import threadsWasmUrl from 'phonon-tts/wasm-threads/phonon_tts_bg.wasm?url';
+import threadsSimdWasmUrl from 'phonon-tts/wasm-threads/phonon_tts_simd_bg.wasm?url';
 
 let ttsPromise: Promise<PhononTTS | null> | null = null;
+let phononUnavailable = false;
 let activeController: AbortController | null = null;
 let activeContext: AudioContext | null = null;
 
 export function isPhononSupported(): boolean {
+  if (phononUnavailable) return false;
   return (
     typeof window !== 'undefined' &&
+    typeof Worker !== 'undefined' &&
     typeof WebAssembly === 'object' &&
     !!(window.AudioContext || (window as any).webkitAudioContext)
   );
@@ -20,8 +27,12 @@ export async function loadPhonon(): Promise<PhononTTS | null> {
       lang: 'en',
       quant: 'q8',
       device: 'auto',
-    }).catch((err) => {
-      console.error('Phonon load failed', err);
+      wasmUrl,
+      simdWasmUrl,
+      threadsWasmUrl,
+      threadsSimdWasmUrl,
+    }).catch(() => {
+      phononUnavailable = true;
       ttsPromise = null;
       return null;
     });
@@ -116,7 +127,12 @@ export async function speakWithPhonon(
       callbacks.onEnd?.();
       return true;
     }
+    if (!started) {
+      phononUnavailable = true;
+      ttsPromise = null;
+      return false;
+    }
     callbacks.onError?.(err);
-    return started;
+    return true;
   }
 }

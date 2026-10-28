@@ -1,6 +1,23 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, PanelLeft, Download, FileText, Share2, GitFork, Layers, Link2, GraduationCap } from 'lucide-react';
-import { ChatMessage as ChatMessageType, SearchMode } from './types';
+import {
+  Plus,
+  PanelLeft,
+  Download,
+  FileText,
+  Share2,
+  GitFork,
+  Layers,
+  Link2,
+  GraduationCap,
+  Compass,
+  Bookmark,
+} from 'lucide-react';
+import {
+  ChatMessage as ChatMessageType,
+  SearchMode,
+  PublicArtifact,
+  KnowledgeVaultItem,
+} from './types';
 import { GrokLogo } from './components/GrokLogo';
 import { ChatInput, ChatHistoryItem, ChatHistoryMessageItem, MessageScroller } from './components/kobra';
 import { GrokChatMessage } from './components/GrokChatMessage';
@@ -16,6 +33,14 @@ import { ShareExportStudioModal } from './components/ShareExportStudioModal';
 import { DeepResearchModal } from './components/DeepResearchModal';
 import { PageExtractModal } from './components/PageExtractModal';
 import { InbuiltPdfViewer, PdfStudioTab } from './components/InbuiltPdfViewer';
+import { ZenoGrowthHubModal, GrowthHubTab } from './components/ZenoGrowthHubModal';
+import { PublicArtifactView } from './components/PublicArtifactView';
+import {
+  captureReferralFromUrlIfPresent,
+  claimPendingReferralIfEligible,
+  trackGrowthEvent,
+  KnowledgeVaultStore,
+} from './lib/growthStore';
 
 import { ReadingProgressBar } from './components/ReadingProgressBar';
 import { AnalyticsDashboardModal } from './components/AnalyticsDashboardModal';
@@ -388,9 +413,18 @@ export default function App() {
   // Studio & Research Tool Modals
   const [shareStudioState, setShareStudioState] = useState<{
     isOpen: boolean;
-    initialTab?: 'share' | 'export' | 'quote';
+    initialTab?: 'share' | 'export' | 'quote' | 'publish';
     quoteMessage?: ChatMessageType | null;
   }>({ isOpen: false });
+  const [growthHubState, setGrowthHubState] = useState<{
+    isOpen: boolean;
+    initialTab: GrowthHubTab;
+  }>({ isOpen: false, initialTab: 'discover' });
+  const [publicArtifactModal, setPublicArtifactModal] = useState<{
+    isOpen: boolean;
+    artifactId: string | null;
+    initialArtifact?: PublicArtifact | null;
+  }>({ isOpen: false, artifactId: null, initialArtifact: null });
   const [deepResearchState, setDeepResearchState] = useState<{
     isOpen: boolean;
     initialTopic?: string;
@@ -411,10 +445,24 @@ export default function App() {
 
   const [isSignedIn, setIsSignedIn] = useState(() => UserAccountStore.isUserSignedIn());
 
-  // Load Public Shared Thread snapshot when ?share=<shareId> is present in URL
+  // Load Public Shared Thread snapshot (?share=), Public Zeno Page (?artifact=), and Referral attribution (?ref=)
   useEffect(() => {
     try {
+      captureReferralFromUrlIfPresent();
+      trackGrowthEvent('returning_session_started');
       const params = new URLSearchParams(window.location.search);
+
+      const artifactId = params.get('artifact')?.trim();
+      if (artifactId) {
+        // Public Zeno Pages are accessible without forcing signup
+        setIsSignedIn(true);
+        setPublicArtifactModal({
+          isOpen: true,
+          artifactId,
+          initialArtifact: null,
+        });
+      }
+
       const shareId = params.get('share')?.trim();
       if (!shareId) return;
       loadSharedThreadFromFirestore(shareId).then((sharedSnap) => {
@@ -779,6 +827,66 @@ export default function App() {
     );
   };
 
+  const handleForkArtifactIntoChat = (artifact: PublicArtifact) => {
+    const userMsg: ChatMessageType = {
+      id: `user-${Date.now()}`,
+      role: 'user',
+      content: artifact.promptText || `Explore & synthesize: ${artifact.title}`,
+      timestamp: Date.now(),
+    };
+    const assistantMsg: ChatMessageType = {
+      id: `assistant-${Date.now() + 1}`,
+      role: 'assistant',
+      content: artifact.content,
+      timestamp: Date.now() + 1,
+      sources: artifact.sources || [],
+      modelUsed: artifact.modelUsed || 'Zeno Synthesis',
+    };
+    const newId = `thread-${Date.now()}`;
+    const forkedThread: SavedThread = {
+      id: newId,
+      title: artifact.title.slice(0, 60),
+      createdAt: Date.now(),
+      messages: [userMsg, assistantMsg],
+    };
+    setThreads((prev) => [forkedThread, ...prev]);
+    setActiveThreadId(newId);
+    setCurrentView('chat');
+    trackGrowthEvent('first_core_action_completed', { source: 'fork_public_artifact' });
+  };
+
+  const handleContinueVaultItemInChat = (item: KnowledgeVaultItem) => {
+    if (item.sourceThreadId && threads.some((t) => t.id === item.sourceThreadId)) {
+      handleSelectThread(item.sourceThreadId);
+      setCurrentView('chat');
+      return;
+    }
+    const userMsg: ChatMessageType = {
+      id: `user-${Date.now()}`,
+      role: 'user',
+      content: `Continue from saved Knowledge Vault note: ${item.title}`,
+      timestamp: Date.now(),
+    };
+    const assistantMsg: ChatMessageType = {
+      id: `assistant-${Date.now() + 1}`,
+      role: 'assistant',
+      content: item.content,
+      timestamp: Date.now() + 1,
+      sources: item.sources || [],
+      modelUsed: 'Zeno Knowledge Vault',
+    };
+    const newId = `thread-${Date.now()}`;
+    const resumedThread: SavedThread = {
+      id: newId,
+      title: item.title.slice(0, 60),
+      createdAt: Date.now(),
+      messages: [userMsg, assistantMsg],
+    };
+    setThreads((prev) => [resumedThread, ...prev]);
+    setActiveThreadId(newId);
+    setCurrentView('chat');
+  };
+
   const handleSend = async (
     promptText: string,
     mode: SearchMode = searchMode,
@@ -786,6 +894,9 @@ export default function App() {
   ) => {
     const query = promptText.trim();
     if (!query || isRunning) return;
+
+    trackGrowthEvent('first_core_action_completed', { action: 'chat_prompt' });
+    claimPendingReferralIfEligible('first_core_action');
 
     // Auto-select vision model when user sends an image or file attachment
     const hasImageAtt = attachments.some((a) => a?.type?.startsWith('image/'));
@@ -1369,6 +1480,7 @@ export default function App() {
               setCurrentView('account');
             }}
             onOpenOnboarding={() => setIsOnboardingOpen(true)}
+            onOpenGrowthHub={(tab) => setGrowthHubState({ isOpen: true, initialTab: tab })}
             onSelectPinnedMessage={(threadId, messageId, snippet) => {
               handleSelectThread(threadId);
               setTimeout(() => {
@@ -1449,7 +1561,7 @@ export default function App() {
                   />
                 </div>
 
-                {/* Top Right Controls: Study Studio + Share & Export Studio + New Chat Button */}
+                {/* Top Right Controls: Study Studio + New Chat Button */}
                 <div className="flex items-center gap-1.5 pointer-events-auto">
                   <button
                     type="button"
@@ -1476,27 +1588,6 @@ export default function App() {
                     <span>Study</span>
                     <span className="hidden sm:inline">Studio</span>
                   </button>
-                  {!isThreadEmpty && activeThread && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setShareStudioState({
-                          isOpen: true,
-                          initialTab: 'share',
-                          quoteMessage: null,
-                        })
-                      }
-                      className={`pointer-events-auto flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] font-medium backdrop-blur-2xl transition-all cursor-pointer whitespace-nowrap ${
-                        isDark
-                          ? 'bg-white/[0.06] hover:bg-white/[0.12] border-white/[0.15] text-white shadow-[0_8px_32px_rgba(0,0,0,0.5)]'
-                          : 'bg-white/70 hover:bg-white/90 border-black/[0.08] text-[#000000] shadow-[0_8px_32px_rgba(0,0,0,0.08)]'
-                      }`}
-                      title="Share public link, export PDF/Notion Markdown, or create PNG quote card"
-                    >
-                      <Share2 className="w-3.5 h-3.5" />
-                      <span className="hidden sm:inline">Share & Export</span>
-                    </button>
-                  )}
                   <button
                     type="button"
                     onClick={handleNewChat}
@@ -1515,14 +1606,14 @@ export default function App() {
 
               {/* Content State: Empty vs Thread */}
               {isThreadEmpty ? (
-                /* Empty State: Center logo, small subtle suggestions above prompt input, prompt input anchored at bottom */
+                /* Empty State: Center logo, Smart Continuation strip, and prompt input anchored at bottom */
                 <div className="flex-1 min-w-0 flex flex-col items-center justify-between px-3 sm:px-4 w-full overflow-y-auto pt-14 sm:pt-16 pb-[max(1rem,env(safe-area-inset-bottom))] sm:pb-8">
                   {/* Center Area: Centered Grok Wordmark */}
                   <div className="flex-1 flex flex-col items-center justify-center my-auto">
                     <GrokLogo size="lg" isDark={isDark} />
                   </div>
 
-                  {/* Bottom Anchored Area: Prompt Input at the bottom */}
+                  {/* Bottom Anchored Area: Prompt Input */}
                   <div className="w-full max-w-3xl flex flex-col items-center mt-auto">
                     {/* ChatInput (@kobra/chat-input with @kobra/chat-history & upward model selector) */}
                     <div className="w-full">
@@ -1732,7 +1823,7 @@ export default function App() {
             onClose={() => setDeepResearchState({ isOpen: false })}
             initialTopic={deepResearchState.initialTopic}
             isDark={isDark}
-            onInsertReportIntoChat={(topic, reportMarkdown, sources) => {
+            onInsertReportToChat={(topic, reportMarkdown, sources, arxivPapers) => {
               const userMsg: ChatMessageType = {
                 id: `user-${Date.now()}`,
                 role: 'user',
@@ -1745,6 +1836,7 @@ export default function App() {
                 content: reportMarkdown,
                 timestamp: Date.now() + 1,
                 sources,
+                arxivPapers,
                 modelUsed: 'Zeno Deep Research Agent',
               };
               if (!activeThreadId) {
@@ -1775,10 +1867,53 @@ export default function App() {
           <PageExtractModal
             isOpen={urlReaderState.isOpen}
             onClose={() => setUrlReaderState({ isOpen: false })}
-            url={urlReaderState.initialUrl}
-            title={urlReaderState.title}
+            url={urlReaderState.initialUrl || null}
             isDark={isDark}
-            onAskZeno={(prompt) => handleSend(prompt)}
+            onChatWithPage={(_url, title, extractedMarkdown, userQuestion) => {
+              handleSend(
+                userQuestion
+                  ? `${userQuestion}\n\nContext from "${title}":\n${extractedMarkdown.slice(0, 4000)}`
+                  : `Summarize and analyze "${title}":\n${extractedMarkdown.slice(0, 4000)}`
+              );
+            }}
+          />
+
+          {/* Zeno Growth Hub Modal (Discover, Knowledge Vault, Weekly Brief, Zeno Passes) */}
+          <ZenoGrowthHubModal
+            isOpen={growthHubState.isOpen}
+            onClose={() => setGrowthHubState((prev) => ({ ...prev, isOpen: false }))}
+            initialTab={growthHubState.initialTab}
+            threads={threads}
+            onOpenArtifactPage={(artifact) => {
+              setGrowthHubState((prev) => ({ ...prev, isOpen: false }));
+              setPublicArtifactModal({
+                isOpen: true,
+                artifactId: artifact.id,
+                initialArtifact: artifact,
+              });
+            }}
+            onForkArtifactIntoChat={handleForkArtifactIntoChat}
+            onContinueVaultItemInChat={handleContinueVaultItemInChat}
+            isDark={isDark}
+          />
+
+          {/* Public Zeno Page Reader & Fork Modal (?artifact=<id>) */}
+          <PublicArtifactView
+            isOpen={publicArtifactModal.isOpen}
+            artifactId={publicArtifactModal.artifactId}
+            initialArtifact={publicArtifactModal.initialArtifact}
+            onClose={() => {
+              setPublicArtifactModal({ isOpen: false, artifactId: null, initialArtifact: null });
+              try {
+                const u = new URL(window.location.href);
+                if (u.searchParams.has('artifact')) {
+                  u.searchParams.delete('artifact');
+                  window.history.replaceState({}, '', u.toString());
+                }
+              } catch {}
+            }}
+            onForkIntoChat={handleForkArtifactIntoChat}
+            isDark={isDark}
           />
 
           {/* Full-Page PDF Upload, Quiz, Flashcards & ArXiv Study Studio */}
