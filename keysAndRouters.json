@@ -26,7 +26,7 @@
     "apinex": "https://api.apinex.bond/v1",
     "flm": "https://flm.stonech.at/v1",
     "rumikTts": "https://silk-api.rumik.ai/v1/tts",
-    "transcriptPrimary": "https://pharmaceuticals-guestbook-chairs-couples.trycloudflare.com/api/transcript",
+    "transcriptPrimary": "https://yeast-bubble-commander-biblical.trycloudflare.com/api/transcript",
     "transcriptFallback": "https://prod-main-transcript-api-6588e7-006jmayjabt.compute.instacloud-edge.com/api/transcript"
   },
   "organizations": {
