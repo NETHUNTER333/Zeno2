@@ -231,34 +231,27 @@ export const PrismCodeBlock: React.FC<PrismCodeBlockProps> = ({
 
   return (
     <div
-      className={`my-3.5 rounded-2xl border overflow-hidden font-mono text-xs transition-colors ${
+      className={`my-3 w-full max-w-full min-w-0 rounded-xl border overflow-hidden font-mono text-xs transition-colors ${
         isDark
-          ? 'prism-dark bg-[#0b0c10] border-[#222530] shadow-lg shadow-black/30'
-          : 'prism-light bg-[#f8fafc] border-[#e2e8f0] shadow-sm'
+          ? 'prism-dark bg-[#0d0d10] border-white/[0.08]'
+          : 'prism-light bg-[#f8f8fa] border-black/[0.08]'
       }`}
     >
       {/* Code Block Header Bar */}
       <div
         className={`flex items-center justify-between px-3.5 py-2 border-b select-none ${
           isDark
-            ? 'border-[#1e212b] bg-[#12141c] text-[#a1a1aa]'
-            : 'border-[#e2e8f0] bg-[#f1f5f9] text-[#475569]'
+            ? 'border-white/[0.07] bg-[#121216] text-neutral-400'
+            : 'border-black/[0.07] bg-[#f1f1f4] text-neutral-600'
         }`}
       >
         <div className="flex items-center gap-2 min-w-0">
           {isShell ? (
-            <Terminal className="w-3.5 h-3.5 opacity-75 shrink-0 text-emerald-400" />
+            <Terminal className="w-3.5 h-3.5 opacity-70 shrink-0" />
           ) : (
-            <Code2 className="w-3.5 h-3.5 opacity-75 shrink-0 text-sky-400" />
+            <Code2 className="w-3.5 h-3.5 opacity-70 shrink-0" />
           )}
           <span className="font-semibold text-[11px] tracking-tight truncate">{meta.label}</span>
-          <span
-            className={`text-[10px] px-1.5 py-0.5 rounded font-mono tabular-nums ${
-              isDark ? 'bg-white/[0.04] text-[#71717a]' : 'bg-black/[0.05] text-[#64748b]'
-            }`}
-          >
-            {lineCount} {lineCount === 1 ? 'line' : 'lines'}
-          </span>
         </div>
 
         <div className="flex items-center gap-1">

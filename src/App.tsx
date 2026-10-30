@@ -11,6 +11,8 @@ import {
   GraduationCap,
   Compass,
   Bookmark,
+  Zap,
+  Flame,
 } from 'lucide-react';
 import {
   ChatMessage as ChatMessageType,
@@ -21,9 +23,16 @@ import {
 import { GrokLogo } from './components/GrokLogo';
 import { ChatInput, ChatHistoryItem, ChatHistoryMessageItem, MessageScroller } from './components/kobra';
 import { GrokChatMessage } from './components/GrokChatMessage';
-import { GROK_MODELS, ModelOption, getDefaultVisionModel, GrokModelPicker } from './components/GrokModelPicker';
+import {
+  GROK_MODELS,
+  ModelOption,
+  getDefaultVisionModel,
+  GrokModelPicker,
+  getModelRequiredTier,
+} from './components/GrokModelPicker';
 import { Sidebar, ChatThread } from './components/Sidebar';
 import { AccountWorkspacePage, AccountTab } from './components/AccountWorkspacePage';
+import { PricingModal } from './components/PricingModal';
 import { StudyWorkspace } from './components/StudyWorkspace';
 import { YouTubeVideoInfo } from './types';
 import { QuickOnboardingModal } from './components/QuickOnboardingModal';
@@ -42,8 +51,6 @@ import {
   KnowledgeVaultStore,
 } from './lib/growthStore';
 
-import { ReadingProgressBar } from './components/ReadingProgressBar';
-import { AnalyticsDashboardModal } from './components/AnalyticsDashboardModal';
 import { Signup1 } from './components/ui/signup-1';
 import {
   auth,
@@ -298,7 +305,14 @@ async function fetchZenoApi(path: string, init?: RequestInit): Promise<Response>
   try {
     const localRes = await fetch(path, init);
     const contentType = localRes.headers.get('content-type') || '';
-    if (localRes.ok && contentType.includes('application/json')) {
+    if (
+      (localRes.ok ||
+        localRes.status === 400 ||
+        localRes.status === 401 ||
+        localRes.status === 403 ||
+        localRes.status === 429) &&
+      contentType.includes('application/json')
+    ) {
       return localRes;
     }
   } catch (err: any) {
@@ -393,7 +407,6 @@ export default function App() {
   const [currentView, setCurrentView] = useState<'chat' | 'account' | 'study'>('chat');
   const [activeStudyVideo, setActiveStudyVideo] = useState<YouTubeVideoInfo | null>(null);
   const [accountPageTab, setAccountPageTab] = useState<AccountTab>('profile');
-  const [isAnalyticsOpen, setIsAnalyticsOpen] = useState(false);
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
   const [userProfile, setUserProfile] = useState(() => UserAccountStore.getProfile());
   const [userSub, setUserSub] = useState(() => UserAccountStore.getSubscription());
@@ -441,9 +454,28 @@ export default function App() {
     extractedText?: string;
     initialTab?: PdfStudioTab;
   }>({ isOpen: false });
+  const [pricingModalState, setPricingModalState] = useState<{
+    isOpen: boolean;
+    highlightPlan?: 'free' | 'spark' | 'fire';
+    limitReason?: string | null;
+  }>({ isOpen: false, highlightPlan: 'spark', limitReason: null });
   const [sharedBannerId, setSharedBannerId] = useState<string | null>(null);
 
   const [isSignedIn, setIsSignedIn] = useState(() => UserAccountStore.isUserSignedIn());
+
+  // Listen for global 'zeno-open-pricing' events from ChatInput, GrokModelPicker, Sidebar, etc.
+  useEffect(() => {
+    const handleOpenPricing = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail || {};
+      setPricingModalState({
+        isOpen: true,
+        highlightPlan: detail.highlightPlan || 'spark',
+        limitReason: detail.reason || null,
+      });
+    };
+    window.addEventListener('zeno-open-pricing', handleOpenPricing);
+    return () => window.removeEventListener('zeno-open-pricing', handleOpenPricing);
+  }, []);
 
   // Load Public Shared Thread snapshot (?share=), Public Zeno Page (?artifact=), and Referral attribution (?ref=)
   useEffect(() => {
@@ -584,6 +616,8 @@ export default function App() {
       window.visualViewport.addEventListener('scroll', syncViewportDimensions);
     }
 
+    UserAccountStore.syncQuotaWithServerAndFirestore();
+
     return () => {
       window.removeEventListener('resize', syncViewportDimensions);
       window.removeEventListener('orientationchange', syncViewportDimensions);
@@ -616,8 +650,21 @@ export default function App() {
 
   // Active messages based on current thread
   const activeThread = threads.find((t) => t.id === activeThreadId);
-  const messages = activeThread ? activeThread.messages : [];
+  const messages = React.useMemo(
+    () => (activeThread ? activeThread.messages : []),
+    [activeThread]
+  );
   const isThreadEmpty = messages.length === 0;
+  const fallbackShareThread = React.useMemo(
+    () =>
+      activeThread || {
+        id: 'thread-preview',
+        title: 'Zeno Research Session',
+        createdAt: 0,
+        messages,
+      },
+    [activeThread, messages]
+  );
 
   // Session-isolated prompt & message history: strictly only for the current active chat session!
   const currentSessionMessageItems: ChatHistoryMessageItem[] = React.useMemo(() => {
@@ -895,6 +942,30 @@ export default function App() {
     const query = promptText.trim();
     if (!query || isRunning) return;
 
+    // 1. Check daily prompt/message limit and file upload limit
+    const currentUsage = UserAccountStore.getUsage();
+    const currentPlanNorm = UserAccountStore.getNormalizedPlan();
+    if (currentUsage.messagesUsed >= currentUsage.messageLimit) {
+      setPricingModalState({
+        isOpen: true,
+        highlightPlan: currentPlanNorm === 'free' ? 'spark' : 'fire',
+        limitReason: `Daily message limit reached (${currentUsage.messagesUsed}/${currentUsage.messageLimit} prompts used). Upgrade to Spark ($1/mo) for 150 messages/day or Fire ($5/mo) for unlimited messages.`,
+      });
+      return;
+    }
+
+    if (
+      attachments.length > 0 &&
+      currentUsage.filesUploaded + attachments.length > currentUsage.fileUploadLimit
+    ) {
+      setPricingModalState({
+        isOpen: true,
+        highlightPlan: currentPlanNorm === 'free' ? 'spark' : 'fire',
+        limitReason: `File upload limit reached (${currentUsage.filesUploaded}/${currentUsage.fileUploadLimit} files used on your plan). Upgrade to Spark ($1/mo) for 25 uploads/day or Fire ($5/mo) for unlimited uploads.`,
+      });
+      return;
+    }
+
     trackGrowthEvent('first_core_action_completed', { action: 'chat_prompt' });
     claimPendingReferralIfEligible('first_core_action');
 
@@ -905,6 +976,19 @@ export default function App() {
     if (hasAnyAtt && !selectedModel.supportsVision) {
       activeModel = getDefaultVisionModel();
       setSelectedModel(activeModel);
+    }
+
+    // 2. Check if selected model requires Spark ($1) or Fire ($5)
+    const reqModelTier = getModelRequiredTier(activeModel);
+    if (!UserAccountStore.canUseModel(reqModelTier)) {
+      setPricingModalState({
+        isOpen: true,
+        highlightPlan: reqModelTier === 'fire' ? 'fire' : 'spark',
+        limitReason: `${activeModel.name} requires the ${
+          reqModelTier === 'fire' ? 'Fire ($5/mo)' : 'Spark ($1/mo)'
+        } plan. Upgrade now to unlock it.`,
+      });
+      return;
     }
 
     const isCasualOrGreeting =
@@ -1059,6 +1143,8 @@ export default function App() {
           systemPrompt: clockSystemPrompt,
           personalization: UserAccountStore.getPersonalization(),
           pinnedInsights: UserAccountStore.getBookmarks().slice(0, 10),
+          subscriptionPlan: UserAccountStore.getNormalizedPlan(),
+          clientUsage: UserAccountStore.getUsage(),
         }),
       });
 
@@ -1070,18 +1156,37 @@ export default function App() {
         throw new Error('Server took too long or returned an unexpected response. Please try again.');
       }
 
+      if (data?.quota) {
+        UserAccountStore.applyServerQuotaSnapshot(data.quota);
+      }
+
       if (!response.ok || !data.success) {
+        if (
+          (response.status === 403 || response.status === 429) &&
+          typeof data?.code === 'string' &&
+          data.code.startsWith('quota/')
+        ) {
+          setPricingModalState({
+            isOpen: true,
+            highlightPlan: data.requiredTier === 'fire' ? 'fire' : 'spark',
+            limitReason: data.error || 'Daily plan limit reached. Upgrade to continue.',
+          });
+        }
         throw new Error(data.error || 'Failed to generate response');
       }
 
       data = enforceClientClockInReply(data, clientClock, isClockQuery, query);
 
-      // Record token & search usage in persistent account quota
-      if (data?.timing?.totalTokens) {
+      // Apply authoritative server quota snapshot or record usage
+      if (data?.quota) {
+        UserAccountStore.applyServerQuotaSnapshot(data.quota);
+      } else {
         UserAccountStore.recordUsage(
-          data.timing.totalTokens,
+          data?.timing?.totalTokens || 450,
           Array.isArray(data.sources) && data.sources.length > 0 ? 1 : 0,
-          Array.isArray(data.toolsUsed) ? data.toolsUsed.length : 0
+          Array.isArray(data.toolsUsed) ? data.toolsUsed.length : 0,
+          1,
+          attachments ? attachments.length : 0
         );
       }
 
@@ -1279,6 +1384,8 @@ export default function App() {
           systemPrompt: clockSystemPrompt,
           personalization: UserAccountStore.getPersonalization(),
           pinnedInsights: UserAccountStore.getBookmarks().slice(0, 10),
+          subscriptionPlan: UserAccountStore.getNormalizedPlan(),
+          clientUsage: UserAccountStore.getUsage(),
         }),
       });
 
@@ -1290,7 +1397,22 @@ export default function App() {
         throw new Error('Server took too long or returned an unexpected response. Please try again.');
       }
 
+      if (data?.quota) {
+        UserAccountStore.applyServerQuotaSnapshot(data.quota);
+      }
+
       if (!response.ok || !data.success) {
+        if (
+          (response.status === 403 || response.status === 429) &&
+          typeof data?.code === 'string' &&
+          data.code.startsWith('quota/')
+        ) {
+          setPricingModalState({
+            isOpen: true,
+            highlightPlan: data.requiredTier === 'fire' ? 'fire' : 'spark',
+            limitReason: data.error || 'Daily plan limit reached. Upgrade to continue.',
+          });
+        }
         throw new Error(data.error || 'Failed to regenerate response');
       }
 
@@ -1404,6 +1526,8 @@ export default function App() {
           systemPrompt: clockSystemPrompt,
           personalization: UserAccountStore.getPersonalization(),
           pinnedInsights: UserAccountStore.getBookmarks().slice(0, 10),
+          subscriptionPlan: UserAccountStore.getNormalizedPlan(),
+          clientUsage: UserAccountStore.getUsage(),
         }),
       });
 
@@ -1414,7 +1538,23 @@ export default function App() {
       } catch {
         throw new Error('Server took too long or returned an unexpected response. Please try again.');
       }
+
+      if (data?.quota) {
+        UserAccountStore.applyServerQuotaSnapshot(data.quota);
+      }
+
       if (!response.ok || !data.success) {
+        if (
+          (response.status === 403 || response.status === 429) &&
+          typeof data?.code === 'string' &&
+          data.code.startsWith('quota/')
+        ) {
+          setPricingModalState({
+            isOpen: true,
+            highlightPlan: data.requiredTier === 'fire' ? 'fire' : 'spark',
+            limitReason: data.error || 'Daily plan limit reached. Upgrade to continue.',
+          });
+        }
         throw new Error(data.error || 'Failed to generate response');
       }
 
@@ -1474,13 +1614,19 @@ export default function App() {
               setAccountPageTab('preferences');
               setCurrentView('account');
             }}
-            onOpenAnalytics={() => setIsAnalyticsOpen(true)}
             onOpenAccountModal={(tab) => {
               setAccountPageTab((tab as AccountTab) || 'profile');
               setCurrentView('account');
             }}
             onOpenOnboarding={() => setIsOnboardingOpen(true)}
             onOpenGrowthHub={(tab) => setGrowthHubState({ isOpen: true, initialTab: tab })}
+            onOpenPricing={(highlightPlan) =>
+              setPricingModalState({
+                isOpen: true,
+                highlightPlan: highlightPlan || 'spark',
+                limitReason: null,
+              })
+            }
             onSelectPinnedMessage={(threadId, messageId, snippet) => {
               handleSelectThread(threadId);
               setTimeout(() => {
@@ -1536,14 +1682,14 @@ export default function App() {
           ) : (
             /* Main Chat Canvas */
             <div className="flex-1 min-w-0 flex flex-col h-full overflow-hidden relative">
-              {/* Glassmorphic Floating Top Controls (Sidebar toggle, Export & Small Icon-only New Chat) */}
+              {/* Glassmorphic Floating Top Controls (Sidebar toggle, Model Picker, Study Studio & New Chat) */}
               <div className="absolute top-[max(0.5rem,env(safe-area-inset-top))] left-3 right-3 sm:left-4 sm:right-4 z-30 flex items-center justify-between gap-2 pointer-events-none">
                 <button
                   onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                  className={`pointer-events-auto p-1.5 rounded-xl border backdrop-blur-2xl transition-all cursor-pointer ${
+                  className={`pointer-events-auto p-1.5 rounded-xl border backdrop-blur-2xl backdrop-saturate-150 transition-all cursor-pointer ${
                     isDark
-                      ? 'bg-white/[0.06] hover:bg-white/[0.12] border-white/[0.15] text-white shadow-[0_8px_32px_rgba(0,0,0,0.5)]'
-                      : 'bg-white/70 hover:bg-white/90 border-black/[0.08] text-[#000000] shadow-[0_8px_32px_rgba(0,0,0,0.08)]'
+                      ? 'bg-neutral-900/55 hover:bg-neutral-800/65 border-white/[0.16] text-white shadow-[0_8px_32px_rgba(0,0,0,0.55)]'
+                      : 'bg-white/65 hover:bg-white/85 border-black/[0.1] text-[#000000] shadow-[0_8px_32px_rgba(0,0,0,0.1)]'
                   }`}
                   title={isSidebarOpen ? 'Close sidebar' : 'Open sidebar'}
                 >
@@ -1555,46 +1701,56 @@ export default function App() {
                   <GrokModelPicker
                     selectedModelId={selectedModel.id}
                     onSelectModel={setSelectedModel}
+                    onOpenPricing={(highlightPlan, reason) =>
+                      setPricingModalState({
+                        isOpen: true,
+                        highlightPlan: highlightPlan || 'spark',
+                        limitReason: reason || null,
+                      })
+                    }
                     isDark={isDark}
                     dropdownDirection="down"
                     variant="header"
                   />
                 </div>
 
-                {/* Top Right Controls: Study Studio + New Chat Button */}
+                {/* Top Right Controls: Glassmorphic Study Studio + New Chat Button */}
                 <div className="flex items-center gap-1.5 pointer-events-auto">
                   <button
                     type="button"
-                    onClick={() =>
+                    onClick={() => {
+                      const u = UserAccountStore.getUsage();
+                      if (u.pdfStudyUsed >= u.pdfStudyLimit) {
+                        setPricingModalState({
+                          isOpen: true,
+                          highlightPlan:
+                            UserAccountStore.getNormalizedPlan() === 'free' ? 'spark' : 'fire',
+                          limitReason: `PDF Study Studio limit reached (${u.pdfStudyUsed}/${u.pdfStudyLimit} sessions used). Upgrade to Spark ($1/mo) for 20 sessions/day or Fire ($5/mo) for unlimited PDF Studio.`,
+                        });
+                        return;
+                      }
+                      UserAccountStore.recordPdfStudySession();
                       setPdfStudioState({
                         isOpen: true,
                         initialTab: 'quiz',
-                      })
-                    }
-                    className={`pointer-events-auto flex items-center gap-1.5 pl-2 pr-2.5 py-1.5 rounded-full border text-[11px] font-semibold tracking-tight transition-all cursor-pointer whitespace-nowrap active:scale-95 ${
+                      });
+                    }}
+                    className={`pointer-events-auto flex items-center gap-1.5 px-3 py-1.5 rounded-full border backdrop-blur-2xl backdrop-saturate-150 text-[11px] font-semibold tracking-tight transition-all cursor-pointer whitespace-nowrap active:scale-95 ${
                       isDark
-                        ? 'bg-[#171922] hover:bg-[#212430] border-white/[0.18] text-white shadow-[0_8px_28px_rgba(0,0,0,0.65)]'
-                        : 'bg-[#111111] hover:bg-[#242424] border-black text-white shadow-[0_6px_20px_rgba(0,0,0,0.16)]'
+                        ? 'bg-neutral-900/55 hover:bg-neutral-800/65 border-white/[0.16] text-white shadow-[0_8px_32px_rgba(0,0,0,0.55)]'
+                        : 'bg-white/65 hover:bg-white/85 border-black/[0.1] text-[#0d0d0d] shadow-[0_8px_32px_rgba(0,0,0,0.1)]'
                     }`}
-                    title="Open PDF Upload, Quiz & Flashcards Studio"
+                    title="Open PDF Study Studio"
                   >
-                    <span
-                      className={`size-4 rounded-full flex items-center justify-center shrink-0 ${
-                        isDark ? 'bg-white/15 text-white' : 'bg-white/20 text-white'
-                      }`}
-                    >
-                      <GraduationCap className="w-2.5 h-2.5" />
-                    </span>
                     <span>Study</span>
-                    <span className="hidden sm:inline">Studio</span>
                   </button>
                   <button
                     type="button"
                     onClick={handleNewChat}
-                    className={`pointer-events-auto p-1.5 rounded-xl border backdrop-blur-2xl transition-all cursor-pointer ${
+                    className={`pointer-events-auto p-1.5 rounded-xl border backdrop-blur-2xl backdrop-saturate-150 transition-all cursor-pointer ${
                       isDark
-                        ? 'bg-white/[0.06] hover:bg-white/[0.12] border-white/[0.15] text-white shadow-[0_8px_32px_rgba(0,0,0,0.5)]'
-                        : 'bg-white/70 hover:bg-white/90 border-black/[0.08] text-[#000000] shadow-[0_8px_32px_rgba(0,0,0,0.08)]'
+                        ? 'bg-neutral-900/55 hover:bg-neutral-800/65 border-white/[0.16] text-white shadow-[0_8px_32px_rgba(0,0,0,0.55)]'
+                        : 'bg-white/65 hover:bg-white/85 border-black/[0.1] text-[#000000] shadow-[0_8px_32px_rgba(0,0,0,0.1)]'
                     }`}
                     title="New chat"
                     aria-label="New chat"
@@ -1636,21 +1792,46 @@ export default function App() {
                         messages={activeThread ? activeThread.messages : []}
                         isResearchMode={isResearchMode}
                         onToggleResearchMode={(enabled) => setIsResearchMode(enabled)}
-                        onOpenDeepResearch={(topic) =>
-                          setDeepResearchState({ isOpen: true, initialTopic: topic })
-                        }
+                        onOpenDeepResearch={(topic) => {
+                          const u = UserAccountStore.getUsage();
+                          if (u.deepResearchUsed >= u.deepResearchLimit) {
+                            setPricingModalState({
+                              isOpen: true,
+                              highlightPlan:
+                                UserAccountStore.getNormalizedPlan() === 'free' ? 'spark' : 'fire',
+                              limitReason: `Deep Research limit reached (${u.deepResearchUsed}/${u.deepResearchLimit} runs used). Upgrade to Spark ($1/mo) for 10 runs/day or Fire ($5/mo) for unlimited Deep Research.`,
+                            });
+                            return;
+                          }
+                          UserAccountStore.recordDeepResearchRun();
+                          setDeepResearchState({
+                            isOpen: true,
+                            initialTopic: topic,
+                          });
+                        }}
                         onOpenUrlReader={(url) =>
                           setUrlReaderState({ isOpen: true, initialUrl: url })
                         }
-                        onOpenArxivReader={(payload) =>
+                        onOpenArxivReader={(payload) => {
+                          const u = UserAccountStore.getUsage();
+                          if (u.pdfStudyUsed >= u.pdfStudyLimit) {
+                            setPricingModalState({
+                              isOpen: true,
+                              highlightPlan:
+                                UserAccountStore.getNormalizedPlan() === 'free' ? 'spark' : 'fire',
+                              limitReason: `PDF Study Studio limit reached (${u.pdfStudyUsed}/${u.pdfStudyLimit} sessions used). Upgrade to Spark ($1/mo) for 20 sessions/day or Fire ($5/mo) for unlimited PDF Studio.`,
+                            });
+                            return;
+                          }
+                          UserAccountStore.recordPdfStudySession();
                           setPdfStudioState({
                             isOpen: true,
                             pdfUrl: payload?.pdfUrl,
                             pdfName: payload?.pdfName,
                             extractedText: payload?.extractedText,
                             initialTab: payload?.initialTab || 'quiz',
-                          })
-                        }
+                          });
+                        }}
                       />
                     </div>
 
@@ -1667,12 +1848,9 @@ export default function App() {
               ) : (
                 /* Active Thread State with message flow beneath floating prompt */
                 <div className="flex-1 min-w-0 flex flex-col h-full overflow-hidden relative">
-                  {/* Slim horizontal reading progress bar at top of chat viewport */}
-                  <ReadingProgressBar viewportRef={messagesContainerRef} isDark={isDark} />
-
                   {/* Scrollable Messages Viewport with bottom padding so content flows beneath the floating composer */}
                   <div ref={messagesContainerRef} className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden px-3 sm:px-4 pb-36 scrollbar-thin">
-                    <div className="py-4 max-w-3xl mx-auto w-full min-w-0">
+                    <div className="pt-12 pb-3 max-w-3xl mx-auto w-full min-w-0">
                       {/* Shared Public Thread Read-Only Snapshot Banner */}
                       {sharedBannerId && activeThread && (
                         <div
@@ -1731,6 +1909,9 @@ export default function App() {
                               quoteMessage: targetMsg,
                             })
                           }
+                          onOpenKnowledgeVault={() =>
+                            setGrowthHubState({ isOpen: true, initialTab: 'vault' })
+                          }
                           theme={theme}
                           nsfwMode={nsfwMode}
                         />
@@ -1767,21 +1948,46 @@ export default function App() {
                         messages={activeThread ? activeThread.messages : []}
                         isResearchMode={isResearchMode}
                         onToggleResearchMode={(enabled) => setIsResearchMode(enabled)}
-                        onOpenDeepResearch={(topic) =>
-                          setDeepResearchState({ isOpen: true, initialTopic: topic })
-                        }
+                        onOpenDeepResearch={(topic) => {
+                          const u = UserAccountStore.getUsage();
+                          if (u.deepResearchUsed >= u.deepResearchLimit) {
+                            setPricingModalState({
+                              isOpen: true,
+                              highlightPlan:
+                                UserAccountStore.getNormalizedPlan() === 'free' ? 'spark' : 'fire',
+                              limitReason: `Deep Research limit reached (${u.deepResearchUsed}/${u.deepResearchLimit} runs used). Upgrade to Spark ($1/mo) for 10 runs/day or Fire ($5/mo) for unlimited Deep Research.`,
+                            });
+                            return;
+                          }
+                          UserAccountStore.recordDeepResearchRun();
+                          setDeepResearchState({
+                            isOpen: true,
+                            initialTopic: topic,
+                          });
+                        }}
                         onOpenUrlReader={(url) =>
                           setUrlReaderState({ isOpen: true, initialUrl: url })
                         }
-                        onOpenArxivReader={(payload) =>
+                        onOpenArxivReader={(payload) => {
+                          const u = UserAccountStore.getUsage();
+                          if (u.pdfStudyUsed >= u.pdfStudyLimit) {
+                            setPricingModalState({
+                              isOpen: true,
+                              highlightPlan:
+                                UserAccountStore.getNormalizedPlan() === 'free' ? 'spark' : 'fire',
+                              limitReason: `PDF Study Studio limit reached (${u.pdfStudyUsed}/${u.pdfStudyLimit} sessions used). Upgrade to Spark ($1/mo) for 20 sessions/day or Fire ($5/mo) for unlimited PDF Studio.`,
+                            });
+                            return;
+                          }
+                          UserAccountStore.recordPdfStudySession();
                           setPdfStudioState({
                             isOpen: true,
                             pdfUrl: payload?.pdfUrl,
                             pdfName: payload?.pdfName,
                             extractedText: payload?.extractedText,
                             initialTab: payload?.initialTab || 'quiz',
-                          })
-                        }
+                          });
+                        }}
                       />
 
                       <div
@@ -1803,25 +2009,23 @@ export default function App() {
             <ShareExportStudioModal
               isOpen={shareStudioState.isOpen}
               onClose={() => setShareStudioState({ isOpen: false })}
-              thread={
-                activeThread || {
-                  id: 'thread-preview',
-                  title: 'Zeno Research Session',
-                  createdAt: Date.now(),
-                  messages: messages,
-                }
-              }
+              thread={fallbackShareThread}
               initialQuoteMessage={shareStudioState.quoteMessage}
               initialTab={shareStudioState.initialTab}
               isDark={isDark}
             />
           )}
 
-          {/* Multi-Step Deep Research Report Generator Modal */}
+          {/* Full-Page Research & AI Answer View */}
           <DeepResearchModal
             isOpen={deepResearchState.isOpen}
             onClose={() => setDeepResearchState({ isOpen: false })}
             initialTopic={deepResearchState.initialTopic}
+            selectedModelId={selectedModel.geminiModel}
+            selectedModel={selectedModel}
+            onSelectModel={(m) => setSelectedModel(m)}
+            searchMode={searchMode}
+            onToggleSearchMode={(m) => setSearchMode(m)}
             isDark={isDark}
             onInsertReportToChat={(topic, reportMarkdown, sources, arxivPapers) => {
               const userMsg: ChatMessageType = {
@@ -1948,11 +2152,12 @@ export default function App() {
             }}
           />
 
-          {/* Analytics Dashboard Modal */}
-          <AnalyticsDashboardModal
-            isOpen={isAnalyticsOpen}
-            onClose={() => setIsAnalyticsOpen(false)}
-            threads={threads}
+          {/* Full-Page Pricing & Plans Modal (Core Basic $0 · Spark $1 · Fire $5) */}
+          <PricingModal
+            isOpen={pricingModalState.isOpen}
+            onClose={() => setPricingModalState((prev) => ({ ...prev, isOpen: false }))}
+            initialHighlightPlan={pricingModalState.highlightPlan}
+            limitReason={pricingModalState.limitReason}
             isDark={isDark}
           />
         </>

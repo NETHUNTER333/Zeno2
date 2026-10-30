@@ -20,12 +20,14 @@ import {
   Compass,
   Link2,
   GraduationCap,
-  Layers
+  Layers,
+  Zap,
 } from 'lucide-react';
 import { ModelOption, GROK_MODELS, getDefaultVisionModel } from '../GrokModelPicker';
 import { SearchMode, ChatAttachment, ChatMessage } from '../../types';
 import { ChatHistory, ChatHistoryItem, ChatHistoryMessageItem } from './chat-history';
 import { extractTextFromPdfFile } from '../../lib/pdfStudyEngine';
+import { UserAccountStore } from '../../lib/userAccountStore';
 import type { PdfStudioTab } from '../InbuiltPdfViewer';
 
 export interface PdfStudioLaunchPayload {
@@ -294,6 +296,9 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [isReadingFiles, setIsReadingFiles] = useState(false);
   const [readingFileProgress, setReadingFileProgress] = useState<string>('');
+  const [uploadLimitWarning, setUploadLimitWarning] = useState<string | null>(null);
+  const [usageQuota, setUsageQuota] = useState(() => UserAccountStore.getUsage());
+  const [currentPlan, setCurrentPlan] = useState(() => UserAccountStore.getNormalizedPlan());
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isPlusMenuOpen, setIsPlusMenuOpen] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -304,6 +309,25 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
   const isDark = theme === 'dark';
   const isEmpty = !value.trim() && attachments.length === 0;
+
+  useEffect(() => {
+    const syncQuota = () => {
+      setUsageQuota(UserAccountStore.getUsage());
+      setCurrentPlan(UserAccountStore.getNormalizedPlan());
+    };
+    window.addEventListener('zeno-account-updated', syncQuota);
+    return () => window.removeEventListener('zeno-account-updated', syncQuota);
+  }, []);
+
+  const openPricingModal = (highlightPlan: 'spark' | 'fire' = 'spark', reason?: string) => {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('zeno-open-pricing', {
+          detail: { highlightPlan, reason },
+        })
+      );
+    }
+  };
 
   // Detect if user typed or pasted a standalone or inline URL
   const detectedUrl = React.useMemo(() => {
@@ -363,10 +387,41 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
   const addFilesList = async (fileList: File[]) => {
     if (fileList.length === 0) return;
+
+    const latestUsage = UserAccountStore.getUsage();
+    const totalUsedAfterCurrent = latestUsage.filesUploaded + attachments.length;
+    const remainingDailySlots = Math.max(0, latestUsage.fileUploadLimit - totalUsedAfterCurrent);
+    const remainingPerMessageSlots = Math.max(0, latestUsage.maxFilesPerMessage - attachments.length);
+    const allowedSlots = Math.min(remainingDailySlots, remainingPerMessageSlots);
+
+    if (allowedSlots <= 0) {
+      const msg =
+        currentPlan === 'free'
+          ? `File upload limit reached (${latestUsage.fileUploadLimit}/3 files used on Core Basic). Upgrade to Spark ($1/mo) for 25 uploads/day or Fire ($5/mo) for unlimited uploads.`
+          : `Daily file upload limit reached (${latestUsage.fileUploadLimit} files on Spark). Upgrade to Fire ($5/mo) for unlimited file uploads.`;
+      setUploadLimitWarning(msg);
+      openPricingModal(currentPlan === 'free' ? 'spark' : 'fire', msg);
+      return;
+    }
+
+    let filesToProcess = fileList;
+    if (fileList.length > allowedSlots) {
+      filesToProcess = fileList.slice(0, allowedSlots);
+      const msg =
+        currentPlan === 'free'
+          ? `Only ${allowedSlots} file(s) attached — Free plan is limited to ${latestUsage.fileUploadLimit} file uploads. Upgrade to Spark ($1/mo) or Fire ($5/mo) for more.`
+          : `Attached ${allowedSlots} file(s) up to your Spark plan limit. Upgrade to Fire ($5/mo) for unlimited uploads.`;
+      setUploadLimitWarning(msg);
+    } else {
+      setUploadLimitWarning(null);
+    }
+
     setIsReadingFiles(true);
-    setReadingFileProgress(`Reading ${fileList.length} ${fileList.length === 1 ? 'file' : 'files'}...`);
+    setReadingFileProgress(
+      `Reading ${filesToProcess.length} ${filesToProcess.length === 1 ? 'file' : 'files'}...`
+    );
     try {
-      const processed = await Promise.all(fileList.map((f) => processUploadedFile(f)));
+      const processed = await Promise.all(filesToProcess.map((f) => processUploadedFile(f)));
       setAttachments((prev) => [...prev, ...processed]);
       const defaultVision = getDefaultVisionModel();
       if (!selectedModel.supportsVision) {
@@ -485,6 +540,49 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         multiple
       />
 
+      {/* File Upload Limit Warning Banner */}
+      {uploadLimitWarning && (
+        <div className="px-3 pb-2.5 animate-in fade-in duration-150">
+          <div
+            className={`p-3.5 sm:px-4 rounded-2xl border flex flex-wrap items-center justify-between gap-3 text-xs ${
+              isDark
+                ? 'bg-[#141418] border-white/15 text-white shadow-lg'
+                : 'bg-white border-black/12 text-[#18181b] shadow-md'
+            }`}
+          >
+            <div className="flex items-center gap-2 font-medium">
+              <span>{uploadLimitWarning}</span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() =>
+                  openPricingModal(
+                    currentPlan === 'free' ? 'spark' : 'fire',
+                    uploadLimitWarning
+                  )
+                }
+                className={`px-3.5 py-1.5 rounded-full font-semibold text-[11px] cursor-pointer whitespace-nowrap transition-colors ${
+                  isDark
+                    ? 'bg-white text-black hover:bg-neutral-200'
+                    : 'bg-[#18181b] text-white hover:bg-neutral-800'
+                }`}
+              >
+                Upgrade ($1 Spark / $5 Fire)
+              </button>
+              <button
+                type="button"
+                onClick={() => setUploadLimitWarning(null)}
+                className="p-1 opacity-60 hover:opacity-100 cursor-pointer"
+                aria-label="Dismiss limit alert"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Attachment Preview Container & Cumulative Size Summary */}
       {(attachments.length > 0 || isReadingFiles) && (
         <div className="px-3 pb-2 flex flex-col gap-1.5 animate-in fade-in duration-150">
@@ -493,6 +591,10 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             <div className="flex items-center gap-2">
               <span className={`font-semibold ${isDark ? 'text-neutral-200' : 'text-neutral-800'}`}>
                 {attachments.length} {attachments.length === 1 ? 'file attached' : 'files attached'}
+              </span>
+              <span className="text-[10px] font-mono opacity-65">
+                ({usageQuota.filesUploaded + attachments.length}/
+                {usageQuota.fileUploadLimit >= 999999 ? '∞' : usageQuota.fileUploadLimit} plan limit)
               </span>
               {totalAttachmentBytes > 0 && (
                 <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono ${
@@ -507,7 +609,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               <button
                 type="button"
                 onClick={() => setAttachments([])}
-                className="flex items-center gap-1 text-red-400 hover:text-red-300 transition-colors text-[10px] font-medium cursor-pointer"
+                className="flex items-center gap-1 opacity-70 hover:opacity-100 transition-opacity text-[10px] font-medium cursor-pointer"
                 title="Remove all attachments"
               >
                 <Trash2 className="w-3 h-3" />
@@ -519,7 +621,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           {/* Scrollable / Wrapping Chip List */}
           <div className="flex flex-wrap items-center gap-1.5 max-h-36 overflow-y-auto scrollbar-thin">
             {attachments.map((file, idx) => {
-              const { category, color } = getFileCategory(file.name, file.type);
+              const { category } = getFileCategory(file.name, file.type);
               const isImg = category === 'image' && file.url;
               const isStudylike = category === 'pdf' || category === 'document';
               return (
@@ -535,7 +637,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                       });
                     }
                   }}
-                  className={`group/chip flex items-center gap-2 pl-2 pr-2.5 py-1 rounded-2xl border text-xs font-medium shadow-xs transition-all ${
+                  className={`group/chip flex items-center gap-2 pl-2.5 pr-2.5 py-1.5 rounded-2xl border text-xs font-medium shadow-xs transition-all ${
                     isStudylike ? 'cursor-pointer' : ''
                   } ${
                     isDark
@@ -555,24 +657,24 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                       className="w-5 h-5 rounded-lg object-cover shrink-0 border border-black/10"
                     />
                   ) : category === 'pdf' ? (
-                    <FileText className={`w-3.5 h-3.5 shrink-0 ${color}`} />
+                    <FileText className="w-3.5 h-3.5 shrink-0 opacity-80" />
                   ) : category === 'code' ? (
-                    <Code2 className={`w-3.5 h-3.5 shrink-0 ${color}`} />
+                    <Code2 className="w-3.5 h-3.5 shrink-0 opacity-80" />
                   ) : category === 'data' ? (
-                    <FileSpreadsheet className={`w-3.5 h-3.5 shrink-0 ${color}`} />
+                    <FileSpreadsheet className="w-3.5 h-3.5 shrink-0 opacity-80" />
                   ) : category === 'audio' ? (
-                    <Music className={`w-3.5 h-3.5 shrink-0 ${color}`} />
+                    <Music className="w-3.5 h-3.5 shrink-0 opacity-80" />
                   ) : category === 'video' ? (
-                    <Film className={`w-3.5 h-3.5 shrink-0 ${color}`} />
+                    <Film className="w-3.5 h-3.5 shrink-0 opacity-80" />
                   ) : (
-                    <File className={`w-3.5 h-3.5 shrink-0 ${color}`} />
+                    <File className="w-3.5 h-3.5 shrink-0 opacity-80" />
                   )}
 
                   <div className="flex items-baseline gap-1.5 min-w-0">
                     <span className="truncate max-w-[140px] text-[11px] font-medium leading-none">
                       {file.name}
                     </span>
-                    <span className={`text-[9px] font-mono shrink-0 opacity-60`}>
+                    <span className="text-[9px] font-mono shrink-0 opacity-60">
                       {formatFileSize(file.size)}
                     </span>
                   </div>
@@ -593,8 +695,14 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             })}
 
             {isReadingFiles && (
-              <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/10 text-[#007aff] text-[11px] font-medium animate-pulse border border-blue-500/20">
-                <span className="size-2 rounded-full bg-[#007aff] animate-ping" />
+              <div
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-[11px] font-medium border ${
+                  isDark
+                    ? 'bg-[#18181b] border-white/15 text-white'
+                    : 'bg-white border-black/10 text-[#18181b]'
+                }`}
+              >
+                <span className="size-2 rounded-full bg-current animate-ping" />
                 <span>{readingFileProgress || 'Processing files...'}</span>
               </div>
             )}
@@ -612,28 +720,28 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               if (!targetDoc) return null;
               return (
                 <div
-                  className={`mt-1 p-2.5 sm:px-3.5 sm:py-2 rounded-2xl border flex flex-wrap items-center justify-between gap-2 backdrop-blur-2xl transition-all ${
+                  className={`mt-1 p-3 sm:px-4 sm:py-2.5 rounded-2xl border flex flex-wrap items-center justify-between gap-2 transition-all ${
                     isDark
-                      ? 'bg-[#12151f]/95 border-white/[0.14] text-white shadow-[0_12px_32px_rgba(0,0,0,0.55)]'
-                      : 'bg-white/95 border-black/[0.1] text-neutral-900 shadow-sm'
+                      ? 'bg-[#141418] border-white/[0.14] text-white shadow-lg'
+                      : 'bg-white border-black/[0.1] text-neutral-900 shadow-sm'
                   }`}
                 >
-                  <div className="flex items-center gap-2 min-w-0">
+                  <div className="flex items-center gap-2.5 min-w-0">
                     <div
-                      className={`size-7 rounded-xl border flex items-center justify-center shrink-0 ${
+                      className={`size-8 rounded-xl border flex items-center justify-center shrink-0 ${
                         isDark
-                          ? 'bg-red-500/15 border-red-500/30 text-red-400'
-                          : 'bg-red-50 border-red-200 text-red-600'
+                          ? 'bg-white/[0.06] border-white/15 text-white'
+                          : 'bg-[#f4f4f5] border-black/10 text-[#18181b]'
                       }`}
                     >
-                      <GraduationCap className="w-3.5 h-3.5" />
+                      <GraduationCap className="w-4 h-4" />
                     </div>
                     <div className="min-w-0">
-                      <div className="text-[11px] font-semibold truncate">
+                      <div className="text-[11.5px] font-semibold truncate">
                         PDF Study & Assessment Studio Ready
                       </div>
                       <div className="text-[10px] opacity-60 truncate">
-                        Launch padded pop-up for {targetDoc.name}
+                        Launch study workspace for {targetDoc.name}
                       </div>
                     </div>
                   </div>
@@ -658,7 +766,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                             initialTab: btn.tab,
                           })
                         }
-                        className={`px-2.5 py-1 rounded-xl border text-[11px] font-semibold transition-all cursor-pointer whitespace-nowrap ${
+                        className={`px-3 py-1 rounded-full border text-[11px] font-semibold transition-all cursor-pointer whitespace-nowrap ${
                           btn.tab === 'quiz'
                             ? isDark
                               ? 'bg-white text-black border-white hover:bg-neutral-200'
@@ -680,16 +788,16 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
       {/* Detected URL Instant Action Bar */}
       {detectedUrl && onOpenUrlReader && (
-        <div className="px-3 pb-2 animate-in fade-in duration-150">
+        <div className="px-2 pb-2.5 animate-in fade-in duration-150">
           <div
-            className={`flex items-center justify-between gap-2 px-3 py-1.5 rounded-2xl border text-xs ${
+            className={`flex items-center justify-between gap-3 pl-4 pr-2 py-2 rounded-full border text-xs ${
               isDark
-                ? 'bg-[#141414]/95 border-white/15 text-neutral-200'
-                : 'bg-white/95 border-black/10 text-neutral-800 shadow-xs'
+                ? 'bg-[#141418] border-white/15 text-white shadow-lg'
+                : 'bg-white border-black/10 text-[#18181b] shadow-sm'
             }`}
           >
-            <div className="flex items-center gap-2 min-w-0">
-              <Link2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+            <div className="flex items-center gap-2.5 min-w-0">
+              <Link2 className="w-3.5 h-3.5 opacity-70 shrink-0" />
               <span className="truncate font-mono text-[11px] opacity-80">{detectedUrl}</span>
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
@@ -698,10 +806,10 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                 onClick={() => {
                   onOpenUrlReader(detectedUrl);
                 }}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-colors cursor-pointer whitespace-nowrap ${
+                className={`px-4 py-1.5 rounded-full text-[11px] font-semibold transition-all cursor-pointer whitespace-nowrap ${
                   isDark
-                    ? 'bg-white text-black hover:bg-neutral-200'
-                    : 'bg-black text-white hover:bg-neutral-800'
+                    ? 'bg-white text-[#18181b] hover:bg-neutral-200'
+                    : 'bg-[#18181b] text-white hover:bg-neutral-800'
                 }`}
               >
                 Open in URL Reader & Summarizer
@@ -711,279 +819,234 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         </div>
       )}
 
-      {/* Main Glassmorphic Pill Chat Input Shell */}
+      {/* Main Solid Padded Monochrome Pill Chat Input Shell */}
       <form
         onSubmit={(e) => {
           e.preventDefault();
           handleSubmit();
         }}
-        className={`group/composer relative rounded-full border transition-all duration-200 pl-2.5 sm:pl-3 pr-1.5 py-1 sm:py-1.5 flex items-center gap-1.5 sm:gap-2 ${
+        className={`group/composer relative rounded-full border transition-all duration-200 pl-2.5 sm:pl-3.5 pr-2 py-1.5 sm:py-2 flex items-center gap-2 ${
           isDark
-            ? 'bg-neutral-900/60 border-white/[0.15] focus-within:border-white/[0.3] shadow-[0_8px_32px_rgba(0,0,0,0.6)] backdrop-blur-2xl'
-            : 'bg-white/60 border-black/[0.12] focus-within:border-black/[0.25] shadow-[0_8px_32px_rgba(0,0,0,0.08)] backdrop-blur-2xl'
+            ? 'bg-[#141418] border-white/[0.15] focus-within:border-white/[0.3] shadow-[0_12px_36px_rgba(0,0,0,0.65)]'
+            : 'bg-white border-black/[0.12] focus-within:border-black/[0.25] shadow-[0_8px_28px_rgba(0,0,0,0.08)]'
         }`}
       >
-        {/* Left Plus Button with Upward Dropup Menu */}
+        {/* Left Plus Button with Solid Padded Monochrome Upward Dropup Menu */}
         <div className="relative flex items-center shrink-0" ref={plusMenuRef}>
           <button
             type="button"
             onClick={() => setIsPlusMenuOpen(!isPlusMenuOpen)}
-            className={`relative size-7 sm:size-7.5 rounded-full flex items-center justify-center transition-colors cursor-pointer ${
-              isDark
-                ? 'text-[#a1a1aa] hover:text-white hover:bg-white/[0.08]'
-                : 'text-[#71717a] hover:text-[#18181b] hover:bg-black/[0.05]'
+            className={`relative size-8 rounded-full flex items-center justify-center transition-colors cursor-pointer ${
+              isPlusMenuOpen
+                ? isDark
+                  ? 'bg-white text-black'
+                  : 'bg-[#18181b] text-white'
+                : isDark
+                ? 'bg-white/[0.06] text-[#d4d4d8] hover:text-white hover:bg-white/[0.12]'
+                : 'bg-[#f4f4f5] text-[#52525b] hover:text-[#18181b] hover:bg-neutral-200/80'
             }`}
             title="Attach files, images, code, or toggle Research mode"
             aria-label="Add files or options"
           >
-            <Plus className="w-4 h-4 stroke-[2]" />
+            <Plus className="w-4 h-4 stroke-[2.2]" />
             {isResearchMode && (
               <span
-                className="absolute top-1 right-1 size-2 rounded-full bg-amber-400 ring-2 ring-black/50"
+                className={`absolute -top-0.5 -right-0.5 size-2.5 rounded-full ring-2 ${
+                  isDark ? 'bg-white ring-[#141418]' : 'bg-[#18181b] ring-white'
+                }`}
                 title="Research mode is active"
               />
             )}
           </button>
 
-          {/* Upward Plus Menu Dropup with Multiple Upload Types */}
+          {/* Ultra-Compact Monochrome Pill Plus Menu Dropup (No icons, no lines, small font) */}
           {isPlusMenuOpen && (
             <div
-              className={`absolute bottom-full left-0 mb-3 w-64 rounded-2xl border p-1.5 z-50 text-xs shadow-2xl backdrop-blur-2xl animate-in fade-in zoom-in-95 duration-100 ${
+              className={`absolute bottom-full left-0 mb-2.5 w-48 rounded-2xl border p-1.5 z-50 text-[11px] font-normal animate-in fade-in zoom-in-95 duration-150 ${
                 isDark
-                  ? 'bg-[#18181b]/98 border-[#2b2b2b] text-white shadow-[0_20px_50px_rgba(0,0,0,0.9)]'
-                  : 'bg-white/98 border-[#e2e2e2] text-black shadow-[0_20px_50px_rgba(0,0,0,0.15)]'
+                  ? 'bg-[#141418] border-white/[0.12] text-white/90 shadow-[0_16px_40px_rgba(0,0,0,0.85)]'
+                  : 'bg-white border-black/[0.1] text-[#18181b] shadow-[0_16px_40px_rgba(0,0,0,0.14)]'
               }`}
             >
-              {/* Option 1: Universal Multi-File Attach */}
-              <button
-                type="button"
-                onClick={() => {
-                  setIsPlusMenuOpen(false);
-                  if (fileInputRef.current) {
-                    fileInputRef.current.accept = '*/*';
-                    fileInputRef.current.click();
-                  }
-                }}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left transition-colors cursor-pointer ${
-                  isDark ? 'hover:bg-white/[0.08]' : 'hover:bg-black/[0.05]'
+              {/* Compact Pill Quota Row */}
+              <div
+                className={`mb-1 px-2.5 py-1 rounded-full border flex items-center justify-between text-[10px] font-normal ${
+                  isDark
+                    ? 'bg-[#1c1c22] border-white/[0.08] text-white/80'
+                    : 'bg-[#f4f4f5] border-black/[0.06] text-[#18181b]/80'
                 }`}
               >
-                <FileText className="w-4 h-4 text-blue-500 shrink-0" />
-                <div className="min-w-0">
-                  <div className="font-semibold text-xs truncate">Attach Any Files</div>
-                  <div className={`text-[10px] truncate ${isDark ? 'text-white/50' : 'text-black/50'}`}>
-                    Multi-file • All formats & large sizes
-                  </div>
-                </div>
-              </button>
-
-              {/* Option 2: High-Resolution Images & Photos */}
-              <button
-                type="button"
-                onClick={() => {
-                  setIsPlusMenuOpen(false);
-                  if (fileInputRef.current) {
-                    fileInputRef.current.accept = 'image/*';
-                    fileInputRef.current.click();
-                  }
-                }}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left transition-colors cursor-pointer ${
-                  isDark ? 'hover:bg-white/[0.08]' : 'hover:bg-black/[0.05]'
-                }`}
-              >
-                <ImageIcon className="w-4 h-4 text-emerald-500 shrink-0" />
-                <div className="min-w-0">
-                  <div className="font-semibold text-xs truncate">Images & Photos</div>
-                  <div className={`text-[10px] truncate ${isDark ? 'text-white/50' : 'text-black/50'}`}>
-                    High-res multimodal vision analysis
-                  </div>
-                </div>
-              </button>
-
-              {/* Option 3: PDF Documents */}
-              <button
-                type="button"
-                onClick={() => {
-                  setIsPlusMenuOpen(false);
-                  if (fileInputRef.current) {
-                    fileInputRef.current.accept = '.pdf,application/pdf';
-                    fileInputRef.current.click();
-                  }
-                }}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left transition-colors cursor-pointer ${
-                  isDark ? 'hover:bg-white/[0.08]' : 'hover:bg-black/[0.05]'
-                }`}
-              >
-                <File className="w-4 h-4 text-red-500 shrink-0" />
-                <div className="min-w-0">
-                  <div className="font-semibold text-xs truncate">PDF Documents</div>
-                  <div className={`text-[10px] truncate ${isDark ? 'text-white/50' : 'text-black/50'}`}>
-                    Full document reasoning & extraction
-                  </div>
-                </div>
-              </button>
-
-              {/* Option 4: Code & Data */}
-              <button
-                type="button"
-                onClick={() => {
-                  setIsPlusMenuOpen(false);
-                  if (fileInputRef.current) {
-                    fileInputRef.current.accept =
-                      '.js,.jsx,.ts,.tsx,.py,.html,.css,.json,.csv,.sql,.md,.txt,.log,.xml,.yaml,.yml,.sh,.env,.tsv,.c,.cpp';
-                    fileInputRef.current.click();
-                  }
-                }}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left transition-colors cursor-pointer ${
-                  isDark ? 'hover:bg-white/[0.08]' : 'hover:bg-black/[0.05]'
-                }`}
-              >
-                <Code2 className="w-4 h-4 text-cyan-500 shrink-0" />
-                <div className="min-w-0">
-                  <div className="font-semibold text-xs truncate">Code & Datasets</div>
-                  <div className={`text-[10px] truncate ${isDark ? 'text-white/50' : 'text-black/50'}`}>
-                    Scripts, CSV, JSON, logs & tables
-                  </div>
-                </div>
-              </button>
-
-              <div className={`my-1 border-t ${isDark ? 'border-white/10' : 'border-black/10'}`} />
-
-              {/* Web Search Mode Toggle */}
-              <button
-                type="button"
-                onClick={() => {
-                  setIsPlusMenuOpen(false);
-                  onToggleSearchMode(searchMode === 'off' ? 'organic' : 'off');
-                }}
-                className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left transition-colors cursor-pointer ${
-                  isDark ? 'hover:bg-white/[0.08]' : 'hover:bg-black/[0.05]'
-                }`}
-              >
-                <span className="flex items-center gap-2.5">
-                  <Globe className="w-4 h-4 opacity-80" />
-                  <span className="font-semibold text-xs">Web Search Mode</span>
+                <span>
+                  Uploads {usageQuota.filesUploaded + attachments.length}/
+                  {usageQuota.fileUploadLimit >= 999999 ? '∞' : usageQuota.fileUploadLimit}
                 </span>
-                <span
-                  className={`text-[10px] px-1.5 py-0.5 rounded font-mono uppercase ${
-                    searchMode !== 'off'
-                      ? isDark
-                        ? 'bg-white/15 text-white'
-                        : 'bg-black/10 text-black'
-                      : 'bg-neutral-500/20 text-neutral-400'
-                  }`}
-                >
-                  {searchMode}
-                </span>
-              </button>
+                {currentPlan !== 'fire' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsPlusMenuOpen(false);
+                      openPricingModal(currentPlan === 'free' ? 'spark' : 'fire');
+                    }}
+                    className={`px-2 py-0.5 rounded-full text-[9.5px] font-normal transition-colors cursor-pointer ${
+                      isDark
+                        ? 'bg-white text-black hover:bg-neutral-200'
+                        : 'bg-[#18181b] text-white hover:bg-neutral-800'
+                    }`}
+                  >
+                    {currentPlan === 'free' ? 'Spark $1' : 'Fire $5'}
+                  </button>
+                )}
+              </div>
 
-              {/* Hardcore Research Mode Toggle Pill */}
-              <button
-                type="button"
-                onClick={() => {
-                  setIsPlusMenuOpen(false);
-                  onToggleResearchMode?.(!isResearchMode);
-                }}
-                className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left transition-colors cursor-pointer ${
-                  isDark ? 'hover:bg-white/[0.08]' : 'hover:bg-black/[0.05]'
-                }`}
-              >
-                <span className="flex items-center gap-2.5">
-                  <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
-                  <span className="font-semibold text-xs">Research / Deep Scrape</span>
-                </span>
-                <span
-                  className={`text-[10px] px-1.5 py-0.5 rounded font-mono uppercase ${
-                    isResearchMode
-                      ? 'bg-amber-400/20 text-amber-400 border border-amber-400/30'
-                      : 'bg-neutral-500/20 text-neutral-400'
-                  }`}
-                >
-                  {isResearchMode ? 'ON' : 'OFF'}
-                </span>
-              </button>
-
-              <div className={`my-1 border-t ${isDark ? 'border-white/10' : 'border-black/10'}`} />
-
-              {/* Multi-Step Deep Research Report Generator */}
-              {onOpenDeepResearch && (
+              <div className="space-y-0.5">
                 <button
                   type="button"
                   onClick={() => {
                     setIsPlusMenuOpen(false);
-                    onOpenDeepResearch(value.trim() || undefined);
-                  }}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left transition-colors cursor-pointer ${
-                    isDark ? 'hover:bg-white/[0.08]' : 'hover:bg-black/[0.05]'
-                  }`}
-                >
-                  <Layers className="w-4 h-4 text-purple-400 shrink-0" />
-                  <div className="min-w-0">
-                    <div className="font-semibold text-xs truncate">Deep Research Agent</div>
-                    <div className={`text-[10px] truncate ${isDark ? 'text-white/50' : 'text-black/50'}`}>
-                      3-step Web, ArXiv & News executive report
-                    </div>
-                  </div>
-                </button>
-              )}
-
-              {/* URL / Website Reader & Page Summarizer */}
-              {onOpenUrlReader && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsPlusMenuOpen(false);
-                    onOpenUrlReader(detectedUrl || undefined);
-                  }}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left transition-colors cursor-pointer ${
-                    isDark ? 'hover:bg-white/[0.08]' : 'hover:bg-black/[0.05]'
-                  }`}
-                >
-                  <Link2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <div className="min-w-0">
-                    <div className="font-semibold text-xs truncate">URL / Website Reader</div>
-                    <div className={`text-[10px] truncate ${isDark ? 'text-white/50' : 'text-black/50'}`}>
-                      Scrape, summarize & chat with any link or repo
-                    </div>
-                  </div>
-                </button>
-              )}
-
-              {/* Academic Paper & PDF Quiz/Flashcards Studio */}
-              {onOpenArxivReader && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsPlusMenuOpen(false);
-                    const attachedPdf = attachments.find(
-                      (a) => getFileCategory(a.name, a.type).category === 'pdf'
-                    );
-                    if (attachedPdf) {
-                      onOpenArxivReader({
-                        pdfUrl: attachedPdf.url || attachedPdf.dataUrl,
-                        pdfName: attachedPdf.name,
-                        extractedText: attachedPdf.textContent || '',
-                        initialTab: 'quiz',
-                      });
-                    } else {
-                      onOpenArxivReader({ initialTab: 'quiz' });
+                    if (fileInputRef.current) {
+                      fileInputRef.current.accept = '*/*';
+                      fileInputRef.current.click();
                     }
                   }}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left transition-colors cursor-pointer ${
-                    isDark ? 'hover:bg-white/[0.08]' : 'hover:bg-black/[0.05]'
+                  className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-full text-left text-[11px] font-normal transition-colors cursor-pointer ${
+                    isDark ? 'hover:bg-white/[0.07]' : 'hover:bg-[#f4f4f5]'
                   }`}
                 >
-                  <GraduationCap className="w-4 h-4 text-rose-400 shrink-0" />
-                  <div className="min-w-0">
-                    <div className="font-semibold text-xs truncate">
-                      PDF Quiz, Flashcards & Study Studio
-                    </div>
-                    <div className={`text-[10px] truncate ${isDark ? 'text-white/50' : 'text-black/50'}`}>
-                      Upload PDF • Quiz, Flashcards, Cheatsheet & ArXiv
-                    </div>
-                  </div>
+                  <span className="truncate">Attach Files</span>
                 </button>
-              )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsPlusMenuOpen(false);
+                    if (fileInputRef.current) {
+                      fileInputRef.current.accept = 'image/*';
+                      fileInputRef.current.click();
+                    }
+                  }}
+                  className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-full text-left text-[11px] font-normal transition-colors cursor-pointer ${
+                    isDark ? 'hover:bg-white/[0.07]' : 'hover:bg-[#f4f4f5]'
+                  }`}
+                >
+                  <span className="truncate">Photos & Images</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsPlusMenuOpen(false);
+                    if (fileInputRef.current) {
+                      fileInputRef.current.accept = '.pdf,application/pdf';
+                      fileInputRef.current.click();
+                    }
+                  }}
+                  className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-full text-left text-[11px] font-normal transition-colors cursor-pointer ${
+                    isDark ? 'hover:bg-white/[0.07]' : 'hover:bg-[#f4f4f5]'
+                  }`}
+                >
+                  <span className="truncate">PDF Document</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsPlusMenuOpen(false);
+                    if (fileInputRef.current) {
+                      fileInputRef.current.accept =
+                        '.js,.jsx,.ts,.tsx,.py,.html,.css,.json,.csv,.sql,.md,.txt,.log,.xml,.yaml,.yml,.sh,.env,.tsv,.c,.cpp';
+                      fileInputRef.current.click();
+                    }
+                  }}
+                  className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-full text-left text-[11px] font-normal transition-colors cursor-pointer ${
+                    isDark ? 'hover:bg-white/[0.07]' : 'hover:bg-[#f4f4f5]'
+                  }`}
+                >
+                  <span className="truncate">Code & Data</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsPlusMenuOpen(false);
+                    onToggleSearchMode(searchMode === 'off' ? 'organic' : 'off');
+                  }}
+                  className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-full text-left text-[11px] font-normal transition-colors cursor-pointer ${
+                    isDark ? 'hover:bg-white/[0.07]' : 'hover:bg-[#f4f4f5]'
+                  }`}
+                >
+                  <span className="truncate">Web Search</span>
+                  <span
+                    className={`text-[9.5px] px-2 py-0.5 rounded-full font-normal border ${
+                      searchMode !== 'off'
+                        ? isDark
+                          ? 'bg-white text-black border-white'
+                          : 'bg-[#18181b] text-white border-[#18181b]'
+                        : isDark
+                        ? 'bg-white/[0.04] border-white/10 text-white/50'
+                        : 'bg-[#f4f4f5] border-black/10 text-black/50'
+                    }`}
+                  >
+                    {searchMode === 'off' ? 'Off' : 'On'}
+                  </span>
+                </button>
+
+                {onOpenDeepResearch && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsPlusMenuOpen(false);
+                      onOpenDeepResearch(value.trim() || undefined);
+                    }}
+                    className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-full text-left text-[11px] font-normal transition-colors cursor-pointer ${
+                      isDark ? 'hover:bg-white/[0.07]' : 'hover:bg-[#f4f4f5]'
+                    }`}
+                  >
+                    <span className="truncate">Deep Research</span>
+                  </button>
+                )}
+
+                {onOpenUrlReader && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsPlusMenuOpen(false);
+                      onOpenUrlReader(detectedUrl || undefined);
+                    }}
+                    className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-full text-left text-[11px] font-normal transition-colors cursor-pointer ${
+                      isDark ? 'hover:bg-white/[0.07]' : 'hover:bg-[#f4f4f5]'
+                    }`}
+                  >
+                    <span className="truncate">URL Reader</span>
+                  </button>
+                )}
+
+                {onOpenArxivReader && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsPlusMenuOpen(false);
+                      const attachedPdf = attachments.find(
+                        (a) => getFileCategory(a.name, a.type).category === 'pdf'
+                      );
+                      if (attachedPdf) {
+                        onOpenArxivReader({
+                          pdfUrl: attachedPdf.url || attachedPdf.dataUrl,
+                          pdfName: attachedPdf.name,
+                          extractedText: attachedPdf.textContent || '',
+                          initialTab: 'quiz',
+                        });
+                      } else {
+                        onOpenArxivReader({ initialTab: 'quiz' });
+                      }
+                    }}
+                    className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-full text-left text-[11px] font-normal transition-colors cursor-pointer ${
+                      isDark ? 'hover:bg-white/[0.07]' : 'hover:bg-[#f4f4f5]'
+                    }`}
+                  >
+                    <span className="truncate">PDF Study Studio</span>
+                  </button>
+                )}
+              </div>
             </div>
           )}
         </div>

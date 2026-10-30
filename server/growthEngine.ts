@@ -478,6 +478,107 @@ const referralsByCode = new Map<string, ServerReferralRecord>();
 const referralCodeByUid = new Map<string, string>();
 const claimedReferralsByUid = new Map<string, { code: string; referrerUid: string; claimedAt: number }>();
 
+export interface ServerFeedbackRecord {
+  id: string;
+  uid: string;
+  category: 'feature' | 'bug' | 'model_quality' | 'ui_ux' | 'research_tools' | 'praise';
+  rating: number;
+  subject: string;
+  message: string;
+  includeDiagnostics: boolean;
+  diagnosticsSummary?: string;
+  status: 'received' | 'routed' | 'reviewed';
+  createdAt: number;
+}
+
+// Strict server-side destination inbox for user feedback (never returned to client or UI)
+const FEEDBACK_DESTINATION_EMAIL =
+  process.env.ZENO_FEEDBACK_EMAIL || 'wakefullfinding62@gmail.com';
+
+const feedbackStore: ServerFeedbackRecord[] = [];
+
+const SEEDED_REFERRERS: Array<{
+  uid: string;
+  displayName: string;
+  username: string;
+  bio: string;
+  referralCode: string;
+  visitsCount: number;
+  validatedSignupsCount: number;
+  specialtyTag: string;
+}> = [
+  {
+    uid: 'ref_elena_vance',
+    displayName: 'Dr. Elena Vance',
+    username: 'elena_quantum',
+    bio: 'Quantum information theorist & ArXiv synthesis contributor.',
+    referralCode: 'zp_elena94x',
+    visitsCount: 148,
+    validatedSignupsCount: 31,
+    specialtyTag: 'Quantum & Physics',
+  },
+  {
+    uid: 'ref_marcus_chen',
+    displayName: 'Marcus Chen',
+    username: 'mchen_systems',
+    bio: 'Distributed systems architect exploring low-latency AI gateways.',
+    referralCode: 'zp_mchen88k',
+    visitsCount: 104,
+    validatedSignupsCount: 22,
+    specialtyTag: 'Distributed Systems',
+  },
+  {
+    uid: 'ref_aria_lindqvist',
+    displayName: 'Aria Lindqvist',
+    username: 'aria_ml',
+    bio: 'Machine learning researcher curating transformer study guides.',
+    referralCode: 'zp_arialq72',
+    visitsCount: 82,
+    validatedSignupsCount: 16,
+    specialtyTag: 'Deep Learning',
+  },
+  {
+    uid: 'ref_siddharth_rao',
+    displayName: 'Siddharth Rao',
+    username: 'srao_arxiv',
+    bio: 'Graduate researcher building active-recall study workflows.',
+    referralCode: 'zp_srao51m',
+    visitsCount: 54,
+    validatedSignupsCount: 11,
+    specialtyTag: 'Literature Review',
+  },
+  {
+    uid: 'ref_lucas_meyer',
+    displayName: 'Lucas Meyer',
+    username: 'lmeyer_dev',
+    bio: 'TypeScript & WebGPU compiler engineer.',
+    referralCode: 'zp_lmeyer33',
+    visitsCount: 39,
+    validatedSignupsCount: 7,
+    specialtyTag: 'Edge AI & WebGPU',
+  },
+  {
+    uid: 'ref_nadia_okafor',
+    displayName: 'Nadia Okafor',
+    username: 'nadia_bio',
+    bio: 'Computational biology & organic chemistry study sheet author.',
+    referralCode: 'zp_nadia19p',
+    visitsCount: 27,
+    validatedSignupsCount: 4,
+    specialtyTag: 'STEM & Bio',
+  },
+  {
+    uid: 'ref_kaito_takahashi',
+    displayName: 'Kaito Takahashi',
+    username: 'kaito_wasm',
+    bio: 'Systems researcher benchmarking multi-model reasoning.',
+    referralCode: 'zp_kaito07z',
+    visitsCount: 18,
+    validatedSignupsCount: 2,
+    specialtyTag: 'Model Arena',
+  },
+];
+
 const seenAnalyticsEventIds = new Set<string>();
 const analyticsEventCounts: Record<GrowthAnalyticsEventName, number> = {
   signup_completed: 0,
@@ -510,6 +611,38 @@ function ensureSeededArtifacts(): void {
       featuredArtifactIds: SEEDED_ARTIFACTS.slice(0, 4).map((a) => a.id),
       updatedAt: 1761490000000,
     });
+    for (const sr of SEEDED_REFERRERS) {
+      if (!creatorProfilesStore.has(sr.uid)) {
+        creatorProfilesStore.set(sr.uid, {
+          uid: sr.uid,
+          displayName: sr.displayName,
+          username: sr.username,
+          bio: sr.bio,
+          isPublic: true,
+          featuredArtifactIds: [],
+          updatedAt: 1761490000000,
+        });
+      }
+      if (!referralsByCode.has(sr.referralCode)) {
+        const themes = ['carbon-default'];
+        if (sr.validatedSignupsCount >= 1) themes.push('obsidian-gold');
+        if (sr.validatedSignupsCount >= 3) themes.push('solar-ivory');
+        if (sr.validatedSignupsCount >= 5) themes.push('emerald-terminal');
+        const rec: ServerReferralRecord = {
+          referralCode: sr.referralCode,
+          referrerUid: sr.uid,
+          visitsCount: sr.visitsCount,
+          visitorKeys: new Set<string>(),
+          validatedSignupsCount: sr.validatedSignupsCount,
+          qualifiedActionsCount: sr.validatedSignupsCount,
+          referredUids: new Set<string>(),
+          unlockedThemes: themes,
+          createdAt: 1761400000000,
+        };
+        referralsByCode.set(sr.referralCode, rec);
+        referralCodeByUid.set(sr.uid, sr.referralCode);
+      }
+    }
   }
 }
 ensureSeededArtifacts();
@@ -522,6 +655,7 @@ export function resetGrowthEngineForTests(): void {
   referralsByCode.clear();
   referralCodeByUid.clear();
   claimedReferralsByUid.clear();
+  feedbackStore.length = 0;
   seenAnalyticsEventIds.clear();
   for (const k of VALID_GROWTH_EVENTS) {
     analyticsEventCounts[k] = 0;
@@ -1434,6 +1568,297 @@ export function registerGrowthEngineRoutes(app: Router): void {
     return res.json({
       success: true,
       summary: getGrowthFunnelSummary(),
+    });
+  });
+
+  // 11. Elite Referrer Leaderboard & Top Contributors Endpoint
+  app.get('/api/growth/leaderboard', (req: Request, res: Response) => {
+    ensureSeededArtifacts();
+    const requesterUid =
+      req.auth?.uid ||
+      (typeof req.headers['x-zeno-client-id'] === 'string' &&
+      isValidSafeId(req.headers['x-zeno-client-id'], 64)
+        ? `client_${req.headers['x-zeno-client-id']}`
+        : 'guest_explorer');
+
+    // Ensure requester has a referral record so their current standing is included
+    getOrCreateReferralRecord(requesterUid);
+
+    const resolveTier = (claimed: number) => {
+      if (claimed >= 25) return 'Grand Ambassador';
+      if (claimed >= 12) return 'Apex Referrer';
+      if (claimed >= 5) return 'Catalyst';
+      if (claimed >= 2) return 'Vanguard';
+      return 'Scout';
+    };
+
+    const seededMetaMap = new Map(SEEDED_REFERRERS.map((s) => [s.uid, s]));
+
+    const allReferrerEntries = Array.from(referralsByCode.values()).map((rec) => {
+      const profile = creatorProfilesStore.get(rec.referrerUid);
+      const seeded = seededMetaMap.get(rec.referrerUid);
+      const isMe = rec.referrerUid === requesterUid;
+      const displayName =
+        profile?.displayName ||
+        seeded?.displayName ||
+        (isMe ? 'You (Zeno Explorer)' : `Researcher ${rec.referralCode.slice(3, 7).toUpperCase()}`);
+      const username =
+        profile?.username ||
+        seeded?.username ||
+        (isMe ? 'you' : `zeno_${rec.referralCode.slice(3, 8)}`);
+      const conversionRate =
+        rec.visitsCount > 0
+          ? Math.min(100, Math.round((rec.validatedSignupsCount / rec.visitsCount) * 100))
+          : rec.validatedSignupsCount > 0
+          ? 100
+          : 0;
+
+      return {
+        rank: 0,
+        uid: rec.referrerUid,
+        displayName,
+        username,
+        referralCode: rec.referralCode,
+        claimedReferrals: rec.validatedSignupsCount,
+        visitsCount: rec.visitsCount,
+        conversionRate,
+        tier: resolveTier(rec.validatedSignupsCount),
+        unlockedThemes: rec.unlockedThemes,
+        specialtyTag: seeded?.specialtyTag || (isMe ? 'Active Member' : 'Community Referrer'),
+        isCurrentUser: isMe,
+      };
+    });
+
+    allReferrerEntries.sort(
+      (a, b) =>
+        b.claimedReferrals - a.claimedReferrals ||
+        b.visitsCount - a.visitsCount ||
+        a.referralCode.localeCompare(b.referralCode)
+    );
+
+    allReferrerEntries.forEach((entry, idx) => {
+      entry.rank = idx + 1;
+    });
+
+    const myRank = allReferrerEntries.find((e) => e.isCurrentUser) || null;
+    const eliteReferrers = allReferrerEntries.filter(
+      (e) => e.claimedReferrals > 0 || e.isCurrentUser
+    );
+
+    // Compute Top Contributors from public artifacts + community engagement
+    const contributorAgg = new Map<
+      string,
+      {
+        uid: string;
+        displayName: string;
+        username: string;
+        bio: string;
+        publishedCount: number;
+        totalSaves: number;
+        totalForks: number;
+        totalViews: number;
+        specialtyTags: Set<string>;
+        topArtifactTitle?: string;
+        topArtifactId?: string;
+        topArtifactScore: number;
+      }
+    >();
+
+    for (const art of artifactsStore.values()) {
+      if (art.visibility !== 'public') continue;
+      const authorKey = art.authorUsername || art.ownerId || art.authorName;
+      let agg = contributorAgg.get(authorKey);
+      if (!agg) {
+        agg = {
+          uid: art.ownerId,
+          displayName: art.authorName || 'Zeno Contributor',
+          username: art.authorUsername || authorKey.replace(/[^a-zA-Z0-9_]/g, '').toLowerCase(),
+          bio:
+            art.authorBio ||
+            'Publishing peer-reviewed study syntheses and workflows on Zeno Discover.',
+          publishedCount: 0,
+          totalSaves: 0,
+          totalForks: 0,
+          totalViews: 0,
+          specialtyTags: new Set<string>(),
+          topArtifactScore: -1,
+        };
+        contributorAgg.set(authorKey, agg);
+      }
+      agg.publishedCount += 1;
+      agg.totalSaves += art.savesCount || 0;
+      agg.totalForks += art.forksCount || 0;
+      agg.totalViews += art.viewsCount || 0;
+      art.tags.slice(0, 3).forEach((t) => agg!.specialtyTags.add(t));
+      const artScore = (art.savesCount || 0) * 4 + (art.forksCount || 0) * 5 + (art.viewsCount || 0);
+      if (artScore > agg.topArtifactScore) {
+        agg.topArtifactScore = artScore;
+        agg.topArtifactTitle = art.title;
+        agg.topArtifactId = art.id;
+      }
+    }
+
+    const topContributors = Array.from(contributorAgg.values())
+      .map((c) => {
+        const impactScore =
+          c.publishedCount * 12 + c.totalSaves * 4 + c.totalForks * 5 + c.totalViews;
+        const badge =
+          impactScore >= 140
+            ? 'Distinguished Fellow'
+            : impactScore >= 90
+            ? 'Principal Author'
+            : impactScore >= 55
+            ? 'Senior Synthesizer'
+            : 'Verified Contributor';
+        return {
+          rank: 0,
+          uid: c.uid,
+          displayName: c.displayName,
+          username: c.username,
+          bio: c.bio,
+          publishedCount: c.publishedCount,
+          totalSaves: c.totalSaves,
+          totalForks: c.totalForks,
+          totalViews: c.totalViews,
+          impactScore,
+          specialtyTags: Array.from(c.specialtyTags).slice(0, 4),
+          badge,
+          topArtifactTitle: c.topArtifactTitle,
+          topArtifactId: c.topArtifactId,
+          isCurrentUser: c.uid === requesterUid,
+        };
+      })
+      .sort((a, b) => b.impactScore - a.impactScore || b.totalSaves - a.totalSaves);
+
+    topContributors.forEach((c, idx) => {
+      c.rank = idx + 1;
+    });
+
+    return res.json({
+      success: true,
+      eliteReferrers: eliteReferrers.slice(0, 25),
+      topContributors: topContributors.slice(0, 15),
+      myRank,
+    });
+  });
+
+  // 12. Private Backend Feedback Submission & History (Maintainer Email Strictly Hidden)
+  app.post('/api/growth/feedback', async (req: Request, res: Response) => {
+    const uid =
+      req.auth?.uid ||
+      (typeof req.headers['x-zeno-client-id'] === 'string' &&
+      isValidSafeId(req.headers['x-zeno-client-id'], 64)
+        ? `client_${req.headers['x-zeno-client-id']}`
+        : 'anonymous_user');
+
+    const validCategories = [
+      'feature',
+      'bug',
+      'model_quality',
+      'ui_ux',
+      'research_tools',
+      'praise',
+    ] as const;
+    const rawCat = req.body?.category;
+    const category = validCategories.includes(rawCat) ? rawCat : 'feature';
+    const rating = Math.min(5, Math.max(1, Number(req.body?.rating) || 5));
+    const message = sanitizePlainString(req.body?.message, 2400);
+    if (!message || message.length < 4) {
+      return sendNormalizedError(
+        res,
+        400,
+        'feedback/invalid-message',
+        'Please enter at least a few words describing your feedback.'
+      );
+    }
+    const rawSubject = sanitizePlainString(req.body?.subject, 160);
+    const subject = rawSubject || message.slice(0, 72);
+    const includeDiagnostics = Boolean(req.body?.includeDiagnostics);
+    const diagnosticsSummary = includeDiagnostics
+      ? sanitizePlainString(req.body?.diagnosticsSummary || '', 500)
+      : undefined;
+
+    const record: ServerFeedbackRecord = {
+      id: `fb_${Date.now().toString(36)}_${crypto.randomBytes(3).toString('hex')}`,
+      uid,
+      category,
+      rating,
+      subject,
+      message,
+      includeDiagnostics,
+      diagnosticsSummary,
+      status: 'routed',
+      createdAt: Date.now(),
+    };
+
+    feedbackStore.unshift(record);
+    if (feedbackStore.length > 500) {
+      feedbackStore.pop();
+    }
+
+    // Asynchronously dispatch to maintainer inbox on the server without exposing email to client
+    if (FEEDBACK_DESTINATION_EMAIL) {
+      fetch(`https://formsubmit.co/ajax/${encodeURIComponent(FEEDBACK_DESTINATION_EMAIL)}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        signal: AbortSignal.timeout(3500),
+        body: JSON.stringify({
+          _subject: `[Zeno Feedback · ${category.toUpperCase()}] ${subject} (${rating}/5★)`,
+          category,
+          rating: `${rating} / 5`,
+          subject,
+          message,
+          diagnostics: diagnosticsSummary || 'Not included',
+          submittedAt: new Date(record.createdAt).toISOString(),
+        }),
+      }).catch(() => {
+        // Silently ignore network/relay errors in sandboxed environments; feedback is persisted in server store
+      });
+    }
+
+    return res.status(201).json({
+      success: true,
+      item: {
+        id: record.id,
+        category: record.category,
+        rating: record.rating,
+        subject: record.subject,
+        message: record.message,
+        includeDiagnostics: record.includeDiagnostics,
+        status: record.status,
+        createdAt: record.createdAt,
+      },
+    });
+  });
+
+  app.get('/api/growth/feedback/mine', (req: Request, res: Response) => {
+    const uid =
+      req.auth?.uid ||
+      (typeof req.headers['x-zeno-client-id'] === 'string' &&
+      isValidSafeId(req.headers['x-zeno-client-id'], 64)
+        ? `client_${req.headers['x-zeno-client-id']}`
+        : 'anonymous_user');
+
+    const mine = feedbackStore
+      .filter((f) => f.uid === uid)
+      .slice(0, 25)
+      .map((f) => ({
+        id: f.id,
+        category: f.category,
+        rating: f.rating,
+        subject: f.subject,
+        message: f.message,
+        includeDiagnostics: f.includeDiagnostics,
+        status: f.status,
+        createdAt: f.createdAt,
+      }));
+
+    return res.json({
+      success: true,
+      items: mine,
     });
   });
 }

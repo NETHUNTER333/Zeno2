@@ -9,6 +9,7 @@ import { SourceCard } from './SourceCard';
 import { ToolExecutionBadge } from './ToolExecutionBadge';
 import { PeleDiagram } from './PeleDiagram';
 import { PrismCodeBlock } from './PrismCodeBlock';
+import { normalizeMathDelimiters } from './MathMarkdown';
 import { LoadingBreadcrumb } from './ui/animated-loading-svg-text-shimmer';
 
 interface ChatMessageProps {
@@ -116,7 +117,7 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ message, onExtractUrl,
             <div className="prose-custom max-w-none text-slate-200 text-sm leading-relaxed">
               <ReactMarkdown
                 remarkPlugins={[remarkGfm, remarkMath]}
-                rehypePlugins={[rehypeKatex]}
+                rehypePlugins={[[rehypeKatex, { throwOnError: false, strict: false }]]}
                 components={{
                   a: ({ node, ...props }) => (
                     <a
@@ -157,7 +158,7 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ message, onExtractUrl,
                   },
                 }}
               >
-                {message.content}
+                {normalizeMathDelimiters(message.content)}
               </ReactMarkdown>
             </div>
           )}

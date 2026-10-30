@@ -38,10 +38,10 @@ export const MessageScroller: React.FC<MessageScrollerProps> = ({
       <button
         type="button"
         onClick={onScrollToBottom}
-        className={`relative flex items-center gap-1.5 px-3 py-2 rounded-full border shadow-lg backdrop-blur-xl text-xs font-medium transition-all active:scale-95 cursor-pointer ${
+        className={`relative flex items-center gap-1.5 px-3 py-2 rounded-full border backdrop-blur-2xl backdrop-saturate-150 text-xs font-medium transition-all active:scale-95 cursor-pointer ${
           isDark
-            ? 'bg-[#181818]/90 hover:bg-[#222222] border-[#333333] text-white shadow-black/60'
-            : 'bg-white/95 hover:bg-[#f7f7f7] border-[#d8d8d8] text-black shadow-black/10'
+            ? 'bg-neutral-900/55 hover:bg-neutral-800/70 border-white/[0.16] text-white shadow-[0_8px_32px_rgba(0,0,0,0.6)]'
+            : 'bg-white/65 hover:bg-white/85 border-black/[0.1] text-black shadow-[0_8px_32px_rgba(0,0,0,0.12)]'
         }`}
         title="Scroll to latest messages"
         aria-label="Scroll to bottom"

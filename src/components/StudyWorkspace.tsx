@@ -30,6 +30,10 @@ import {
   Clock,
   ExternalLink,
 } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import {
   YouTubeTranscriptSegment,
   YouTubeStudyBundle,
@@ -622,7 +626,7 @@ ${segments.map((s) => `[${formatTime(s.start_s)}] ${s.text}`).slice(0, 150).join
           </button>
 
           <div className="flex items-center gap-2 truncate">
-            <span className="hidden lg:inline text-xs font-semibold uppercase tracking-wider text-blue-500">
+            <span className="hidden lg:inline text-xs font-semibold uppercase tracking-wider text-neutral-500">
               Study Workspace
             </span>
             <span className="hidden lg:inline text-xs opacity-30">/</span>
@@ -636,24 +640,18 @@ ${segments.map((s) => `[${formatTime(s.start_s)}] ${s.text}`).slice(0, 150).join
           {/* Cloud Sync Status */}
           <div
             className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border ${
-              cloudSavedStatus === 'saved'
-                ? isDark
-                  ? 'bg-emerald-950/40 border-emerald-800/40 text-emerald-400'
-                  : 'bg-emerald-50 border-emerald-200 text-emerald-700'
-                : isDark
-                ? 'bg-amber-950/40 border-amber-800/40 text-amber-400'
-                : 'bg-amber-50 border-amber-200 text-amber-700'
+              isDark
+                ? 'bg-white/[0.04] border-white/[0.1] text-neutral-300'
+                : 'bg-neutral-100 border-black/[0.1] text-neutral-700'
             }`}
             title="Session automatically saved to your cloud account"
           >
             {cloudSavedStatus === 'saving' ? (
               <Loader2 className="w-3 h-3 animate-spin" />
-            ) : (
-              <Cloud className="w-3 h-3" />
-            )}
+            ) : null}
             <span>
               {cloudSavedStatus === 'saved'
-                ? 'Saved to Cloud'
+                ? 'Saved'
                 : cloudSavedStatus === 'saving'
                 ? 'Saving...'
                 : 'Local Mode'}
@@ -765,7 +763,9 @@ ${segments.map((s) => `[${formatTime(s.start_s)}] ${s.text}`).slice(0, 150).join
               <button
                 type="submit"
                 disabled={loadingTranscript}
-                className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium cursor-pointer transition-colors disabled:opacity-50 shrink-0"
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-colors disabled:opacity-50 shrink-0 ${
+                  isDark ? 'bg-white text-black hover:bg-neutral-200' : 'bg-neutral-900 text-white hover:bg-neutral-800'
+                }`}
               >
                 {loadingTranscript ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -1136,16 +1136,22 @@ ${segments.map((s) => `[${formatTime(s.start_s)}] ${s.text}`).slice(0, 150).join
                 {activeTab === 'summary' && (
                   <div className="space-y-6 max-w-2xl">
                     <section className="space-y-2">
-                      <h2 className="text-xs font-semibold uppercase tracking-wider text-blue-500">
+                      <h2 className="text-xs font-semibold uppercase tracking-wider text-neutral-500">
                         Executive Overview
                       </h2>
-                      <p className="text-sm leading-relaxed opacity-90 p-4 rounded-xl border border-blue-500/20 bg-blue-500/5">
-                        {studyBundle.summary.overview}
-                      </p>
+                      <div
+                        className={`text-sm leading-relaxed p-4 rounded-xl border prose-grok max-w-none ${
+                          isDark ? 'bg-[#121215] border-white/[0.08]' : 'bg-[#f8f8fa] border-black/[0.08]'
+                        }`}
+                      >
+                        <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
+                          {studyBundle.summary.overview}
+                        </ReactMarkdown>
+                      </div>
                     </section>
 
                     <section className="space-y-3">
-                      <h2 className="text-xs font-semibold uppercase tracking-wider text-blue-500">
+                      <h2 className="text-xs font-semibold uppercase tracking-wider text-neutral-500">
                         Key Takeaways ({studyBundle.summary.keyPoints.length})
                       </h2>
                       <div className="space-y-2">
@@ -1158,10 +1164,14 @@ ${segments.map((s) => `[${formatTime(s.start_s)}] ${s.text}`).slice(0, 150).join
                                 : 'bg-[#ffffff] border-[#e4e4e7]'
                             }`}
                           >
-                            <span className="w-5 h-5 rounded-full bg-blue-500/20 text-blue-400 font-semibold flex items-center justify-center shrink-0 text-[10px]">
+                            <span className="w-5 h-5 rounded-full bg-current/10 font-semibold flex items-center justify-center shrink-0 text-[10px]">
                               {idx + 1}
                             </span>
-                            <p className="leading-relaxed opacity-90">{point}</p>
+                            <div className="leading-relaxed opacity-90 prose-grok max-w-none">
+                              <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
+                                {point}
+                              </ReactMarkdown>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -1169,7 +1179,7 @@ ${segments.map((s) => `[${formatTime(s.start_s)}] ${s.text}`).slice(0, 150).join
 
                     {studyBundle.summary.chapters?.length > 0 && (
                       <section className="space-y-3">
-                        <h2 className="text-xs font-semibold uppercase tracking-wider text-blue-500">
+                        <h2 className="text-xs font-semibold uppercase tracking-wider text-neutral-500">
                           Video Chapters & Timestamps
                         </h2>
                         <div className="space-y-2">
@@ -1179,8 +1189,8 @@ ${segments.map((s) => `[${formatTime(s.start_s)}] ${s.text}`).slice(0, 150).join
                               onClick={() => handleSeek(ch.timestamp)}
                               className={`p-3 rounded-lg border text-xs flex items-start justify-between gap-3 cursor-pointer transition-all ${
                                 isDark
-                                  ? 'bg-[#121214] border-[#27272a] hover:border-blue-500/50'
-                                  : 'bg-[#ffffff] border-[#e4e4e7] hover:border-blue-400'
+                                  ? 'bg-[#121214] border-[#27272a] hover:border-white/30'
+                                  : 'bg-[#ffffff] border-[#e4e4e7] hover:border-black/30'
                               }`}
                             >
                               <div className="space-y-1">
@@ -1189,7 +1199,7 @@ ${segments.map((s) => `[${formatTime(s.start_s)}] ${s.text}`).slice(0, 150).join
                                   {ch.summary}
                                 </p>
                               </div>
-                              <span className="font-mono text-xs px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 shrink-0 font-semibold">
+                              <span className="font-mono text-xs px-2 py-0.5 rounded bg-current/10 shrink-0 font-semibold">
                                 {formatTime(ch.timestamp)}
                               </span>
                             </div>
@@ -1204,16 +1214,22 @@ ${segments.map((s) => `[${formatTime(s.start_s)}] ${s.text}`).slice(0, 150).join
                 {activeTab === 'explanation' && (
                   <div className="space-y-6 max-w-2xl">
                     <section className="space-y-2">
-                      <h2 className="text-xs font-semibold uppercase tracking-wider text-blue-500">
+                      <h2 className="text-xs font-semibold uppercase tracking-wider text-neutral-500">
                         Core Thesis
                       </h2>
-                      <p className="text-sm leading-relaxed p-4 rounded-xl border border-purple-500/20 bg-purple-500/5">
-                        {studyBundle.explanation.coreThesis}
-                      </p>
+                      <div
+                        className={`text-sm leading-relaxed p-4 rounded-xl border prose-grok max-w-none ${
+                          isDark ? 'bg-[#121215] border-white/[0.08]' : 'bg-[#f8f8fa] border-black/[0.08]'
+                        }`}
+                      >
+                        <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
+                          {studyBundle.explanation.coreThesis}
+                        </ReactMarkdown>
+                      </div>
                     </section>
 
                     <section className="space-y-3">
-                      <h2 className="text-xs font-semibold uppercase tracking-wider text-blue-500">
+                      <h2 className="text-xs font-semibold uppercase tracking-wider text-neutral-500">
                         Conceptual Mechanics ({studyBundle.explanation.concepts.length})
                       </h2>
                       <div className="space-y-3">
@@ -1228,14 +1244,18 @@ ${segments.map((s) => `[${formatTime(s.start_s)}] ${s.text}`).slice(0, 150).join
                           >
                             <div className="flex items-center justify-between gap-2">
                               <div className="flex items-center gap-2 flex-wrap">
-                                <h3 className="text-sm font-semibold text-blue-400">
+                                <h3 className="text-sm font-semibold">
                                   {c.term}
                                 </h3>
                                 {c.citation && (
-                                  <span className={`px-2 py-0.5 rounded text-[10px] font-medium border ${
-                                    isDark ? 'bg-emerald-950/40 border-emerald-800/40 text-emerald-300' : 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                                  }`}>
-                                    📰 {c.citation}
+                                  <span
+                                    className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${
+                                      isDark
+                                        ? 'bg-white/[0.06] border-white/[0.1] text-neutral-300'
+                                        : 'bg-neutral-100 border-black/[0.1] text-neutral-700'
+                                    }`}
+                                  >
+                                    {c.citation}
                                   </span>
                                 )}
                               </div>
@@ -1243,26 +1263,32 @@ ${segments.map((s) => `[${formatTime(s.start_s)}] ${s.text}`).slice(0, 150).join
                                 <button
                                   type="button"
                                   onClick={() => handleSeek(c.timestamp!)}
-                                  className="text-[11px] font-mono font-semibold px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition-colors shrink-0"
+                                  className="text-[11px] font-mono font-semibold px-2 py-0.5 rounded bg-current/10 hover:bg-current/20 transition-colors shrink-0"
                                 >
                                   {formatTime(c.timestamp)}
                                 </button>
                               )}
                             </div>
-                            <p className="text-xs leading-relaxed opacity-90">
-                              <strong className="opacity-60 font-medium">Definition:</strong>{' '}
-                              {c.definition}
-                            </p>
-                            <p className="text-xs leading-relaxed opacity-90">
-                              <strong className="opacity-60 font-medium">Mechanism:</strong>{' '}
-                              {c.mechanism}
-                            </p>
+                            <div className="text-xs leading-relaxed opacity-90 prose-grok max-w-none">
+                              <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
+                                {`**Definition:** ${c.definition}`}
+                              </ReactMarkdown>
+                            </div>
+                            <div className="text-xs leading-relaxed opacity-90 prose-grok max-w-none">
+                              <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
+                                {`**Mechanism:** ${c.mechanism}`}
+                              </ReactMarkdown>
+                            </div>
                             {c.proofQuote && (
-                              <div className={`mt-2 p-2.5 rounded-lg border text-[11px] italic font-serif ${
-                                isDark ? 'bg-[#09090b] border-white/10 text-neutral-300' : 'bg-neutral-50 border-black/10 text-neutral-700'
-                              }`}>
-                                <span className="font-sans font-semibold text-[10px] uppercase not-italic opacity-70 block mb-0.5 text-blue-400">
-                                  Transcript Proof & Verification Quote:
+                              <div
+                                className={`mt-2 p-2.5 rounded-lg border text-[11px] italic ${
+                                  isDark
+                                    ? 'bg-[#09090b] border-white/10 text-neutral-300'
+                                    : 'bg-neutral-50 border-black/10 text-neutral-700'
+                                }`}
+                              >
+                                <span className="font-sans font-semibold text-[10px] uppercase not-italic opacity-70 block mb-0.5">
+                                  Transcript Quote:
                                 </span>
                                 “{c.proofQuote}”
                               </div>
@@ -1559,21 +1585,30 @@ ${segments.map((s) => `[${formatTime(s.start_s)}] ${s.text}`).slice(0, 150).join
                         chatTurns.map((turn) => (
                           <div
                             key={turn.id}
-                            className={`p-3 rounded-xl text-xs leading-relaxed max-w-[85%] ${
+                            className={`p-3.5 rounded-xl text-xs leading-relaxed max-w-[88%] ${
                               turn.role === 'user'
-                                ? 'ml-auto bg-blue-600 text-white'
+                                ? isDark
+                                  ? 'ml-auto bg-white text-black font-medium'
+                                  : 'ml-auto bg-neutral-900 text-white font-medium'
                                 : isDark
                                 ? 'bg-[#18181b] border border-[#27272a] text-[#f4f4f5]'
                                 : 'bg-[#f4f4f5] border border-[#e4e4e7] text-[#18181b]'
                             }`}
                           >
-                            <p className="whitespace-pre-wrap">{turn.content}</p>
+                            <div className="prose-grok max-w-none text-xs leading-relaxed">
+                              <ReactMarkdown
+                                remarkPlugins={[remarkGfm, remarkMath]}
+                                rehypePlugins={[rehypeKatex]}
+                              >
+                                {turn.content}
+                              </ReactMarkdown>
+                            </div>
                           </div>
                         ))
                       )}
                       {chatLoading && (
                         <div className="flex items-center gap-2 text-xs opacity-60 p-2">
-                          <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-500" />
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
                           <span>Consulting video transcript...</span>
                         </div>
                       )}
@@ -1587,19 +1622,21 @@ ${segments.map((s) => `[${formatTime(s.start_s)}] ${s.text}`).slice(0, 150).join
                         onChange={(e) => setChatDraft(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && handleSendChat()}
                         placeholder="Ask the AI Tutor about this video..."
-                        className={`flex-1 px-3 py-2 rounded-lg border text-xs outline-none ${
+                        className={`flex-1 px-3.5 py-2 rounded-full border text-xs outline-none ${
                           isDark
-                            ? 'bg-[#18181b] border-[#27272a] focus:border-blue-500 text-white'
-                            : 'bg-white border-[#d4d4d8] focus:border-blue-600 text-black'
+                            ? 'bg-[#18181b] border-[#27272a] focus:border-white/30 text-white'
+                            : 'bg-white border-[#d4d4d8] focus:border-black/30 text-black'
                         }`}
                       />
                       <button
                         type="button"
                         onClick={handleSendChat}
                         disabled={chatLoading || !chatDraft.trim()}
-                        className="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium cursor-pointer disabled:opacity-40"
+                        className={`px-4 py-2 rounded-full text-xs font-semibold cursor-pointer disabled:opacity-40 ${
+                          isDark ? 'bg-white text-black' : 'bg-neutral-900 text-white'
+                        }`}
                       >
-                        <Send className="w-3.5 h-3.5" />
+                        Send
                       </button>
                     </div>
                   </div>

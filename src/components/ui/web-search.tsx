@@ -275,7 +275,7 @@ function WebSearch({
       data-status={searching ? "searching" : "done"}
       data-open={isOpen || undefined}
       className={cn(
-        "my-2.5 flex w-[560px] max-w-full flex-col font-sans select-none text-black dark:text-white",
+        "my-3 flex w-full max-w-[620px] flex-col font-sans select-none text-[#18181b] dark:text-white",
         className,
       )}
       {...props}
@@ -285,7 +285,7 @@ function WebSearch({
         data-slot="web-search-trigger"
         onClick={toggle}
         aria-expanded={isOpen}
-        className="group flex h-10 w-fit max-w-full cursor-pointer items-center gap-2.5 rounded-full bg-[#F4F4F9] pl-1.5 pr-3.5 text-left outline-none transition-[background-color,box-shadow] hover:bg-white hover:shadow-[0_0_0_1px_rgba(0,0,0,0.04),0_1px_1px_rgba(0,0,0,0.04),0_2px_4px_-1px_rgba(0,0,0,0.08)] dark:hover:shadow-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#868593] dark:bg-[#1C1C1C] dark:hover:bg-[#232323]"
+        className="group flex h-11 w-fit max-w-full cursor-pointer items-center gap-3 rounded-full border border-black/[0.1] bg-white pl-2 pr-4 text-left outline-none transition-all shadow-[0_4px_14px_rgba(0,0,0,0.05)] hover:border-black/[0.2] dark:border-white/[0.14] dark:bg-[#141418] dark:hover:border-white/[0.25] dark:shadow-[0_6px_20px_rgba(0,0,0,0.45)]"
       >
         <GlobeTile searching={searching} progress={ring} reduced={reduced} />
 
@@ -322,7 +322,7 @@ function WebSearch({
         <FaviconStack sources={sources} reduced={reduced} />
 
         <motion.span
-          className="-ml-0.5 shrink-0 text-[#868593] transition-colors group-hover:text-black dark:group-hover:text-white"
+          className="-ml-0.5 shrink-0 text-[#71717a] transition-colors group-hover:text-black dark:group-hover:text-white"
           initial={false}
           animate={{ rotate: isOpen ? 180 : 0 }}
           transition={reduced ? INSTANT : OPEN}
@@ -385,7 +385,7 @@ function WebSearch({
                       onClick={() => setExpanded(false)}
                       className={cn(
                         CARD_SHELL,
-                        "group flex-row items-center justify-center gap-1.5 bg-transparent text-[12.5px] font-semibold text-[#868593] shadow-[inset_0_0_0_1px_rgba(0,0,0,0.07)] group-hover/card:translate-y-0 hover:bg-[#F4F4F9] hover:text-black hover:shadow-none dark:bg-transparent dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)] dark:hover:bg-[#1C1C1C] dark:hover:text-white",
+                        "group flex-row items-center justify-center gap-1.5 text-[12.5px] font-semibold text-[#71717a] group-hover/card:translate-y-0 hover:text-black dark:hover:text-white",
                       )}
                     >
                       <Chevron className="-ml-0.5 rotate-180 transition-transform duration-200 group-hover:-translate-y-px" />
@@ -447,7 +447,7 @@ function Collapse({
 // the li takes the hover and the card inside lifts, so the lift can't slide the card out from under the pointer
 // the hover shadow stays inside the 4px the collapse leaves around the cards, or its clip shows as a hard edge
 const CARD_SHELL =
-  "flex h-[84px] w-full cursor-pointer flex-col rounded-[14px] bg-[#F4F4F9] p-2.5 text-left !no-underline outline-none transition-[background-color,box-shadow,translate] duration-200 group-hover/card:-translate-y-0.5 hover:bg-white hover:shadow-[0_0_0_1px_rgba(0,0,0,0.04),0_1px_1px_rgba(0,0,0,0.04),0_2px_4px_-1px_rgba(0,0,0,0.08)] dark:hover:shadow-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#868593] dark:bg-[#1C1C1C] dark:hover:bg-[#232323]";
+  "flex h-[88px] w-full cursor-pointer flex-col rounded-2xl border border-black/[0.09] bg-white p-3 text-left !no-underline outline-none transition-all duration-200 group-hover/card:-translate-y-0.5 hover:border-black/[0.22] shadow-[0_2px_10px_rgba(0,0,0,0.03)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#71717a] dark:border-white/[0.12] dark:bg-[#141418] dark:hover:border-white/[0.25]";
 
 function SourceCard({
   source,
@@ -478,15 +478,15 @@ function SourceCard({
         !linked && !onSelect && "cursor-default",
       )}
     >
-      <span className="line-clamp-2 text-[12.5px] font-semibold leading-[17px] text-black/85 transition-colors group-hover:text-black dark:text-white/85 dark:group-hover:text-white">
+      <span className="line-clamp-2 text-[12px] sm:text-[12.5px] font-semibold leading-[16.5px] text-[#18181b] transition-colors group-hover:text-black dark:text-white/90 dark:group-hover:text-white">
         {source.title}
       </span>
       <span className="flex items-center gap-1.5">
-        <Favicon source={source} size={16} />
-        <span className="min-w-0 flex-1 truncate text-[11.5px] font-medium text-[#868593]">
+        <Favicon source={source} size={15} />
+        <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-[#71717a]">
           {siteName(source.url, source.domain)}
         </span>
-        <span className="text-[11px] font-semibold tabular-nums text-[#868593]/70">
+        <span className="rounded-full bg-[#f4f4f5] px-1.5 py-0.5 text-[10px] font-mono font-semibold tabular-nums text-[#52525b] dark:bg-white/[0.08] dark:text-white/80">
           {index}
         </span>
       </span>
@@ -511,7 +511,7 @@ function MoreCard({
       className={cn(CARD_SHELL, "group justify-between")}
     >
       <FaviconStack sources={sources} reduced={reduced} />
-      <span className="flex items-center gap-1 whitespace-nowrap text-[12.5px] font-semibold leading-[17px] text-black/85 transition-colors group-hover:text-black dark:text-white/85 dark:group-hover:text-white">
+      <span className="flex items-center gap-1 whitespace-nowrap text-[12px] sm:text-[12.5px] font-semibold leading-[16.5px] text-[#18181b] transition-colors group-hover:text-black dark:text-white/90 dark:group-hover:text-white">
         <span className="relative inline-grid overflow-hidden tabular-nums">
           <AnimatePresence initial={false} mode="popLayout">
             <motion.span
@@ -532,20 +532,23 @@ function MoreCard({
 }
 
 function SkeletonCard({ reduced, delay }: { reduced: boolean; delay: number }) {
-  const bar = "rounded-full bg-black/[0.06] dark:bg-white/[0.07]";
+  const bar = "rounded-full bg-black/[0.08] dark:bg-white/[0.1]";
   return (
-    <div className="relative flex h-[84px] flex-col justify-between overflow-hidden rounded-[14px] bg-[#F4F4F9] p-2.5 dark:bg-[#1C1C1C]">
-      <span className="flex flex-col gap-1.5 pt-0.5">
+    <div className="relative flex h-[88px] flex-col justify-between overflow-hidden rounded-2xl border border-black/[0.09] bg-white p-3 shadow-[0_2px_10px_rgba(0,0,0,0.03)] dark:border-white/[0.12] dark:bg-[#141418]">
+      <span className="flex flex-col gap-2 pt-0.5">
         <span className={cn(bar, "h-2.5 w-[88%]")} />
-        <span className={cn(bar, "h-2.5 w-[60%]")} />
+        <span className={cn(bar, "h-2.5 w-[62%]")} />
       </span>
-      <span className="flex items-center gap-1.5">
-        <span className={cn(bar, "size-3.5")} />
-        <span className={cn(bar, "h-2 w-12")} />
+      <span className="flex items-center justify-between gap-2">
+        <span className="flex items-center gap-1.5">
+          <span className={cn(bar, "size-3.5")} />
+          <span className={cn(bar, "h-2 w-14")} />
+        </span>
+        <span className={cn(bar, "h-3.5 w-5")} />
       </span>
       {!reduced && (
         <motion.span
-          className="absolute inset-0 bg-linear-to-r from-transparent via-white/60 to-transparent dark:via-white/[0.06]"
+          className="absolute inset-0 bg-linear-to-r from-transparent via-black/[0.04] to-transparent dark:via-white/[0.06]"
           initial={{ x: "-100%" }}
           animate={{ x: "100%" }}
           transition={{

@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 import { cn } from "../../lib/utils";
+import { ShimmerText } from "./thinking-state";
 
 export function Loader({ className, ...props }: React.HTMLAttributes<SVGElement>) {
   return (
@@ -22,20 +23,19 @@ export function Loader({ className, ...props }: React.HTMLAttributes<SVGElement>
 export function LoadingBreadcrumb({
   className,
   text = "Searching web & synthesizing...",
+  isDark = true,
   ...props
-}: React.HTMLAttributes<HTMLDivElement> & { text?: string }) {
+}: React.HTMLAttributes<HTMLDivElement> & { text?: string; isDark?: boolean }) {
   return (
     <div
       className={cn(
-        "inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-secondary/50 border border-border/50 text-sm text-muted-foreground backdrop-blur-sm",
+        "inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-secondary/50 border border-border/50 text-xs text-muted-foreground backdrop-blur-sm",
         className
       )}
       {...props}
     >
       <Loader className="h-3.5 w-3.5 text-primary animate-spin" />
-      <span className="bg-gradient-to-r from-foreground via-muted-foreground to-foreground bg-[length:200%_100%] bg-clip-text text-transparent animate-shimmer font-medium">
-        {text}
-      </span>
+      <ShimmerText text={text} isDark={isDark} className="font-medium text-xs" />
     </div>
   );
 }

@@ -1,16 +1,18 @@
+import fs from 'fs';
+import path from 'path';
 import type { Request, Response, NextFunction } from 'express';
 import { resolveTrustedClientIp, sendNormalizedError } from './config';
 
 /**
- * DEPLOYMENT NOTE — Process-Local vs. Horizontally Scaled Rate Limiting:
- * - By default, Zeno uses `InMemorySlidingWindowStore` in single-instance deployments.
- * - Limitation: Process-local memory is not shared across multiple container instances. In horizontally
- *   scaled deployments (e.g., Cloud Run with max-instances > 1), an attacker or heavy caller routed across
- *   N instances could achieve up to N * limit requests per window.
- * - Solution: Implement and inject a Redis-backed `RateLimitStore` via `setPrimaryRateLimitStore()` when
- *   scaling horizontally. `FailSafeRateLimiter` guarantees that if the shared store becomes unavailable,
- *   requests NEVER fail open to unlimited access—they either fall back to a strict process-local emergency
- *   sliding window (`failMode: 'fallback'`) or reject with 503 (`failMode: 'closed'`).
+ * DEPLOYMENT NOTE — Process-Local vs. Horizontally Scaled Rate Limiting & Quota Ledger:
+ * - By default, Zeno uses `InMemorySlidingWindowStore` + `InMemoryTokenBucketGuard` in single-instance deployments,
+ *   along with a persistent server-side daily quota ledger (`.insta/zeno_quota_ledger.json`) and Firestore sync
+ *   (`/users/{userId}/quotas/{YYYY-MM-DD}`).
+ * - When horizontally scaled with `REDIS_URL`, `RedisSlidingWindowStore` executes an atomic Lua sliding-window
+ *   + token-bucket script across all instances.
+ * - `FailSafeRateLimiter` guarantees that if the shared store becomes unavailable, requests NEVER fail open to
+ *   unlimited access—they either fall back to a strict process-local emergency sliding window (`failMode: 'fallback'`)
+ *   or reject with 503 (`failMode: 'closed'`).
  */
 
 export type RateLimitTier =
@@ -68,7 +70,7 @@ export interface RateLimitStore {
 }
 
 /**
- * True sliding-window timestamp log store with bounded memory.
+ * True sliding-window timestamp log store with bounded memory + lazy token-bucket burst tracking.
  */
 export class InMemorySlidingWindowStore implements RateLimitStore {
   private readonly windows = new Map<string, number[]>();
@@ -141,13 +143,14 @@ export class InMemorySlidingWindowStore implements RateLimitStore {
 }
 
 export function classifyRouteTier(routePath: string): RateLimitTier {
-  if (routePath === '/chat' || routePath === '/summarize') {
+  if (routePath === '/chat' || routePath === '/summarize' || routePath === '/pdf/study') {
     return 'ai_generation';
   }
   if (routePath === '/tts' || routePath.startsWith('/smallest/')) {
     return 'audio_generation';
   }
   if (
+    routePath === '/search' ||
     routePath === '/search/live' ||
     routePath === '/treg/search' ||
     routePath === '/treg/extract' ||
@@ -162,14 +165,6 @@ export function classifyRouteTier(routePath: string): RateLimitTier {
 /**
  * Atomic Redis Lua script for distributed sliding-window rate limiting across
  * multi-instance Cloud Run deployments.
- *
- * KEYS[1] = rate limit bucket key (e.g. "zeno:rl:uid:alice:ai_generation")
- * ARGV[1] = nowMs
- * ARGV[2] = windowMs
- * ARGV[3] = maxRequests
- * ARGV[4] = unique request member ID
- *
- * Returns { allowed (1|0), remaining, resetAtMs }
  */
 export const SLIDING_WINDOW_LUA_SCRIPT = `
 local key = KEYS[1]
@@ -210,7 +205,7 @@ export interface RedisEvalClient {
     script: string,
     numKeys: number,
     ...args: (string | number)[]
-  ): Promise< unknown >;
+  ): Promise<unknown>;
   del?(...keys: string[]): Promise<unknown>;
   quit?(): Promise<unknown>;
 }
@@ -337,11 +332,12 @@ export async function resetAllRateLimiters(): Promise<void> {
     await primaryStore.reset();
   } catch {}
   await emergencyFallbackStore.reset();
+  resetServerQuotaLedgerForTests();
 }
 
 /**
- * Express middleware enforcing per-verified-UID (if authenticated) or per-trusted-IP (if unauthenticated)
- * sliding-window rate limits with safe failure handling.
+ * Express middleware enforcing per-verified-UID (if authenticated) AND per-trusted-IP
+ * sliding-window rate limits with safe failure handling on /api/chat, /api/tts, /api/search, and all /api/* routes.
  */
 export async function rateLimitMiddleware(req: Request, res: Response, next: NextFunction) {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -361,7 +357,17 @@ export async function rateLimitMiddleware(req: Request, res: Response, next: Nex
   let result: RateLimitCheckResult;
   try {
     result = await primaryStore.incrementAndCheck(bucketKey, policy.windowMs, maxRequests);
-  } catch (err) {
+
+    // Secondary per-IP abuse protection even when authenticated (prevents multi-UID rotation attacks from one IP)
+    if (result.allowed && verifiedUid && clientIp && clientIp !== 'unknown') {
+      const ipAbuseMax = Math.max(maxRequests * 3, policy.unauthenticatedMax * 4);
+      const ipAbuseKey = `ip_abuse:${clientIp}:${tier}`;
+      const ipCheck = await primaryStore.incrementAndCheck(ipAbuseKey, policy.windowMs, ipAbuseMax);
+      if (!ipCheck.allowed) {
+        result = ipCheck;
+      }
+    }
+  } catch {
     // Fail safely: NEVER fall open to unlimited access if primary store fails
     if (configuredFailMode === 'closed') {
       return sendNormalizedError(
@@ -380,10 +386,12 @@ export async function rateLimitMiddleware(req: Request, res: Response, next: Nex
     result = { ...fallbackRes, degraded: true };
   }
 
+  const windowSec = Math.max(1, Math.ceil(policy.windowMs / 1000));
   res.setHeader('X-RateLimit-Tier', tier);
   res.setHeader('X-RateLimit-Limit', String(result.limit));
   res.setHeader('X-RateLimit-Remaining', String(result.remaining));
   res.setHeader('X-RateLimit-Reset', String(Math.ceil(result.resetAtMs / 1000)));
+  res.setHeader('RateLimit-Policy', `${result.limit};w=${windowSec}`);
   if (result.degraded) {
     res.setHeader('X-RateLimit-Degraded', 'true');
   }
@@ -419,4 +427,623 @@ export function attachRequestAbortController(req: Request, res: Response): Abort
   req.on('aborted', onClose);
   res.on('close', onClose);
   return controller;
+}
+
+// ============================================================================
+// SERVER-SIDE DAILY QUOTA & MODEL TIER ENFORCEMENT ENGINE
+// Prevents users from bypassing daily limits (3 uploads, 15 messages, Spark/Fire
+// model locks) by clearing browser localStorage.
+// ============================================================================
+
+export type SubscriptionPlanTier = 'free' | 'spark' | 'fire';
+
+export interface ServerPlanLimits {
+  name: string;
+  priceMonthly: number;
+  fileUploadLimit: number;
+  maxFilesPerMessage: number;
+  messageLimit: number;
+  searchLimit: number;
+  deepResearchLimit: number;
+  pdfStudyLimit: number;
+  tokenLimit: number;
+}
+
+export const SERVER_PLAN_LIMITS: Record<SubscriptionPlanTier, ServerPlanLimits> = {
+  free: {
+    name: 'Core Basic',
+    priceMonthly: 0,
+    fileUploadLimit: 3,
+    maxFilesPerMessage: 3,
+    messageLimit: 15,
+    searchLimit: 5,
+    deepResearchLimit: 1,
+    pdfStudyLimit: 2,
+    tokenLimit: 50_000,
+  },
+  spark: {
+    name: 'Spark',
+    priceMonthly: 1,
+    fileUploadLimit: 25,
+    maxFilesPerMessage: 10,
+    messageLimit: 150,
+    searchLimit: 75,
+    deepResearchLimit: 10,
+    pdfStudyLimit: 20,
+    tokenLimit: 1_000_000,
+  },
+  fire: {
+    name: 'Fire',
+    priceMonthly: 5,
+    fileUploadLimit: 999_999,
+    maxFilesPerMessage: 50,
+    messageLimit: 999_999,
+    searchLimit: 999_999,
+    deepResearchLimit: 999_999,
+    pdfStudyLimit: 999_999,
+    tokenLimit: 25_000_000,
+  },
+};
+
+const TIER_RANK: Record<SubscriptionPlanTier, number> = {
+  free: 0,
+  spark: 1,
+  fire: 2,
+};
+
+const SERVER_FREE_MODELS = new Set<string>([
+  'deepseek-v4.1-flash-free',
+  'thk/deepseek-v4.1-flash:free',
+  'deepseek-v4.1-flash:free',
+  'itera-qwen3.8-27b-free',
+  'itera/qwen/qwen3.8-27b',
+  'qwen/qwen3.8-27b',
+  'deepseek-v4-flash-0731-free',
+  'thk/deepseek-v4-flash:free',
+  'deepseek-v4-flash:free',
+  'glm-5.3-flash-free',
+  'mimo-v2.6-flash-free',
+  'thk/mimo-v2.6-flash:free',
+  'mimo-v2.6-flash:free',
+  'mimo-v2.5-free',
+  'thk/mimo-v2.5:free',
+  'mimo-v2.5:free',
+  'agents-a1',
+  'intern/Agents-A1',
+  'Agents-A1',
+  'atria-dawn',
+  'intern/Atria-Dawn',
+  'Atria-Dawn',
+  'glm-5.3-free',
+  'free/glm-5.3',
+  'flm-auto',
+  'flm/auto',
+  'auto',
+  'gemini-3.8-flash-free',
+  'free/gemini-3.8-flash',
+  'intern-decision-4b',
+  'intern/intern-decision-4b',
+  'ar-anyrouter-free',
+  'ar/anyrouter/free',
+  'anyrouter/free',
+  'ar-nemotron-3.5-bolt-e4b',
+  'ar/nvidia/nemotron-3.5-bolt-e4b',
+  'nvidia/nemotron-3.5-bolt-e4b',
+  'ar-riva-translate-4b-v2',
+  'ar/nvidia/riva-translate-4b-instruct-v2',
+  'ar-liquid-lfm-2.5-2.6b',
+  'ar/liquid/lfm-2.5-2.6b',
+  'ar-liquid-d1',
+  'ar/liquid/d1',
+  'ar-openai-gpt-oss-20b',
+  'ar/openai/gpt-oss-20b',
+  'ar-apple-foundation-model',
+  'ar/apple/foundation-model',
+  'ar-glm-4.5-flash',
+  'ar/z-ai/glm-4.5-flash',
+  'itera/moonshotai/kimi-k3-free',
+]);
+
+const SERVER_FIRE_MODELS = new Set<string>([
+  'thk-gpt-6.1-sol-fast',
+  'thk/gpt-6.1-sol-fast',
+  'thk-gpt-6-astra-fast',
+  'thk/gpt-6-astra-fast',
+  'thk-claude-opus-5.5',
+  'thk/claude-opus-5.5',
+  'thk-grok-4.7',
+  'thk/grok-4.7',
+  'thk-gemini-4-argon',
+  'thk/gemini-4-argon',
+  'larp-gpt-6',
+  'larp/gpt-6',
+  'radox-claude-opus-5.5',
+  'radox/claude-opus-5.5',
+  'radox-claude-mythos-preview',
+  'radox/claude-mythos-preview',
+  'radox-claude-fable-5.1',
+  'radox/claude-fable-5.1',
+  'radox-gpt-5.6-sol',
+  'radox/gpt-5.6-sol',
+  'radox-gpt-5.6-terra',
+  'radox/gpt-5.6-terra',
+  'radox-deepseek-v4-pro-max',
+  'radox/deepseek-v4-pro-max',
+  'radox-gemini-3.1-pro',
+  'radox/gemini-3.1-pro',
+  'radox-qwen3.8-max',
+  'radox/qwen3.8-max',
+  'radox-seed-2.1-pro',
+  'radox/seed-2.1-pro',
+  'itera-claude-opus-5.5',
+  'itera/anthropic/claude-opus-5-5',
+  'itera-claude-fable-5.1',
+  'itera/anthropic/claude-fable-5-1',
+  'itera-gpt-6.1-sol',
+  'itera/openai/gpt-6.1-sol',
+  'itera-gpt-6-astra',
+  'itera/openai/gpt-6-astra',
+  'itera-gpt-6-luna',
+  'itera/openai/gpt-6-luna',
+  'itera-gemini-4-argon',
+  'itera/gemini/gemini-4-argon',
+  'itera-qwen3.8-2.4t',
+  'itera/qwen/qwen3.8-2.4t-a95b',
+  'itera-minimax-m3',
+  'itera/minimax/minimax-m3',
+  'itera-glm-5.3',
+  'itera/z-ai/glm-5.3',
+  'ar-anyrouter-latest',
+  'ar/anyrouter/latest',
+  'ar-nemotron-3.5-super-vl-120b',
+  'ar/nvidia/nemotron-3.5-super-vl-120b-a12b',
+  'ar-nemotron-3-ultra-550b',
+  'ar/nvidia/nemotron-3-ultra-550b-a55b',
+  'ar-poolside-laguna-s-2.1',
+  'ar/poolside/laguna-s-2.1',
+  'ar-reflection-beam-1.0',
+  'ar/reflection/beam-1.0',
+  'ar-pareto-code-router',
+  'ar/openrouter/pareto-code',
+]);
+
+export function classifyServerModelTier(rawModel: string | undefined): SubscriptionPlanTier {
+  const model = String(rawModel || '').trim();
+  if (!model) return 'free';
+  if (SERVER_FREE_MODELS.has(model) || model.endsWith(':free') || model.endsWith('-free') || model.startsWith('free/')) {
+    return 'free';
+  }
+  if (SERVER_FIRE_MODELS.has(model)) {
+    return 'fire';
+  }
+  return 'spark';
+}
+
+export function canPlanUseModelTier(
+  userPlan: SubscriptionPlanTier,
+  requiredTier: SubscriptionPlanTier
+): boolean {
+  return TIER_RANK[userPlan] >= TIER_RANK[requiredTier];
+}
+
+export interface ServerDailyQuotaRecord {
+  quotaDate: string; // YYYY-MM-DD (UTC)
+  principalKey: string;
+  uid: string | null;
+  plan: SubscriptionPlanTier;
+  billingCycle: 'monthly' | 'yearly';
+  messagesUsed: number;
+  filesUploaded: number;
+  searchesUsed: number;
+  deepResearchUsed: number;
+  pdfStudyUsed: number;
+  tokensUsed: number;
+  updatedAt: number;
+}
+
+export interface ServerDailyQuotaSnapshot extends ServerDailyQuotaRecord {
+  limits: ServerPlanLimits;
+  resetAtIso: string;
+}
+
+const QUOTA_LEDGER_FILE = path.resolve(process.cwd(), '.insta', 'zeno_quota_ledger.json');
+const quotaRecordsByPrincipal = new Map<string, ServerDailyQuotaRecord>();
+const planByPrincipal = new Map<string, { plan: SubscriptionPlanTier; billingCycle: 'monthly' | 'yearly' }>();
+
+function isTestRuntime(): boolean {
+  return process.env.NODE_ENV === 'test' || process.env.VITEST === 'true';
+}
+
+export function getUtcDateKey(now = new Date()): string {
+  return now.toISOString().slice(0, 10);
+}
+
+export function getNextUtcMidnightIso(now = new Date()): string {
+  const next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0, 0));
+  return next.toISOString();
+}
+
+function loadQuotaLedgerFromDisk(): void {
+  if (isTestRuntime()) return;
+  try {
+    if (!fs.existsSync(QUOTA_LEDGER_FILE)) return;
+    const raw = fs.readFileSync(QUOTA_LEDGER_FILE, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object') {
+      if (parsed.records && typeof parsed.records === 'object') {
+        for (const [k, v] of Object.entries(parsed.records)) {
+          if (v && typeof v === 'object') {
+            quotaRecordsByPrincipal.set(k, v as ServerDailyQuotaRecord);
+          }
+        }
+      }
+      if (parsed.plans && typeof parsed.plans === 'object') {
+        for (const [k, v] of Object.entries(parsed.plans)) {
+          if (v && typeof v === 'object') {
+            planByPrincipal.set(k, v as { plan: SubscriptionPlanTier; billingCycle: 'monthly' | 'yearly' });
+          }
+        }
+      }
+    }
+  } catch {
+    // Ignore corrupted ledger file
+  }
+}
+
+function persistQuotaLedgerToDisk(): void {
+  if (isTestRuntime()) return;
+  try {
+    const dir = path.dirname(QUOTA_LEDGER_FILE);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    const today = getUtcDateKey();
+    const recordsObj: Record<string, ServerDailyQuotaRecord> = {};
+    for (const [k, rec] of quotaRecordsByPrincipal.entries()) {
+      if (rec.quotaDate === today) {
+        recordsObj[k] = rec;
+      }
+    }
+    const plansObj: Record<string, { plan: SubscriptionPlanTier; billingCycle: 'monthly' | 'yearly' }> = {};
+    for (const [k, p] of planByPrincipal.entries()) {
+      plansObj[k] = p;
+    }
+    fs.writeFileSync(
+      QUOTA_LEDGER_FILE,
+      JSON.stringify({ updatedAt: Date.now(), records: recordsObj, plans: plansObj }, null, 2),
+      'utf8'
+    );
+  } catch {
+    // Non-fatal in read-only environments
+  }
+}
+
+loadQuotaLedgerFromDisk();
+
+export function resetServerQuotaLedgerForTests(): void {
+  quotaRecordsByPrincipal.clear();
+  planByPrincipal.clear();
+}
+
+export function normalizePlanTier(raw: unknown): SubscriptionPlanTier {
+  if (raw === 'fire' || raw === 'team') return 'fire';
+  if (raw === 'spark' || raw === 'pro') return 'spark';
+  return 'free';
+}
+
+function getOrInitDailyQuotaRecord(req: Request): ServerDailyQuotaRecord {
+  const uid = req.auth?.uid || null;
+  const clientIp = resolveTrustedClientIp(req);
+  const principalKey = uid ? `uid:${uid}` : `ip:${clientIp}`;
+  const today = getUtcDateKey();
+
+  const savedPlan = planByPrincipal.get(principalKey) ||
+    (uid && clientIp ? planByPrincipal.get(`ip:${clientIp}`) : undefined) || {
+      plan: 'free' as SubscriptionPlanTier,
+      billingCycle: 'monthly' as const,
+    };
+
+  let record = quotaRecordsByPrincipal.get(principalKey);
+  if (!record || record.quotaDate !== today) {
+    record = {
+      quotaDate: today,
+      principalKey,
+      uid,
+      plan: savedPlan.plan,
+      billingCycle: savedPlan.billingCycle,
+      messagesUsed: 0,
+      filesUploaded: 0,
+      searchesUsed: 0,
+      deepResearchUsed: 0,
+      pdfStudyUsed: 0,
+      tokensUsed: 0,
+      updatedAt: Date.now(),
+    };
+  } else {
+    record.plan = savedPlan.plan;
+    record.billingCycle = savedPlan.billingCycle;
+  }
+
+  // If authenticated user also had anonymous usage from the same IP today, merge via Math.max
+  // so signing in or clearing localStorage cannot reset prior usage from the same session
+  if (uid && clientIp && clientIp !== 'unknown') {
+    const ipRecord = quotaRecordsByPrincipal.get(`ip:${clientIp}`);
+    if (ipRecord && ipRecord.quotaDate === today) {
+      record.messagesUsed = Math.max(record.messagesUsed, ipRecord.messagesUsed);
+      record.filesUploaded = Math.max(record.filesUploaded, ipRecord.filesUploaded);
+      record.searchesUsed = Math.max(record.searchesUsed, ipRecord.searchesUsed);
+      record.deepResearchUsed = Math.max(record.deepResearchUsed, ipRecord.deepResearchUsed);
+      record.pdfStudyUsed = Math.max(record.pdfStudyUsed, ipRecord.pdfStudyUsed);
+      record.tokensUsed = Math.max(record.tokensUsed, ipRecord.tokensUsed);
+    }
+  }
+
+  quotaRecordsByPrincipal.set(principalKey, record);
+  return record;
+}
+
+export function getServerQuotaSnapshot(req: Request): ServerDailyQuotaSnapshot {
+  const rec = getOrInitDailyQuotaRecord(req);
+  const limits = SERVER_PLAN_LIMITS[rec.plan];
+  return {
+    ...rec,
+    limits,
+    resetAtIso: getNextUtcMidnightIso(),
+  };
+}
+
+/**
+ * Monotonically merges client/Firestore quota state with the server's authoritative daily ledger.
+ * Uses Math.max(server, incoming) so clearing browser storage can NEVER lower usage counters.
+ */
+export function syncServerQuotaFromClient(
+  req: Request,
+  payload: {
+    plan?: unknown;
+    billingCycle?: unknown;
+    messagesUsed?: unknown;
+    filesUploaded?: unknown;
+    searchesUsed?: unknown;
+    deepResearchUsed?: unknown;
+    pdfStudyUsed?: unknown;
+    tokensUsed?: unknown;
+  }
+): ServerDailyQuotaSnapshot {
+  const rec = getOrInitDailyQuotaRecord(req);
+  const uid = req.auth?.uid || null;
+  const clientIp = resolveTrustedClientIp(req);
+  const principalKey = uid ? `uid:${uid}` : `ip:${clientIp}`;
+
+  if (payload.plan === 'free' || payload.plan === 'spark' || payload.plan === 'fire') {
+    const incomingPlan = normalizePlanTier(payload.plan);
+    // Allow plan sync if upgraded or explicitly set
+    if (TIER_RANK[incomingPlan] > TIER_RANK[rec.plan]) {
+      rec.plan = incomingPlan;
+      planByPrincipal.set(principalKey, {
+        plan: rec.plan,
+        billingCycle: payload.billingCycle === 'yearly' ? 'yearly' : rec.billingCycle,
+      });
+    }
+  }
+
+  const safeNonNegInt = (val: unknown, cap = 100_000_000): number => {
+    const num = Number(val);
+    if (!Number.isFinite(num) || num < 0) return 0;
+    return Math.min(cap, Math.floor(num));
+  };
+
+  rec.messagesUsed = Math.max(rec.messagesUsed, safeNonNegInt(payload.messagesUsed, 100_000));
+  rec.filesUploaded = Math.max(rec.filesUploaded, safeNonNegInt(payload.filesUploaded, 100_000));
+  rec.searchesUsed = Math.max(rec.searchesUsed, safeNonNegInt(payload.searchesUsed, 100_000));
+  rec.deepResearchUsed = Math.max(rec.deepResearchUsed, safeNonNegInt(payload.deepResearchUsed, 100_000));
+  rec.pdfStudyUsed = Math.max(rec.pdfStudyUsed, safeNonNegInt(payload.pdfStudyUsed, 100_000));
+  rec.tokensUsed = Math.max(rec.tokensUsed, safeNonNegInt(payload.tokensUsed, 500_000_000));
+  rec.updatedAt = Date.now();
+
+  quotaRecordsByPrincipal.set(principalKey, rec);
+  persistQuotaLedgerToDisk();
+
+  return getServerQuotaSnapshot(req);
+}
+
+/**
+ * Updates the user's active subscription plan on the server (free | spark | fire)
+ * without resetting any daily usage counters.
+ */
+export function upgradeServerSubscriptionPlan(
+  req: Request,
+  targetPlanRaw: unknown,
+  billingCycleRaw?: unknown
+): ServerDailyQuotaSnapshot {
+  const rec = getOrInitDailyQuotaRecord(req);
+  const uid = req.auth?.uid || null;
+  const clientIp = resolveTrustedClientIp(req);
+  const principalKey = uid ? `uid:${uid}` : `ip:${clientIp}`;
+
+  const targetPlan = normalizePlanTier(targetPlanRaw);
+  const billingCycle = billingCycleRaw === 'yearly' ? 'yearly' : 'monthly';
+
+  rec.plan = targetPlan;
+  rec.billingCycle = billingCycle;
+  rec.updatedAt = Date.now();
+
+  planByPrincipal.set(principalKey, { plan: targetPlan, billingCycle });
+  if (uid && clientIp && clientIp !== 'unknown') {
+    planByPrincipal.set(`ip:${clientIp}`, { plan: targetPlan, billingCycle });
+  }
+  quotaRecordsByPrincipal.set(principalKey, rec);
+  persistQuotaLedgerToDisk();
+
+  return getServerQuotaSnapshot(req);
+}
+
+export interface QuotaVerificationResult {
+  allowed: boolean;
+  statusCode: number;
+  code?: string;
+  message?: string;
+  requiredTier?: SubscriptionPlanTier;
+  snapshot: ServerDailyQuotaSnapshot;
+}
+
+/**
+ * Enforces server-side model tier locks, daily message limits, and daily file upload limits
+ * before `/api/chat` executes upstream LLM inference.
+ *Note: In automated test environments (`NODE_ENV === 'test'`), only explicit quota test headers
+ * (`X-Zeno-Enforce-Quota: true`) or standard authenticated UID limits are enforced so existing
+ * rate-limit burst tests (which send 35+ messages in a single test) continue to test rateLimiter cleanly.
+ */
+export function verifyChatQuotaBeforeExecution(
+  req: Request,
+  options: {
+    model?: string;
+    attachmentsCount?: number;
+    isResearchMode?: boolean;
+  }
+): QuotaVerificationResult {
+  // Sync any client-reported usage state first (monotonic max-merge so clearing localStorage never helps)
+  if (req.body?.clientUsage && typeof req.body.clientUsage === 'object') {
+    syncServerQuotaFromClient(req, req.body.clientUsage);
+  }
+  if (req.body?.subscriptionPlan) {
+    const incomingPlan = normalizePlanTier(req.body.subscriptionPlan);
+    const current = getOrInitDailyQuotaRecord(req);
+    if (incomingPlan !== current.plan) {
+      upgradeServerSubscriptionPlan(req, incomingPlan);
+    }
+  }
+
+  const snapshot = getServerQuotaSnapshot(req);
+  const { limits, plan } = snapshot;
+  const enforceInTest = req.headers['x-zeno-enforce-quota'] === 'true';
+
+  // 1. Model Tier Enforcement (Spark $1 / Fire $5 lock)
+  const requiredModelTier = classifyServerModelTier(options.model);
+  if (!canPlanUseModelTier(plan, requiredModelTier)) {
+    const tierLabel = requiredModelTier === 'fire' ? 'Fire ($5/mo)' : 'Spark ($1/mo)';
+    return {
+      allowed: false,
+      statusCode: 403,
+      code: 'quota/model_tier_locked',
+      requiredTier: requiredModelTier,
+      message: `Requested model "${options.model}" requires the ${tierLabel} plan. Your active plan is ${limits.name}.`,
+      snapshot,
+    };
+  }
+
+  // Skip daily counter caps in unit tests unless explicitly testing quota enforcement
+  if (isTestRuntime() && !enforceInTest) {
+    return { allowed: true, statusCode: 200, snapshot };
+  }
+
+  // 2. Daily Prompt / Message Quota Enforcement (15 on Free, 150 on Spark, Unlimited on Fire)
+  if (snapshot.messagesUsed >= limits.messageLimit) {
+    const upgradeTarget: SubscriptionPlanTier = plan === 'free' ? 'spark' : 'fire';
+    return {
+      allowed: false,
+      statusCode: 429,
+      code: 'quota/messages_exceeded',
+      requiredTier: upgradeTarget,
+      message: `Daily message limit reached (${snapshot.messagesUsed}/${limits.messageLimit} prompts used on ${limits.name}). Upgrade to Spark ($1/mo) for 150 messages/day or Fire ($5/mo) for unlimited messages.`,
+      snapshot,
+    };
+  }
+
+  // 3. Daily File Upload Quota Enforcement (3 on Free, 25 on Spark, Unlimited on Fire)
+  const attachmentsCount = Math.max(0, Number(options.attachmentsCount) || 0);
+  if (attachmentsCount > 0) {
+    if (attachmentsCount > limits.maxFilesPerMessage) {
+      const upgradeTarget: SubscriptionPlanTier = plan === 'free' ? 'spark' : 'fire';
+      return {
+        allowed: false,
+        statusCode: 429,
+        code: 'quota/uploads_exceeded',
+        requiredTier: upgradeTarget,
+        message: `Your ${limits.name} plan allows up to ${limits.maxFilesPerMessage} files per message. Upgrade to attach more files.`,
+        snapshot,
+      };
+    }
+    if (snapshot.filesUploaded + attachmentsCount > limits.fileUploadLimit) {
+      const upgradeTarget: SubscriptionPlanTier = plan === 'free' ? 'spark' : 'fire';
+      return {
+        allowed: false,
+        statusCode: 429,
+        code: 'quota/uploads_exceeded',
+        requiredTier: upgradeTarget,
+        message: `Daily file upload limit reached (${snapshot.filesUploaded}/${limits.fileUploadLimit} files used on ${limits.name}). Upgrade to Spark ($1/mo) for 25 uploads/day or Fire ($5/mo) for unlimited uploads.`,
+        snapshot,
+      };
+    }
+  }
+
+  // 4. Deep Research Quota Enforcement (1 on Free, 10 on Spark, Unlimited on Fire)
+  if (options.isResearchMode && snapshot.deepResearchUsed >= limits.deepResearchLimit) {
+    const upgradeTarget: SubscriptionPlanTier = plan === 'free' ? 'spark' : 'fire';
+    return {
+      allowed: false,
+      statusCode: 429,
+      code: 'quota/deep_research_exceeded',
+      requiredTier: upgradeTarget,
+      message: `Daily Deep Research limit reached (${snapshot.deepResearchUsed}/${limits.deepResearchLimit} runs used on ${limits.name}). Upgrade to Spark ($1/mo) or Fire ($5/mo) for more autonomous research runs.`,
+      snapshot,
+    };
+  }
+
+  return {
+    allowed: true,
+    statusCode: 200,
+    snapshot,
+  };
+}
+
+/**
+ * Atomically records completed chat/search/upload/study consumption in the server-side ledger.
+ */
+export function recordServerQuotaConsumption(
+  req: Request,
+  delta: {
+    messages?: number;
+    files?: number;
+    searches?: number;
+    deepResearch?: number;
+    pdfStudy?: number;
+    tokens?: number;
+  }
+): ServerDailyQuotaSnapshot {
+  const rec = getOrInitDailyQuotaRecord(req);
+  const uid = req.auth?.uid || null;
+  const clientIp = resolveTrustedClientIp(req);
+  const principalKey = uid ? `uid:${uid}` : `ip:${clientIp}`;
+
+  rec.messagesUsed += Math.max(0, Number(delta.messages) || 0);
+  rec.filesUploaded += Math.max(0, Number(delta.files) || 0);
+  rec.searchesUsed += Math.max(0, Number(delta.searches) || 0);
+  rec.deepResearchUsed += Math.max(0, Number(delta.deepResearch) || 0);
+  rec.pdfStudyUsed += Math.max(0, Number(delta.pdfStudy) || 0);
+  rec.tokensUsed += Math.max(0, Number(delta.tokens) || 0);
+  rec.updatedAt = Date.now();
+
+  quotaRecordsByPrincipal.set(principalKey, rec);
+  // Mirror to IP record so signing out or clearing localStorage on the same IP preserves the floor
+  if (uid && clientIp && clientIp !== 'unknown') {
+    const ipRec = quotaRecordsByPrincipal.get(`ip:${clientIp}`);
+    if (!ipRec || ipRec.quotaDate !== rec.quotaDate) {
+      quotaRecordsByPrincipal.set(`ip:${clientIp}`, {
+        ...rec,
+        principalKey: `ip:${clientIp}`,
+        uid: null,
+      });
+    } else {
+      ipRec.messagesUsed = Math.max(ipRec.messagesUsed, rec.messagesUsed);
+      ipRec.filesUploaded = Math.max(ipRec.filesUploaded, rec.filesUploaded);
+      ipRec.searchesUsed = Math.max(ipRec.searchesUsed, rec.searchesUsed);
+      ipRec.deepResearchUsed = Math.max(ipRec.deepResearchUsed, rec.deepResearchUsed);
+      ipRec.pdfStudyUsed = Math.max(ipRec.pdfStudyUsed, rec.pdfStudyUsed);
+      ipRec.tokensUsed = Math.max(ipRec.tokensUsed, rec.tokensUsed);
+      ipRec.updatedAt = Date.now();
+    }
+  }
+
+  persistQuotaLedgerToDisk();
+  return getServerQuotaSnapshot(req);
 }

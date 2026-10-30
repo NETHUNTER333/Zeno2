@@ -24,6 +24,9 @@ import {
   loadUserBookmarksFromFirestore,
   ensureUserProfileInFirestore,
   isFirestoreOfflineError,
+  getAuthHeaders,
+  loadUserDailyQuotaFromFirestore,
+  syncUserDailyQuotaToFirestore,
 } from './firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 
@@ -73,6 +76,9 @@ onAuthStateChanged(auth, async (firebaseUser) => {
           saveBookmarkToFirestore(lb).catch(() => {});
         }
       }
+
+      // Sync authoritative daily usage quota & tier from Firestore + Server Ledger
+      await UserAccountStore.syncQuotaWithServerAndFirestore();
     } catch (err) {
       // Ensure local profile still reflects authenticated Firebase user even if Firestore sync fails
       UserAccountStore.saveProfile({
@@ -99,8 +105,8 @@ const STORAGE_KEYS = {
   CITATIONS: 'zeno_saved_citations',
   BOOKMARKS: 'zeno_saved_bookmarks',
   SESSIONS: 'zeno_active_sessions',
-  SUBSCRIPTION: 'zeno_user_subscription',
-  USAGE: 'zeno_usage_quota',
+  SUBSCRIPTION: 'zeno_user_subscription_v2',
+  USAGE: 'zeno_usage_quota_v2',
   PRIVACY: 'zeno_privacy_settings',
   ONBOARDING_DONE: 'zeno_onboarding_completed',
 };
@@ -109,8 +115,8 @@ export const DEFAULT_PROFILE: UserProfile = {
   id: 'zeno_usr_98124',
   displayName: 'doom',
   username: 'doomsh7',
-  email: 'wakefullfinding62@gmail.com',
-  phoneNumber: '+917981726766',
+  email: 'user@zeno.app',
+  phoneNumber: '',
   emailVerified: true,
   avatar: '',
   avatarType: 'initials',
@@ -267,24 +273,94 @@ export const DEFAULT_SESSIONS: ActiveSession[] = [
   },
 ];
 
+export const PLAN_LIMITS: Record<
+  'free' | 'spark' | 'fire',
+  {
+    name: string;
+    priceMonthlyUsd: number;
+    priceYearlyUsd: number;
+    fileUploadLimit: number;
+    maxFilesPerMessage: number;
+    messageLimit: number;
+    searchLimit: number;
+    deepResearchLimit: number;
+    pdfStudyLimit: number;
+    tokenLimit: number;
+    toolLimit: number;
+    storageBytesLimit: number;
+  }
+> = {
+  free: {
+    name: 'Core Basic',
+    priceMonthlyUsd: 0,
+    priceYearlyUsd: 0,
+    fileUploadLimit: 3,
+    maxFilesPerMessage: 3,
+    messageLimit: 15,
+    searchLimit: 5,
+    deepResearchLimit: 1,
+    pdfStudyLimit: 2,
+    tokenLimit: 50000,
+    toolLimit: 10,
+    storageBytesLimit: 104857600, // 100 MB
+  },
+  spark: {
+    name: 'Spark',
+    priceMonthlyUsd: 1,
+    priceYearlyUsd: 10,
+    fileUploadLimit: 25,
+    maxFilesPerMessage: 10,
+    messageLimit: 150,
+    searchLimit: 75,
+    deepResearchLimit: 10,
+    pdfStudyLimit: 20,
+    tokenLimit: 1000000,
+    toolLimit: 200,
+    storageBytesLimit: 5368709120, // 5 GB
+  },
+  fire: {
+    name: 'Fire',
+    priceMonthlyUsd: 5,
+    priceYearlyUsd: 48,
+    fileUploadLimit: 999999,
+    maxFilesPerMessage: 50,
+    messageLimit: 999999,
+    searchLimit: 999999,
+    deepResearchLimit: 999999,
+    pdfStudyLimit: 999999,
+    tokenLimit: 25000000,
+    toolLimit: 999999,
+    storageBytesLimit: 107374182400, // 100 GB
+  },
+};
+
 export const DEFAULT_SUBSCRIPTION: UserSubscription = {
-  plan: 'pro',
+  plan: 'free',
   status: 'active',
-  renewalDate: 'Nov 18, 2026',
+  renewalDate: 'Nov 27, 2026',
   billingCycle: 'monthly',
-  paymentMethod: 'Mastercard •••• 4288',
+  paymentMethod: 'Free Tier',
 };
 
 export const DEFAULT_USAGE: UsageQuota = {
-  tokensUsed: 168400,
-  tokenLimit: 1000000,
-  searchesUsed: 62,
-  searchLimit: 500,
-  toolsUsed: 28,
-  toolLimit: 200,
-  storageBytesUsed: 38400000, // ~38.4 MB
-  storageBytesLimit: 5368709120, // 5 GB
-  resetDate: 'Nov 18, 2026',
+  messagesUsed: 0,
+  messageLimit: PLAN_LIMITS.free.messageLimit,
+  filesUploaded: 0,
+  fileUploadLimit: PLAN_LIMITS.free.fileUploadLimit,
+  maxFilesPerMessage: PLAN_LIMITS.free.maxFilesPerMessage,
+  tokensUsed: 0,
+  tokenLimit: PLAN_LIMITS.free.tokenLimit,
+  searchesUsed: 0,
+  searchLimit: PLAN_LIMITS.free.searchLimit,
+  deepResearchUsed: 0,
+  deepResearchLimit: PLAN_LIMITS.free.deepResearchLimit,
+  pdfStudyUsed: 0,
+  pdfStudyLimit: PLAN_LIMITS.free.pdfStudyLimit,
+  toolsUsed: 0,
+  toolLimit: PLAN_LIMITS.free.toolLimit,
+  storageBytesUsed: 4200000,
+  storageBytesLimit: PLAN_LIMITS.free.storageBytesLimit,
+  resetDate: 'Tomorrow, 12:00 AM',
 };
 
 export const DEFAULT_PRIVACY: PrivacySettings = {
@@ -601,23 +677,317 @@ export const UserAccountStore = {
     this.saveSessions(sessions);
   },
 
+  getNormalizedPlan(plan?: string): 'free' | 'spark' | 'fire' {
+    const raw = plan || this.getSubscription().plan;
+    if (raw === 'fire' || raw === 'enterprise') return 'fire';
+    if (raw === 'spark' || raw === 'pro') return 'spark';
+    return 'free';
+  },
+  getPlanLimits(plan?: string) {
+    const norm = this.getNormalizedPlan(plan);
+    return PLAN_LIMITS[norm];
+  },
+  canUseModel(requiredTier: 'free' | 'spark' | 'fire' = 'free'): boolean {
+    if (requiredTier === 'free') return true;
+    const current = this.getNormalizedPlan();
+    if (current === 'fire') return true;
+    if (current === 'spark' && requiredTier === 'spark') return true;
+    return false;
+  },
   getSubscription(): UserSubscription {
     return loadFromStorage<UserSubscription>(STORAGE_KEYS.SUBSCRIPTION, DEFAULT_SUBSCRIPTION);
   },
   saveSubscription(sub: UserSubscription): void {
     saveToStorage(STORAGE_KEYS.SUBSCRIPTION, sub);
+    const limits = this.getPlanLimits(sub.plan);
+    const rawUsage = loadFromStorage<UsageQuota>(STORAGE_KEYS.USAGE, DEFAULT_USAGE);
+    const syncedUsage: UsageQuota = {
+      ...DEFAULT_USAGE,
+      ...rawUsage,
+      messageLimit: limits.messageLimit,
+      fileUploadLimit: limits.fileUploadLimit,
+      maxFilesPerMessage: limits.maxFilesPerMessage,
+      tokenLimit: limits.tokenLimit,
+      searchLimit: limits.searchLimit,
+      deepResearchLimit: limits.deepResearchLimit,
+      pdfStudyLimit: limits.pdfStudyLimit,
+      toolLimit: limits.toolLimit,
+      storageBytesLimit: limits.storageBytesLimit,
+    };
+    saveToStorage(STORAGE_KEYS.USAGE, syncedUsage);
     this.emitChange();
+  },
+  upgradePlan(
+    plan: 'free' | 'spark' | 'fire',
+    billingCycle: 'monthly' | 'yearly' = 'monthly'
+  ): UserSubscription {
+    const nextMonth = new Date(Date.now() + (billingCycle === 'yearly' ? 365 : 30) * 86400000);
+    const renewalDate = nextMonth.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+    const sub: UserSubscription = {
+      plan,
+      status: 'active',
+      renewalDate,
+      billingCycle,
+      paymentMethod:
+        plan === 'free'
+          ? 'Free Tier'
+          : plan === 'spark'
+          ? 'Spark ($1 USD)'
+          : 'Fire ($5 USD)',
+    };
+    this.saveSubscription(sub);
+
+    // Sync upgraded tier to Firestore and backend quota ledger
+    const currentUsage = this.getUsage();
+    syncUserDailyQuotaToFirestore({
+      plan,
+      messagesUsed: currentUsage.messagesUsed,
+      filesUploaded: currentUsage.filesUploaded,
+      searchesUsed: currentUsage.searchesUsed,
+      deepResearchUsed: currentUsage.deepResearchUsed,
+      pdfStudyUsed: currentUsage.pdfStudyUsed,
+      tokensUsed: currentUsage.tokensUsed,
+    }).catch(() => {});
+
+    getAuthHeaders()
+      .then((headers) =>
+        fetch('/api/quota/upgrade', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ plan }),
+        })
+      )
+      .then((r) => (r.ok ? r.json() : null))
+      .then((res) => {
+        if (res?.quota) {
+          this.applyServerQuotaSnapshot(res.quota, false);
+        }
+      })
+      .catch(() => {});
+
+    return sub;
   },
 
   getUsage(): UsageQuota {
-    return loadFromStorage<UsageQuota>(STORAGE_KEYS.USAGE, DEFAULT_USAGE);
+    const limits = this.getPlanLimits();
+    const raw = loadFromStorage<UsageQuota>(STORAGE_KEYS.USAGE, DEFAULT_USAGE);
+    return {
+      ...DEFAULT_USAGE,
+      ...raw,
+      messagesUsed: Number(raw.messagesUsed || 0),
+      filesUploaded: Number(raw.filesUploaded || 0),
+      searchesUsed: Number(raw.searchesUsed || 0),
+      deepResearchUsed: Number(raw.deepResearchUsed || 0),
+      pdfStudyUsed: Number(raw.pdfStudyUsed || 0),
+      tokensUsed: Number(raw.tokensUsed || 0),
+      toolsUsed: Number(raw.toolsUsed || 0),
+      messageLimit: limits.messageLimit,
+      fileUploadLimit: limits.fileUploadLimit,
+      maxFilesPerMessage: limits.maxFilesPerMessage,
+      tokenLimit: limits.tokenLimit,
+      searchLimit: limits.searchLimit,
+      deepResearchLimit: limits.deepResearchLimit,
+      pdfStudyLimit: limits.pdfStudyLimit,
+      toolLimit: limits.toolLimit,
+      storageBytesLimit: limits.storageBytesLimit,
+    };
   },
-  recordUsage(tokens: number, searches = 0, tools = 0): void {
+
+  applyServerQuotaSnapshot(snapshot: any, pushToFirestore = true): void {
+    if (!snapshot || typeof snapshot !== 'object') return;
+    const currentSub = this.getSubscription();
+    const serverPlan: 'free' | 'spark' | 'fire' =
+      snapshot.plan === 'fire' || snapshot.plan === 'spark' || snapshot.plan === 'free'
+        ? snapshot.plan
+        : this.getNormalizedPlan(currentSub.plan);
+
+    const tierRank: Record<'free' | 'spark' | 'fire', number> = {
+      free: 0,
+      spark: 1,
+      fire: 2,
+    };
+    const effectivePlan: 'free' | 'spark' | 'fire' =
+      tierRank[serverPlan] >= tierRank[this.getNormalizedPlan(currentSub.plan)]
+        ? serverPlan
+        : this.getNormalizedPlan(currentSub.plan);
+
+    if (effectivePlan !== currentSub.plan) {
+      saveToStorage(STORAGE_KEYS.SUBSCRIPTION, {
+        ...currentSub,
+        plan: effectivePlan,
+      });
+    }
+
+    const limits = this.getPlanLimits(effectivePlan);
+    const local = loadFromStorage<UsageQuota>(STORAGE_KEYS.USAGE, DEFAULT_USAGE);
+    const merged: UsageQuota = {
+      ...DEFAULT_USAGE,
+      ...local,
+      messagesUsed: Math.max(Number(local.messagesUsed || 0), Number(snapshot.messagesUsed || 0)),
+      filesUploaded: Math.max(Number(local.filesUploaded || 0), Number(snapshot.filesUploaded || 0)),
+      searchesUsed: Math.max(Number(local.searchesUsed || 0), Number(snapshot.searchesUsed || 0)),
+      deepResearchUsed: Math.max(
+        Number(local.deepResearchUsed || 0),
+        Number(snapshot.deepResearchUsed || 0)
+      ),
+      pdfStudyUsed: Math.max(Number(local.pdfStudyUsed || 0), Number(snapshot.pdfStudyUsed || 0)),
+      tokensUsed: Math.max(Number(local.tokensUsed || 0), Number(snapshot.tokensUsed || 0)),
+      toolsUsed: Math.max(Number(local.toolsUsed || 0), Number(snapshot.toolsUsed || 0)),
+      messageLimit: Number(snapshot.messageLimit || limits.messageLimit),
+      fileUploadLimit: Number(snapshot.fileUploadLimit || limits.fileUploadLimit),
+      maxFilesPerMessage: Number(snapshot.maxFilesPerMessage || limits.maxFilesPerMessage),
+      tokenLimit: Number(snapshot.tokenLimit || limits.tokenLimit),
+      searchLimit: Number(snapshot.searchLimit || limits.searchLimit),
+      deepResearchLimit: Number(snapshot.deepResearchLimit || limits.deepResearchLimit),
+      pdfStudyLimit: Number(snapshot.pdfStudyLimit || limits.pdfStudyLimit),
+      toolLimit: Number(snapshot.toolLimit || limits.toolLimit),
+      storageBytesLimit: limits.storageBytesLimit,
+      resetDate: snapshot.resetAtUtc ? 'Resets 00:00 UTC' : local.resetDate || 'Resets 00:00 UTC',
+    };
+
+    saveToStorage(STORAGE_KEYS.USAGE, merged);
+    this.emitChange();
+
+    if (pushToFirestore && auth.currentUser) {
+      syncUserDailyQuotaToFirestore({
+        plan: effectivePlan,
+        messagesUsed: merged.messagesUsed,
+        filesUploaded: merged.filesUploaded,
+        searchesUsed: merged.searchesUsed,
+        deepResearchUsed: merged.deepResearchUsed,
+        pdfStudyUsed: merged.pdfStudyUsed,
+        tokensUsed: merged.tokensUsed,
+      }).catch(() => {});
+    }
+  },
+
+  async syncQuotaWithServerAndFirestore(): Promise<void> {
+    try {
+      const localUsage = this.getUsage();
+      const localPlan = this.getNormalizedPlan();
+
+      // 1. Pull authoritative Firestore daily quota document if signed in
+      const firestoreQuota = await loadUserDailyQuotaFromFirestore();
+      if (firestoreQuota) {
+        this.applyServerQuotaSnapshot(firestoreQuota, false);
+      }
+
+      // 2. Sync monotonic counters with backend server quota ledger (/api/quota/sync)
+      const latestUsage = this.getUsage();
+      const latestPlan = this.getNormalizedPlan();
+      const headers = await getAuthHeaders();
+      const res = await fetch('/api/quota/sync', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          plan: firestoreQuota?.plan || latestPlan || localPlan,
+          messagesUsed: Math.max(localUsage.messagesUsed, latestUsage.messagesUsed),
+          filesUploaded: Math.max(localUsage.filesUploaded, latestUsage.filesUploaded),
+          searchesUsed: Math.max(localUsage.searchesUsed, latestUsage.searchesUsed),
+          deepResearchUsed: Math.max(localUsage.deepResearchUsed, latestUsage.deepResearchUsed),
+          pdfStudyUsed: Math.max(localUsage.pdfStudyUsed, latestUsage.pdfStudyUsed),
+          tokensUsed: Math.max(localUsage.tokensUsed, latestUsage.tokensUsed),
+          toolsUsed: Math.max(localUsage.toolsUsed, latestUsage.toolsUsed),
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.quota) {
+          this.applyServerQuotaSnapshot(data.quota, true);
+        }
+      }
+    } catch {
+      // Offline or static fallback — keep local + Firestore state
+    }
+  },
+
+  pushUsageToServerAndFirestore(usage: UsageQuota): void {
+    const plan = this.getNormalizedPlan();
+    syncUserDailyQuotaToFirestore({
+      plan,
+      messagesUsed: usage.messagesUsed,
+      filesUploaded: usage.filesUploaded,
+      searchesUsed: usage.searchesUsed,
+      deepResearchUsed: usage.deepResearchUsed,
+      pdfStudyUsed: usage.pdfStudyUsed,
+      tokensUsed: usage.tokensUsed,
+    }).catch(() => {});
+
+    getAuthHeaders()
+      .then((headers) =>
+        fetch('/api/quota/sync', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            plan,
+            messagesUsed: usage.messagesUsed,
+            filesUploaded: usage.filesUploaded,
+            searchesUsed: usage.searchesUsed,
+            deepResearchUsed: usage.deepResearchUsed,
+            pdfStudyUsed: usage.pdfStudyUsed,
+            tokensUsed: usage.tokensUsed,
+            toolsUsed: usage.toolsUsed,
+          }),
+        })
+      )
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.quota) {
+          this.applyServerQuotaSnapshot(data.quota, false);
+        }
+      })
+      .catch(() => {});
+  },
+
+  recordUsage(tokens: number, searches = 0, tools = 0, messages = 1, files = 0): void {
     const usage = this.getUsage();
     usage.tokensUsed += tokens;
     usage.searchesUsed += searches;
     usage.toolsUsed += tools;
+    usage.messagesUsed += messages;
+    usage.filesUploaded += files;
     saveToStorage(STORAGE_KEYS.USAGE, usage);
+    this.emitChange();
+    this.pushUsageToServerAndFirestore(usage);
+  },
+  recordFileUploads(count: number, bytes = 0): void {
+    const usage = this.getUsage();
+    usage.filesUploaded += count;
+    usage.storageBytesUsed += bytes;
+    saveToStorage(STORAGE_KEYS.USAGE, usage);
+    this.emitChange();
+    this.pushUsageToServerAndFirestore(usage);
+  },
+  recordDeepResearchRun(): void {
+    const usage = this.getUsage();
+    usage.deepResearchUsed += 1;
+    saveToStorage(STORAGE_KEYS.USAGE, usage);
+    this.emitChange();
+    this.pushUsageToServerAndFirestore(usage);
+  },
+  recordPdfStudySession(): void {
+    const usage = this.getUsage();
+    usage.pdfStudyUsed += 1;
+    saveToStorage(STORAGE_KEYS.USAGE, usage);
+    this.emitChange();
+    this.pushUsageToServerAndFirestore(usage);
+  },
+  resetUsageQuota(): void {
+    // Client-side manual reset is disabled for anti-abuse enforcement; re-syncs from server/Firestore instead
+    this.syncQuotaWithServerAndFirestore();
+  },
+  grantReferrerBonusQuota(bonusUploads = 5, bonusMessages = 20): void {
+    const raw = loadFromStorage<UsageQuota>(STORAGE_KEYS.USAGE, DEFAULT_USAGE);
+    const updated: UsageQuota = {
+      ...raw,
+      filesUploaded: Math.max(0, Number(raw.filesUploaded || 0) - bonusUploads),
+      messagesUsed: Math.max(0, Number(raw.messagesUsed || 0) - bonusMessages),
+    };
+    saveToStorage(STORAGE_KEYS.USAGE, updated);
     this.emitChange();
   },
 

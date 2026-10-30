@@ -58,18 +58,13 @@ export const TtsPopup: React.FC<TtsPopupProps> = ({ text, onClose, isDark = true
   const selectedLanguageObj =
     TTS_LANGUAGES.find((l) => l.code === ttsLang) || TTS_LANGUAGES[0];
 
-  const handlePlayToggle = () => {
-    if (isPlaying || loading) {
-      stopSmallestSpeech();
-      setIsPlaying(false);
-      setLoading(false);
-      return;
-    }
-
+  const startSpeech = (langOverride?: string, genderOverride?: TtsVoiceGender) => {
+    stopSmallestSpeech();
+    setIsPlaying(false);
     setLoading(true);
     speakTextWithSmallestAi(
       text,
-      ttsLang,
+      langOverride ?? ttsLang,
       () => {
         setLoading(false);
         setIsPlaying(true);
@@ -82,8 +77,18 @@ export const TtsPopup: React.FC<TtsPopupProps> = ({ text, onClose, isDark = true
         setLoading(false);
         setIsPlaying(false);
       },
-      ttsGender
+      genderOverride ?? ttsGender
     );
+  };
+
+  const handlePlayToggle = () => {
+    if (isPlaying || loading) {
+      stopSmallestSpeech();
+      setIsPlaying(false);
+      setLoading(false);
+      return;
+    }
+    startSpeech(ttsLang, ttsGender);
   };
 
   return (
@@ -147,9 +152,8 @@ export const TtsPopup: React.FC<TtsPopupProps> = ({ text, onClose, isDark = true
                   onClick={() => {
                     setTtsGender(g);
                     setSavedTtsGender(g);
-                    if (isPlaying) {
-                      stopSmallestSpeech();
-                      setIsPlaying(false);
+                    if (isPlaying || loading) {
+                      startSpeech(ttsLang, g);
                     }
                   }}
                   className={`py-1.5 px-2.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
@@ -211,9 +215,8 @@ export const TtsPopup: React.FC<TtsPopupProps> = ({ text, onClose, isDark = true
                           setTtsLang(lang.code);
                           setSavedTtsLanguage(lang.code);
                           setIsLangMenuOpen(false);
-                          if (isPlaying) {
-                            stopSmallestSpeech();
-                            setIsPlaying(false);
+                          if (isPlaying || loading) {
+                            startSpeech(lang.code, ttsGender);
                           }
                         }}
                         className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-xs transition-colors cursor-pointer ${

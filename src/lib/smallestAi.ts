@@ -88,8 +88,84 @@ export function stopSmallestSpeech() {
   }
 }
 
+function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
+  const numChannels = 1;
+  const sampleRate = buffer.sampleRate;
+  const channelData = buffer.getChannelData(0);
+  const numSamples = channelData.length;
+  const wavBuf = new ArrayBuffer(44 + numSamples * 2);
+  const view = new DataView(wavBuf);
+
+  const writeStr = (offset: number, str: string) => {
+    for (let i = 0; i < str.length; i++) {
+      view.setUint8(offset + i, str.charCodeAt(i));
+    }
+  };
+
+  writeStr(0, 'RIFF');
+  view.setUint32(4, 36 + numSamples * 2, true);
+  writeStr(8, 'WAVE');
+  writeStr(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * numChannels * 2, true);
+  view.setUint16(32, numChannels * 2, true);
+  view.setUint16(34, 16, true);
+  writeStr(36, 'data');
+  view.setUint32(40, numSamples * 2, true);
+
+  let offset = 44;
+  for (let i = 0; i < numSamples; i++) {
+    const s = Math.max(-1, Math.min(1, channelData[i]));
+    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+    offset += 2;
+  }
+
+  return new Blob([wavBuf], { type: 'audio/wav' });
+}
+
+async function shiftBlobToMaleVoiceIfNeeded(blob: Blob, shouldShift: boolean): Promise<Blob> {
+  if (!shouldShift || typeof window === 'undefined') return blob;
+  try {
+    const AudioCtxCtor = window.AudioContext || (window as any).webkitAudioContext;
+    const OfflineCtxCtor = window.OfflineAudioContext || (window as any).webkitOfflineAudioContext;
+    if (!AudioCtxCtor || !OfflineCtxCtor) return blob;
+
+    const arrayBuf = await blob.arrayBuffer();
+    const decodeCtx = new AudioCtxCtor();
+    const decoded = await decodeCtx.decodeAudioData(arrayBuf.slice(0));
+    try {
+      await decodeCtx.close();
+    } catch {}
+
+    const rate = 0.81; // Shifts pitch & vocal tract formants down ~3.6 semitones into natural male baritone
+    const outLength = Math.ceil(decoded.length / rate);
+    const offlineCtx = new OfflineCtxCtor(1, outLength, decoded.sampleRate);
+
+    const source = offlineCtx.createBufferSource();
+    source.buffer = decoded;
+    source.playbackRate.value = rate;
+
+    const lowShelf = offlineCtx.createBiquadFilter();
+    lowShelf.type = 'lowshelf';
+    lowShelf.frequency.value = 160;
+    lowShelf.gain.value = 4.5;
+
+    source.connect(lowShelf);
+    lowShelf.connect(offlineCtx.destination);
+    source.start(0);
+
+    const rendered = await offlineCtx.startRendering();
+    return audioBufferToWavBlob(rendered);
+  } catch {
+    return blob;
+  }
+}
+
 /**
- * Speak text using Rumik AI Silk TTS (/api/tts) in the user's preferred language and Male/Female voice.
+ * Speak text using Rumik AI Silk / Gemini / Neural TTS (/api/tts) in the user's preferred language and Male/Female voice.
  */
 export async function speakTextWithSmallestAi(
   text: string,
@@ -119,15 +195,8 @@ export async function speakTextWithSmallestAi(
     selectedLangCode && selectedLangCode !== 'auto'
       ? selectedLangCode
       : getSavedTtsLanguage();
-  const gender = selectedGender || getSavedTtsGender();
+  const gender: TtsVoiceGender = selectedGender === 'male' || (!selectedGender && getSavedTtsGender() === 'male') ? 'male' : 'female';
   const bcp47 = TTS_LANGUAGES.find((l) => l.code === language)?.bcp47 || 'en-US';
-
-  // Prefer the on-device Phonon model for English: free, private, no network.
-  const isEnglish = language === 'english' || language === 'en' || bcp47.startsWith('en');
-  if (isEnglish && isPhononSupported()) {
-    const handled = await speakWithPhonon(cleanText, { onStart, onEnd, onError });
-    if (handled) return;
-  }
 
   const controller = new AbortController();
   activeAbortController = controller;
@@ -148,7 +217,11 @@ export async function speakTextWithSmallestAi(
     if (controller.signal.aborted) return;
 
     if (response.ok) {
-      const audioBlob = await response.blob();
+      const rawAudioBlob = await response.blob();
+      if (controller.signal.aborted) return;
+
+      const needsMaleShift = response.headers.get('X-Zeno-Tts-Pitch-Shift') === 'male';
+      const audioBlob = await shiftBlobToMaleVoiceIfNeeded(rawAudioBlob, needsMaleShift);
       if (controller.signal.aborted) return;
 
       const audioUrl = URL.createObjectURL(audioBlob);
@@ -158,6 +231,14 @@ export async function speakTextWithSmallestAi(
       }
 
       const audio = new Audio(audioUrl);
+      if (needsMaleShift && audioBlob === rawAudioBlob) {
+        try {
+          (audio as any).preservesPitch = false;
+          (audio as any).mozPreservesPitch = false;
+          (audio as any).webkitPreservesPitch = false;
+          audio.playbackRate = 0.82;
+        } catch {}
+      }
       activeAudioElement = audio;
 
       audio.onended = () => {
@@ -182,6 +263,13 @@ export async function speakTextWithSmallestAi(
     }
   }
 
+  // Only use Phonon on-device fallback for Female English (Phonon 31M is a female-only model)
+  const isEnglish = language === 'english' || language === 'en' || bcp47.startsWith('en');
+  if (gender === 'female' && isEnglish && isPhononSupported()) {
+    const handled = await speakWithPhonon(cleanText, { onStart, onEnd, onError });
+    if (handled) return;
+  }
+
   fallbackWebSpeech(cleanText, bcp47, gender, onStart, onEnd, onError);
 }
 
@@ -197,8 +285,32 @@ function fallbackWebSpeech(
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = bcp47;
-    utterance.pitch = gender === 'male' ? 0.9 : 1.05;
-    utterance.rate = 1.0;
+
+    const voices = window.speechSynthesis.getVoices?.() || [];
+    const langPrefix = bcp47.split('-')[0].toLowerCase();
+    const matchingVoices = voices.filter((v) => v.lang?.toLowerCase().startsWith(langPrefix));
+    const voicePool = matchingVoices.length > 0 ? matchingVoices : voices;
+
+    if (gender === 'male') {
+      const maleVoice = voicePool.find((v) =>
+        /\b(male|david|daniel|mark|guy|george|james|rishi|arjun|prabhat|madhur|mohan|sundar|karthik|thomas|nicolas|jorge|pablo|stefan|ichiro|naoki|iom|#male)\b/i.test(
+          `${v.name} ${v.voiceURI}`
+        )
+      );
+      if (maleVoice) utterance.voice = maleVoice;
+      utterance.pitch = 0.68;
+      utterance.rate = 0.96;
+    } else {
+      const femaleVoice = voicePool.find((v) =>
+        /\b(female|zira|samantha|victoria|karen|moira|tessa|veena|swara|neerja|heera|kalpana|salli|joanna|amy| #female)\b/i.test(
+          `${v.name} ${v.voiceURI}`
+        )
+      );
+      if (femaleVoice) utterance.voice = femaleVoice;
+      utterance.pitch = 1.08;
+      utterance.rate = 1.0;
+    }
+
     utterance.onstart = () => onStart?.();
     utterance.onend = () => onEnd?.();
     utterance.onerror = (e) => {

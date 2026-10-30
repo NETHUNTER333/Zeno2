@@ -1,21 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import {
-  X,
+  ArrowLeft,
   Copy,
   Check,
-  FileText,
-  Globe,
   Loader2,
   ExternalLink,
-  ArrowRight,
-  MessageSquare,
-  ListChecks,
-  Code2,
-  BookOpen,
+  X,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import { getAuthHeaders } from '../lib/firebase';
+import { extractYouTubeIdFromInput } from './YouTubeTranscriptModal';
+import { PrismCodeBlock } from './PrismCodeBlock';
+import { PeleDiagram } from './PeleDiagram';
 
 export interface PageExtractModalProps {
   url: string | null;
@@ -23,10 +22,16 @@ export interface PageExtractModalProps {
   onClose: () => void;
   isDark?: boolean;
   selectedModelId?: string;
-  onChatWithPage?: (url: string, title: string, extractedMarkdown: string, userQuestion?: string) => void;
+  onChatWithPage?: (
+    url: string,
+    title: string,
+    extractedMarkdown: string,
+    userQuestion?: string
+  ) => void;
 }
 
-const INSTACLOUD_API_BASE = 'https://prod-main-zeno-api-c257d4-00gfx3c9932.compute.instacloud-edge.com';
+const INSTACLOUD_API_BASE =
+  'https://prod-main-zeno-api-c257d4-00gfx3c9932.compute.instacloud-edge.com';
 
 async function callZenoEndpoint(path: string, init?: RequestInit): Promise<Response> {
   const isStaticHost =
@@ -39,9 +44,78 @@ async function callZenoEndpoint(path: string, init?: RequestInit): Promise<Respo
   try {
     const localRes = await fetch(path, init);
     const ct = localRes.headers.get('content-type') || '';
-    if (localRes.ok && ct.includes('application/json')) return localRes;
+    if (
+      (localRes.ok ||
+        localRes.status === 400 ||
+        localRes.status === 401 ||
+        localRes.status === 403 ||
+        localRes.status === 429) &&
+      ct.includes('application/json')
+    ) {
+      return localRes;
+    }
   } catch {}
   return fetch(`${INSTACLOUD_API_BASE}${path}`, init);
+}
+
+/**
+ * Resolves relative image and anchor URLs inside extracted Markdown
+ * (including GitHub repository relative paths like `assets/nanogpt.jpg`).
+ */
+function resolveExtractedAssetUrl(
+  rawUrl: string | undefined,
+  basePageUrl: string,
+  isImage: boolean
+): string {
+  if (!rawUrl) return '';
+  const trimmed = rawUrl.trim();
+  if (!trimmed) return '';
+  if (
+    /^https?:\/\//i.test(trimmed) ||
+    trimmed.startsWith('data:') ||
+    trimmed.startsWith('mailto:') ||
+    trimmed.startsWith('#')
+  ) {
+    // If it's a GitHub blob URL used for an image, convert to raw.githubusercontent.com
+    if (isImage && /^https?:\/\/github\.com\/[^/]+\/[^/]+\/blob\//i.test(trimmed)) {
+      return trimmed
+        .replace(/^https?:\/\/github\.com\//i, 'https://raw.githubusercontent.com/')
+        .replace(/\/blob\//, '/');
+    }
+    return trimmed;
+  }
+
+  try {
+    const parsedBase = new URL(basePageUrl);
+    if (parsedBase.hostname === 'github.com' || parsedBase.hostname === 'www.github.com') {
+      const parts = parsedBase.pathname.split('/').filter(Boolean);
+      if (parts.length >= 2) {
+        const owner = parts[0];
+        const repo = parts[1].replace(/\.git$/i, '');
+        let branch = 'HEAD';
+        let subDir = '';
+
+        if ((parts[2] === 'blob' || parts[2] === 'tree') && parts[3]) {
+          branch = parts[3];
+          if (parts.length > 4) {
+            const rest = parts.slice(4);
+            if (parts[2] === 'blob') rest.pop();
+            subDir = rest.length > 0 ? `${rest.join('/')}/` : '';
+          }
+        }
+
+        const cleanRel = trimmed.replace(/^\.\//, '').replace(/^\//, '');
+        if (isImage) {
+          return `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${subDir}${cleanRel}`;
+        }
+        return `https://github.com/${owner}/${repo}/blob/${branch}/${subDir}${cleanRel}`;
+      }
+    }
+
+    return new URL(trimmed, basePageUrl).toString();
+  } catch {
+    return trimmed;
+  }
 }
 
 export const PageExtractModal: React.FC<PageExtractModalProps> = ({
@@ -59,6 +133,7 @@ export const PageExtractModal: React.FC<PageExtractModalProps> = ({
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<boolean>(false);
+  const [copiedSummary, setCopiedSummary] = useState<boolean>(false);
   const [viewMode, setViewMode] = useState<'rendered' | 'raw'>('rendered');
   const [duration, setDuration] = useState<number | null>(null);
 
@@ -85,9 +160,49 @@ export const PageExtractModal: React.FC<PageExtractModalProps> = ({
     setError(null);
     setContent('');
     setAiSummary('');
+    setActiveSummaryLens('');
     setDuration(null);
 
+    const startTime = Date.now();
+
     try {
+      const ytId = extractYouTubeIdFromInput(normalizedUrl);
+      if (ytId) {
+        try {
+          const transcriptRes = await fetch(
+            'https://prod-main-transcript-api-6588e7-006jmayjabt.compute.instacloud-edge.com/api/transcript',
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ videoId: ytId }),
+            }
+          );
+          const ytData = await transcriptRes.json();
+          if (
+            transcriptRes.ok &&
+            ytData?.success &&
+            Array.isArray(ytData.segments) &&
+            ytData.segments.length > 0
+          ) {
+            const ytTitle = ytData.title || `YouTube Video (${ytId})`;
+            const ytAuthor = ytData.author ? `Channel: ${ytData.author}\n\n` : '';
+            const transcriptBody = ytData.segments
+              .map((s: any) => s.text || '')
+              .join(' ')
+              .replace(/\s+/g, ' ')
+              .trim();
+            const formattedMd = `# ${ytTitle}\n\n${ytAuthor}${transcriptBody}`;
+            setContent(formattedMd);
+            setTitle(ytTitle);
+            setDuration(Date.now() - startTime);
+            setLoading(false);
+            return;
+          }
+        } catch {
+          // Fall through to standard webpage extractor
+        }
+      }
+
       const authHeaders = await getAuthHeaders();
       const res = await callZenoEndpoint('/api/treg/extract', {
         method: 'POST',
@@ -103,15 +218,18 @@ export const PageExtractModal: React.FC<PageExtractModalProps> = ({
       const extractedMd = data.markdown || 'No readable text could be extracted from this URL.';
       setContent(extractedMd);
       setTitle(data.title || new URL(normalizedUrl).hostname);
-      setDuration(data.durationMs || null);
+      setDuration(data.durationMs || Date.now() - startTime);
     } catch (err: any) {
-      setError(err.message || 'Could not scrape URL content.');
+      setError(err.message || 'Could not extract URL content.');
     } finally {
       setLoading(false);
     }
   };
 
-  const runPageAiAnalysis = async (lens: 'summary' | 'takeaways' | 'technical' | 'custom', customPromptText?: string) => {
+  const runPageAiAnalysis = async (
+    lens: 'summary' | 'takeaways' | 'technical' | 'custom',
+    customPromptText?: string
+  ) => {
     if (!content || isSummarizing) return;
     setIsSummarizing(true);
     setActiveSummaryLens(lens);
@@ -134,7 +252,7 @@ export const PageExtractModal: React.FC<PageExtractModalProps> = ({
           messages: [
             {
               role: 'user',
-              content: `Analyze the following scraped webpage (${activeUrl}):\n\nTitle: ${title}\n\nPage Content:\n${content.slice(
+              content: `Analyze the following extracted webpage (${activeUrl}):\n\nTitle: ${title}\n\nPage Content:\n${content.slice(
                 0,
                 14000
               )}\n\nTask: ${promptInstruction}`,
@@ -161,117 +279,210 @@ export const PageExtractModal: React.FC<PageExtractModalProps> = ({
   if (!isOpen && !initialUrl) return null;
 
   const copyToClipboard = () => {
-    navigator.clipboard.writeText(aiSummary || content);
+    navigator.clipboard.writeText(content);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const copySummaryToClipboard = () => {
+    if (!aiSummary) return;
+    navigator.clipboard.writeText(aiSummary);
+    setCopiedSummary(true);
+    setTimeout(() => setCopiedSummary(false), 2000);
   };
 
   const wordCount = content ? content.trim().split(/\s+/).length : 0;
   const readTimeMin = Math.max(1, Math.ceil(wordCount / 220));
 
+  const renderMarkdownComponents = {
+    a: ({ node, href, children, ...props }: any) => {
+      const resolvedHref = resolveExtractedAssetUrl(href, activeUrl, false);
+      return (
+        <a
+          {...props}
+          href={resolvedHref}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="underline underline-offset-3 transition-opacity hover:opacity-80 break-words"
+        >
+          {children}
+        </a>
+      );
+    },
+    img: ({ node, src, alt, ...props }: any) => {
+      const resolvedSrc = resolveExtractedAssetUrl(src, activeUrl, true);
+      if (!resolvedSrc) return null;
+      return (
+        <img
+          {...props}
+          src={resolvedSrc}
+          alt={alt || ''}
+          loading="lazy"
+          onError={(e) => {
+            e.currentTarget.style.display = 'none';
+          }}
+          className="max-w-full h-auto rounded-xl my-3 border border-black/10 dark:border-white/10"
+        />
+      );
+    },
+    table: ({ node, children, ...props }: any) => (
+      <div className="my-4 w-full max-w-full overflow-x-auto rounded-xl border border-black/10 dark:border-white/10">
+        <table {...props} className="w-full border-collapse text-left text-xs sm:text-sm">
+          {children}
+        </table>
+      </div>
+    ),
+    pre: ({ node, children }: any) => {
+      const child = React.Children.toArray(children)[0] as React.ReactElement<any>;
+      const childClassName = child?.props?.className || '';
+      const childContent = String(child?.props?.children ?? children ?? '').replace(/\n$/, '');
+      if (
+        childClassName.includes('language-mermaid') ||
+        childClassName.includes('mermaid') ||
+        childContent.startsWith('graph ') ||
+        childContent.startsWith('flowchart ') ||
+        childContent.startsWith('sequenceDiagram')
+      ) {
+        return <PeleDiagram code={childContent} isDark={isDark} />;
+      }
+      const matchLang = /language-([\w+-]+)/.exec(childClassName || '');
+      const lang = matchLang ? matchLang[1] : 'text';
+      return <PrismCodeBlock language={lang} code={childContent} isDark={isDark} />;
+    },
+    code: ({ node, className, children, ...props }: any) => {
+      const text = String(children ?? '');
+      const isInline = !className && !text.includes('\n');
+      if (isInline) {
+        return (
+          <code
+            {...props}
+            className={`font-mono text-[0.84em] px-1.5 py-0.5 rounded break-words ${
+              isDark
+                ? 'bg-white/[0.08] text-neutral-100'
+                : 'bg-black/[0.06] text-neutral-900'
+            }`}
+          >
+            {children}
+          </code>
+        );
+      }
+      return (
+        <code className={className} {...props}>
+          {children}
+        </code>
+      );
+    },
+  };
+
+  const lensLabel =
+    activeSummaryLens === 'takeaways'
+      ? 'Key Takeaways'
+      : activeSummaryLens === 'technical'
+      ? 'Technical Architecture'
+      : activeSummaryLens === 'custom'
+      ? 'Page Q&A'
+      : 'Executive Summary';
+
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/80 backdrop-blur-md animate-in fade-in duration-150"
-      onClick={onClose}
+      className={`fixed inset-0 z-50 w-full h-[100dvh] overflow-y-auto overflow-x-hidden scrollbar-thin transition-colors ${
+        isDark ? 'bg-[#09090b] text-[#fafafa]' : 'bg-white text-[#09090b]'
+      }`}
     >
-      <div
-        className={`w-full max-w-5xl max-h-[90vh] rounded-2xl border flex flex-col shadow-2xl overflow-hidden ${
+      {/* Sticky Minimal Header */}
+      <header
+        className={`sticky top-0 z-20 backdrop-blur-md border-b transition-colors ${
           isDark
-            ? 'bg-[#0b0c10] border-[#22252e] text-white'
-            : 'bg-white border-slate-200 text-slate-900'
+            ? 'bg-[#09090b]/90 border-white/[0.08]'
+            : 'bg-white/90 border-black/[0.08]'
         }`}
-        onClick={(e) => e.stopPropagation()}
       >
-        {/* Top Header */}
-        <div
-          className={`px-5 py-3.5 border-b flex items-center justify-between gap-4 ${
-            isDark ? 'border-[#1d2029]' : 'border-slate-200'
-          }`}
-        >
-          <div className="flex items-center gap-3 min-w-0">
-            <div
-              className={`size-9 rounded-xl border flex items-center justify-center shrink-0 ${
-                isDark ? 'bg-white/5 border-white/10 text-white' : 'bg-slate-100 border-slate-200 text-slate-900'
+        <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <button
+              type="button"
+              onClick={onClose}
+              className={`size-8 rounded-lg flex items-center justify-center border transition-colors cursor-pointer shrink-0 ${
+                isDark
+                  ? 'bg-[#121215] hover:bg-white/[0.08] border-white/[0.08] text-white'
+                  : 'bg-[#f4f4f5] hover:bg-black/[0.06] border-black/[0.08] text-[#09090b]'
               }`}
+              title="Back"
             >
-              <Globe className="w-4 h-4" />
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 text-xs text-neutral-500">
-                <span className={isDark ? 'text-white font-semibold text-sm' : 'text-slate-900 font-semibold text-sm'}>
-                  URL / Website Reader & Page Summarizer
-                </span>
+              <ArrowLeft className="w-4 h-4" />
+            </button>
+
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 min-w-0">
+                <h1 className="text-sm font-semibold tracking-tight truncate">
+                  {title || 'URL Reader'}
+                </h1>
                 {wordCount > 0 && (
-                  <>
-                    <span aria-hidden="true">·</span>
-                    <span className="font-mono tabular-nums">{wordCount.toLocaleString()} words</span>
-                    <span aria-hidden="true">·</span>
-                    <span className="font-mono tabular-nums">{readTimeMin} min read</span>
-                  </>
-                )}
-                {duration && (
-                  <>
-                    <span aria-hidden="true">·</span>
-                    <span className="font-mono tabular-nums">{duration}ms</span>
-                  </>
+                  <span
+                    className={`hidden sm:inline-block text-[11px] font-mono tabular-nums shrink-0 ${
+                      isDark ? 'text-neutral-500' : 'text-neutral-400'
+                    }`}
+                  >
+                    · {wordCount.toLocaleString()} words · {readTimeMin}m read
+                  </span>
                 )}
               </div>
-              {activeUrl && (
-                <p className="text-xs text-neutral-500 truncate font-mono mt-0.5">
-                  {activeUrl}
-                </p>
-              )}
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            {content && (
-              <div
-                className={`flex items-center p-0.5 rounded-lg border text-xs ${
-                  isDark ? 'bg-[#14171f] border-[#252934]' : 'bg-slate-100 border-slate-200'
+          <div className="flex items-center gap-1.5 shrink-0">
+            {/* Compact Rendered | Raw Switcher */}
+            <div
+              className={`inline-flex items-center p-0.5 rounded-lg border ${
+                isDark
+                  ? 'bg-[#121215] border-white/[0.08]'
+                  : 'bg-[#f4f4f5] border-black/[0.08]'
+              }`}
+            >
+              <button
+                type="button"
+                onClick={() => setViewMode('rendered')}
+                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer ${
+                  viewMode === 'rendered'
+                    ? isDark
+                      ? 'bg-white text-black'
+                      : 'bg-[#09090b] text-white'
+                    : isDark
+                    ? 'text-neutral-400 hover:text-white'
+                    : 'text-neutral-600 hover:text-black'
                 }`}
               >
-                <button
-                  type="button"
-                  onClick={() => setViewMode('rendered')}
-                  className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${
-                    viewMode === 'rendered'
-                      ? isDark
-                        ? 'bg-white text-black font-medium'
-                        : 'bg-slate-900 text-white font-medium'
-                      : 'text-neutral-500 hover:text-current'
-                  }`}
-                >
-                  Rendered
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setViewMode('raw')}
-                  className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${
-                    viewMode === 'raw'
-                      ? isDark
-                        ? 'bg-white text-black font-medium'
-                        : 'bg-slate-900 text-white font-medium'
-                      : 'text-neutral-500 hover:text-current'
-                  }`}
-                >
-                  Raw MD
-                </button>
-              </div>
-            )}
+                Reader
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('raw')}
+                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer ${
+                  viewMode === 'raw'
+                    ? isDark
+                      ? 'bg-white text-black'
+                      : 'bg-[#09090b] text-white'
+                    : isDark
+                    ? 'text-neutral-400 hover:text-white'
+                    : 'text-neutral-600 hover:text-black'
+                }`}
+              >
+                Raw
+              </button>
+            </div>
 
             <button
               type="button"
               onClick={copyToClipboard}
               disabled={!content || loading}
-              className={`p-2 rounded-lg border transition-colors cursor-pointer disabled:opacity-40 ${
+              className={`size-8 rounded-lg flex items-center justify-center border transition-colors cursor-pointer disabled:opacity-40 ${
                 isDark
-                  ? 'border-[#252934] hover:bg-white/5 text-neutral-300'
-                  : 'border-slate-200 hover:bg-slate-100 text-slate-700'
+                  ? 'bg-[#121215] hover:bg-white/[0.08] border-white/[0.08] text-white'
+                  : 'bg-[#f4f4f5] hover:bg-black/[0.06] border-black/[0.08] text-[#09090b]'
               }`}
-              title="Copy content"
+              title="Copy markdown"
             >
-              {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+              {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
             </button>
 
             {activeUrl && (
@@ -279,35 +490,24 @@ export const PageExtractModal: React.FC<PageExtractModalProps> = ({
                 href={activeUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className={`p-2 rounded-lg border transition-colors ${
+                className={`size-8 rounded-lg flex items-center justify-center border transition-colors ${
                   isDark
-                    ? 'border-[#252934] hover:bg-white/5 text-neutral-300'
-                    : 'border-slate-200 hover:bg-slate-100 text-slate-700'
+                    ? 'bg-[#121215] hover:bg-white/[0.08] border-white/[0.08] text-white'
+                    : 'bg-[#f4f4f5] hover:bg-black/[0.06] border-black/[0.08] text-[#09090b]'
                 }`}
-                title="Open original webpage"
+                title="Open source URL"
               >
-                <ExternalLink className="w-4 h-4" />
+                <ExternalLink className="w-3.5 h-3.5" />
               </a>
             )}
-
-            <button
-              type="button"
-              onClick={onClose}
-              className={`p-2 rounded-lg transition-colors cursor-pointer ${
-                isDark ? 'hover:bg-white/10 text-neutral-400 hover:text-white' : 'hover:bg-slate-100 text-slate-500'
-              }`}
-            >
-              <X className="w-4 h-4" />
-            </button>
           </div>
         </div>
+      </header>
 
-        {/* URL Input Bar */}
-        <div
-          className={`p-3.5 border-b flex flex-col sm:flex-row items-stretch sm:items-center gap-2 ${
-            isDark ? 'bg-[#101218] border-[#1d2029]' : 'bg-slate-50 border-slate-200'
-          }`}
-        >
+      {/* Main Single-Column Editorial Container */}
+      <main className="w-full max-w-4xl mx-auto px-4 sm:px-6 py-5 sm:py-7 min-w-0">
+        {/* Compact Single-Row URL Input Bar (No Nested Wrapper Box) */}
+        <div className="flex items-center gap-2 mb-4">
           <input
             type="url"
             value={urlInput}
@@ -315,239 +515,310 @@ export const PageExtractModal: React.FC<PageExtractModalProps> = ({
             onKeyDown={(e) => {
               if (e.key === 'Enter') fetchUrlContent(urlInput);
             }}
-            placeholder="Paste any article, documentation link, or GitHub repo URL (e.g. https://github.com/facebook/react)..."
-            className={`flex-1 px-3.5 py-2 rounded-xl border text-xs font-mono outline-none ${
+            placeholder="https://github.com/karpathy/nanoGPT"
+            className={`flex-1 min-w-0 px-3.5 py-2.5 rounded-xl border text-xs sm:text-sm font-mono outline-none transition-colors ${
               isDark
-                ? 'bg-[#0b0c10] border-[#252934] text-white focus:border-white/40'
-                : 'bg-white border-slate-300 text-slate-900 focus:border-slate-900'
+                ? 'bg-[#121215] border-white/[0.1] text-white placeholder-neutral-500 focus:border-white/[0.28]'
+                : 'bg-[#f4f4f5] border-black/[0.1] text-[#09090b] placeholder-neutral-400 focus:border-black/[0.28]'
             }`}
           />
           <button
             type="button"
             onClick={() => fetchUrlContent(urlInput)}
             disabled={loading || !urlInput.trim()}
-            className={`inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0 disabled:opacity-50 ${
+            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-colors cursor-pointer shrink-0 disabled:opacity-40 ${
               isDark
                 ? 'bg-white text-black hover:bg-neutral-200'
-                : 'bg-slate-900 text-white hover:bg-slate-800'
+                : 'bg-[#09090b] text-white hover:bg-neutral-800'
             }`}
           >
-            {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowRight className="w-3.5 h-3.5" />}
-            <span>{loading ? 'Scraping...' : 'Read URL'}</span>
+            {loading ? 'Reading...' : 'Read'}
           </button>
         </div>
 
-        {/* 1-Click AI Summarizer & Action Bar when content is loaded */}
+        {/* Clean Action Bar + Inline Page Q&A (Only when content is loaded, zero decorative icons) */}
         {content && !loading && (
-          <div
-            className={`px-5 py-2.5 border-b flex flex-wrap items-center justify-between gap-2 ${
-              isDark ? 'bg-[#0e1016] border-[#1d2029]' : 'bg-white border-slate-200'
-            }`}
-          >
-            <div className="flex flex-wrap items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => runPageAiAnalysis('summary')}
-                disabled={isSummarizing}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
-                  activeSummaryLens === 'summary'
-                    ? isDark
-                      ? 'bg-white text-black border-white'
-                      : 'bg-slate-900 text-white border-slate-900'
-                    : isDark
-                    ? 'border-[#252934] hover:bg-white/5 text-neutral-300'
-                    : 'border-slate-200 hover:bg-slate-100 text-slate-700'
-                }`}
-              >
-                <BookOpen className="w-3.5 h-3.5" />
-                <span>Executive Summary</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => runPageAiAnalysis('takeaways')}
-                disabled={isSummarizing}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
-                  activeSummaryLens === 'takeaways'
-                    ? isDark
-                      ? 'bg-white text-black border-white'
-                      : 'bg-slate-900 text-white border-slate-900'
-                    : isDark
-                    ? 'border-[#252934] hover:bg-white/5 text-neutral-300'
-                    : 'border-slate-200 hover:bg-slate-100 text-slate-700'
-                }`}
-              >
-                <ListChecks className="w-3.5 h-3.5" />
-                <span>Key Takeaways</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => runPageAiAnalysis('technical')}
-                disabled={isSummarizing}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
-                  activeSummaryLens === 'technical'
-                    ? isDark
-                      ? 'bg-white text-black border-white'
-                      : 'bg-slate-900 text-white border-slate-900'
-                    : isDark
-                    ? 'border-[#252934] hover:bg-white/5 text-neutral-300'
-                    : 'border-slate-200 hover:bg-slate-100 text-slate-700'
-                }`}
-              >
-                <Code2 className="w-3.5 h-3.5" />
-                <span>Technical Architecture</span>
-              </button>
-            </div>
-
-            {onChatWithPage && (
-              <button
-                type="button"
-                onClick={() => {
-                  onChatWithPage(activeUrl, title, content);
-                  onClose();
-                }}
-                className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
-                  isDark
-                    ? 'bg-white text-black hover:bg-neutral-200'
-                    : 'bg-slate-900 text-white hover:bg-slate-800'
-                }`}
-              >
-                <MessageSquare className="w-3.5 h-3.5" />
-                <span>Continue in Main Chat</span>
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* Main Content Split View */}
-        <div className="flex-1 overflow-y-auto grid grid-cols-1 lg:grid-cols-12 divide-y lg:divide-y-0 lg:divide-x divide-neutral-800">
-          {/* Left / Primary Extracted Page Content */}
-          <div className={`p-5 overflow-y-auto ${aiSummary || isSummarizing ? 'lg:col-span-7' : 'lg:col-span-12'}`}>
-            {loading && (
-              <div className="py-20 flex flex-col items-center justify-center gap-3 text-neutral-400">
-                <Loader2 className="w-7 h-7 animate-spin" />
-                <p className="text-xs font-medium">Scraping & cleaning webpage into structured Markdown...</p>
-              </div>
-            )}
-
-            {error && !loading && (
-              <div className="p-4 rounded-xl bg-red-950/40 border border-red-800/50 text-red-300 text-xs">
-                <p className="font-semibold mb-1">Extraction Error</p>
-                <p>{error}</p>
-              </div>
-            )}
-
-            {!loading && !error && !content && (
-              <div className="py-12 text-center">
-                <p className="text-xs text-neutral-500 mb-4">
-                  Paste any URL above or try one of these live technical sources:
-                </p>
-                <div className="flex flex-wrap items-center justify-center gap-2">
-                  {[
-                    'https://github.com/karpathy/nanoGPT',
-                    'https://en.wikipedia.org/wiki/Quantum_computing',
-                    'https://arxiv.org/abs/1706.03762',
-                  ].map((sampleUrl) => (
+          <div className="mb-6 space-y-2.5">
+            <div className="flex items-center justify-between gap-2 overflow-x-auto scrollbar-none pb-0.5">
+              <div className="flex items-center gap-1.5 shrink-0">
+                {(
+                  [
+                    { id: 'summary', label: 'Executive Summary' },
+                    { id: 'takeaways', label: 'Key Takeaways' },
+                    { id: 'technical', label: 'Architecture' },
+                  ] as const
+                ).map((item) => {
+                  const isActive =
+                    activeSummaryLens === item.id && (Boolean(aiSummary) || isSummarizing);
+                  return (
                     <button
-                      key={sampleUrl}
+                      key={item.id}
                       type="button"
-                      onClick={() => {
-                        setUrlInput(sampleUrl);
-                        fetchUrlContent(sampleUrl);
-                      }}
-                      className={`px-3 py-1.5 rounded-lg border font-mono text-xs transition-colors cursor-pointer ${
-                        isDark
-                          ? 'bg-[#12141c] border-[#252934] hover:border-white/30 text-neutral-300'
-                          : 'bg-slate-50 border-slate-200 hover:border-slate-400 text-slate-700'
+                      onClick={() => runPageAiAnalysis(item.id)}
+                      disabled={isSummarizing}
+                      className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer whitespace-nowrap ${
+                        isActive
+                          ? isDark
+                            ? 'bg-white text-black border-white'
+                            : 'bg-[#09090b] text-white border-[#09090b]'
+                          : isDark
+                          ? 'bg-[#121215] border-white/[0.08] text-neutral-300 hover:text-white hover:border-white/[0.18]'
+                          : 'bg-[#f4f4f5] border-black/[0.08] text-neutral-700 hover:text-black hover:border-black/[0.18]'
                       }`}
                     >
-                      {sampleUrl}
+                      {item.label}
                     </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {!loading && !error && content && (
-              viewMode === 'rendered' ? (
-                <div className="prose-custom max-w-none text-sm leading-relaxed">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {content}
-                  </ReactMarkdown>
-                </div>
-              ) : (
-                <pre
-                  className={`font-mono text-xs p-4 rounded-xl overflow-x-auto whitespace-pre-wrap leading-relaxed ${
-                    isDark ? 'bg-[#07080b] text-neutral-300' : 'bg-slate-50 text-slate-800'
-                  }`}
-                >
-                  {content}
-                </pre>
-              )
-            )}
-          </div>
-
-          {/* Right Pane: AI Page Summarizer & Q&A */}
-          {(aiSummary || isSummarizing) && (
-            <div className="lg:col-span-5 p-5 flex flex-col justify-between overflow-y-auto">
-              <div>
-                <div className="flex items-center justify-between pb-3 mb-3 border-b border-neutral-800">
-                  <span className="text-xs font-semibold">AI Page Synthesis</span>
-                  {isSummarizing && <Loader2 className="w-3.5 h-3.5 animate-spin text-sky-400" />}
-                </div>
-                {isSummarizing && !aiSummary ? (
-                  <div className="py-12 text-xs text-neutral-500 text-center">
-                    Synthesizing insights from scraped page...
-                  </div>
-                ) : (
-                  <div className="prose-custom max-w-none text-xs leading-relaxed">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                      {aiSummary}
-                    </ReactMarkdown>
-                  </div>
-                )}
+                  );
+                })}
               </div>
 
-              {/* Follow-up Question Input */}
-              <div className="mt-4 pt-3 border-t border-neutral-800 flex items-center gap-2">
-                <input
-                  type="text"
-                  value={customQuestion}
-                  onChange={(e) => setCustomQuestion(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && customQuestion.trim()) {
-                      runPageAiAnalysis('custom', customQuestion);
-                      setCustomQuestion('');
-                    }
-                  }}
-                  placeholder="Ask a specific question about this page..."
-                  className={`flex-1 px-3 py-2 rounded-lg border text-xs outline-none ${
-                    isDark
-                      ? 'bg-[#0b0c10] border-[#252934] text-white'
-                      : 'bg-white border-slate-300 text-slate-900'
-                  }`}
-                />
+              {onChatWithPage && (
                 <button
                   type="button"
                   onClick={() => {
-                    if (customQuestion.trim()) {
-                      runPageAiAnalysis('custom', customQuestion);
-                      setCustomQuestion('');
-                    }
+                    onChatWithPage(activeUrl, title, content);
+                    onClose();
                   }}
-                  disabled={isSummarizing || !customQuestion.trim()}
-                  className={`px-3 py-2 rounded-lg text-xs font-semibold cursor-pointer ${
-                    isDark ? 'bg-white text-black' : 'bg-slate-900 text-white'
+                  className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                    isDark
+                      ? 'bg-[#121215] border-white/[0.12] text-white hover:bg-white/[0.08]'
+                      : 'bg-[#f4f4f5] border-black/[0.12] text-[#09090b] hover:bg-black/[0.06]'
+                  }`}
+                >
+                  Continue in Chat
+                </button>
+              )}
+            </div>
+
+            {/* Compact Single-Line Page Question Input */}
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={customQuestion}
+                onChange={(e) => setCustomQuestion(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && customQuestion.trim()) {
+                    runPageAiAnalysis('custom', customQuestion);
+                    setCustomQuestion('');
+                  }
+                }}
+                placeholder="Ask a specific question about this page..."
+                className={`flex-1 min-w-0 px-3.5 py-2 rounded-xl border text-xs outline-none transition-colors ${
+                  isDark
+                    ? 'bg-[#121215] border-white/[0.08] text-white placeholder-neutral-500 focus:border-white/[0.22]'
+                    : 'bg-[#f4f4f5] border-black/[0.08] text-[#09090b] placeholder-neutral-400 focus:border-black/[0.22]'
+                }`}
+              />
+              {customQuestion.trim() && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    runPageAiAnalysis('custom', customQuestion);
+                    setCustomQuestion('');
+                  }}
+                  disabled={isSummarizing}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-semibold transition-colors cursor-pointer shrink-0 ${
+                    isDark
+                      ? 'bg-white text-black hover:bg-neutral-200'
+                      : 'bg-[#09090b] text-white hover:bg-neutral-800'
                   }`}
                 >
                   Ask
                 </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Active AI Synthesis Output (Shown ONLY when active, zero empty placeholder boxes) */}
+        {(isSummarizing || aiSummary) && (
+          <section
+            className={`mb-6 p-4 sm:p-5 rounded-2xl border min-w-0 ${
+              isDark
+                ? 'bg-[#121215] border-white/[0.1]'
+                : 'bg-[#f8f8fa] border-black/[0.1]'
+            }`}
+          >
+            <div className="flex items-center justify-between gap-2 pb-3 mb-3 border-b border-black/[0.08] dark:border-white/[0.08]">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-xs font-semibold tracking-tight truncate">
+                  {lensLabel}
+                </span>
+                {isSummarizing && (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin opacity-70 shrink-0" />
+                )}
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                {aiSummary && !isSummarizing && (
+                  <button
+                    type="button"
+                    onClick={copySummaryToClipboard}
+                    className={`px-2 py-1 rounded-md text-[11px] font-medium transition-colors cursor-pointer ${
+                      isDark
+                        ? 'text-neutral-400 hover:text-white hover:bg-white/[0.06]'
+                        : 'text-neutral-600 hover:text-black hover:bg-black/[0.05]'
+                    }`}
+                  >
+                    {copiedSummary ? 'Copied' : 'Copy'}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAiSummary('');
+                    setActiveSummaryLens('');
+                  }}
+                  className={`p-1 rounded-md transition-colors cursor-pointer ${
+                    isDark
+                      ? 'text-neutral-400 hover:text-white hover:bg-white/[0.06]'
+                      : 'text-neutral-500 hover:text-black hover:bg-black/[0.05]'
+                  }`}
+                  title="Dismiss synthesis"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
               </div>
             </div>
-          )}
-        </div>
-      </div>
+
+            {isSummarizing && !aiSummary ? (
+              <div className="py-6 flex items-center gap-2.5 text-xs opacity-75">
+                <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                <span>Synthesizing page content...</span>
+              </div>
+            ) : (
+              <div className="prose-grok max-w-none min-w-0 text-xs sm:text-sm leading-relaxed">
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm, remarkMath]}
+                  rehypePlugins={[rehypeKatex]}
+                  components={renderMarkdownComponents}
+                >
+                  {aiSummary}
+                </ReactMarkdown>
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* Loading State */}
+        {loading && (
+          <div className="py-20 flex flex-col items-center justify-center gap-2.5">
+            <Loader2 className="w-5 h-5 animate-spin opacity-70" />
+            <p
+              className={`text-xs font-medium ${
+                isDark ? 'text-neutral-400' : 'text-neutral-500'
+              }`}
+            >
+              Extracting readable page content...
+            </p>
+          </div>
+        )}
+
+        {/* Error State */}
+        {error && !loading && (
+          <div
+            className={`p-4 rounded-xl border text-xs sm:text-sm space-y-1 ${
+              isDark
+                ? 'bg-[#121215] border-white/[0.1] text-white'
+                : 'bg-[#f4f4f5] border-black/[0.1] text-[#09090b]'
+            }`}
+          >
+            <p className="font-semibold">Unable to extract URL</p>
+            <p className={isDark ? 'text-neutral-400' : 'text-neutral-600'}>{error}</p>
+          </div>
+        )}
+
+        {/* Empty State with Quick Samples */}
+        {!loading && !error && !content && (
+          <div className="py-12 text-center space-y-3">
+            <p
+              className={`text-xs ${
+                isDark ? 'text-neutral-400' : 'text-neutral-500'
+              }`}
+            >
+              Paste any URL above or select a sample source:
+            </p>
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              {[
+                'https://github.com/karpathy/nanoGPT',
+                'https://en.wikipedia.org/wiki/Quantum_computing',
+                'https://arxiv.org/abs/1706.03762',
+              ].map((sampleUrl) => (
+                <button
+                  key={sampleUrl}
+                  type="button"
+                  onClick={() => {
+                    setUrlInput(sampleUrl);
+                    fetchUrlContent(sampleUrl);
+                  }}
+                  className={`px-3 py-1.5 rounded-lg border font-mono text-xs transition-colors cursor-pointer ${
+                    isDark
+                      ? 'bg-[#121215] border-white/[0.08] hover:border-white/[0.2] text-neutral-300 hover:text-white'
+                      : 'bg-[#f4f4f5] border-black/[0.08] hover:border-black/[0.2] text-neutral-700 hover:text-black'
+                  }`}
+                >
+                  {sampleUrl.replace(/^https?:\/\//, '')}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Extracted Article Body (Single Clean Surface — No Box-Inside-a-Box) */}
+        {!loading && !error && content && (
+          <article className="min-w-0 max-w-full">
+            {/* Compact Metadata Line on Mobile */}
+            {(activeUrl || wordCount > 0) && (
+              <div
+                className={`flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] font-mono pb-4 mb-5 border-b ${
+                  isDark
+                    ? 'text-neutral-500 border-white/[0.08]'
+                    : 'text-neutral-500 border-black/[0.08]'
+                }`}
+              >
+                {activeUrl && (
+                  <span className="truncate max-w-[240px] sm:max-w-md">{activeUrl}</span>
+                )}
+                {wordCount > 0 && (
+                  <>
+                    <span>·</span>
+                    <span className="tabular-nums">{wordCount.toLocaleString()} words</span>
+                    <span>·</span>
+                    <span className="tabular-nums">{readTimeMin} min read</span>
+                  </>
+                )}
+                {duration !== null && (
+                  <>
+                    <span>·</span>
+                    <span className="tabular-nums">{duration}ms</span>
+                  </>
+                )}
+              </div>
+            )}
+
+            {viewMode === 'rendered' ? (
+              <div className="prose-grok max-w-none min-w-0">
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm, remarkMath]}
+                  rehypePlugins={[rehypeKatex]}
+                  components={renderMarkdownComponents}
+                >
+                  {content}
+                </ReactMarkdown>
+              </div>
+            ) : (
+              <pre
+                className={`font-mono text-xs p-4 rounded-xl border whitespace-pre-wrap break-words leading-relaxed min-w-0 max-w-full ${
+                  isDark
+                    ? 'bg-[#121215] border-white/[0.08] text-neutral-200'
+                    : 'bg-[#f8f8fa] border-black/[0.08] text-[#09090b]'
+                }`}
+              >
+                {content}
+              </pre>
+            )}
+          </article>
+        )}
+      </main>
     </div>
   );
 };

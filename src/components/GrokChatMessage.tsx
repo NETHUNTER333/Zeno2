@@ -30,6 +30,7 @@ import {
   ListChecks,
   Share2,
   Bookmark,
+  Highlighter,
   Globe
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -37,8 +38,9 @@ import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
-import { ChatMessage as ChatMessageType, YouTubeVideoInfo, FinanceQuote } from '../types';
+import { ChatMessage as ChatMessageType, YouTubeVideoInfo, FinanceQuote, KnowledgeVaultItem } from '../types';
 import { PrismCodeBlock } from './PrismCodeBlock';
+import { normalizeMathDelimiters } from './MathMarkdown';
 import { GrokTimingTooltip } from './GrokTimingTooltip';
 import { GenerativeUiViewer } from './GenerativeUiViewer';
 import { ArxivPaperCard } from './ArxivPaperCard';
@@ -61,7 +63,15 @@ import {
   InlineCitation,
   InlineCitationsList,
   PlanCard,
-  QuestionCard
+  QuestionCard,
+  AgentMap,
+  extractAgentMapFromContext,
+  ProductCards,
+  extractProductsFromContext,
+  ImageGenerationCard,
+  detectImageGenerationIntent,
+  WeatherCard,
+  detectWeatherLocationInQuery,
 } from './kobra';
 import { PeleDiagram } from './PeleDiagram';
 import { TtsPopup } from './TtsPopup';
@@ -81,6 +91,7 @@ interface GrokChatMessageProps {
     message: ChatMessageType,
     tab?: 'share' | 'export' | 'quote' | 'publish'
   ) => void;
+  onOpenKnowledgeVault?: () => void;
   theme?: 'dark' | 'light';
   nsfwMode?: boolean;
 }
@@ -175,7 +186,8 @@ function getUniversalClientEmbedUrl(url?: string, ytId?: string, existingEmbed?:
 
 const preprocessMessageContent = (content: string): string => {
   if (!content) return '';
-  const parts = content.split(/(```[\s\S]*?```)/g);
+  const normalizedMath = normalizeMathDelimiters(content);
+  const parts = normalizedMath.split(/(```[\s\S]*?```)/g);
   return parts
     .map((part) => {
       if (part.startsWith('```')) {
@@ -192,10 +204,6 @@ const preprocessMessageContent = (content: string): string => {
       processed = processed.replace(/<svg\b[\s\S]*?<\/svg>/gi, (svgMatch) => {
         return `\n\n\`\`\`svg-render\n${svgMatch.trim()}\n\`\`\`\n\n`;
       });
-      // Normalize LaTeX block math \\[ ... \\] to $$ ... $$ and inline math \\( ... \\) to $ ... $
-      processed = processed
-        .replace(/\\\[([\s\S]*?)\\\]/g, '$$\n$1\n$$')
-        .replace(/\\\(([\s\S]*?)\\\)/g, '$$$1$$');
 
       // Prevent runaway markdown headings (#, ##, ###, ####) if a heading line exceeds 100 characters
       processed = processed.replace(/^(#{1,6})\s+(.+)$/gm, (fullMatch, hashes, headingText) => {
@@ -238,6 +246,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
   onEdit,
   onAskZeno,
   onOpenShareStudio,
+  onOpenKnowledgeVault,
   theme = 'dark',
 }) => {
   const [copied, setCopied] = useState(false);
@@ -275,6 +284,8 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
   const isDark = theme === 'dark';
   const isUser = message.role === 'user';
 
+  const searchQueriesKey = (message.searchQueries || []).join('|');
+
   // Auto-detect stock & crypto tickers ($NVDA, $AAPL, BTC, SOL, etc.) in assistant messages
   useEffect(() => {
     if (isUser) return;
@@ -282,10 +293,10 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
       setLiveFinanceQuotes(message.financeQuotes);
       return;
     }
-    const combinedText = `${(message.searchQueries || []).join(' ')} ${(message.content || '').slice(0, 600)}`;
+    const combinedText = `${searchQueriesKey} ${(message.content || '').slice(0, 600)}`;
     const symbols = detectFinanceSymbolsInText(combinedText);
     if (symbols.length === 0) {
-      setLiveFinanceQuotes([]);
+      setLiveFinanceQuotes((prev) => (prev.length === 0 ? prev : []));
       return;
     }
     setLiveFinanceQuotes(symbols.map((s) => buildFallbackFinanceQuote(s)));
@@ -300,7 +311,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [isUser, message.financeQuotes, message.searchQueries, message.content]);
+  }, [isUser, message.financeQuotes, searchQueriesKey, message.content]);
 
   // Extract detected YouTube ID from videos or message text for quick Study Workspace access
   const detectedYtId = useMemo(() => {
@@ -340,6 +351,133 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
   };
 
   const [savedToVault, setSavedToVault] = useState(false);
+  const [showActionsOnTap, setShowActionsOnTap] = useState(false);
+
+  // Highlight & Save Segment to Knowledge Vault state
+  const messageContentRef = React.useRef<HTMLDivElement>(null);
+  const collectionDropdownRef = React.useRef<HTMLDivElement>(null);
+  const [selectedSegmentText, setSelectedSegmentText] = useState('');
+  const [segmentSavedToast, setSegmentSavedToast] = useState(false);
+  const [showSegmentPicker, setShowSegmentPicker] = useState(false);
+  const [isCollectionMenuOpen, setIsCollectionMenuOpen] = useState(false);
+  const [selectedCollectionId, setSelectedCollectionId] = useState<string>('col_explanations');
+  const [vaultCollections, setVaultCollections] = useState(() =>
+    KnowledgeVaultStore.getCollections()
+  );
+  const [savedMessageHighlights, setSavedMessageHighlights] = useState<KnowledgeVaultItem[]>(() =>
+    KnowledgeVaultStore.getItems().filter(
+      (item) => item.sourceMessageId === message.id && item.tags?.includes('highlight')
+    )
+  );
+
+  const selectedCollectionName = useMemo(() => {
+    return (
+      vaultCollections.find((c) => c.id === selectedCollectionId)?.name || 'Useful Explanations'
+    );
+  }, [vaultCollections, selectedCollectionId]);
+
+  useEffect(() => {
+    if (!isCollectionMenuOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        collectionDropdownRef.current &&
+        !collectionDropdownRef.current.contains(e.target as Node)
+      ) {
+        setIsCollectionMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isCollectionMenuOpen]);
+
+  useEffect(() => {
+    const syncVaultHighlights = () => {
+      setVaultCollections(KnowledgeVaultStore.getCollections());
+      setSavedMessageHighlights(
+        KnowledgeVaultStore.getItems().filter(
+          (item) => item.sourceMessageId === message.id && item.tags?.includes('highlight')
+        )
+      );
+    };
+    window.addEventListener('zeno-vault-updated', syncVaultHighlights);
+    return () => window.removeEventListener('zeno-vault-updated', syncVaultHighlights);
+  }, [message.id]);
+
+  const handleCaptureTextSelection = React.useCallback(() => {
+    if (typeof window === 'undefined' || !messageContentRef.current) return;
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
+      return;
+    }
+    const range = selection.getRangeAt(0);
+    if (!messageContentRef.current.contains(range.commonAncestorContainer)) {
+      return;
+    }
+    const rawText = selection.toString().replace(/\s+/g, ' ').trim();
+    if (rawText.length >= 4) {
+      setSelectedSegmentText(rawText.slice(0, 2400));
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isUser) return;
+    const onSelectionChange = () => {
+      if (!messageContentRef.current) return;
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed || sel.rangeCount === 0) return;
+      const range = sel.getRangeAt(0);
+      if (messageContentRef.current.contains(range.commonAncestorContainer)) {
+        const txt = sel.toString().replace(/\s+/g, ' ').trim();
+        if (txt.length >= 4) {
+          setSelectedSegmentText(txt.slice(0, 2400));
+        }
+      }
+    };
+    document.addEventListener('selectionchange', onSelectionChange);
+    return () => document.removeEventListener('selectionchange', onSelectionChange);
+  }, [isUser]);
+
+  const handleSaveSegmentToVault = (rawSegment?: string, collectionOverride?: string) => {
+    const targetText = (rawSegment ?? selectedSegmentText).trim();
+    if (!targetText) return;
+    const cleanTitleSnippet = targetText
+      .replace(/[#*`~>\n]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 68);
+    KnowledgeVaultStore.saveItem({
+      title: cleanTitleSnippet
+        ? `"${cleanTitleSnippet}${targetText.length > 68 ? '…' : ''}"`
+        : threadTitle || 'Highlighted Insight',
+      summary: targetText.slice(0, 220),
+      content: targetText,
+      type: 'ai_response',
+      collectionId: collectionOverride || selectedCollectionId || 'col_explanations',
+      tags: ['highlight', 'chat-segment'],
+      sourceThreadId: threadId,
+      sourceMessageId: message.id,
+      sources: message.sources || [],
+    });
+    setSegmentSavedToast(true);
+    setSelectedSegmentText('');
+    try {
+      window.getSelection()?.removeAllRanges();
+    } catch {}
+    setTimeout(() => setSegmentSavedToast(false), 2400);
+  };
+
+  const handleToggleParagraphHighlight = (segmentText: string) => {
+    const cleanSeg = segmentText.trim();
+    if (!cleanSeg) return;
+    const existing = savedMessageHighlights.find(
+      (h) => h.content.trim().toLowerCase() === cleanSeg.toLowerCase()
+    );
+    if (existing) {
+      KnowledgeVaultStore.deleteItem(existing.id);
+    } else {
+      handleSaveSegmentToVault(cleanSeg);
+    }
+  };
 
   const handleSaveToKnowledgeVault = () => {
     const cleanBody = (message.content || '')
@@ -365,6 +503,20 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
   const cleanedContent = (message.content || '')
     .replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '')
     .trim();
+
+  // Split cleanedContent into selectable paragraphs/segments for one-tap highlighting
+  const highlightableSegments = useMemo(() => {
+    if (!cleanedContent) return [];
+    return cleanedContent
+      .split(/\n{2,}/)
+      .map((block) =>
+        block
+          .replace(/^#{1,6}\s+/gm, '')
+          .replace(/^\s*[-*+]\s+/gm, '• ')
+          .trim()
+      )
+      .filter((block) => block.length >= 16 && !block.startsWith('```'));
+  }, [cleanedContent]);
 
   const scrollVideoCarousel = (direction: 'left' | 'right') => {
     if (!videoCarouselRef.current) return;
@@ -515,7 +667,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
   };
 
   return (
-    <div id={`msg-${message.id}`} data-message-id={message.id} className="group/msg py-6 px-4 md:px-0 max-w-3xl mx-auto w-full min-w-0 overflow-hidden transition-all duration-300 rounded-2xl">
+    <div id={`msg-${message.id}`} data-message-id={message.id} className="group/msg py-1 px-2 sm:px-4 md:px-0 max-w-3xl mx-auto w-full min-w-0 overflow-hidden transition-all duration-300 rounded-2xl">
       {/* User Message Layout */}
       {isUser ? (
         <div className="flex flex-col items-end w-full min-w-0">
@@ -664,10 +816,10 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
 
           {isEditing ? (
             <div
-              className={`w-full max-w-full sm:max-w-2xl rounded-2xl border backdrop-blur-2xl p-3.5 space-y-2.5 transition-all ${
+              className={`w-full max-w-full sm:max-w-xl rounded-3xl border px-5 py-4 transition-all ${
                 isDark
-                  ? 'bg-white/[0.06] border-white/[0.16] shadow-[0_12px_36px_rgba(0,0,0,0.55)]'
-                  : 'bg-white/80 border-black/[0.12] shadow-[0_12px_36px_rgba(0,0,0,0.08)]'
+                  ? 'bg-[#141418] border-white/[0.15] text-white shadow-[0_12px_36px_rgba(0,0,0,0.55)]'
+                  : 'bg-white border-black/[0.12] text-[#18181b] shadow-[0_8px_28px_rgba(0,0,0,0.06)]'
               }`}
             >
               <textarea
@@ -683,44 +835,37 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                   }
                 }}
                 autoFocus
-                className={`w-full border rounded-xl p-3 text-xs sm:text-sm focus:outline-none font-sans resize-y ${
-                  isDark
-                    ? 'bg-black/40 border-white/[0.12] text-white focus:border-white/30'
-                    : 'bg-white/90 border-black/[0.1] text-[#0d0d0d] focus:border-black/30'
+                rows={Math.min(6, Math.max(2, editDraft.split('\n').length))}
+                className={`w-full bg-transparent border-0 p-0 text-[14px] leading-relaxed focus:outline-none focus:ring-0 font-sans resize-none ${
+                  isDark ? 'text-white placeholder-white/40' : 'text-[#18181b] placeholder-black/40'
                 }`}
-                rows={3}
               />
-              <div className="flex items-center justify-between gap-2">
-                <span className={`text-[11px] ${isDark ? 'text-white/45' : 'text-black/45'}`}>
-                  Editing message will regenerate the reply below
-                </span>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsEditing(false);
-                      setEditDraft(message.content);
-                    }}
-                    className={`px-3 py-1.5 rounded-xl border backdrop-blur-md text-xs font-medium transition-colors cursor-pointer ${
-                      isDark
-                        ? 'bg-white/[0.04] border-white/[0.1] text-white/75 hover:text-white hover:bg-white/[0.08]'
-                        : 'bg-black/[0.03] border-black/[0.08] text-[#525252] hover:text-black hover:bg-black/[0.06]'
-                    }`}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleSaveEdit}
-                    className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-colors cursor-pointer ${
-                      isDark
-                        ? 'bg-white text-black hover:bg-[#e5e5e5]'
-                        : 'bg-[#0d0d0d] text-white hover:bg-[#262626]'
-                    }`}
-                  >
-                    Save & Resend
-                  </button>
-                </div>
+              <div className="flex items-center justify-end gap-2 pt-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsEditing(false);
+                    setEditDraft(message.content);
+                  }}
+                  className={`px-4 py-1.5 rounded-full border text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap ${
+                    isDark
+                      ? 'bg-white/[0.06] border-white/[0.12] text-white/80 hover:text-white hover:bg-white/[0.12]'
+                      : 'bg-[#f4f4f5] border-black/[0.08] text-[#52525b] hover:text-[#18181b] hover:bg-neutral-200/80'
+                  }`}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveEdit}
+                  className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap ${
+                    isDark
+                      ? 'bg-white text-black hover:bg-neutral-200'
+                      : 'bg-[#18181b] text-white hover:bg-neutral-800'
+                  }`}
+                >
+                  Send
+                </button>
               </div>
             </div>
           ) : (
@@ -735,9 +880,10 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                     : rawUserText;
                 return (
                   <div
-                    className={`text-[13px] sm:text-[13.5px] leading-[1.55] font-normal px-3.5 py-2.5 rounded-2xl sm:rounded-3xl backdrop-blur-2xl border transition-all w-fit max-w-full min-w-0 overflow-hidden whitespace-pre-wrap break-words [overflow-wrap:anywhere] [word-break:break-word] ${
+                    onClick={() => setShowActionsOnTap((prev) => !prev)}
+                    className={`text-[13px] sm:text-[13.5px] leading-[1.55] font-normal px-3.5 py-2.5 rounded-2xl sm:rounded-3xl backdrop-blur-2xl backdrop-saturate-150 border transition-all w-fit max-w-full min-w-0 overflow-hidden whitespace-pre-wrap break-words [overflow-wrap:anywhere] [word-break:break-word] cursor-pointer ${
                       isDark
-                        ? 'bg-white/[0.07] border-white/[0.14] text-white shadow-[0_8px_28px_rgba(0,0,0,0.45)]'
+                        ? 'bg-neutral-900/55 border-white/[0.15] text-white shadow-[0_8px_28px_rgba(0,0,0,0.45)]'
                         : 'bg-white/75 border-black/[0.08] text-[#000000] shadow-[0_8px_24px_rgba(0,0,0,0.06)]'
                     }`}
                   >
@@ -745,7 +891,10 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                     {isLongUserMessage && (
                       <button
                         type="button"
-                        onClick={() => setIsUserMsgExpanded((prev) => !prev)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIsUserMsgExpanded((prev) => !prev);
+                        }}
                         className={`mt-2 inline-flex items-center gap-1 text-[11.5px] font-semibold px-2.5 py-1 rounded-full border transition-colors cursor-pointer ${
                           isDark
                             ? 'bg-white/[0.08] hover:bg-white/[0.14] border-white/[0.14] text-sky-400'
@@ -769,26 +918,32 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                 );
               })()}
 
-              {/* Copy and Edit Buttons Directly Under Sent User Message */}
-              <div className="mt-1.5 flex items-center justify-end gap-1.5 px-1">
+              {/* Copy and Edit Buttons Directly Under Sent User Message (Hidden until hover or tap) */}
+              <div
+                className={`items-center justify-end gap-1 px-0.5 transition-opacity duration-150 ${
+                  showActionsOnTap || copied
+                    ? 'mt-1 flex opacity-100'
+                    : 'hidden group-hover/msg:mt-1 group-hover/msg:flex group-hover/msg:opacity-100'
+                }`}
+              >
                 <button
                   type="button"
                   onClick={copyText}
-                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full border backdrop-blur-xl text-[11px] font-medium transition-all cursor-pointer ${
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border backdrop-blur-2xl backdrop-saturate-150 text-[10.5px] font-medium transition-all cursor-pointer ${
                     isDark
-                      ? 'bg-white/[0.04] hover:bg-white/[0.1] border-white/[0.1] text-white/65 hover:text-white'
+                      ? 'bg-neutral-900/50 hover:bg-neutral-800/70 border-white/[0.14] text-white/75 hover:text-white'
                       : 'bg-white/70 hover:bg-white/95 border-black/[0.08] text-[#525252] hover:text-black'
                   }`}
                   title="Copy message"
                 >
                   {copied ? (
                     <>
-                      <Check className="w-3 h-3 text-emerald-500" />
+                      <Check className="w-2.5 h-2.5 text-emerald-500" />
                       <span className="text-emerald-500">Copied</span>
                     </>
                   ) : (
                     <>
-                      <Copy className="w-3 h-3" />
+                      <Copy className="w-2.5 h-2.5" />
                       <span>Copy</span>
                     </>
                   )}
@@ -801,14 +956,14 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                       setEditDraft(message.content);
                       setIsEditing(true);
                     }}
-                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full border backdrop-blur-xl text-[11px] font-medium transition-all cursor-pointer ${
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border backdrop-blur-2xl backdrop-saturate-150 text-[10.5px] font-medium transition-all cursor-pointer ${
                       isDark
-                        ? 'bg-white/[0.04] hover:bg-white/[0.1] border-white/[0.1] text-white/65 hover:text-white'
+                        ? 'bg-neutral-900/50 hover:bg-neutral-800/70 border-white/[0.14] text-white/75 hover:text-white'
                         : 'bg-white/70 hover:bg-white/95 border-black/[0.08] text-[#525252] hover:text-black'
                     }`}
                     title="Edit message"
                   >
-                    <Pencil className="w-3 h-3" />
+                    <Pencil className="w-2.5 h-2.5" />
                     <span>Edit</span>
                   </button>
                 )}
@@ -846,6 +1001,26 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
             />
           )}
 
+          {/* @kobra/weather: Intelligently triggered when query asks for weather/temperature/forecast */}
+          {(() => {
+            const wxLoc = detectWeatherLocationInQuery(message.searchQueries?.[0] || '');
+            if (!wxLoc) return null;
+            return <WeatherCard locationQuery={wxLoc} isDark={isDark} />;
+          })()}
+
+          {/* @kobra/image-generation: Intelligently triggered when query requests image generation */}
+          {(() => {
+            const imgPrompt = detectImageGenerationIntent(message.searchQueries?.[0] || '');
+            if (!imgPrompt) return null;
+            return (
+              <ImageGenerationCard
+                prompt={imgPrompt}
+                isDark={isDark}
+                fallbackImages={message.images}
+              />
+            );
+          })()}
+
           {/* Fast single-line loading indicator only while waiting for text when WebSearch spinner isn't already active */}
           {message.isStreaming &&
             !cleanedContent &&
@@ -872,7 +1047,234 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
             />
           )}
 
-          <div className="prose-grok max-w-none text-[15px] leading-relaxed my-1">
+          {/* Floating Highlight & Save Selection Bar when text is selected inside AI response */}
+          {(selectedSegmentText || segmentSavedToast) && !message.isStreaming && (
+            <div
+              className={`sticky top-2 z-30 mb-2 px-2.5 py-1.5 rounded-full border backdrop-blur-2xl backdrop-saturate-150 shadow-lg flex items-center justify-between gap-2 transition-all ${
+                isDark
+                  ? 'bg-neutral-900/80 border-white/[0.16] text-white'
+                  : 'bg-white/85 border-black/[0.1] text-[#111111]'
+              }`}
+            >
+              {segmentSavedToast && !selectedSegmentText ? (
+                <div className="flex items-center justify-between w-full gap-2 px-1 text-[11px]">
+                  <div className="flex items-center gap-1.5 font-medium">
+                    <Check className="w-3 h-3 text-emerald-500" />
+                    <span>Saved to {selectedCollectionName}</span>
+                  </div>
+                  {onOpenKnowledgeVault && (
+                    <button
+                      type="button"
+                      onClick={onOpenKnowledgeVault}
+                      className={`px-2 py-0.5 rounded-full text-[10.5px] font-medium transition-colors cursor-pointer ${
+                        isDark
+                          ? 'bg-white/10 hover:bg-white/15 text-white'
+                          : 'bg-black/5 hover:bg-black/10 text-black'
+                      }`}
+                    >
+                      Vault
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <>
+                  <div className="min-w-0 flex-1 pl-1 text-[11px] truncate opacity-80">
+                    “{selectedSegmentText}”
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handleSaveSegmentToVault(selectedSegmentText)}
+                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors cursor-pointer ${
+                        isDark
+                          ? 'bg-white text-black hover:bg-neutral-200'
+                          : 'bg-black text-white hover:bg-neutral-800'
+                      }`}
+                    >
+                      <span>Save</span>
+                    </button>
+                    {onAskZeno && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const snippet = selectedSegmentText;
+                          setSelectedSegmentText('');
+                          onAskZeno(`Explain this further: "${snippet.slice(0, 300)}"`);
+                        }}
+                        className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors cursor-pointer ${
+                          isDark
+                            ? 'bg-white/[0.08] hover:bg-white/[0.14] text-white/90'
+                            : 'bg-black/[0.05] hover:bg-black/[0.1] text-black/85'
+                        }`}
+                      >
+                        Ask
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedSegmentText('');
+                        try {
+                          window.getSelection()?.removeAllRanges();
+                        } catch {}
+                      }}
+                      className={`p-1 rounded-full transition-colors cursor-pointer ${
+                        isDark ? 'text-white/50 hover:text-white' : 'text-black/45 hover:text-black'
+                      }`}
+                      title="Dismiss"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Clean Compact Segment Highlighter with Custom Popover Dropdown (No Native Select) */}
+          {showSegmentPicker && !message.isStreaming && highlightableSegments.length > 0 && (
+            <div
+              className={`mb-2.5 p-2 rounded-2xl border backdrop-blur-2xl transition-all ${
+                isDark
+                  ? 'bg-neutral-900/55 border-white/[0.12] text-white'
+                  : 'bg-white/75 border-black/[0.08] text-[#111111]'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2 mb-1.5 px-0.5">
+                {/* Custom Model-Picker-Style Collection Dropdown */}
+                <div className="relative" ref={collectionDropdownRef}>
+                  <button
+                    type="button"
+                    onClick={() => setIsCollectionMenuOpen((prev) => !prev)}
+                    className={`flex items-center gap-1 px-2.5 py-1 rounded-full border backdrop-blur-2xl backdrop-saturate-150 transition-all cursor-pointer font-medium text-[11px] select-none ${
+                      isDark
+                        ? 'bg-neutral-900/75 hover:bg-neutral-800/80 border-white/[0.16] text-white'
+                        : 'bg-white/85 hover:bg-white border-black/[0.1] text-black shadow-2xs'
+                    }`}
+                  >
+                    <span className="truncate max-w-[150px]">{selectedCollectionName}</span>
+                    <ChevronDown
+                      className={`w-3 h-3 shrink-0 transition-transform duration-150 opacity-60 ${
+                        isCollectionMenuOpen ? 'rotate-180' : ''
+                      }`}
+                    />
+                  </button>
+
+                  {isCollectionMenuOpen && (
+                    <div
+                      className={`absolute top-full left-0 mt-1.5 w-48 rounded-xl border p-1 z-50 text-[11px] backdrop-blur-2xl backdrop-saturate-150 shadow-2xl animate-in fade-in zoom-in-95 duration-150 ${
+                        isDark
+                          ? 'bg-neutral-900/95 border-white/[0.16] text-white shadow-[0_16px_48px_rgba(0,0,0,0.85)]'
+                          : 'bg-white/95 border-black/[0.1] text-[#0d0d0d] shadow-[0_16px_48px_rgba(0,0,0,0.16)]'
+                      }`}
+                    >
+                      {vaultCollections.map((col) => {
+                        const isSelected = col.id === selectedCollectionId;
+                        return (
+                          <button
+                            key={col.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedCollectionId(col.id);
+                              setIsCollectionMenuOpen(false);
+                            }}
+                            className={`w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg text-left transition-colors cursor-pointer ${
+                              isSelected
+                                ? isDark
+                                  ? 'bg-white/10 text-white font-medium'
+                                  : 'bg-black/5 text-black font-medium'
+                                : isDark
+                                ? 'hover:bg-white/[0.05] text-white/75'
+                                : 'hover:bg-black/[0.04] text-black/75'
+                            }`}
+                          >
+                            <span className="truncate">{col.name}</span>
+                            {isSelected && <Check className="w-3 h-3 shrink-0" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-1">
+                  {onOpenKnowledgeVault && savedMessageHighlights.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={onOpenKnowledgeVault}
+                      className={`px-2.5 py-1 rounded-full text-[10.5px] font-medium transition-colors cursor-pointer ${
+                        isDark
+                          ? 'bg-white/[0.07] hover:bg-white/[0.12] text-white/85'
+                          : 'bg-black/[0.05] hover:bg-black/[0.09] text-black/80'
+                      }`}
+                    >
+                      Vault ({savedMessageHighlights.length})
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowSegmentPicker(false);
+                      setIsCollectionMenuOpen(false);
+                    }}
+                    className={`p-1 rounded-full transition-colors cursor-pointer ${
+                      isDark ? 'text-white/50 hover:text-white' : 'text-black/45 hover:text-black'
+                    }`}
+                    title="Close"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-1 max-h-52 overflow-y-auto pr-0.5 scrollbar-none">
+                {highlightableSegments.map((seg, idx) => {
+                  const isSaved = savedMessageHighlights.some(
+                    (h) => h.content.trim().toLowerCase() === seg.toLowerCase()
+                  );
+                  return (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => handleToggleParagraphHighlight(seg)}
+                      className={`w-full text-left px-2.5 py-1.5 rounded-xl border text-[11.5px] leading-snug transition-all flex items-center justify-between gap-2 cursor-pointer ${
+                        isSaved
+                          ? isDark
+                            ? 'bg-white/[0.1] border-white/[0.22] text-white'
+                            : 'bg-black/[0.07] border-black/[0.18] text-black'
+                          : isDark
+                          ? 'bg-white/[0.03] hover:bg-white/[0.06] border-white/[0.06] text-white/80'
+                          : 'bg-black/[0.02] hover:bg-black/[0.05] border-black/[0.05] text-black/80'
+                      }`}
+                    >
+                      <span className="line-clamp-2 flex-1">{seg}</span>
+                      <span
+                        className={`shrink-0 px-2 py-0.5 rounded-full text-[10px] font-medium ${
+                          isSaved
+                            ? isDark
+                              ? 'bg-white text-black'
+                              : 'bg-black text-white'
+                            : isDark
+                            ? 'bg-white/[0.08] text-white/70'
+                            : 'bg-black/[0.06] text-black/70'
+                        }`}
+                      >
+                        {isSaved ? 'Saved' : '+ Save'}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <div
+            ref={messageContentRef}
+            onMouseUp={handleCaptureTextSelection}
+            onTouchEnd={() => setTimeout(handleCaptureTextSelection, 60)}
+            onClick={() => setShowActionsOnTap((prev) => !prev)}
+            className="prose-grok max-w-none text-[15px] leading-relaxed my-0"
+          >
               <StreamingText
                 isStreaming={message.isStreaming}
                 durationSec={message.timing?.totalSec}
@@ -1048,6 +1450,30 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                       );
                     }
 
+                    // @kobra/weather codeblock handler
+                    if (childClassName.includes('language-weather')) {
+                      return (
+                        <WeatherCard
+                          locationQuery={childContent.split('\n')[0]?.trim() || 'New York'}
+                          isDark={isDark}
+                        />
+                      );
+                    }
+
+                    // @kobra/image-generation codeblock handler
+                    if (
+                      childClassName.includes('language-image-gen') ||
+                      childClassName.includes('language-image-generation')
+                    ) {
+                      return (
+                        <ImageGenerationCard
+                          prompt={childContent.split('\n')[0]?.trim() || 'Minimalist architectural space'}
+                          isDark={isDark}
+                          fallbackImages={message.images}
+                        />
+                      );
+                    }
+
                     // Render Mermaid diagrams using Pele engine
                     if (
                       childClassName.includes('language-mermaid') ||
@@ -1147,6 +1573,51 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
               </ReactMarkdown>
             </StreamingText>
           </div>
+
+          {/* @kobra/product-cards: Intelligently triggered on product/buying/comparison queries */}
+          {!message.isStreaming &&
+            cleanedContent.length > 120 &&
+            (() => {
+              const detectedProducts = extractProductsFromContext(
+                message.searchQueries?.[0] || threadTitle || '',
+                cleanedContent,
+                (message.sources || []).map((s) => ({
+                  title: s.title,
+                  url: s.url,
+                  domain: s.domain,
+                }))
+              );
+              if (detectedProducts.length === 0) return null;
+              return (
+                <ProductCards
+                  products={detectedProducts}
+                  isDark={isDark}
+                  onAskProduct={onAskZeno}
+                />
+              );
+            })()}
+
+          {/* @kobra/agent-map: Intelligently triggered on spatial/location/itinerary or multi-agent workflow queries */}
+          {!message.isStreaming &&
+            cleanedContent.length > 120 &&
+            (() => {
+              const mapData = extractAgentMapFromContext(
+                message.searchQueries?.[0] || threadTitle || '',
+                cleanedContent
+              );
+              if (!mapData) return null;
+              return (
+                <AgentMap
+                  title={mapData.title}
+                  subtitle={mapData.subtitle}
+                  mode={mapData.mode}
+                  nodes={mapData.nodes}
+                  isDark={isDark}
+                  onSelectNodePrompt={onAskZeno}
+                />
+              );
+            })()}
+
         {/* Interactive Multi-Image Generative UI Gallery */}
           {message.images && message.images.length > 0 && (
             <div className={`mt-4 pt-3 border-t ${isDark ? 'border-[#1f1f1f]' : 'border-[#e5e5e5]'}`}>
@@ -1828,9 +2299,56 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
 
 
 
-          {/* Assistant Action Bar & Timing Tooltip on Hover */}
+          {/* Saved Knowledge Vault Highlights Strip for this AI Response */}
+          {savedMessageHighlights.length > 0 && !message.isStreaming && (
+            <div className="mt-2 flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-0.5">
+              {onOpenKnowledgeVault && (
+                <button
+                  type="button"
+                  onClick={onOpenKnowledgeVault}
+                  className={`px-2.5 py-1 rounded-full text-[10.5px] font-medium shrink-0 transition-colors cursor-pointer ${
+                    isDark
+                      ? 'bg-white/[0.08] hover:bg-white/[0.14] text-white/90'
+                      : 'bg-black/[0.06] hover:bg-black/[0.1] text-black/85'
+                  }`}
+                >
+                  Vault ({savedMessageHighlights.length})
+                </button>
+              )}
+              {savedMessageHighlights.map((hl) => (
+                <div
+                  key={hl.id}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10.5px] max-w-[240px] shrink-0 ${
+                    isDark
+                      ? 'bg-white/[0.04] border-white/[0.1] text-white/80'
+                      : 'bg-black/[0.03] border-black/[0.08] text-black/80'
+                  }`}
+                >
+                  <span className="truncate" title={hl.content}>
+                    {hl.content}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => KnowledgeVaultStore.deleteItem(hl.id)}
+                    className="opacity-50 hover:opacity-100 cursor-pointer shrink-0"
+                    title="Remove highlight"
+                  >
+                    <X className="w-2.5 h-2.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Assistant Action Bar & Timing Tooltip (Hidden until hover or tap) */}
           {!message.isStreaming && (
-            <div className="mt-3 flex items-center justify-between pt-1">
+            <div
+              className={`items-center justify-between transition-opacity duration-150 ${
+                showActionsOnTap || showTtsPopup || copied || savedToVault || showSegmentPicker || segmentSavedToast
+                  ? 'mt-1 flex opacity-100'
+                  : 'hidden group-hover/msg:mt-1 group-hover/msg:flex group-hover/msg:opacity-100'
+              }`}
+            >
               <div className={`flex items-center gap-1.5 ${isDark ? 'text-[#6b6b6b]' : 'text-[#9ca3af]'}`}>
                 {/* On-demand Read Aloud Icon + Popup */}
                 <button
@@ -1874,36 +2392,6 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                   </button>
                 )}
                 <button
-                  onClick={() => setReaction(reaction === 'good' ? null : 'good')}
-                  className={`p-1 rounded transition-colors cursor-pointer ${
-                    reaction === 'good'
-                      ? isDark
-                        ? 'text-white'
-                        : 'text-[#0d0d0d]'
-                      : isDark
-                      ? 'hover:text-white'
-                      : 'hover:text-[#0d0d0d]'
-                  }`}
-                  title="Good response"
-                >
-                  <ThumbsUp className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  onClick={() => setReaction(reaction === 'bad' ? null : 'bad')}
-                  className={`p-1 rounded transition-colors cursor-pointer ${
-                    reaction === 'bad'
-                      ? isDark
-                        ? 'text-white'
-                        : 'text-[#0d0d0d]'
-                      : isDark
-                      ? 'hover:text-white'
-                      : 'hover:text-[#0d0d0d]'
-                  }`}
-                  title="Bad response"
-                >
-                  <ThumbsDown className="w-3.5 h-3.5" />
-                </button>
-                <button
                   type="button"
                   onClick={handleTogglePin}
                   className={`p-1 rounded transition-colors cursor-pointer ${
@@ -1921,6 +2409,22 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
 
                 <button
                   type="button"
+                  onClick={() => setShowSegmentPicker((prev) => !prev)}
+                  className={`p-1 rounded transition-colors cursor-pointer ${
+                    showSegmentPicker || savedMessageHighlights.length > 0
+                      ? 'text-amber-400'
+                      : isDark
+                      ? 'hover:text-white'
+                      : 'hover:text-[#0d0d0d]'
+                  }`}
+                  title="Highlight & save specific segments to Knowledge Vault"
+                  aria-label="Highlight & save specific segments to Knowledge Vault"
+                >
+                  <Highlighter className="w-3.5 h-3.5" />
+                </button>
+
+                <button
+                  type="button"
                   onClick={handleSaveToKnowledgeVault}
                   className={`p-1 rounded transition-colors cursor-pointer ${
                     savedToVault
@@ -1929,38 +2433,24 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                       ? 'hover:text-white'
                       : 'hover:text-[#0d0d0d]'
                   }`}
-                  title={savedToVault ? 'Saved to Knowledge Vault' : 'Save to Knowledge Vault'}
+                  title={savedToVault ? 'Saved to Knowledge Vault' : 'Save full response to Knowledge Vault'}
                   aria-label="Save to Knowledge Vault"
                 >
                   <Bookmark className={`w-3.5 h-3.5 ${savedToVault ? 'fill-current' : ''}`} />
                 </button>
 
                 {onOpenShareStudio && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => onOpenShareStudio(message, 'quote')}
-                      className={`p-1 rounded transition-colors cursor-pointer ${
-                        isDark ? 'hover:text-white' : 'hover:text-[#0d0d0d]'
-                      }`}
-                      title="Create Zeno Share Card or Export"
-                      aria-label="Create Zeno Share Card"
-                    >
-                      <Share2 className="w-3.5 h-3.5" />
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => onOpenShareStudio(message, 'publish')}
-                      className={`p-1 rounded transition-colors cursor-pointer ${
-                        isDark ? 'hover:text-white' : 'hover:text-[#0d0d0d]'
-                      }`}
-                      title="Publish as a Public Zeno Page"
-                      aria-label="Publish as a Public Zeno Page"
-                    >
-                      <Globe className="w-3.5 h-3.5" />
-                    </button>
-                  </>
+                  <button
+                    type="button"
+                    onClick={() => onOpenShareStudio(message, 'quote')}
+                    className={`p-1 rounded transition-colors cursor-pointer ${
+                      isDark ? 'hover:text-white' : 'hover:text-[#0d0d0d]'
+                    }`}
+                    title="Create Zeno Share Card or Export"
+                    aria-label="Create Zeno Share Card"
+                  >
+                    <Share2 className="w-3.5 h-3.5" />
+                  </button>
                 )}
               </div>
 

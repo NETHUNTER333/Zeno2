@@ -116,7 +116,25 @@ html.light ::-webkit-scrollbar-thumb:hover {
 
 /* Markdown typography styling */
 .prose-grok {
-  line-height: 1.7;
+  line-height: 1.65;
+  font-size: 0.9375rem;
+  letter-spacing: -0.008em;
+  word-break: break-word;
+}
+
+@media (min-width: 640px) {
+  .prose-grok {
+    font-size: 0.96875rem;
+    line-height: 1.68;
+  }
+}
+
+.prose-grok > *:first-child {
+  margin-top: 0 !important;
+}
+
+.prose-grok > *:last-child {
+  margin-bottom: 0 !important;
 }
 
 html.dark .prose-grok {
@@ -128,7 +146,7 @@ html.light .prose-grok {
 }
 
 .prose-grok p {
-  margin-bottom: 0.85rem;
+  margin-bottom: 0.7rem;
 }
 
 .prose-grok p:last-child {
@@ -136,10 +154,18 @@ html.light .prose-grok {
 }
 
 .prose-grok h1, .prose-grok h2, .prose-grok h3, .prose-grok h4 {
-  font-weight: 700;
-  margin-top: 1.4rem;
-  margin-bottom: 0.5rem;
+  font-weight: 600;
+  margin-top: 1.15rem;
+  margin-bottom: 0.45rem;
+  line-height: 1.32;
   letter-spacing: -0.015em;
+}
+
+.prose-grok h1:first-child,
+.prose-grok h2:first-child,
+.prose-grok h3:first-child,
+.prose-grok h4:first-child {
+  margin-top: 0;
 }
 
 html.dark .prose-grok h1, html.dark .prose-grok h2, html.dark .prose-grok h3, html.dark .prose-grok h4 {
@@ -150,13 +176,13 @@ html.light .prose-grok h1, html.light .prose-grok h2, html.light .prose-grok h3,
   color: #000000;
 }
 
-.prose-grok h1 { font-size: 1.35rem; }
-.prose-grok h2 { font-size: 1.2rem; }
-.prose-grok h3 { font-size: 1.05rem; }
+.prose-grok h1 { font-size: 1.3rem; }
+.prose-grok h2 { font-size: 1.125rem; }
+.prose-grok h3 { font-size: 1rem; }
 
 .prose-grok ul, .prose-grok ol {
-  margin-top: 0.4rem;
-  margin-bottom: 0.85rem;
+  margin-top: 0.35rem;
+  margin-bottom: 0.75rem;
   padding-left: 1.3rem;
 }
 
@@ -169,7 +195,12 @@ html.light .prose-grok h1, html.light .prose-grok h2, html.light .prose-grok h3,
 }
 
 .prose-grok li {
-  margin-bottom: 0.35rem;
+  margin-bottom: 0.25rem;
+  line-height: 1.6;
+}
+
+.prose-grok li:last-child {
+  margin-bottom: 0;
 }
 
 .prose-grok a:not(.citation-badge) {
@@ -250,30 +281,44 @@ html.light .prose-grok blockquote {
   width: 100%;
   border-collapse: collapse;
   margin: 1rem 0;
-  font-size: 0.875rem;
+  font-size: 0.84rem;
+  line-height: 1.5;
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .prose-grok th, .prose-grok td {
-  padding: 0.55rem 0.85rem;
+  padding: 0.65rem 0.95rem;
   text-align: left;
+  vertical-align: top;
+  word-break: normal;
+  overflow-wrap: normal;
+  min-width: 120px;
+}
+
+.prose-grok th {
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 html.dark .prose-grok th, html.dark .prose-grok td {
-  border: 1px solid #1f1f1f;
+  border: 1px solid #242428;
 }
 
 html.light .prose-grok th, html.light .prose-grok td {
-  border: 1px solid #e5e5e5;
+  border: 1px solid #e4e4e7;
 }
 
 html.dark .prose-grok th {
-  background-color: #111111;
+  background-color: #141417;
   color: #ffffff;
 }
 
 html.light .prose-grok th {
-  background-color: #f5f5f5;
-  color: #000000;
+  background-color: #f4f4f5;
+  color: #09090b;
 }
 
 @keyframes textShimmer {
@@ -313,27 +358,82 @@ body,
 }
 
 /* Ensure markdown tables, code blocks, and math formulas adapt and scroll within device screen width */
-.prose-grok {
-  overflow-wrap: anywhere;
-  word-break: break-word;
+.prose-grok,
+.prose-custom {
+  overflow-wrap: break-word;
+  word-break: normal;
   max-width: 100%;
+  min-width: 0;
 }
 
-.prose-grok pre {
+.prose-grok pre,
+.prose-custom pre {
   max-width: 100%;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
-.prose-grok table {
+.prose-grok hr,
+.prose-custom hr {
+  border: 0;
+  margin: 1.25rem 0;
+}
+
+html.dark .prose-grok hr,
+html.dark .prose-custom hr {
+  border-top: 1px solid #242428;
+}
+
+html.light .prose-grok hr,
+html.light .prose-custom hr {
+  border-top: 1px solid #e4e4e7;
+}
+
+.prose-grok img,
+.prose-custom img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.75rem;
+  margin: 0.85rem 0;
   display: block;
-  max-width: 100%;
-  overflow-x: auto;
+}
+
+.katex {
+  font-size: 1.02em;
+  line-height: 1.45;
+  color: inherit;
 }
 
 .katex-display {
   max-width: 100%;
   overflow-x: auto;
   overflow-y: hidden;
+  padding: 0.55rem 0.75rem;
+  margin: 0.75rem 0;
+  border-radius: 0.75rem;
+  -webkit-overflow-scrolling: touch;
+}
+
+html.dark .katex-display {
+  background-color: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+html.light .katex-display {
+  background-color: rgba(0, 0, 0, 0.025);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.katex-display > .katex {
+  white-space: nowrap;
+}
+
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
 }
 
 /* Prism.js Syntax Highlighting Token Palettes (Dark & Light Adaptive) */
@@ -481,4 +581,30 @@ body,
 .token.italic {
   font-style: italic;
 }
+
+@keyframes kokonut-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.animate-kokonut-shimmer {
+  background-size: 200% 100%;
+  animation: kokonut-shimmer 2.4s linear infinite;
+}
+
+@keyframes affect-pixel-twinkle {
+  0%, 100% {
+    opacity: 0.25;
+    transform: scale(0.92);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 

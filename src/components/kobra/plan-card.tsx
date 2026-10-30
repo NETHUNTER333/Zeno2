@@ -1,15 +1,4 @@
 import React, { useState } from 'react';
-import {
-  CheckCircle2,
-  Circle,
-  ListTodo,
-  ChevronDown,
-  ChevronUp,
-  Copy,
-  Check,
-  BarChart2,
-  Vote
-} from 'lucide-react';
 
 export interface PlanTask {
   id: string;
@@ -38,10 +27,9 @@ export const PlanCard: React.FC<PlanCardProps> = ({
   onVote,
 }) => {
   const isPoll = type === 'poll';
-  const defaultBadge = isPoll ? 'Live Poll' : 'Action Plan';
+  const defaultBadge = isPoll ? 'Poll' : 'Todo';
   const displayBadge = badge || defaultBadge;
 
-  // Initialize tasks with votes if it's a poll
   const [tasks, setTasks] = useState<PlanTask[]>(() => {
     return initialTasks.map((t, idx) => ({
       ...t,
@@ -77,8 +65,6 @@ export const PlanCard: React.FC<PlanCardProps> = ({
   };
 
   const completedCount = tasks.filter((t) => t.done).length;
-  const progressPercent = tasks.length > 0 ? Math.round((completedCount / tasks.length) * 100) : 0;
-
   const totalVotes = tasks.reduce((sum, t) => sum + (t.votes || 0), 0);
 
   const copyPlan = () => {
@@ -99,111 +85,65 @@ export const PlanCard: React.FC<PlanCardProps> = ({
 
   return (
     <div
-      className={`my-3.5 rounded-2xl border p-3.5 transition-all duration-200 ${
+      data-slot="kobra-plan-card"
+      className={`my-2.5 rounded-3xl border px-3.5 py-2.5 transition-all duration-200 text-[11px] font-normal ${
         isDark
-          ? 'bg-[#121212]/80 border-[#262626] text-white shadow-sm'
-          : 'bg-[#fafafa] border-[#e2e2e2] text-black shadow-xs'
+          ? 'bg-[#141418] border-white/[0.1] text-white/90 shadow-xs'
+          : 'bg-white border-black/[0.08] text-[#18181b] shadow-xs'
       }`}
     >
-      {/* Header bar */}
-      <div className="flex items-start justify-between gap-3 mb-2.5">
-        <div className="flex items-start gap-2 min-w-0">
-          <div
-            className={`p-1.5 rounded-xl shrink-0 mt-0.5 ${
-              isPoll
-                ? isDark
-                  ? 'bg-purple-500/15 text-purple-400'
-                  : 'bg-purple-500/10 text-purple-600'
-                : isDark
-                ? 'bg-emerald-500/15 text-emerald-400'
-                : 'bg-emerald-500/10 text-emerald-600'
+      {/* Compact Pill Header: No icons, no divider lines, no heavy bold text */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <span className="text-xs font-normal truncate">{title}</span>
+          <span
+            className={`px-2 py-0.5 rounded-full text-[10px] font-normal shrink-0 border ${
+              isDark
+                ? 'bg-white/[0.04] border-white/10 text-white/65'
+                : 'bg-[#f4f4f5] border-black/[0.06] text-black/65'
             }`}
           >
-            {isPoll ? <Vote className="w-4 h-4" /> : <ListTodo className="w-4 h-4" />}
-          </div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="font-semibold text-xs sm:text-sm truncate">{title}</span>
-              <span
-                className={`px-2 py-0.5 rounded-full text-[10px] font-medium tracking-wide uppercase ${
-                  isPoll
-                    ? isDark
-                      ? 'bg-purple-500/15 text-purple-400'
-                      : 'bg-purple-500/10 text-purple-700'
-                    : isDark
-                    ? 'bg-emerald-500/15 text-emerald-400'
-                    : 'bg-emerald-500/10 text-emerald-700'
-                }`}
-              >
-                {displayBadge}
-              </span>
-            </div>
-            {description && (
-              <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-2">
-                {description}
-              </p>
-            )}
-          </div>
+            {isPoll
+              ? `${displayBadge} · ${totalVotes} votes`
+              : `${completedCount}/${tasks.length} done`}
+          </span>
         </div>
 
         <div className="flex items-center gap-1 shrink-0">
           <button
             type="button"
             onClick={copyPlan}
-            className={`p-1.5 rounded-lg text-xs transition-colors cursor-pointer ${
+            className={`px-2.5 py-0.5 rounded-full border text-[10px] font-normal transition-colors cursor-pointer ${
               isDark
-                ? 'hover:bg-white/10 text-white/60 hover:text-white'
-                : 'hover:bg-black/5 text-black/60 hover:text-black'
+                ? 'bg-white/[0.04] border-white/10 text-white/70 hover:bg-white/10'
+                : 'bg-[#f4f4f5] border-black/[0.06] text-black/70 hover:bg-neutral-200/70'
             }`}
-            title={isPoll ? 'Copy poll results' : 'Copy plan'}
           >
-            {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+            {copied ? 'Copied' : 'Copy'}
           </button>
           <button
             type="button"
             onClick={() => setIsExpanded(!isExpanded)}
-            className={`p-1.5 rounded-lg text-xs transition-colors cursor-pointer ${
+            className={`px-2.5 py-0.5 rounded-full border text-[10px] font-normal transition-colors cursor-pointer ${
               isDark
-                ? 'hover:bg-white/10 text-white/60 hover:text-white'
-                : 'hover:bg-black/5 text-black/60 hover:text-black'
+                ? 'bg-white/[0.04] border-white/10 text-white/70 hover:bg-white/10'
+                : 'bg-[#f4f4f5] border-black/[0.06] text-black/70 hover:bg-neutral-200/70'
             }`}
-            title={isExpanded ? 'Collapse' : 'Expand'}
           >
-            {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            {isExpanded ? 'Hide' : 'Show'}
           </button>
         </div>
       </div>
 
-      {/* Progress / Summary row */}
-      {!isPoll ? (
-        <div className="mb-3">
-          <div className="flex items-center justify-between text-[11px] text-muted-foreground mb-1">
-            <span>
-              {completedCount} of {tasks.length} completed
-            </span>
-            <span className="font-mono">{progressPercent}%</span>
-          </div>
-          <div
-            className={`h-1.5 w-full rounded-full overflow-hidden ${
-              isDark ? 'bg-white/10' : 'bg-black/10'
-            }`}
-          >
-            <div
-              className="h-full bg-emerald-500 transition-all duration-300 rounded-full"
-              style={{ width: `${progressPercent}%` }}
-            />
-          </div>
-        </div>
-      ) : (
-        <div className="mb-2 text-[11px] text-muted-foreground flex items-center justify-between">
-          <span>{totalVotes} total votes</span>
-          <span>{selectedPollOption ? 'Vote submitted' : 'Click an option to vote'}</span>
-        </div>
+      {description && isExpanded && (
+        <p className="text-[10.5px] opacity-60 mt-1 line-clamp-1 px-0.5">
+          {description}
+        </p>
       )}
 
-      {/* Items list */}
+      {/* Pill-shaped internals: No divider lines, no icons, small font */}
       {isExpanded && (
-        <div className="space-y-1.5 pt-1 border-t border-inherit/40">
+        <div className="mt-2 space-y-1">
           {isPoll
             ? tasks.map((opt) => {
                 const votes = opt.votes || 0;
@@ -215,77 +155,62 @@ export const PlanCard: React.FC<PlanCardProps> = ({
                     key={opt.id}
                     type="button"
                     onClick={() => handleVote(opt.id)}
-                    className={`relative w-full rounded-xl p-2.5 text-left text-xs transition-all cursor-pointer overflow-hidden border ${
+                    className={`relative w-full rounded-full px-3 py-1.5 text-left text-[11px] font-normal transition-all cursor-pointer overflow-hidden border ${
                       isSelected
                         ? isDark
-                          ? 'border-purple-500/50 bg-purple-500/10'
-                          : 'border-purple-500/50 bg-purple-500/5'
+                          ? 'border-white/30 bg-white/[0.08]'
+                          : 'border-black/25 bg-black/[0.06]'
                         : isDark
-                        ? 'border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.06]'
-                        : 'border-black/[0.08] bg-black/[0.02] hover:bg-black/[0.04]'
+                        ? 'border-white/[0.07] bg-white/[0.02] hover:bg-white/[0.05]'
+                        : 'border-black/[0.06] bg-[#fafafa] hover:bg-[#f4f4f5]'
                     }`}
                   >
-                    {/* Background Progress Fill */}
                     <div
-                      className={`absolute inset-y-0 left-0 transition-all duration-500 ${
-                        isSelected
-                          ? isDark
-                            ? 'bg-purple-500/20'
-                            : 'bg-purple-500/15'
-                          : isDark
-                          ? 'bg-white/[0.06]'
-                          : 'bg-black/[0.04]'
+                      className={`absolute inset-y-0 left-0 transition-all duration-500 rounded-full ${
+                        isDark ? 'bg-white/[0.07]' : 'bg-black/[0.05]'
                       }`}
                       style={{ width: `${pct}%` }}
                     />
 
-                    <div className="relative flex items-center justify-between gap-3 z-10">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <div
-                          className={`size-4 rounded-full border flex items-center justify-center shrink-0 ${
-                            isSelected
-                              ? 'border-purple-500 bg-purple-500 text-white'
-                              : isDark
-                              ? 'border-white/30'
-                              : 'border-black/30'
-                          }`}
-                        >
-                          {isSelected && <Check className="w-2.5 h-2.5" />}
-                        </div>
-                        <span className={`font-medium truncate ${isSelected ? 'text-purple-400 font-semibold' : ''}`}>
-                          {opt.text}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0 font-mono text-[11px] opacity-80">
-                        <span>{votes} votes</span>
-                        <span className="font-semibold">{pct}%</span>
-                      </div>
+                    <div className="relative flex items-center justify-between gap-2 z-10">
+                      <span className="truncate">{opt.text}</span>
+                      <span className="shrink-0 text-[10px] opacity-65">
+                        {votes} · {pct}%
+                      </span>
                     </div>
                   </button>
                 );
               })
-            : tasks.map((task) => (
+            : tasks.map((task, idx) => (
                 <button
                   key={task.id}
                   type="button"
                   onClick={() => toggleTask(task.id)}
-                  className={`w-full flex items-start gap-2.5 px-2.5 py-1.5 rounded-xl text-left text-xs transition-colors cursor-pointer group ${
-                    isDark
-                      ? 'hover:bg-white/[0.05] text-[#d4d4d4]'
-                      : 'hover:bg-black/[0.04] text-[#333333]'
+                  className={`w-full flex items-center justify-between gap-2 px-3 py-1.5 rounded-full border text-left text-[11px] font-normal transition-colors cursor-pointer ${
+                    task.done
+                      ? isDark
+                        ? 'bg-white/[0.015] border-white/[0.05] text-white/45'
+                        : 'bg-[#fafafa] border-black/[0.04] text-black/45'
+                      : isDark
+                      ? 'bg-white/[0.03] border-white/[0.08] text-white/85 hover:bg-white/[0.06]'
+                      : 'bg-[#fafafa] border-black/[0.07] text-[#18181b] hover:bg-[#f4f4f5]'
                   }`}
                 >
-                  {task.done ? (
-                    <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-                  ) : (
-                    <Circle className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5 group-hover:text-foreground" />
-                  )}
+                  <span className={`truncate ${task.done ? 'line-through' : ''}`}>
+                    {idx + 1}. {task.text}
+                  </span>
                   <span
-                    className={`leading-snug transition-all ${
-                      task.done ? 'line-through opacity-50' : 'opacity-90'
+                    className={`px-2 py-0.5 rounded-full text-[9.5px] shrink-0 ${
+                      task.done
+                        ? isDark
+                          ? 'bg-white text-black'
+                          : 'bg-[#18181b] text-white'
+                        : isDark
+                        ? 'bg-white/[0.05] text-white/55'
+                        : 'bg-black/[0.05] text-black/55'
                     }`}
                   >
-                    {task.text}
+                    {task.done ? 'Done' : 'Todo'}
                   </span>
                 </button>
               ))}
@@ -294,3 +219,5 @@ export const PlanCard: React.FC<PlanCardProps> = ({
     </div>
   );
 };
+
+export default PlanCard;

@@ -29,7 +29,13 @@ export type BounceSidebarItem =
       trailing?: ReactNode;
       onClick?: () => void;
     }
-  | { id?: string; label: string; heading: true; trailing?: ReactNode };
+  | {
+      id?: string;
+      label: string;
+      heading: true;
+      trailing?: ReactNode;
+      onClick?: () => void;
+    };
 
 export type BounceSidebarProps = Omit<ComponentProps<"ul">, "onChange"> & {
   items: BounceSidebarItem[];
@@ -72,7 +78,7 @@ export function BounceSidebar({
         Math.round((el.offsetTop + el.offsetHeight / 2 - size / 2) * dpr) / dpr;
       animate(dot.current, { x: 0, y: toY }, { duration: 0 });
       prevY.current = toY;
-      setReady(true);
+      setReady((prev) => (prev ? prev : true));
     };
     snap();
     const raf = requestAnimationFrame(snap);
@@ -93,7 +99,7 @@ export function BounceSidebar({
     if (prevY.current === null) {
       animate(dot.current, { x: 0, y: toY }, { duration: 0 });
       prevY.current = toY;
-      setReady(true);
+      setReady((prev) => (prev ? prev : true));
       return;
     }
     const fromY = prevY.current;
@@ -110,7 +116,7 @@ export function BounceSidebar({
       { x: 0, y: toY },
       { duration: 0.25, ease: "easeOut", path },
     );
-  }, [activeIndex, animate, dot, dotSize, items.length]);
+  }, [activeIndex, dotSize, items.length]);
 
   const select = (index: number, item: BounceSidebarItem) => {
     if (value === undefined) setInternalValue(index);
@@ -148,10 +154,25 @@ export function BounceSidebar({
               ref={(el) => {
                 itemRefs.current[index] = el;
               }}
-              role="presentation"
+              role={item.onClick ? "button" : "presentation"}
+              tabIndex={item.onClick ? 0 : undefined}
+              onClick={item.onClick}
+              onKeyDown={
+                item.onClick
+                  ? (e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        item.onClick?.();
+                      }
+                    }
+                  : undefined
+              }
               data-slot="bounce-sidebar-heading"
               style={{ color: dotColor }}
-              className="flex items-center justify-between px-1 pb-1 pt-5 text-[11px] font-semibold uppercase tracking-[0.14em] first:pt-1"
+              className={cn(
+                "flex items-center justify-between px-1.5 pb-1 pt-5 text-[11px] font-semibold uppercase tracking-[0.14em] first:pt-1 rounded-lg transition-colors",
+                item.onClick && "cursor-pointer hover:bg-foreground/[0.05] py-1.5 first:pt-1.5 select-none"
+              )}
             >
               <span>{label}</span>
               {item.trailing}

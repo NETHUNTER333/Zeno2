@@ -112,6 +112,24 @@
         "updatedAt": { "type": "number" }
       },
       "required": ["id", "ownerId", "authorName", "title", "summary", "content", "category", "visibility", "outputType", "createdAt", "updatedAt"]
+    },
+    "UserDailyQuota": {
+      "title": "User Daily Quota",
+      "description": "Server-verified daily usage counters and subscription tier for a user (monotonic non-resettable per UTC date)",
+      "type": "object",
+      "properties": {
+        "quotaDate": { "type": "string", "maxLength": 32, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "plan": { "type": "string", "enum": ["free", "spark", "fire"] },
+        "messagesUsed": { "type": "number" },
+        "filesUploaded": { "type": "number" },
+        "searchesUsed": { "type": "number" },
+        "deepResearchUsed": { "type": "number" },
+        "pdfStudyUsed": { "type": "number" },
+        "tokensUsed": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["quotaDate", "userId", "plan", "messagesUsed", "filesUploaded", "searchesUsed", "deepResearchUsed", "pdfStudyUsed", "tokensUsed", "updatedAt"]
     }
   },
   "firestore": {
@@ -134,6 +152,10 @@
     "/users/{userId}/vault_items/{itemId}": {
       "schema": { "$ref": "#/entities/KnowledgeVaultItem" },
       "description": "Stores private personal knowledge vault items for a specific user"
+    },
+    "/users/{userId}/quotas/{quotaDate}": {
+      "schema": { "$ref": "#/entities/UserDailyQuota" },
+      "description": "Stores non-resettable daily quota consumption and active plan tier per user per UTC day"
     },
     "/shared_threads/{shareId}": {
       "schema": { "$ref": "#/entities/SharedThreadSnapshot" },

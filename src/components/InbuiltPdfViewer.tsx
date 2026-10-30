@@ -24,6 +24,7 @@ import {
   RotateCcw,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Download,
   Shuffle,
   CheckCircle2,
@@ -37,6 +38,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
+import { MathMarkdown } from './MathMarkdown';
 import { speakTextWithSmallestAi, stopSmallestSpeech } from '../lib/smallestAi';
 import { getAuthHeaders } from '../lib/firebase';
 import { ArxivPaper } from '../types';
@@ -188,11 +190,24 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
   // Selection pop-up state
   const [selectionMenu, setSelectionMenu] = useState<TextSelectionMenu | null>(null);
   const [copiedSuccess, setCopiedSuccess] = useState<boolean>(false);
+  const [showFeatureDropdown, setShowFeatureDropdown] = useState<boolean>(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const featureDropdownRef = useRef<HTMLDivElement>(null);
   const fileUploadInputRef = useRef<HTMLInputElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const studyRequestSeqRef = useRef<number>(0);
+
+  useEffect(() => {
+    if (!showFeatureDropdown) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (featureDropdownRef.current && !featureDropdownRef.current.contains(e.target as Node)) {
+        setShowFeatureDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showFeatureDropdown]);
 
   // Synthesize study bundle (Quiz, Flashcards, Summary, Concepts, Cheatsheet) from document text
   const generateStudyBundleForDoc = async (
@@ -816,209 +831,237 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
           </div>
         )}
 
-        {/* Top Full-Page Studio Header Bar */}
+        {/* Compact Single-Row Top Header Bar */}
         <div
-          className={`px-3 sm:px-6 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 border-b flex flex-wrap items-center justify-between gap-2.5 shrink-0 ${
-            isDark ? 'bg-[#101218] border-white/[0.08]' : 'bg-[#f8f9fa] border-black/[0.08]'
+          className={`px-3 sm:px-5 pt-[max(0.5rem,env(safe-area-inset-top))] pb-2.5 border-b flex items-center justify-between gap-2 shrink-0 ${
+            isDark ? 'bg-[#0b0c10] border-white/[0.08]' : 'bg-white border-black/[0.08]'
           }`}
         >
-          {/* Left: Back to Chat + Document Title & Metadata */}
-          <div className="flex items-center gap-2.5 min-w-0">
+          {/* Left: Back Button + Truncated Title */}
+          <div className="flex items-center gap-2 min-w-0 flex-1">
             <button
               type="button"
               onClick={onClose}
-              className={`inline-flex items-center gap-1 px-2.5 py-2 rounded-xl border text-xs font-semibold transition-colors cursor-pointer shrink-0 ${
+              className={`size-8 rounded-full border flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
                 isDark
-                  ? 'bg-white/[0.05] border-white/[0.12] hover:bg-white/[0.1] text-white'
-                  : 'bg-white border-black/[0.1] hover:bg-black/[0.04] text-[#0d0d0d]'
+                  ? 'bg-white/[0.04] border-white/[0.12] hover:bg-white/[0.09] text-white'
+                  : 'bg-black/[0.03] border-black/[0.1] hover:bg-black/[0.06] text-[#0d0d0d]'
               }`}
               title="Back to Chat"
             >
               <ChevronLeft className="w-4 h-4" />
-              <span className="hidden xs:inline">Back</span>
             </button>
 
-            <div
-              className={`size-9 sm:size-10 rounded-2xl border flex items-center justify-center shrink-0 ${
-                isDark
-                  ? 'bg-red-500/15 border-red-500/30 text-red-400'
-                  : 'bg-red-50 border-red-200 text-red-600'
-              }`}
+            <h2
+              className="font-semibold text-[13px] sm:text-sm truncate tracking-tight"
+              title={activePdfName}
             >
-              <FileText className="w-4 h-4 sm:w-5 sm:h-5" />
-            </div>
+              {activePdfName}
+            </h2>
 
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <h2
-                  className="font-semibold text-sm sm:text-base truncate max-w-[200px] sm:max-w-md"
-                  title={activePdfName}
-                >
-                  {activePdfName}
-                </h2>
-                {(isExtractingPdf || isSynthesizingBundle) && (
-                  <span className="inline-flex items-center gap-1 text-[11px] font-mono text-sky-400">
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                    <span>{isExtractingPdf ? 'Reading PDF...' : 'Synthesizing...'}</span>
-                  </span>
-                )}
-              </div>
-
-              <div
-                className={`flex flex-wrap items-center gap-1.5 text-[11px] font-mono tabular-nums ${
-                  isDark ? 'text-neutral-400' : 'text-neutral-500'
-                }`}
-              >
-                <span>PDF Study & Quiz Studio</span>
-                <span aria-hidden="true">·</span>
-                <span>{studyBundle?.pageCount || activePageCount} pages</span>
-                {studyBundle?.wordCount ? (
-                  <>
-                    <span aria-hidden="true">·</span>
-                    <span>{studyBundle.wordCount.toLocaleString()} words</span>
-                    <span aria-hidden="true">·</span>
-                    <span>{studyBundle.readTimeMin} min read</span>
-                  </>
-                ) : null}
-              </div>
-            </div>
+            {(isExtractingPdf || isSynthesizingBundle) && (
+              <Loader2 className="w-3.5 h-3.5 animate-spin opacity-60 shrink-0" />
+            )}
           </div>
 
-          {/* Right Controls: Upload PDF, Search ArXiv, Layout Switcher, Audio, Export, Close */}
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Upload New PDF Button */}
+          {/* Center / Right: Model-Selector-Style Feature Dropdown + Compact Actions */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {/* Feature Selector Dropdown (Matching Model Selector Style) */}
+            <div ref={featureDropdownRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setShowFeatureDropdown((prev) => !prev)}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[12px] font-medium tracking-tight transition-all cursor-pointer select-none whitespace-nowrap backdrop-blur-2xl ${
+                  isDark
+                    ? 'bg-neutral-900/75 hover:bg-neutral-800/85 border-white/[0.16] text-white shadow-[0_8px_24px_rgba(0,0,0,0.45)]'
+                    : 'bg-white/85 hover:bg-neutral-100 border-black/[0.1] text-[#0d0d0d] shadow-[0_4px_16px_rgba(0,0,0,0.06)]'
+                }`}
+              >
+                <span>
+                  {studioTab === 'quiz'
+                    ? `Quiz${allQuizItems.length ? ` (${allQuizItems.length})` : ''}`
+                    : studioTab === 'flashcards'
+                    ? `Flashcards${allFlashcards.length ? ` (${allFlashcards.length})` : ''}`
+                    : studioTab === 'summary'
+                    ? 'Summary'
+                    : studioTab === 'explanation'
+                    ? 'Concepts & Math'
+                    : studioTab === 'cheatsheet'
+                    ? 'Cheatsheet'
+                    : 'Ask PDF'}
+                </span>
+                <ChevronDown
+                  className={`w-3.5 h-3.5 opacity-60 transition-transform duration-150 ${
+                    showFeatureDropdown ? 'rotate-180' : ''
+                  }`}
+                />
+              </button>
+
+              {showFeatureDropdown && (
+                <div
+                  className={`absolute right-0 top-full mt-2 w-56 rounded-2xl border p-1.5 z-50 backdrop-blur-2xl shadow-2xl animate-in fade-in zoom-in-95 duration-150 ${
+                    isDark
+                      ? 'bg-[#141418]/95 border-white/[0.14] text-white shadow-black/80'
+                      : 'bg-white/95 border-black/[0.1] text-[#0d0d0d] shadow-black/15'
+                  }`}
+                >
+                  <div className="space-y-0.5">
+                    {(
+                      [
+                        {
+                          id: 'quiz',
+                          label: 'Quiz',
+                          meta: allQuizItems.length ? `${allQuizItems.length} questions` : '',
+                        },
+                        {
+                          id: 'flashcards',
+                          label: 'Flashcards',
+                          meta: allFlashcards.length ? `${allFlashcards.length} cards` : '',
+                        },
+                        { id: 'summary', label: 'Summary', meta: 'Synthesis' },
+                        { id: 'explanation', label: 'Concepts & Math', meta: 'LaTeX' },
+                        { id: 'cheatsheet', label: 'Cheatsheet', meta: 'Formulas' },
+                        { id: 'chat', label: 'Ask PDF', meta: 'Q&A' },
+                      ] as const
+                    ).map((item) => {
+                      const active = studioTab === item.id;
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => {
+                            setStudioTab(item.id);
+                            setLayoutMode('studio');
+                            setShowFeatureDropdown(false);
+                          }}
+                          className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs transition-colors cursor-pointer ${
+                            active
+                              ? isDark
+                                ? 'bg-white text-black font-semibold'
+                                : 'bg-[#0d0d0d] text-white font-semibold'
+                              : isDark
+                              ? 'text-neutral-300 hover:bg-white/[0.07]'
+                              : 'text-neutral-700 hover:bg-black/[0.05]'
+                          }`}
+                        >
+                          <span>{item.label}</span>
+                          {item.meta && (
+                            <span
+                              className={`text-[10px] font-mono ${
+                                active ? 'opacity-80' : 'opacity-50'
+                              }`}
+                            >
+                              {item.meta}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Difficulty Picker inside Dropdown */}
+                  <div
+                    className={`mt-1.5 pt-1.5 border-t ${
+                      isDark ? 'border-white/[0.08]' : 'border-black/[0.08]'
+                    }`}
+                  >
+                    <div className="px-2 py-1 text-[10px] font-mono uppercase opacity-50">
+                      Difficulty
+                    </div>
+                    <div className="grid grid-cols-3 gap-1">
+                      {(['easy', 'medium', 'hard'] as const).map((lvl) => (
+                        <button
+                          key={lvl}
+                          type="button"
+                          onClick={() => {
+                            setDifficulty(lvl);
+                            generateStudyBundleForDoc(
+                              activePdfName,
+                              activeExtractedText,
+                              activePageCount,
+                              lvl
+                            );
+                            setShowFeatureDropdown(false);
+                          }}
+                          className={`py-1.5 rounded-lg text-[11px] capitalize transition-colors cursor-pointer ${
+                            difficulty === lvl
+                              ? isDark
+                                ? 'bg-white/15 text-white font-semibold'
+                                : 'bg-black/10 text-black font-semibold'
+                              : 'opacity-65 hover:opacity-100'
+                          }`}
+                        >
+                          {lvl}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* View Mode & Export inside Dropdown */}
+                  <div
+                    className={`mt-1.5 pt-1.5 border-t flex items-center justify-between gap-1 ${
+                      isDark ? 'border-white/[0.08]' : 'border-black/[0.08]'
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLayoutMode(layoutMode === 'document' ? 'studio' : 'document');
+                        setShowFeatureDropdown(false);
+                      }}
+                      className={`flex-1 py-1.5 px-2.5 rounded-lg text-[11px] font-medium text-center transition-colors cursor-pointer ${
+                        isDark ? 'hover:bg-white/[0.07]' : 'hover:bg-black/[0.05]'
+                      }`}
+                    >
+                      {layoutMode === 'document' ? 'Switch to Studio' : 'Open Reader'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleExportStudyPackMarkdown();
+                        setShowFeatureDropdown(false);
+                      }}
+                      className={`py-1.5 px-2.5 rounded-lg text-[11px] font-medium transition-colors cursor-pointer ${
+                        isDark ? 'hover:bg-white/[0.07]' : 'hover:bg-black/[0.05]'
+                      }`}
+                    >
+                      Export .md
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Compact Upload Pill */}
             <button
               type="button"
               onClick={() => fileUploadInputRef.current?.click()}
-              className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border text-xs font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+              className={`px-3 py-1.5 rounded-full text-[11px] font-semibold transition-all cursor-pointer whitespace-nowrap ${
                 isDark
-                  ? 'bg-white text-black border-white hover:bg-neutral-200 shadow-xs'
-                  : 'bg-[#0d0d0d] text-white border-black hover:bg-neutral-800 shadow-xs'
+                  ? 'bg-white text-black hover:bg-neutral-200'
+                  : 'bg-[#0d0d0d] text-white hover:bg-neutral-800'
               }`}
-              title="Upload any PDF or document from your device"
+              title="Upload PDF"
             >
-              <Upload className="w-3.5 h-3.5" />
-              <span>Upload PDF</span>
+              Upload
             </button>
 
-            {/* ArXiv Search Drawer Toggle */}
+            {/* Compact ArXiv Search Toggle */}
             <button
               type="button"
               onClick={() => setShowArxivSearchDrawer(!showArxivSearchDrawer)}
-              className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+              className={`px-2.5 py-1.5 rounded-full border text-[11px] font-medium transition-colors cursor-pointer whitespace-nowrap ${
                 showArxivSearchDrawer
                   ? isDark
                     ? 'bg-white/15 border-white/30 text-white'
                     : 'bg-black/10 border-black/30 text-black'
                   : isDark
                   ? 'bg-white/[0.04] border-white/[0.1] hover:bg-white/[0.08] text-neutral-300'
-                  : 'bg-white border-black/[0.1] hover:bg-black/[0.04] text-neutral-700'
+                  : 'bg-black/[0.03] border-black/[0.1] hover:bg-black/[0.06] text-neutral-700'
               }`}
+              title="Search ArXiv Papers"
             >
-              <Search className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Search ArXiv</span>
-            </button>
-
-            {/* Layout Mode Switcher (Studio | Split | PDF Reader) */}
-            <div
-              className={`flex items-center p-0.5 rounded-xl border text-xs font-medium ${
-                isDark ? 'bg-[#151821] border-white/[0.08]' : 'bg-neutral-100 border-black/[0.08]'
-              }`}
-            >
-              <button
-                type="button"
-                onClick={() => setLayoutMode('studio')}
-                className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
-                  layoutMode === 'studio'
-                    ? isDark
-                      ? 'bg-white text-black font-semibold'
-                      : 'bg-[#0d0d0d] text-white font-semibold'
-                    : 'opacity-70 hover:opacity-100'
-                }`}
-                title="Expanded Quiz & Flashcards Studio"
-              >
-                <Maximize2 className="w-3.5 h-3.5" />
-                <span>Studio</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setLayoutMode('split')}
-                className={`hidden lg:inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
-                  layoutMode === 'split'
-                    ? isDark
-                      ? 'bg-white text-black font-semibold'
-                      : 'bg-[#0d0d0d] text-white font-semibold'
-                    : 'opacity-70 hover:opacity-100'
-                }`}
-                title="Split PDF + Study Studio"
-              >
-                <Columns className="w-3.5 h-3.5" />
-                <span>Split</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setLayoutMode('document')}
-                className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
-                  layoutMode === 'document'
-                    ? isDark
-                      ? 'bg-white text-black font-semibold'
-                      : 'bg-[#0d0d0d] text-white font-semibold'
-                    : 'opacity-70 hover:opacity-100'
-                }`}
-                title="Full Document Reader"
-              >
-                <Minimize2 className="w-3.5 h-3.5" />
-                <span>Reader</span>
-              </button>
-            </div>
-
-            {/* Read Aloud TTS */}
-            <button
-              type="button"
-              onClick={handleToggleReadAloud}
-              className={`p-2 rounded-xl border transition-colors cursor-pointer ${
-                isPlayingTts
-                  ? 'bg-sky-600 border-sky-500 text-white'
-                  : isDark
-                  ? 'bg-white/[0.04] border-white/[0.1] hover:bg-white/[0.08] text-neutral-300'
-                  : 'bg-white border-black/[0.1] hover:bg-black/[0.04] text-neutral-700'
-              }`}
-              title="Read Summary or Analysis Aloud"
-            >
-              {isPlayingTts ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-            </button>
-
-            {/* Export Complete Study Pack (.md) */}
-            <button
-              type="button"
-              onClick={handleExportStudyPackMarkdown}
-              className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
-                isDark
-                  ? 'bg-white/[0.04] border-white/[0.1] hover:bg-white/[0.08] text-neutral-200'
-                  : 'bg-white border-black/[0.1] hover:bg-black/[0.04] text-neutral-800'
-              }`}
-              title="Download Study Guide, Flashcards & Quiz as Markdown"
-            >
-              {copiedStudyPack ? (
-                <Check className="w-3.5 h-3.5 text-emerald-400" />
-              ) : (
-                <Download className="w-3.5 h-3.5" />
-              )}
-              <span className="hidden sm:inline">Export Pack</span>
-            </button>
-
-            {/* Close Modal Button */}
-            <button
-              type="button"
-              onClick={onClose}
-              className={`p-2 rounded-xl border transition-colors cursor-pointer ${
-                isDark
-                  ? 'bg-white/[0.04] border-white/[0.12] hover:bg-red-500/20 hover:border-red-500/40 hover:text-red-400 text-neutral-300'
-                  : 'bg-white border-black/[0.1] hover:bg-red-50 hover:text-red-600 text-neutral-700'
-              }`}
-              title="Close Studio (Esc)"
-            >
-              <X className="w-4 h-4" />
+              ArXiv
             </button>
           </div>
         </div>
@@ -1026,11 +1069,11 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
         {/* Collapsible ArXiv Search Drawer */}
         {showArxivSearchDrawer && (
           <div
-            className={`px-6 py-4 border-b z-10 ${
-              isDark ? 'bg-[#12151f] border-white/[0.08]' : 'bg-slate-50 border-black/[0.08]'
+            className={`px-4 sm:px-6 py-3 border-b z-10 ${
+              isDark ? 'bg-[#101218] border-white/[0.08]' : 'bg-[#f8f9fa] border-black/[0.08]'
             }`}
           >
-            <div className="max-w-4xl mx-auto space-y-3">
+            <div className="max-w-3xl mx-auto space-y-2.5">
               <div className="flex items-center gap-2">
                 <input
                   type="text"
@@ -1039,33 +1082,32 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') handleSearchArxiv();
                   }}
-                  placeholder="Search ArXiv papers by title, author, topic, or ID (e.g. Attention Is All You Need, DeepSeek-R1)..."
-                  className={`flex-1 px-4 py-2.5 rounded-xl border text-xs outline-none ${
+                  placeholder="Search ArXiv papers by title, author, or ID..."
+                  className={`flex-1 px-3.5 py-2 rounded-full border text-xs outline-none ${
                     isDark
                       ? 'bg-[#0b0c10] border-white/[0.12] text-white placeholder-neutral-500'
-                      : 'bg-white border-slate-300 text-slate-900'
+                      : 'bg-white border-black/[0.12] text-[#0d0d0d] placeholder-neutral-400'
                   }`}
                 />
                 <button
                   type="button"
                   onClick={() => handleSearchArxiv()}
                   disabled={isSearchingArxiv || !arxivSearchQuery.trim()}
-                  className={`px-4 py-2.5 rounded-xl text-xs font-semibold cursor-pointer whitespace-nowrap shrink-0 ${
-                    isDark ? 'bg-white text-black hover:bg-neutral-200' : 'bg-slate-900 text-white'
+                  className={`px-3.5 py-2 rounded-full text-xs font-semibold cursor-pointer whitespace-nowrap shrink-0 ${
+                    isDark ? 'bg-white text-black' : 'bg-[#0d0d0d] text-white'
                   }`}
                 >
-                  {isSearchingArxiv ? 'Searching...' : 'Search ArXiv'}
+                  {isSearchingArxiv ? '...' : 'Search'}
                 </button>
               </div>
 
               {arxivResults.length === 0 && !isSearchingArxiv && (
-                <div className="flex flex-wrap items-center gap-2 text-xs">
-                  <span className="text-neutral-500">Quick papers:</span>
+                <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-0.5">
                   {[
                     'Attention Is All You Need',
-                    'FlashAttention Fast and Memory-Efficient Exact Attention',
-                    'Mamba Linear-Time Sequence Modeling',
-                    'LoRA Low-Rank Adaptation of Large Language Models',
+                    'FlashAttention',
+                    'Mamba Sequence Modeling',
+                    'LoRA Low-Rank Adaptation',
                   ].map((q) => (
                     <button
                       key={q}
@@ -1074,10 +1116,10 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
                         setArxivSearchQuery(q);
                         handleSearchArxiv(q);
                       }}
-                      className={`px-2.5 py-1 rounded-lg border text-xs cursor-pointer ${
+                      className={`px-2.5 py-1 rounded-full border text-[11px] whitespace-nowrap shrink-0 cursor-pointer ${
                         isDark
-                          ? 'bg-[#181b24] border-white/[0.1] hover:border-white/30 text-neutral-300'
-                          : 'bg-white border-slate-200 hover:border-slate-400 text-slate-700'
+                          ? 'bg-white/[0.04] border-white/[0.1] text-neutral-300 hover:text-white'
+                          : 'bg-white border-black/[0.08] text-neutral-700 hover:text-black'
                       }`}
                     >
                       {q}
@@ -1087,25 +1129,20 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
               )}
 
               {arxivResults.length > 0 && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-56 overflow-y-auto pt-1">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-52 overflow-y-auto pt-1">
                   {arxivResults.map((p) => (
                     <button
                       key={p.id}
                       type="button"
                       onClick={() => handleSelectArxivPaper(p)}
-                      className={`p-3.5 rounded-2xl border text-left transition-colors cursor-pointer ${
+                      className={`p-3 rounded-2xl border text-left transition-colors cursor-pointer ${
                         isDark
-                          ? 'bg-[#0b0c10] border-white/[0.1] hover:border-white/40'
-                          : 'bg-white border-slate-200 hover:border-slate-900'
+                          ? 'bg-[#0b0c10] border-white/[0.08] hover:border-white/30'
+                          : 'bg-white border-black/[0.08] hover:border-black/30'
                       }`}
                     >
-                      <div className="text-[10px] font-mono text-sky-400">
-                        arXiv:{p.id} · {p.categories.slice(0, 2).join(', ')}
-                      </div>
+                      <div className="text-[10px] font-mono opacity-55">arXiv:{p.id}</div>
                       <div className="text-xs font-semibold line-clamp-1 mt-0.5">{p.title}</div>
-                      <div className="text-[11px] text-neutral-500 line-clamp-2 mt-1">
-                        {p.summary}
-                      </div>
                     </button>
                   ))}
                 </div>
@@ -1116,105 +1153,60 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
 
         {/* Main Workspace Split Grid */}
         <div className="flex-1 min-h-0 overflow-hidden grid grid-cols-1 lg:grid-cols-12">
-          {/* LEFT PANE: PDF Viewer / Extracted Text Reader + Quick Dropzone */}
+          {/* LEFT PANE: PDF Viewer / Extracted Text Reader */}
           {layoutMode !== 'studio' && (
             <div
               className={`min-h-0 overflow-y-auto scrollbar-thin p-4 sm:p-5 flex flex-col gap-3 ${
-                layoutMode === 'split' ? 'lg:col-span-5 border-b lg:border-b-0 lg:border-r' : 'lg:col-span-12'
+                layoutMode === 'split'
+                  ? 'lg:col-span-5 border-b lg:border-b-0 lg:border-r'
+                  : 'lg:col-span-12'
               } ${
-                isDark ? 'border-white/[0.08] bg-[#090a0e]' : 'border-black/[0.08] bg-[#f3f4f6]'
+                isDark ? 'border-white/[0.08] bg-[#090a0e]' : 'border-black/[0.08] bg-[#f7f7f8]'
               }`}
             >
-              {/* Reader Sub-Toolbar */}
               <div className="flex items-center justify-between gap-2 shrink-0">
-                <div
-                  className={`inline-flex items-center p-0.5 rounded-xl border text-xs font-medium ${
-                    isDark ? 'bg-[#141720] border-white/[0.08]' : 'bg-white border-black/[0.08]'
-                  }`}
-                >
+                <div className="flex items-center gap-1.5">
                   <button
                     type="button"
                     onClick={() => setViewMode('pdf')}
-                    className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
+                    className={`px-3 py-1 rounded-full text-xs font-medium transition-all cursor-pointer ${
                       viewMode === 'pdf'
                         ? isDark
                           ? 'bg-white text-black font-semibold'
                           : 'bg-[#0d0d0d] text-white font-semibold'
-                        : 'opacity-70 hover:opacity-100'
+                        : 'opacity-65 hover:opacity-100'
                     }`}
                   >
-                    PDF Canvas
+                    PDF
                   </button>
                   <button
                     type="button"
                     onClick={() => setViewMode('reader')}
-                    className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
+                    className={`px-3 py-1 rounded-full text-xs font-medium transition-all cursor-pointer ${
                       viewMode === 'reader'
                         ? isDark
                           ? 'bg-white text-black font-semibold'
                           : 'bg-[#0d0d0d] text-white font-semibold'
-                        : 'opacity-70 hover:opacity-100'
+                        : 'opacity-65 hover:opacity-100'
                     }`}
                   >
-                    Extracted Text
+                    Text
                   </button>
                 </div>
 
-                <div className="flex items-center gap-1.5">
-                  {viewMode === 'reader' && (
-                    <div
-                      className={`inline-flex items-center gap-0.5 p-0.5 rounded-xl border ${
-                        isDark ? 'bg-[#141720] border-white/[0.08]' : 'bg-white border-black/[0.08]'
-                      }`}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => setReaderTheme('dark')}
-                        className="p-1.5 rounded-lg hover:bg-white/10 cursor-pointer"
-                        title="Dark Reader"
-                      >
-                        <Moon className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setReaderTheme('sepia')}
-                        className="p-1.5 rounded-lg hover:bg-white/10 cursor-pointer"
-                        title="Sepia Reader"
-                      >
-                        <BookOpen className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setReaderTheme('light')}
-                        className="p-1.5 rounded-lg hover:bg-white/10 cursor-pointer"
-                        title="Light Reader"
-                      >
-                        <Sun className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  )}
-
-                  {directPdfUrl && (
-                    <a
-                      href={directPdfUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={`p-1.5 rounded-xl border transition-colors ${
-                        isDark
-                          ? 'bg-[#141720] border-white/[0.08] hover:bg-white/10 text-neutral-300'
-                          : 'bg-white border-black/[0.08] hover:bg-black/5 text-neutral-700'
-                      }`}
-                      title="Open Original PDF in New Tab"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                    </a>
-                  )}
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setLayoutMode('studio')}
+                  className={`px-3 py-1 rounded-full border text-xs font-medium cursor-pointer ${
+                    isDark ? 'border-white/[0.12] text-neutral-300' : 'border-black/[0.12] text-neutral-700'
+                  }`}
+                >
+                  Back to Studio
+                </button>
               </div>
 
-              {/* PDF Viewer or Clean Text Layer */}
               {viewMode === 'pdf' && directPdfUrl ? (
-                <div className="flex-1 min-h-[380px] w-full rounded-2xl overflow-hidden border border-black/15 dark:border-white/15 shadow-xl bg-black">
+                <div className="flex-1 min-h-[380px] w-full rounded-2xl overflow-hidden border border-black/10 dark:border-white/10 bg-black">
                   <iframe
                     src={onlinePdfEmbedUrl}
                     title={activePdfName}
@@ -1223,90 +1215,72 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
                 </div>
               ) : (
                 <div
-                  className={`flex-1 w-full p-5 sm:p-6 rounded-2xl border shadow-md leading-relaxed whitespace-pre-wrap text-xs sm:text-sm overflow-y-auto ${getReaderSurfaceClass()}`}
+                  className={`flex-1 w-full p-5 rounded-2xl border leading-relaxed whitespace-pre-wrap text-xs sm:text-sm overflow-y-auto ${getReaderSurfaceClass()}`}
                 >
-                  <div className="flex items-center justify-between pb-3 mb-4 border-b border-current/10">
-                    <span className="font-semibold text-sm">{activePdfName}</span>
-                    <span className="text-[11px] font-mono opacity-60">
-                      Highlight any sentence for instant math/summary popup
-                    </span>
-                  </div>
                   {activeExtractedText ||
-                    'Upload a PDF document using the "Upload PDF" button above or drag-and-drop any PDF onto this studio.'}
+                    'Upload a PDF document using the "Upload" button above or drag-and-drop any PDF onto this studio.'}
                 </div>
               )}
             </div>
           )}
 
-          {/* RIGHT PANE: Interactive Quiz, Flashcards, Summary, Concepts, Cheatsheet & Ask PDF Studio */}
+          {/* RIGHT PANE: Study Studio */}
           {layoutMode !== 'document' && (
             <div
               className={`min-h-0 flex flex-col h-full overflow-hidden ${
                 layoutMode === 'split' ? 'lg:col-span-7' : 'lg:col-span-12'
               } ${isDark ? 'bg-[#0b0c10] text-white' : 'bg-white text-[#0d0d0d]'}`}
             >
-              {/* Segmented Studio Navigation Bar */}
+              {/* Single-Row Horizontally Scrollable Feature Pills (No Outer Wrapper Box, No Icons) */}
               <div
-                className={`px-4 sm:px-6 py-3 border-b flex flex-wrap items-center justify-between gap-2 shrink-0 ${
-                  isDark ? 'bg-[#101218] border-white/[0.08]' : 'bg-[#f8f9fa] border-black/[0.08]'
+                className={`px-3 sm:px-5 py-2 border-b flex items-center justify-between gap-2 overflow-x-auto scrollbar-none shrink-0 ${
+                  isDark ? 'bg-[#0b0c10] border-white/[0.07]' : 'bg-white border-black/[0.07]'
                 }`}
               >
-                <div
-                  className={`inline-flex flex-wrap items-center gap-1 p-1 rounded-2xl border ${
-                    isDark ? 'bg-[#161922] border-white/[0.08]' : 'bg-[#ededf0] border-black/[0.06]'
-                  }`}
-                >
+                <div className="flex items-center gap-1.5 whitespace-nowrap">
                   {(
                     [
                       {
                         id: 'quiz',
                         label: `Quiz${allQuizItems.length ? ` (${allQuizItems.length})` : ''}`,
-                        icon: HelpCircle,
                       },
                       {
                         id: 'flashcards',
                         label: `Flashcards${
                           allFlashcards.length ? ` (${allFlashcards.length})` : ''
                         }`,
-                        icon: Layers,
                       },
-                      { id: 'summary', label: 'Summary', icon: ListTree },
-                      { id: 'explanation', label: 'Concepts & Math', icon: Sigma },
-                      { id: 'cheatsheet', label: 'Cheatsheet & Notes', icon: ListChecks },
-                      { id: 'chat', label: 'Ask PDF', icon: MessageSquare },
+                      { id: 'summary', label: 'Summary' },
+                      { id: 'explanation', label: 'Concepts & Math' },
+                      { id: 'cheatsheet', label: 'Cheatsheet' },
+                      { id: 'chat', label: 'Ask PDF' },
                     ] as const
                   ).map((tab) => {
-                    const Icon = tab.icon;
                     const active = studioTab === tab.id;
                     return (
                       <button
                         key={tab.id}
                         type="button"
                         onClick={() => setStudioTab(tab.id)}
-                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                        className={`px-3 py-1 rounded-full text-xs font-medium transition-all cursor-pointer whitespace-nowrap shrink-0 border ${
                           active
                             ? isDark
-                              ? 'bg-white text-black font-semibold shadow-xs'
-                              : 'bg-[#0d0d0d] text-white font-semibold shadow-xs'
+                              ? 'bg-white text-black border-white font-semibold'
+                              : 'bg-[#0d0d0d] text-white border-[#0d0d0d] font-semibold'
                             : isDark
-                            ? 'text-neutral-400 hover:text-white'
-                            : 'text-neutral-600 hover:text-black'
+                            ? 'bg-white/[0.03] border-white/[0.08] text-neutral-400 hover:text-white'
+                            : 'bg-black/[0.025] border-black/[0.08] text-neutral-600 hover:text-black'
                         }`}
                       >
-                        <Icon className="w-3.5 h-3.5" />
-                        <span>{tab.label}</span>
+                        {tab.label}
                       </button>
                     );
                   })}
                 </div>
 
-                {/* Difficulty Selector & Regenerate Control */}
-                <div className="flex items-center gap-1.5">
-                  <div
-                    className={`inline-flex items-center p-0.5 rounded-xl border text-[11px] font-medium ${
-                      isDark ? 'bg-[#161922] border-white/[0.08]' : 'bg-[#ededf0] border-black/[0.06]'
-                    }`}
-                  >
+                {/* Inline Difficulty Pills (Only shown on Quiz or Flashcards) */}
+                {(studioTab === 'quiz' || studioTab === 'flashcards') && (
+                  <div className="flex items-center gap-1 shrink-0 pl-2">
                     {(['easy', 'medium', 'hard'] as const).map((lvl) => (
                       <button
                         key={lvl}
@@ -1320,11 +1294,11 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
                             lvl
                           );
                         }}
-                        className={`px-2.5 py-1 rounded-lg capitalize transition-colors cursor-pointer whitespace-nowrap ${
+                        className={`px-2.5 py-1 rounded-full text-[11px] capitalize transition-colors cursor-pointer whitespace-nowrap ${
                           difficulty === lvl
                             ? isDark
                               ? 'bg-white/15 text-white font-semibold'
-                              : 'bg-white text-black font-semibold shadow-2xs'
+                              : 'bg-black/10 text-black font-semibold'
                             : 'text-neutral-500 hover:text-current'
                         }`}
                       >
@@ -1332,136 +1306,45 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
                       </button>
                     ))}
                   </div>
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      generateStudyBundleForDoc(
-                        activePdfName,
-                        activeExtractedText,
-                        activePageCount,
-                        difficulty
-                      )
-                    }
-                    disabled={isSynthesizingBundle}
-                    className={`p-2 rounded-xl border transition-colors cursor-pointer ${
-                      isDark
-                        ? 'bg-[#161922] border-white/[0.08] hover:bg-white/[0.08] text-neutral-300'
-                        : 'bg-white border-black/[0.08] hover:bg-black/[0.04] text-neutral-700'
-                    }`}
-                    title="Regenerate fresh Quiz & Flashcards from PDF"
-                  >
-                    <RotateCcw
-                      className={`w-3.5 h-3.5 ${isSynthesizingBundle ? 'animate-spin' : ''}`}
-                    />
-                  </button>
-                </div>
+                )}
               </div>
 
-              {/* Padded Studio Content Viewport */}
-              <div className="flex-1 overflow-y-auto p-4 sm:p-6 scrollbar-thin">
-                {/* Interactive PDF Upload & Study Deck Launchpad when no custom PDF is uploaded yet */}
-                {!activePdfUrl && (
-                  <div
-                    className={`mb-5 p-4 sm:p-5 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-4 max-w-3xl mx-auto ${
-                      isDark
-                        ? 'bg-[#131722] border-white/[0.12] text-white'
-                        : 'bg-[#f4f6fa] border-black/[0.09] text-[#0d0d0d]'
-                    }`}
-                  >
-                    <div className="space-y-1 min-w-0">
-                      <div className="text-xs sm:text-sm font-semibold flex items-center gap-2">
-                        <span>Upload any PDF or Lecture Slides for Instant Quiz & Flashcards</span>
-                      </div>
-                      <p
-                        className={`text-[11px] sm:text-xs leading-relaxed ${
-                          isDark ? 'text-neutral-400' : 'text-neutral-600'
-                        }`}
-                      >
-                        Drop a PDF anywhere or click Upload to extract every page into interactive multiple-choice quizzes, 3D flip flashcards, and LaTeX concept breakdowns.
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => fileUploadInputRef.current?.click()}
-                        className={`inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer whitespace-nowrap ${
-                          isDark
-                            ? 'bg-white text-black hover:bg-neutral-200'
-                            : 'bg-[#0d0d0d] text-white hover:bg-neutral-800'
-                        }`}
-                      >
-                        <Upload className="w-3.5 h-3.5" />
-                        <span>Choose PDF File</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setShowArxivSearchDrawer(true)}
-                        className={`inline-flex items-center gap-1.5 px-3 py-2.5 rounded-xl border text-xs font-medium transition-colors cursor-pointer whitespace-nowrap ${
-                          isDark
-                            ? 'bg-white/[0.05] border-white/[0.12] hover:bg-white/[0.1] text-neutral-200'
-                            : 'bg-white border-black/[0.12] hover:bg-black/[0.04] text-neutral-800'
-                        }`}
-                      >
-                        <Search className="w-3.5 h-3.5" />
-                        <span>ArXiv Papers</span>
-                      </button>
-                    </div>
-                  </div>
-                )}
-
+              {/* Studio Content Viewport */}
+              <div className="flex-1 overflow-y-auto px-3.5 sm:px-6 py-4 scrollbar-thin">
                 {/* ========================================================= */}
                 {/* TAB 1: INTERACTIVE QUIZ                                   */}
                 {/* ========================================================= */}
                 {studioTab === 'quiz' && (
-                  <div className="space-y-4 max-w-3xl mx-auto">
-                    {/* Quiz Score & Mastery Header Card */}
-                    <div
-                      className={`p-4 sm:p-5 rounded-2xl border flex flex-wrap items-center justify-between gap-4 ${
-                        isDark
-                          ? 'bg-[#12151e] border-white/[0.09]'
-                          : 'bg-[#f8f9fb] border-black/[0.08]'
-                      }`}
-                    >
-                      <div className="space-y-1">
-                        <div className="text-xs font-semibold flex items-center gap-2">
-                          <span>Document Mastery Quiz</span>
-                          <span
-                            className={`text-[11px] font-mono tabular-nums ${
-                              isDark ? 'text-neutral-400' : 'text-neutral-500'
-                            }`}
-                          >
-                            · {difficulty.toUpperCase()}
-                          </span>
-                        </div>
-                        <div
-                          className={`text-xs font-mono tabular-nums ${
-                            isDark ? 'text-neutral-300' : 'text-neutral-700'
-                          }`}
-                        >
-                          Score: <strong className="text-emerald-400">{correctQuizCount}</strong> /{' '}
-                          {allQuizItems.length} · Answered: {answeredQuizCount} · Accuracy:{' '}
-                          <strong>{accuracyPct}%</strong>
-                        </div>
-                      </div>
+                  <div className="space-y-3.5 max-w-3xl mx-auto">
+                    {/* Minimal Single-Line Quiz Status */}
+                    <div className="flex items-center justify-between gap-2 text-xs px-1">
+                      <span
+                        className={`font-mono tabular-nums ${
+                          isDark ? 'text-neutral-400' : 'text-neutral-500'
+                        }`}
+                      >
+                        {correctQuizCount} / {allQuizItems.length} correct
+                        {answeredQuizCount > 0 ? ` · ${accuracyPct}%` : ''}
+                      </span>
 
-                      <div className="flex flex-wrap items-center gap-2">
+                      <div className="flex items-center gap-1.5">
                         {answeredQuizCount > 0 && correctQuizCount < answeredQuizCount && (
                           <button
                             type="button"
                             onClick={() => setRetryIncorrectOnly(!retryIncorrectOnly)}
-                            className={`px-3 py-1.5 rounded-xl border text-xs font-medium transition-colors cursor-pointer whitespace-nowrap ${
+                            className={`px-2.5 py-1 rounded-full border text-[11px] font-medium transition-colors cursor-pointer ${
                               retryIncorrectOnly
-                                ? 'bg-amber-500/20 border-amber-500/40 text-amber-300'
+                                ? isDark
+                                  ? 'bg-white text-black border-white'
+                                  : 'bg-[#0d0d0d] text-white border-[#0d0d0d]'
                                 : isDark
-                                ? 'bg-[#181c26] border-white/[0.1] text-neutral-300 hover:text-white'
-                                : 'bg-white border-black/[0.1] text-neutral-700 hover:text-black'
+                                ? 'border-white/[0.1] text-neutral-400 hover:text-white'
+                                : 'border-black/[0.1] text-neutral-600 hover:text-black'
                             }`}
                           >
-                            {retryIncorrectOnly ? 'Showing Missed Only' : 'Filter Missed'}
+                            {retryIncorrectOnly ? 'All Questions' : 'Missed Only'}
                           </button>
                         )}
-
                         {answeredQuizCount > 0 && (
                           <button
                             type="button"
@@ -1469,21 +1352,20 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
                               setQuizAnswers({});
                               setRetryIncorrectOnly(false);
                             }}
-                            className={`px-3 py-1.5 rounded-xl border text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
+                            className={`px-2.5 py-1 rounded-full border text-[11px] font-medium transition-colors cursor-pointer ${
                               isDark
-                                ? 'bg-[#181c26] border-white/[0.1] text-neutral-300 hover:text-white'
-                                : 'bg-white border-black/[0.1] text-neutral-700 hover:text-black'
+                                ? 'border-white/[0.1] text-neutral-400 hover:text-white'
+                                : 'border-black/[0.1] text-neutral-600 hover:text-black'
                             }`}
                           >
-                            <RotateCcw className="w-3.5 h-3.5" />
-                            <span>Reset Answers</span>
+                            Reset
                           </button>
                         )}
                       </div>
                     </div>
 
                     {/* Quiz Questions List */}
-                    <div className="space-y-4">
+                    <div className="space-y-3.5">
                       {visibleQuizItems.map((q, qIdx) => {
                         const selectedOpt = quizAnswers[q.id];
                         const hasAnswered = selectedOpt !== undefined;
@@ -1491,30 +1373,30 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
                         return (
                           <div
                             key={q.id}
-                            className={`p-5 rounded-2xl border transition-all ${
+                            className={`p-4 sm:p-5 rounded-2xl border transition-all ${
                               isDark
                                 ? 'bg-[#11131a] border-white/[0.08]'
-                                : 'bg-white border-black/[0.08] shadow-2xs'
+                                : 'bg-white border-black/[0.08]'
                             }`}
                           >
-                            <div className="flex items-start justify-between gap-3 mb-3.5">
-                              <div className="text-xs sm:text-sm font-semibold leading-relaxed">
+                            <div className="flex items-start justify-between gap-3 mb-3">
+                              <div className="text-[13px] sm:text-sm font-medium leading-relaxed">
                                 <span
-                                  className={`font-mono tabular-nums mr-2 ${
+                                  className={`font-mono tabular-nums mr-1.5 ${
                                     isDark ? 'text-neutral-500' : 'text-neutral-400'
                                   }`}
                                 >
-                                  Q{qIdx + 1}.
+                                  {qIdx + 1}.
                                 </span>
-                                {q.question}
+                                <MathMarkdown content={q.question} isDark={isDark} inline />
                               </div>
                               {q.pageRef && (
                                 <span
-                                  className={`text-[11px] font-mono tabular-nums shrink-0 ${
-                                    isDark ? 'text-neutral-400' : 'text-neutral-500'
+                                  className={`text-[10px] font-mono tabular-nums shrink-0 pt-0.5 ${
+                                    isDark ? 'text-neutral-500' : 'text-neutral-400'
                                   }`}
                                 >
-                                  Page {q.pageRef}
+                                  p.{q.pageRef}
                                 </span>
                               )}
                             </div>
@@ -1525,16 +1407,22 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
                                 const isCorrect = q.correctIndex === oIdx;
 
                                 let optionStyle = isDark
-                                  ? 'bg-[#171a24] border-white/[0.08] text-neutral-200 hover:border-white/[0.24]'
-                                  : 'bg-[#f8f9fa] border-black/[0.08] text-neutral-800 hover:border-black/[0.25]';
+                                  ? 'bg-[#161922] border-white/[0.07] text-neutral-200 hover:border-white/[0.22]'
+                                  : 'bg-[#f8f9fa] border-black/[0.07] text-neutral-800 hover:border-black/[0.22]';
 
                                 if (hasAnswered) {
                                   if (isCorrect) {
-                                    optionStyle =
-                                      'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 font-medium';
+                                    optionStyle = isDark
+                                      ? 'bg-white/[0.12] border-white/50 text-white font-medium'
+                                      : 'bg-black/[0.07] border-black/50 text-black font-medium';
                                   } else if (isSelected && !isCorrect) {
-                                    optionStyle =
-                                      'bg-red-500/15 border-red-500/40 text-red-300';
+                                    optionStyle = isDark
+                                      ? 'bg-white/[0.02] border-white/[0.15] text-neutral-500 line-through'
+                                      : 'bg-black/[0.02] border-black/[0.15] text-neutral-400 line-through';
+                                  } else {
+                                    optionStyle = isDark
+                                      ? 'bg-[#14161e] border-white/[0.04] text-neutral-500'
+                                      : 'bg-[#fafafa] border-black/[0.04] text-neutral-400';
                                   }
                                 }
 
@@ -1549,25 +1437,25 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
                                         [q.id]: oIdx,
                                       }))
                                     }
-                                    className={`w-full text-left p-3.5 rounded-xl border text-xs transition-all flex items-start justify-between gap-3 cursor-pointer disabled:cursor-default ${optionStyle}`}
+                                    className={`w-full text-left px-3.5 py-2.5 rounded-xl border text-xs transition-all flex items-start justify-between gap-3 cursor-pointer disabled:cursor-default ${optionStyle}`}
                                   >
-                                    <div className="flex items-start gap-2.5 min-w-0">
-                                      <span className="font-mono text-[11px] opacity-75 shrink-0 pt-0.5">
+                                    <div className="flex items-start gap-2 min-w-0">
+                                      <span className="font-mono text-[11px] opacity-60 shrink-0 pt-0.5">
                                         {String.fromCharCode(65 + oIdx)}.
                                       </span>
-                                      <span className="leading-relaxed">{opt}</span>
+                                      <div className="leading-relaxed min-w-0">
+                                        <MathMarkdown content={opt} isDark={isDark} inline />
+                                      </div>
                                     </div>
 
                                     {hasAnswered && isCorrect && (
-                                      <span className="inline-flex items-center gap-1 text-[10px] font-mono uppercase text-emerald-400 shrink-0">
-                                        <CheckCircle2 className="w-3.5 h-3.5" />
-                                        <span>Correct</span>
+                                      <span className="text-[10px] font-mono uppercase opacity-80 shrink-0 pt-0.5">
+                                        Correct
                                       </span>
                                     )}
                                     {hasAnswered && isSelected && !isCorrect && (
-                                      <span className="inline-flex items-center gap-1 text-[10px] font-mono uppercase text-red-400 shrink-0">
-                                        <XCircle className="w-3.5 h-3.5" />
-                                        <span>Incorrect</span>
+                                      <span className="text-[10px] font-mono uppercase opacity-60 shrink-0 pt-0.5">
+                                        Wrong
                                       </span>
                                     )}
                                   </button>
@@ -1577,14 +1465,13 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
 
                             {hasAnswered && q.explanation && (
                               <div
-                                className={`mt-3.5 p-3.5 rounded-xl border text-xs leading-relaxed ${
+                                className={`mt-3 p-3 rounded-xl border text-xs leading-relaxed ${
                                   isDark
-                                    ? 'bg-white/[0.03] border-white/[0.08] text-neutral-300'
-                                    : 'bg-slate-50 border-black/[0.08] text-neutral-700'
+                                    ? 'bg-white/[0.03] border-white/[0.07] text-neutral-300'
+                                    : 'bg-[#f8f9fa] border-black/[0.07] text-neutral-700'
                                 }`}
                               >
-                                <span className="font-semibold">First-Principles Explanation: </span>
-                                {q.explanation}
+                                <MathMarkdown content={q.explanation} isDark={isDark} inline />
                               </div>
                             )}
                           </div>
@@ -1598,24 +1485,21 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
                 {/* TAB 2: INTERACTIVE FLASHCARDS                             */}
                 {/* ========================================================= */}
                 {studioTab === 'flashcards' && (
-                  <div className="space-y-5 max-w-3xl mx-auto">
-                    {/* Flashcard Deck Status & Controls Bar */}
-                    <div
-                      className={`p-4 rounded-2xl border flex flex-wrap items-center justify-between gap-3 ${
-                        isDark
-                          ? 'bg-[#12151e] border-white/[0.09]'
-                          : 'bg-[#f8f9fb] border-black/[0.08]'
-                      }`}
-                    >
-                      <div className="text-xs font-mono tabular-nums">
+                  <div className="space-y-4 max-w-3xl mx-auto">
+                    {/* Minimal Single-Line Flashcard Controls (No Icons, No Colored Numbers) */}
+                    <div className="flex items-center justify-between gap-2 text-xs px-1">
+                      <span
+                        className={`font-mono tabular-nums ${
+                          isDark ? 'text-neutral-400' : 'text-neutral-500'
+                        }`}
+                      >
                         {deckCards.length > 0
-                          ? `Card ${safeCardIndex + 1} of ${deckCards.length}`
-                          : '0 cards'}{' '}
-                        · Known: <strong className="text-emerald-400">{knownCount}</strong> ·
-                        Review: <strong className="text-amber-400">{reviewCount}</strong>
-                      </div>
+                          ? `${safeCardIndex + 1} / ${deckCards.length}`
+                          : '0 cards'}
+                        {knownCount > 0 ? ` · ${knownCount} known` : ''}
+                      </span>
 
-                      <div className="flex flex-wrap items-center gap-2">
+                      <div className="flex items-center gap-1.5">
                         <button
                           type="button"
                           onClick={() => {
@@ -1628,15 +1512,13 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
                             setCardIndex(0);
                             setIsCardFlipped(false);
                           }}
-                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-medium transition-colors cursor-pointer ${
+                          className={`px-2.5 py-1 rounded-full border text-[11px] font-medium transition-colors cursor-pointer ${
                             isDark
-                              ? 'bg-[#181c26] border-white/[0.1] text-neutral-300 hover:text-white'
-                              : 'bg-white border-black/[0.1] text-neutral-700 hover:text-black'
+                              ? 'border-white/[0.1] text-neutral-300 hover:text-white'
+                              : 'border-black/[0.1] text-neutral-700 hover:text-black'
                           }`}
-                          title="Shuffle Flashcards"
                         >
-                          <Shuffle className="w-3.5 h-3.5" />
-                          <span>Shuffle</span>
+                          Shuffle
                         </button>
 
                         <button
@@ -1646,17 +1528,17 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
                             setCardIndex(0);
                             setIsCardFlipped(false);
                           }}
-                          className={`px-3 py-1.5 rounded-xl border text-xs font-medium transition-colors cursor-pointer ${
+                          className={`px-2.5 py-1 rounded-full border text-[11px] font-medium transition-colors cursor-pointer ${
                             filterReviewOnly
                               ? isDark
                                 ? 'bg-white text-black border-white'
-                                : 'bg-[#0d0d0d] text-white border-black'
+                                : 'bg-[#0d0d0d] text-white border-[#0d0d0d]'
                               : isDark
-                              ? 'bg-[#181c26] border-white/[0.1] text-neutral-300 hover:text-white'
-                              : 'bg-white border-black/[0.1] text-neutral-700 hover:text-black'
+                              ? 'border-white/[0.1] text-neutral-300 hover:text-white'
+                              : 'border-black/[0.1] text-neutral-700 hover:text-black'
                           }`}
                         >
-                          {filterReviewOnly ? 'Showing Unmastered' : 'Filter Unmastered'}
+                          {filterReviewOnly ? 'All Cards' : 'Unmastered'}
                         </button>
 
                         <button
@@ -1668,77 +1550,60 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
                             setCardIndex(0);
                             setIsCardFlipped(false);
                           }}
-                          className={`p-1.5 rounded-xl border transition-colors cursor-pointer ${
+                          className={`px-2.5 py-1 rounded-full border text-[11px] font-medium transition-colors cursor-pointer ${
                             isDark
-                              ? 'bg-[#181c26] border-white/[0.1] text-neutral-400 hover:text-white'
-                              : 'bg-white border-black/[0.1] text-neutral-600 hover:text-black'
+                              ? 'border-white/[0.1] text-neutral-400 hover:text-white'
+                              : 'border-black/[0.1] text-neutral-500 hover:text-black'
                           }`}
-                          title="Reset Flashcard Mastery"
                         >
-                          <RotateCcw className="w-3.5 h-3.5" />
+                          Reset
                         </button>
                       </div>
                     </div>
 
                     {currentCard ? (
                       <>
-                        {/* Interactive Padded Flip Card */}
+                        {/* Clean Flip Card with KaTeX Support */}
                         <div
                           onClick={() => setIsCardFlipped((prev) => !prev)}
-                          className={`min-h-[290px] p-7 sm:p-9 rounded-3xl border flex flex-col justify-between transition-all cursor-pointer select-none ${
+                          className={`min-h-[250px] p-6 sm:p-8 rounded-2xl border flex flex-col justify-between transition-all cursor-pointer select-none ${
                             isDark
-                              ? 'bg-[#131620] border-white/[0.12] hover:border-white/[0.28] shadow-[0_16px_50px_rgba(0,0,0,0.55)]'
-                              : 'bg-[#f8f9fb] border-black/[0.12] hover:border-black/[0.28] shadow-lg'
+                              ? 'bg-[#12141c] border-white/[0.1] hover:border-white/[0.24]'
+                              : 'bg-[#f8f9fb] border-black/[0.09] hover:border-black/[0.22]'
                           }`}
                         >
-                          <div className="flex items-center justify-between gap-2 text-xs font-mono">
-                            <span className={isDark ? 'text-neutral-400' : 'text-neutral-500'}>
-                              {isCardFlipped ? 'ANSWER / EXPLANATION' : 'QUESTION PROMPT'} ·{' '}
-                              {currentCard.category}
+                          <div className="flex items-center justify-between gap-2 text-[11px] font-mono opacity-55">
+                            <span>
+                              {isCardFlipped ? 'Answer' : 'Prompt'} · {currentCard.category}
                             </span>
-                            {currentCard.pageRef && (
-                              <span
-                                className={`tabular-nums ${
-                                  isDark ? 'text-neutral-400' : 'text-neutral-500'
-                                }`}
-                              >
-                                Page {currentCard.pageRef}
-                              </span>
-                            )}
+                            {currentCard.pageRef && <span>p.{currentCard.pageRef}</span>}
                           </div>
 
-                          <div className="my-auto py-8 text-center px-3">
-                            <p
-                              className={`text-base sm:text-xl font-semibold leading-relaxed ${
+                          <div className="my-auto py-6 text-center px-2">
+                            <div
+                              className={`text-sm sm:text-base font-medium leading-relaxed ${
                                 isDark ? 'text-white' : 'text-[#0d0d0d]'
                               }`}
                             >
-                              {isCardFlipped ? currentCard.back : currentCard.front}
-                            </p>
+                              <MathMarkdown
+                                content={isCardFlipped ? currentCard.back : currentCard.front}
+                                isDark={isDark}
+                              />
+                            </div>
                           </div>
 
-                          <div className="flex items-center justify-between text-[11px] font-mono">
-                            <span className={isDark ? 'text-neutral-500' : 'text-neutral-400'}>
-                              Click card or press Space to flip · ← / → to navigate
-                            </span>
+                          <div className="flex items-center justify-between text-[11px] font-mono opacity-45">
+                            <span>Tap card to flip</span>
                             {cardMastery[currentCard.id] && (
-                              <span
-                                className={`uppercase font-semibold ${
-                                  cardMastery[currentCard.id] === 'known'
-                                    ? 'text-emerald-400'
-                                    : 'text-amber-400'
-                                }`}
-                              >
-                                {cardMastery[currentCard.id] === 'known'
-                                  ? 'MASTERED'
-                                  : 'NEEDS REVIEW'}
+                              <span className="uppercase">
+                                {cardMastery[currentCard.id] === 'known' ? 'Known' : 'Review'}
                               </span>
                             )}
                           </div>
                         </div>
 
-                        {/* Flashcard Action Controls */}
-                        <div className="flex flex-wrap items-center justify-between gap-2">
+                        {/* Compact Flashcard Navigation Pills */}
+                        <div className="flex items-center justify-between gap-2">
                           <button
                             type="button"
                             disabled={safeCardIndex === 0}
@@ -1746,17 +1611,16 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
                               setIsCardFlipped(false);
                               setCardIndex(Math.max(0, safeCardIndex - 1));
                             }}
-                            className={`px-4 py-2.5 rounded-xl border text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-40 ${
+                            className={`px-3.5 py-2 rounded-full border text-xs font-medium transition-colors cursor-pointer disabled:opacity-35 ${
                               isDark
-                                ? 'bg-[#161922] border-white/[0.1] text-white hover:bg-white/[0.06]'
-                                : 'bg-white border-black/[0.1] text-black hover:bg-black/[0.04]'
+                                ? 'bg-[#14161f] border-white/[0.1] text-white'
+                                : 'bg-white border-black/[0.1] text-black'
                             }`}
                           >
-                            <ChevronLeft className="w-4 h-4" />
-                            <span>Previous</span>
+                            Prev
                           </button>
 
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1.5">
                             <button
                               type="button"
                               onClick={() => {
@@ -1769,15 +1633,17 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
                                   setCardIndex(safeCardIndex + 1);
                                 }
                               }}
-                              className={`px-4 py-2.5 rounded-xl border text-xs font-semibold transition-colors cursor-pointer ${
+                              className={`px-3.5 py-2 rounded-full border text-xs font-medium transition-colors cursor-pointer ${
                                 cardMastery[currentCard.id] === 'review'
-                                  ? 'bg-amber-500/20 border-amber-500/40 text-amber-300'
+                                  ? isDark
+                                    ? 'bg-white/15 border-white/40 text-white'
+                                    : 'bg-black/10 border-black/40 text-black'
                                   : isDark
-                                  ? 'bg-[#161922] border-white/[0.1] text-neutral-300 hover:text-white'
-                                  : 'bg-white border-black/[0.1] text-neutral-700 hover:text-black'
+                                  ? 'bg-[#14161f] border-white/[0.1] text-neutral-300'
+                                  : 'bg-white border-black/[0.1] text-neutral-700'
                               }`}
                             >
-                              Review Again
+                              Review
                             </button>
 
                             <button
@@ -1792,15 +1658,13 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
                                   setCardIndex(safeCardIndex + 1);
                                 }
                               }}
-                              className={`px-4 py-2.5 rounded-xl border text-xs font-semibold transition-colors cursor-pointer ${
-                                cardMastery[currentCard.id] === 'known'
-                                  ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
-                                  : isDark
-                                  ? 'bg-white text-black border-white hover:bg-neutral-200'
-                                  : 'bg-[#0d0d0d] text-white border-black hover:bg-neutral-800'
+                              className={`px-3.5 py-2 rounded-full border text-xs font-semibold transition-colors cursor-pointer ${
+                                isDark
+                                  ? 'bg-white text-black border-white'
+                                  : 'bg-[#0d0d0d] text-white border-[#0d0d0d]'
                               }`}
                             >
-                              Mark Known
+                              Known
                             </button>
                           </div>
 
@@ -1811,374 +1675,105 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
                               setIsCardFlipped(false);
                               setCardIndex(Math.min(deckCards.length - 1, safeCardIndex + 1));
                             }}
-                            className={`px-4 py-2.5 rounded-xl border text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-40 ${
+                            className={`px-3.5 py-2 rounded-full border text-xs font-medium transition-colors cursor-pointer disabled:opacity-35 ${
                               isDark
-                                ? 'bg-[#161922] border-white/[0.1] text-white hover:bg-white/[0.06]'
-                                : 'bg-white border-black/[0.1] text-black hover:bg-black/[0.04]'
+                                ? 'bg-[#14161f] border-white/[0.1] text-white'
+                                : 'bg-white border-black/[0.1] text-black'
                             }`}
                           >
-                            <span>Next</span>
-                            <ChevronRight className="w-4 h-4" />
+                            Next
                           </button>
-                        </div>
-
-                        {/* Deck Overview Grid */}
-                        <div className="pt-3">
-                          <div
-                            className={`text-xs font-semibold mb-2.5 ${
-                              isDark ? 'text-neutral-300' : 'text-neutral-700'
-                            }`}
-                          >
-                            All Cards in Deck ({deckCards.length})
-                          </div>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                            {deckCards.map((fc, idx) => {
-                              const status = cardMastery[fc.id];
-                              const isCurrent = idx === safeCardIndex;
-                              return (
-                                <button
-                                  key={fc.id}
-                                  type="button"
-                                  onClick={() => {
-                                    setCardIndex(idx);
-                                    setIsCardFlipped(false);
-                                  }}
-                                  className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
-                                    isCurrent
-                                      ? isDark
-                                        ? 'bg-white/[0.09] border-white/40'
-                                        : 'bg-black/[0.06] border-black/40'
-                                      : isDark
-                                      ? 'bg-[#11131a] border-white/[0.07] hover:border-white/[0.2]'
-                                      : 'bg-white border-black/[0.08] hover:border-black/[0.2]'
-                                  }`}
-                                >
-                                  <div className="flex items-center justify-between text-[10px] font-mono mb-1">
-                                    <span className="opacity-60">
-                                      #{idx + 1} · {fc.category}
-                                    </span>
-                                    {status && (
-                                      <span
-                                        className={
-                                          status === 'known' ? 'text-emerald-400' : 'text-amber-400'
-                                        }
-                                      >
-                                        {status.toUpperCase()}
-                                      </span>
-                                    )}
-                                  </div>
-                                  <div className="text-xs font-medium line-clamp-2">{fc.front}</div>
-                                </button>
-                              );
-                            })}
-                          </div>
                         </div>
                       </>
                     ) : (
                       <div
-                        className={`p-8 rounded-2xl border text-center text-xs ${
+                        className={`p-6 rounded-2xl border text-center text-xs ${
                           isDark
                             ? 'bg-[#12151e] border-white/[0.08] text-neutral-400'
-                            : 'bg-slate-50 border-black/[0.08] text-neutral-600'
+                            : 'bg-[#f8f9fb] border-black/[0.08] text-neutral-600'
                         }`}
                       >
-                        All flashcards have been marked as known. Click "Filter Unmastered" or Reset
-                        to review the full deck again.
+                        All flashcards marked as known. Tap Reset to review again.
                       </div>
                     )}
                   </div>
                 )}
 
                 {/* ========================================================= */}
-                {/* TAB 3: EXECUTIVE SUMMARY & SECTION BREAKDOWN              */}
+                {/* TAB 3: SUMMARY                                            */}
                 {/* ========================================================= */}
                 {studioTab === 'summary' && studyBundle && (
-                  <div className="space-y-5 max-w-3xl mx-auto">
+                  <div className="space-y-4 max-w-3xl mx-auto">
                     <div
-                      className={`p-5 rounded-2xl border ${
+                      className={`p-4 sm:p-5 rounded-2xl border ${
                         isDark
-                          ? 'bg-[#12151e] border-white/[0.09]'
+                          ? 'bg-[#12151e] border-white/[0.08]'
                           : 'bg-[#f8f9fb] border-black/[0.08]'
                       }`}
                     >
-                      <div className="flex items-center justify-between gap-2 mb-2">
-                        <span
-                          className={`text-xs font-semibold ${
-                            isDark ? 'text-neutral-300' : 'text-neutral-700'
-                          }`}
-                        >
-                          01. Executive Synthesis
-                        </span>
-                        {onAskZeno && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              onAskZeno(
-                                `Here is the executive summary of "${activePdfName}":\n\n${studyBundle.summary.overview}\n\nKey Takeaways:\n${studyBundle.summary.keyPoints
-                                  .map((k, i) => `${i + 1}. ${k}`)
-                                  .join('\n')}\n\nProvide a deeper critique and actionable implications.`
-                              );
-                              onClose();
-                            }}
-                            className="text-xs font-medium underline opacity-80 hover:opacity-100 cursor-pointer"
-                          >
-                            Continue in Main Chat
-                          </button>
-                        )}
-                      </div>
-                      <p
-                        className={`text-sm leading-relaxed ${
+                      <div
+                        className={`text-xs sm:text-sm leading-relaxed ${
                           isDark ? 'text-neutral-100' : 'text-neutral-900'
                         }`}
                       >
-                        {studyBundle.summary.overview}
-                      </p>
+                        <MathMarkdown content={studyBundle.summary.overview} isDark={isDark} />
+                      </div>
                     </div>
 
-                    {/* Key Takeaways */}
-                    <div>
-                      <div className="text-xs font-semibold mb-2.5">
-                        02. High-Signal Takeaways ({studyBundle.summary.keyPoints.length})
-                      </div>
-                      <div className="space-y-2.5">
-                        {studyBundle.summary.keyPoints.map((point, idx) => (
-                          <div
-                            key={idx}
-                            className={`p-4 rounded-2xl border flex items-start gap-3 ${
-                              isDark
-                                ? 'bg-[#11131a] border-white/[0.08]'
-                                : 'bg-white border-black/[0.08]'
+                    <div className="space-y-2">
+                      {studyBundle.summary.keyPoints.map((point, idx) => (
+                        <div
+                          key={idx}
+                          className={`p-3.5 sm:p-4 rounded-2xl border flex items-start gap-2.5 ${
+                            isDark
+                              ? 'bg-[#11131a] border-white/[0.07]'
+                              : 'bg-white border-black/[0.07]'
+                          }`}
+                        >
+                          <span
+                            className={`font-mono text-[11px] tabular-nums pt-0.5 shrink-0 ${
+                              isDark ? 'text-neutral-500' : 'text-neutral-400'
                             }`}
                           >
+                            {idx + 1}.
+                          </span>
+                          <div
+                            className={`text-xs sm:text-[13px] leading-relaxed min-w-0 ${
+                              isDark ? 'text-neutral-200' : 'text-neutral-800'
+                            }`}
+                          >
+                            <MathMarkdown content={point} isDark={isDark} inline />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="space-y-2">
+                      {studyBundle.summary.sections.map((sec, idx) => (
+                        <div
+                          key={idx}
+                          className={`p-4 rounded-2xl border ${
+                            isDark
+                              ? 'bg-[#11131a] border-white/[0.07]'
+                              : 'bg-white border-black/[0.07]'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2 mb-1">
+                            <span className="text-xs font-semibold">{sec.title}</span>
                             <span
-                              className={`font-mono text-xs tabular-nums pt-0.5 shrink-0 ${
+                              className={`text-[10px] font-mono tabular-nums ${
                                 isDark ? 'text-neutral-500' : 'text-neutral-400'
                               }`}
                             >
-                              {String(idx + 1).padStart(2, '0')}
+                              p.{sec.pageNumber}
                             </span>
-                            <p
-                              className={`text-xs sm:text-sm leading-relaxed ${
-                                isDark ? 'text-neutral-200' : 'text-neutral-800'
-                              }`}
-                            >
-                              {point}
-                            </p>
                           </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Section / Page Breakdown */}
-                    <div>
-                      <div className="text-xs font-semibold mb-2.5">
-                        03. Section-by-Section Breakdown
-                      </div>
-                      <div className="space-y-2.5">
-                        {studyBundle.summary.sections.map((sec, idx) => (
                           <div
-                            key={idx}
-                            className={`p-4 rounded-2xl border ${
-                              isDark
-                                ? 'bg-[#11131a] border-white/[0.08]'
-                                : 'bg-white border-black/[0.08]'
+                            className={`text-xs leading-relaxed ${
+                              isDark ? 'text-neutral-400' : 'text-neutral-600'
                             }`}
                           >
-                            <div className="flex items-center justify-between gap-2 mb-1.5">
-                              <span className="text-xs sm:text-sm font-semibold">{sec.title}</span>
-                              <span
-                                className={`text-[11px] font-mono tabular-nums ${
-                                  isDark ? 'text-neutral-400' : 'text-neutral-500'
-                                }`}
-                              >
-                                Page {sec.pageNumber}
-                              </span>
-                            </div>
-                            <p
-                              className={`text-xs leading-relaxed ${
-                                isDark ? 'text-neutral-400' : 'text-neutral-600'
-                              }`}
-                            >
-                              {sec.summary}
-                            </p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* ========================================================= */}
-                {/* TAB 4: DEEP CONCEPTS & MATH BREAKDOWN                     */}
-                {/* ========================================================= */}
-                {studioTab === 'explanation' && studyBundle && (
-                  <div className="space-y-5 max-w-3xl mx-auto">
-                    {/* 1-Click Academic Deep Lenses */}
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                      <button
-                        type="button"
-                        onClick={() => runPaperDeepBreakdown('math')}
-                        className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
-                          activeActionTab === 'math'
-                            ? isDark
-                              ? 'bg-white/10 border-white/40'
-                              : 'bg-black/5 border-black/40'
-                            : isDark
-                            ? 'bg-[#12151e] border-white/[0.08] hover:border-white/25'
-                            : 'bg-[#f8f9fb] border-black/[0.08] hover:border-black/25'
-                        }`}
-                      >
-                        <div className="font-semibold text-xs flex items-center gap-2">
-                          <Sigma className="w-4 h-4 text-sky-400" />
-                          <span>Explain Math & Equations</span>
-                        </div>
-                        <p className="text-[11px] text-neutral-500 mt-1">
-                          LaTeX derivations, variables & objective functions
-                        </p>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => runPaperDeepBreakdown('contributions')}
-                        className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
-                          activeActionTab === 'contributions'
-                            ? isDark
-                              ? 'bg-white/10 border-white/40'
-                              : 'bg-black/5 border-black/40'
-                            : isDark
-                            ? 'bg-[#12151e] border-white/[0.08] hover:border-white/25'
-                            : 'bg-[#f8f9fb] border-black/[0.08] hover:border-black/25'
-                        }`}
-                      >
-                        <div className="font-semibold text-xs flex items-center gap-2">
-                          <ListChecks className="w-4 h-4 text-emerald-400" />
-                          <span>Key Contributions</span>
-                        </div>
-                        <p className="text-[11px] text-neutral-500 mt-1">
-                          Novelty over prior work & empirical benchmarks
-                        </p>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => runPaperDeepBreakdown('methodology')}
-                        className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
-                          activeActionTab === 'methodology'
-                            ? isDark
-                              ? 'bg-white/10 border-white/40'
-                              : 'bg-black/5 border-black/40'
-                            : isDark
-                            ? 'bg-[#12151e] border-white/[0.08] hover:border-white/25'
-                            : 'bg-[#f8f9fb] border-black/[0.08] hover:border-black/25'
-                        }`}
-                      >
-                        <div className="font-semibold text-xs flex items-center gap-2">
-                          <Cpu className="w-4 h-4 text-amber-400" />
-                          <span>Methodology Breakdown</span>
-                        </div>
-                        <p className="text-[11px] text-neutral-500 mt-1">
-                          Architecture, pipeline & experimental setup
-                        </p>
-                      </button>
-                    </div>
-
-                    {/* Deep Lens Output if active */}
-                    {(isCopilotLoading || copilotResponse) && (
-                      <div
-                        className={`p-5 rounded-2xl border ${
-                          isDark
-                            ? 'bg-[#12151e] border-white/[0.12]'
-                            : 'bg-[#f8f9fb] border-black/[0.1]'
-                        }`}
-                      >
-                        {isCopilotLoading ? (
-                          <div className="py-10 flex items-center justify-center gap-2.5 text-xs text-neutral-400">
-                            <Loader2 className="w-4 h-4 animate-spin text-sky-400" />
-                            <span>Synthesizing deep technical breakdown...</span>
-                          </div>
-                        ) : (
-                          <div>
-                            <div className="flex items-center justify-between pb-2.5 mb-3 border-b border-current/10">
-                              <span className="text-xs font-semibold">Deep Lens Analysis</span>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  navigator.clipboard.writeText(copilotResponse);
-                                  setCopiedAnalysis(true);
-                                  setTimeout(() => setCopiedAnalysis(false), 2000);
-                                }}
-                                className="inline-flex items-center gap-1 text-xs opacity-75 hover:opacity-100 cursor-pointer"
-                              >
-                                {copiedAnalysis ? (
-                                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                                ) : (
-                                  <Copy className="w-3.5 h-3.5" />
-                                )}
-                                <span>{copiedAnalysis ? 'Copied' : 'Copy'}</span>
-                              </button>
-                            </div>
-                            <div className="prose-grok max-w-none text-xs sm:text-sm leading-relaxed">
-                              <ReactMarkdown
-                                remarkPlugins={[remarkGfm, remarkMath]}
-                                rehypePlugins={[rehypeKatex]}
-                              >
-                                {copilotResponse}
-                              </ReactMarkdown>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* First-Principles Concept Glossary */}
-                    <div className="space-y-3">
-                      <div className="text-xs font-semibold">
-                        First-Principles Concept Glossary ({studyBundle.explanation.concepts.length})
-                      </div>
-                      {studyBundle.explanation.concepts.map((concept, idx) => (
-                        <div
-                          key={idx}
-                          className={`p-4 sm:p-5 rounded-2xl border ${
-                            isDark
-                              ? 'bg-[#11131a] border-white/[0.08]'
-                              : 'bg-white border-black/[0.08]'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between gap-2 mb-2">
-                            <div className="flex items-center gap-2">
-                              <span
-                                className={`font-mono text-xs tabular-nums ${
-                                  isDark ? 'text-neutral-500' : 'text-neutral-400'
-                                }`}
-                              >
-                                0{idx + 1}.
-                              </span>
-                              <h4 className="text-sm font-semibold">{concept.term}</h4>
-                            </div>
-                            {concept.pageRef && (
-                              <span
-                                className={`text-[11px] font-mono tabular-nums ${
-                                  isDark ? 'text-neutral-400' : 'text-neutral-500'
-                                }`}
-                              >
-                                Page {concept.pageRef}
-                              </span>
-                            )}
-                          </div>
-
-                          <div className="space-y-2 text-xs leading-relaxed">
-                            <div>
-                              <span className="font-semibold">Definition: </span>
-                              <span className={isDark ? 'text-neutral-300' : 'text-neutral-700'}>
-                                {concept.definition}
-                              </span>
-                            </div>
-                            <div>
-                              <span className="font-semibold">Mechanism & Application: </span>
-                              <span className={isDark ? 'text-neutral-400' : 'text-neutral-600'}>
-                                {concept.mechanism}
-                              </span>
-                            </div>
+                            <MathMarkdown content={sec.summary} isDark={isDark} inline />
                           </div>
                         </div>
                       ))}
@@ -2187,82 +1782,182 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
                 )}
 
                 {/* ========================================================= */}
-                {/* TAB 5: HIGH-YIELD CHEATSHEET & SCRATCHPAD NOTES           */}
+                {/* TAB 4: CONCEPTS & MATH                                    */}
                 {/* ========================================================= */}
-                {studioTab === 'cheatsheet' && studyBundle && (
-                  <div className="space-y-5 max-w-3xl mx-auto">
-                    {/* Rapid-Review Formulas & Core Principles */}
-                    <div>
-                      <div className="text-xs font-semibold mb-2.5">
-                        01. Core Equations, Rules & Structural Principles
-                      </div>
-                      <div className="grid grid-cols-1 gap-3">
-                        {studyBundle.cheatsheet.formulasOrRules.map((item, idx) => (
-                          <div
-                            key={idx}
-                            className={`p-4 rounded-2xl border ${
-                              isDark
-                                ? 'bg-[#12151e] border-white/[0.08]'
-                                : 'bg-[#f8f9fb] border-black/[0.08]'
+                {studioTab === 'explanation' && studyBundle && (
+                  <div className="space-y-4 max-w-3xl mx-auto">
+                    {/* Compact Single-Row Scrollable Deep Lens Pills (Replaces Stacked Cards) */}
+                    <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none whitespace-nowrap pb-0.5">
+                      {(
+                        [
+                          { id: 'math', label: 'Explain Math & Equations' },
+                          { id: 'contributions', label: 'Key Contributions' },
+                          { id: 'methodology', label: 'Methodology' },
+                        ] as const
+                      ).map((lens) => {
+                        const active = activeActionTab === lens.id;
+                        return (
+                          <button
+                            key={lens.id}
+                            type="button"
+                            onClick={() => runPaperDeepBreakdown(lens.id)}
+                            className={`px-3.5 py-1.5 rounded-full border text-xs font-medium transition-all cursor-pointer shrink-0 ${
+                              active
+                                ? isDark
+                                  ? 'bg-white text-black border-white font-semibold'
+                                  : 'bg-[#0d0d0d] text-white border-[#0d0d0d] font-semibold'
+                                : isDark
+                                ? 'bg-[#12151e] border-white/[0.09] text-neutral-300 hover:text-white'
+                                : 'bg-[#f8f9fb] border-black/[0.08] text-neutral-700 hover:text-black'
                             }`}
                           >
-                            <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
-                              <span className="text-xs font-semibold">{item.label}</span>
-                              <code
-                                className={`text-xs font-mono px-2.5 py-0.5 rounded-lg ${
-                                  isDark ? 'bg-white/[0.07] text-sky-300' : 'bg-black/[0.06] text-sky-700'
-                                }`}
-                              >
-                                {item.expression}
-                              </code>
-                            </div>
-                            <p
-                              className={`text-xs leading-relaxed ${
-                                isDark ? 'text-neutral-300' : 'text-neutral-700'
-                              }`}
-                            >
-                              {item.meaning}
-                            </p>
-                          </div>
-                        ))}
-                      </div>
+                            {lens.label}
+                          </button>
+                        );
+                      })}
                     </div>
 
-                    {/* High-Yield Exam / Review Bullets */}
-                    <div>
-                      <div className="text-xs font-semibold mb-2.5">
-                        02. High-Yield Exam & Interview Checklist
-                      </div>
+                    {/* Deep Lens Output if active */}
+                    {(isCopilotLoading || copilotResponse) && (
                       <div
-                        className={`p-4 rounded-2xl border space-y-2.5 ${
+                        className={`p-4 sm:p-5 rounded-2xl border ${
                           isDark
-                            ? 'bg-[#11131a] border-white/[0.08]'
-                            : 'bg-white border-black/[0.08]'
+                            ? 'bg-[#12151e] border-white/[0.1]'
+                            : 'bg-[#f8f9fb] border-black/[0.09]'
                         }`}
                       >
-                        {studyBundle.cheatsheet.examTips.map((tip, idx) => (
-                          <div key={idx} className="flex items-start gap-2.5 text-xs leading-relaxed">
-                            <span className="font-mono text-emerald-400 shrink-0">✓</span>
-                            <span>{tip}</span>
+                        {isCopilotLoading ? (
+                          <div className="py-6 flex items-center justify-center gap-2 text-xs text-neutral-400">
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            <span>Synthesizing breakdown...</span>
                           </div>
-                        ))}
+                        ) : (
+                          <div>
+                            <div className="flex items-center justify-between pb-2 mb-2.5 border-b border-current/10">
+                              <span className="text-xs font-semibold">Analysis</span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(copilotResponse);
+                                  setCopiedAnalysis(true);
+                                  setTimeout(() => setCopiedAnalysis(false), 2000);
+                                }}
+                                className="text-[11px] font-medium opacity-70 hover:opacity-100 cursor-pointer"
+                              >
+                                {copiedAnalysis ? 'Copied' : 'Copy'}
+                              </button>
+                            </div>
+                            <div className="prose-grok max-w-none text-xs sm:text-sm leading-relaxed">
+                              <MathMarkdown content={copilotResponse} isDark={isDark} />
+                            </div>
+                          </div>
+                        )}
                       </div>
+                    )}
+
+                    {/* Clean Concept Cards with KaTeX Rendering */}
+                    <div className="space-y-2.5">
+                      {studyBundle.explanation.concepts.map((concept, idx) => (
+                        <div
+                          key={idx}
+                          className={`p-4 rounded-2xl border ${
+                            isDark
+                              ? 'bg-[#11131a] border-white/[0.08]'
+                              : 'bg-white border-black/[0.08]'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2 mb-1.5">
+                            <h4 className="text-xs sm:text-sm font-semibold">{concept.term}</h4>
+                            {concept.pageRef && (
+                              <span
+                                className={`text-[10px] font-mono tabular-nums ${
+                                  isDark ? 'text-neutral-500' : 'text-neutral-400'
+                                }`}
+                              >
+                                p.{concept.pageRef}
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="space-y-1.5 text-xs leading-relaxed">
+                            <div className={isDark ? 'text-neutral-200' : 'text-neutral-800'}>
+                              <MathMarkdown content={concept.definition} isDark={isDark} inline />
+                            </div>
+                            {concept.mechanism && concept.mechanism !== concept.definition && (
+                              <div className={isDark ? 'text-neutral-400' : 'text-neutral-600'}>
+                                <MathMarkdown content={concept.mechanism} isDark={isDark} inline />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* ========================================================= */}
+                {/* TAB 5: CHEATSHEET & NOTES                                 */}
+                {/* ========================================================= */}
+                {studioTab === 'cheatsheet' && studyBundle && (
+                  <div className="space-y-4 max-w-3xl mx-auto">
+                    {/* Core Equations & Rules */}
+                    <div className="space-y-2.5">
+                      {studyBundle.cheatsheet.formulasOrRules.map((item, idx) => (
+                        <div
+                          key={idx}
+                          className={`p-4 rounded-2xl border ${
+                            isDark
+                              ? 'bg-[#12151e] border-white/[0.08]'
+                              : 'bg-[#f8f9fb] border-black/[0.08]'
+                          }`}
+                        >
+                          <div className="text-xs font-semibold mb-2">{item.label}</div>
+                          <div
+                            className={`text-xs px-3 py-2 rounded-xl mb-2 overflow-x-auto ${
+                              isDark ? 'bg-white/[0.04] text-white' : 'bg-black/[0.035] text-black'
+                            }`}
+                          >
+                            <MathMarkdown
+                              content={
+                                item.expression.includes('$')
+                                  ? item.expression
+                                  : `$${item.expression}$`
+                              }
+                              isDark={isDark}
+                              inline
+                            />
+                          </div>
+                          <div
+                            className={`text-xs leading-relaxed ${
+                              isDark ? 'text-neutral-300' : 'text-neutral-700'
+                            }`}
+                          >
+                            <MathMarkdown content={item.meaning} isDark={isDark} inline />
+                          </div>
+                        </div>
+                      ))}
                     </div>
 
-                    {/* Personal Persistent Scratchpad Notes */}
+                    {/* Key Review Points */}
+                    <div
+                      className={`p-4 rounded-2xl border space-y-2 ${
+                        isDark
+                          ? 'bg-[#11131a] border-white/[0.08]'
+                          : 'bg-white border-black/[0.08]'
+                      }`}
+                    >
+                      {studyBundle.cheatsheet.examTips.map((tip, idx) => (
+                        <div key={idx} className="flex items-start gap-2 text-xs leading-relaxed">
+                          <span className="font-mono opacity-45 shrink-0">{idx + 1}.</span>
+                          <div className="min-w-0">
+                            <MathMarkdown content={tip} isDark={isDark} inline />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Personal Notes */}
                     <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-semibold">
-                          03. Personal Study Scratchpad (Auto-Saved)
-                        </span>
-                        <button
-                          type="button"
-                          onClick={handleExportStudyPackMarkdown}
-                          className="text-xs font-medium underline opacity-80 hover:opacity-100 cursor-pointer"
-                        >
-                          Download Full Study Pack (.md)
-                        </button>
-                      </div>
                       <textarea
                         value={userNotes}
                         onChange={(e) => {
@@ -2272,9 +1967,9 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
                             localStorage.setItem(`zeno_pdf_notes_${activePdfName}`, val);
                           } catch {}
                         }}
-                        rows={5}
-                        placeholder="Write your own annotations, key formulas, or exam reminders for this PDF..."
-                        className={`w-full p-4 rounded-2xl border text-xs sm:text-sm leading-relaxed outline-none resize-y ${
+                        rows={4}
+                        placeholder="Add personal study notes..."
+                        className={`w-full p-3.5 rounded-2xl border text-xs sm:text-sm leading-relaxed outline-none resize-y ${
                           isDark
                             ? 'bg-[#11131a] border-white/[0.1] text-white placeholder-neutral-500 focus:border-white/30'
                             : 'bg-[#f8f9fb] border-black/[0.1] text-black placeholder-neutral-400 focus:border-black/30'
@@ -2285,80 +1980,49 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
                 )}
 
                 {/* ========================================================= */}
-                {/* TAB 6: ASK PDF CO-PILOT Q&A                               */}
+                {/* TAB 6: ASK PDF                                            */}
                 {/* ========================================================= */}
                 {studioTab === 'chat' && (
-                  <div className="flex flex-col h-[62vh] max-w-3xl mx-auto">
-                    <div className="flex-1 overflow-y-auto space-y-3 pr-1 scrollbar-thin">
+                  <div className="flex flex-col h-[68vh] max-w-3xl mx-auto">
+                    <div className="flex-1 overflow-y-auto space-y-2.5 pr-1 scrollbar-thin">
                       {chatTurns.length === 0 ? (
-                        <div
-                          className={`p-5 rounded-2xl border ${
-                            isDark
-                              ? 'bg-[#12151e] border-white/[0.09]'
-                              : 'bg-[#f8f9fb] border-black/[0.08]'
-                          }`}
-                        >
-                          <div className="text-xs sm:text-sm font-semibold mb-1">
-                            Ask anything about "{activePdfName}"
-                          </div>
-                          <p
-                            className={`text-xs leading-relaxed mb-4 ${
-                              isDark ? 'text-neutral-400' : 'text-neutral-600'
-                            }`}
-                          >
-                            Responses are grounded directly in the extracted text of your uploaded
-                            PDF document.
-                          </p>
-                          <div className="flex flex-wrap gap-2">
-                            {[
-                              'Give me a 5-bullet executive briefing of this PDF',
-                              'Quiz me with 3 hard open-ended questions on this document',
-                              'Extract all quantitative metrics, tables, and formulas',
-                              'What are the main limitations or counterarguments?',
-                            ].map((qText, idx) => (
-                              <button
-                                key={idx}
-                                type="button"
-                                onClick={() => handleSendPdfChat(qText)}
-                                className={`px-3.5 py-2 rounded-xl border text-xs text-left transition-colors cursor-pointer ${
-                                  isDark
-                                    ? 'bg-[#171b26] border-white/[0.08] text-neutral-200 hover:border-white/30'
-                                    : 'bg-white border-black/[0.08] text-neutral-800 hover:border-black/30'
-                                }`}
-                              >
-                                {qText}
-                              </button>
-                            ))}
-                          </div>
+                        <div className="space-y-2 pt-1">
+                          {[
+                            'Give me a 5-bullet executive briefing of this PDF',
+                            'Quiz me with 3 hard open-ended questions on this document',
+                            'Extract all quantitative metrics, tables, and LaTeX formulas',
+                            'What are the main limitations or counterarguments?',
+                          ].map((qText, idx) => (
+                            <button
+                              key={idx}
+                              type="button"
+                              onClick={() => handleSendPdfChat(qText)}
+                              className={`w-full px-4 py-3 rounded-2xl border text-xs text-left transition-colors cursor-pointer ${
+                                isDark
+                                  ? 'bg-[#12151e] border-white/[0.08] text-neutral-200 hover:border-white/25'
+                                  : 'bg-[#f8f9fb] border-black/[0.08] text-neutral-800 hover:border-black/25'
+                              }`}
+                            >
+                              {qText}
+                            </button>
+                          ))}
                         </div>
                       ) : (
                         chatTurns.map((turn) => (
                           <div
                             key={turn.id}
-                            className={`p-4 rounded-2xl border text-xs sm:text-sm leading-relaxed ${
+                            className={`p-3.5 sm:p-4 rounded-2xl border text-xs sm:text-sm leading-relaxed ${
                               turn.role === 'user'
                                 ? isDark
-                                  ? 'bg-white/[0.08] border-white/[0.15] ml-8'
-                                  : 'bg-black/[0.05] border-black/[0.1] ml-8'
+                                  ? 'bg-white/[0.07] border-white/[0.14] ml-8'
+                                  : 'bg-black/[0.04] border-black/[0.09] ml-8'
                                 : isDark
-                                ? 'bg-[#12151e] border-white/[0.08] mr-4'
-                                : 'bg-white border-black/[0.08] mr-4'
+                                ? 'bg-[#12151e] border-white/[0.08] mr-2'
+                                : 'bg-white border-black/[0.08] mr-2'
                             }`}
                           >
-                            <div
-                              className={`text-[10px] font-mono uppercase mb-1 ${
-                                isDark ? 'text-neutral-400' : 'text-neutral-500'
-                              }`}
-                            >
-                              {turn.role === 'user' ? 'You' : 'PDF Study Co-Pilot'}
-                            </div>
                             <div className="prose-grok max-w-none text-xs sm:text-sm leading-relaxed">
-                              <ReactMarkdown
-                                remarkPlugins={[remarkGfm, remarkMath]}
-                                rehypePlugins={[rehypeKatex]}
-                              >
-                                {turn.content}
-                              </ReactMarkdown>
+                              <MathMarkdown content={turn.content} isDark={isDark} />
                             </div>
                           </div>
                         ))
@@ -2366,14 +2030,14 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
 
                       {isChatLoading && (
                         <div
-                          className={`p-4 rounded-2xl border text-xs flex items-center gap-2 ${
+                          className={`p-3.5 rounded-2xl border text-xs flex items-center gap-2 ${
                             isDark
                               ? 'bg-[#12151e] border-white/[0.08] text-neutral-400'
                               : 'bg-white border-black/[0.08] text-neutral-600'
                           }`}
                         >
-                          <Loader2 className="w-4 h-4 animate-spin text-sky-400" />
-                          <span>Analyzing document pages...</span>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>Analyzing document...</span>
                         </div>
                       )}
                       <div ref={chatEndRef} />
@@ -2384,30 +2048,29 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
                         e.preventDefault();
                         handleSendPdfChat();
                       }}
-                      className="mt-3 pt-3 border-t border-current/10 flex items-center gap-2"
+                      className="mt-3 pt-2.5 border-t border-current/10 flex items-center gap-2"
                     >
                       <input
                         type="text"
                         value={chatDraft}
                         onChange={(e) => setChatDraft(e.target.value)}
-                        placeholder={`Ask a specific question about ${activePdfName}...`}
-                        className={`flex-1 px-4 py-2.5 rounded-xl border text-xs sm:text-sm outline-none ${
+                        placeholder={`Ask about ${activePdfName}...`}
+                        className={`flex-1 px-4 py-2.5 rounded-full border text-xs sm:text-sm outline-none ${
                           isDark
-                            ? 'bg-[#141720] border-white/[0.12] text-white placeholder-neutral-500 focus:border-white/30'
+                            ? 'bg-[#12151e] border-white/[0.12] text-white placeholder-neutral-500 focus:border-white/30'
                             : 'bg-[#f8f9fb] border-black/[0.12] text-black placeholder-neutral-400 focus:border-black/30'
                         }`}
                       />
                       <button
                         type="submit"
                         disabled={!chatDraft.trim() || isChatLoading}
-                        className={`px-4 py-2.5 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-40 ${
+                        className={`px-4 py-2.5 rounded-full text-xs font-semibold transition-colors cursor-pointer disabled:opacity-40 shrink-0 ${
                           isDark
                             ? 'bg-white text-black hover:bg-neutral-200'
                             : 'bg-[#0d0d0d] text-white hover:bg-neutral-800'
                         }`}
                       >
-                        <Send className="w-3.5 h-3.5" />
-                        <span>Ask PDF</span>
+                        Ask
                       </button>
                     </form>
                   </div>
@@ -2425,10 +2088,10 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
               top: `${selectionMenu.y}px`,
               transform: 'translate(-50%, -100%)',
             }}
-            className={`absolute z-50 flex items-center gap-1 p-1.5 rounded-2xl border shadow-2xl backdrop-blur-2xl animate-in fade-in zoom-in-95 duration-150 ${
+            className={`absolute z-50 flex items-center gap-1 p-1 rounded-full border shadow-2xl backdrop-blur-2xl animate-in fade-in zoom-in-95 duration-150 ${
               isDark
-                ? 'bg-[#18181b]/98 border-white/20 text-white shadow-black/90'
-                : 'bg-white/98 border-black/15 text-black shadow-black/20'
+                ? 'bg-[#18181b]/95 border-white/20 text-white shadow-black/90'
+                : 'bg-white/95 border-black/15 text-black shadow-black/20'
             }`}
             onClick={(e) => e.stopPropagation()}
           >
@@ -2442,9 +2105,9 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
                   `Summarize and explain this passage from the document:\n\n"${txt}"`
                 );
               }}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl hover:bg-sky-500 hover:text-white transition-colors cursor-pointer text-xs font-medium"
+              className="px-2.5 py-1 rounded-full hover:bg-white/10 transition-colors cursor-pointer text-xs font-medium"
             >
-              <span>Summarize</span>
+              Summarize
             </button>
             <button
               type="button"
@@ -2456,10 +2119,9 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
                   `Explain the mathematical and technical meaning of this passage from first principles:\n\n"${txt}"`
                 );
               }}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl hover:bg-sky-500 hover:text-white transition-colors cursor-pointer text-xs font-medium"
+              className="px-2.5 py-1 rounded-full hover:bg-white/10 transition-colors cursor-pointer text-xs font-medium"
             >
-              <HelpCircle className="w-3.5 h-3.5 text-sky-400" />
-              <span>Explain</span>
+              Explain
             </button>
             <button
               type="button"
@@ -2471,28 +2133,9 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
                   `Create 3 flashcards and 2 multiple-choice quiz questions specifically testing this passage:\n\n"${txt}"`
                 );
               }}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl hover:bg-sky-500 hover:text-white transition-colors cursor-pointer text-xs font-medium"
+              className="px-2.5 py-1 rounded-full hover:bg-white/10 transition-colors cursor-pointer text-xs font-medium"
             >
-              <Layers className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Quiz This</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                navigator.clipboard.writeText(selectionMenu.text);
-                setCopiedSuccess(true);
-                setTimeout(() => {
-                  setCopiedSuccess(false);
-                  setSelectionMenu(null);
-                }, 1000);
-              }}
-              className="flex items-center gap-1.5 px-2 py-1.5 rounded-xl hover:bg-black/10 dark:hover:bg-white/10 transition-colors cursor-pointer text-xs"
-            >
-              {copiedSuccess ? (
-                <Check className="w-3.5 h-3.5 text-emerald-400" />
-              ) : (
-                <Copy className="w-3.5 h-3.5" />
-              )}
+              Quiz This
             </button>
           </div>
         )}

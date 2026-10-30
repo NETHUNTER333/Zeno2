@@ -10,15 +10,11 @@ import {
   ExternalLink,
   BookOpen,
   Link2,
-  Globe,
-  Lock,
   Bookmark,
-  Send,
+  ChevronDown,
 } from 'lucide-react';
 import {
   ChatMessage,
-  DiscoverCategory,
-  PublicArtifactType,
   PublicArtifact,
 } from '../types';
 import {
@@ -33,8 +29,6 @@ import {
 } from '../lib/exportChat';
 import { publishSharedThreadToFirestore } from '../lib/firebase';
 import {
-  DISCOVER_CATEGORIES,
-  publishPublicArtifact,
   KnowledgeVaultStore,
   trackGrowthEvent,
   getUnlockedCosmeticThemes,
@@ -67,9 +61,10 @@ export const ShareExportStudioModal: React.FC<ShareExportStudioModalProps> = ({
   initialTab = 'quote',
   isDark = true,
   onOpenReadOnlyPreview,
-  onArtifactPublished,
 }) => {
-  const [activeTab, setActiveTab] = useState<'quote' | 'publish' | 'share' | 'export'>(initialTab);
+  const resolvedInitialTab: 'quote' | 'share' | 'export' =
+    initialTab === 'publish' ? 'quote' : initialTab;
+  const [activeTab, setActiveTab] = useState<'quote' | 'share' | 'export'>(resolvedInitialTab);
   const [shareUrl, setShareUrl] = useState<string>('');
   const [shareId, setShareId] = useState<string>('');
   const [isPublishingThread, setIsPublishingThread] = useState(false);
@@ -85,6 +80,7 @@ export const ShareExportStudioModal: React.FC<ShareExportStudioModalProps> = ({
   }, [thread]);
 
   const [selectedAssistantId, setSelectedAssistantId] = useState<string>('');
+  const [isResponsePickerOpen, setIsResponsePickerOpen] = useState(false);
   const [quoteTheme, setQuoteTheme] = useState<ShareCardTheme>('carbon');
   const [aspectRatio, setAspectRatio] = useState<ShareCardAspectRatio>('landscape');
   const [includePromptOnCard, setIncludePromptOnCard] = useState(true);
@@ -94,44 +90,31 @@ export const ShareExportStudioModal: React.FC<ShareExportStudioModalProps> = ({
   const [customCardTitle, setCustomCardTitle] = useState<string>('');
   const [customPromptText, setCustomPromptText] = useState<string>('');
   const [customAnswerExcerpt, setCustomAnswerExcerpt] = useState<string>('');
-
-  // Public Zeno Page Publishing state (requires explicit user confirmation)
-  const [pubTitle, setPubTitle] = useState<string>('');
-  const [pubSummary, setPubSummary] = useState<string>('');
-  const [pubContent, setPubContent] = useState<string>('');
-  const [pubCategory, setPubCategory] = useState<DiscoverCategory>('Research');
-  const [pubType, setPubType] = useState<PublicArtifactType>('research_summary');
-  const [pubTagsInput, setPubTagsInput] = useState<string>('research, synthesis, zeno');
-  const [pubVisibility, setPubVisibility] = useState<'public' | 'private'>('public');
-  const [pubShowAuthor, setPubShowAuthor] = useState<boolean>(true);
-  const [pubConfirmedConsent, setPubConfirmedConsent] = useState<boolean>(false);
-  const [isPublishingArtifact, setIsPublishingArtifact] = useState<boolean>(false);
-  const [publishedArtifact, setPublishedArtifact] = useState<PublicArtifact | null>(null);
-  const [copiedArtifactUrl, setCopiedArtifactUrl] = useState<boolean>(false);
-  const [publishError, setPublishError] = useState<string | null>(null);
+  const [rawSelectedContent, setRawSelectedContent] = useState<string>('');
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const unlockedThemes = useMemo(() => getUnlockedCosmeticThemes(), [isOpen]);
   const userProfile = useMemo(() => UserAccountStore.getProfile(), [isOpen]);
 
+  const targetInitialMsgId = initialQuoteMessage?.id || initialMessageId || '';
+  const lastAssistantMsgId =
+    assistantMessages.length > 0 ? assistantMessages[assistantMessages.length - 1].id : '';
+
   useEffect(() => {
     if (isOpen) {
-      setActiveTab(initialTab);
+      setActiveTab(initialTab === 'publish' ? 'quote' : initialTab);
       setShareUrl('');
       setShareId('');
-      setPublishedArtifact(null);
-      setPublishError(null);
-      setPubConfirmedConsent(false);
       setShareFeedback(null);
+      setIsResponsePickerOpen(false);
 
-      const targetId = initialQuoteMessage?.id || initialMessageId;
-      if (targetId && assistantMessages.some((m) => m.id === targetId)) {
-        setSelectedAssistantId(targetId);
-      } else if (assistantMessages.length > 0) {
-        setSelectedAssistantId(assistantMessages[assistantMessages.length - 1].id);
+      if (targetInitialMsgId && assistantMessages.some((m) => m.id === targetInitialMsgId)) {
+        setSelectedAssistantId(targetInitialMsgId);
+      } else if (lastAssistantMsgId) {
+        setSelectedAssistantId(lastAssistantMsgId);
       }
     }
-  }, [isOpen, initialTab, initialMessageId, initialQuoteMessage, assistantMessages]);
+  }, [isOpen, initialTab, targetInitialMsgId, lastAssistantMsgId]);
 
   const selectedExchange = useMemo(() => {
     if (!thread) return null;
@@ -156,6 +139,10 @@ export const ShareExportStudioModal: React.FC<ShareExportStudioModalProps> = ({
     return null;
   }, [thread, selectedAssistantId, initialQuoteMessage]);
 
+  const selectedExchangeKey = `${thread?.id || ''}:${selectedExchange?.assistantMsg?.id || ''}:${
+    selectedExchange?.assistantMsg?.content?.length || 0
+  }`;
+
   // Populate editable fields when selected message changes
   useEffect(() => {
     if (!thread) return;
@@ -175,11 +162,8 @@ export const ShareExportStudioModal: React.FC<ShareExportStudioModalProps> = ({
     setCustomCardTitle(defaultTitle);
     setCustomPromptText(defaultPrompt);
     setCustomAnswerExcerpt(cleanExcerpt || 'Select a response to generate a Zeno Share Card.');
-
-    setPubTitle(defaultTitle);
-    setPubSummary(cleanExcerpt.slice(0, 220));
-    setPubContent(rawAnswer || '');
-  }, [thread, selectedExchange]);
+    setRawSelectedContent(rawAnswer || '');
+  }, [selectedExchangeKey]);
 
   // Generate read-only thread link only when the user opens the 'share' tab
   useEffect(() => {
@@ -309,7 +293,7 @@ export const ShareExportStudioModal: React.FC<ShareExportStudioModalProps> = ({
   };
 
   const handleSaveCurrentToVault = () => {
-    const contentToSave = pubContent || customAnswerExcerpt;
+    const contentToSave = rawSelectedContent || customAnswerExcerpt;
     if (!contentToSave.trim()) return;
     KnowledgeVaultStore.saveItem({
       title: customCardTitle || thread.title || 'Saved Zeno Insight',
@@ -325,60 +309,6 @@ export const ShareExportStudioModal: React.FC<ShareExportStudioModalProps> = ({
     setVaultSavedFeedback(true);
     setTimeout(() => setVaultSavedFeedback(false), 2200);
   };
-
-  const handlePublishPublicArtifact = async () => {
-    setPublishError(null);
-    if (!pubTitle.trim() || !pubContent.trim()) {
-      setPublishError('Please provide both a title and content before publishing.');
-      return;
-    }
-    if (pubVisibility === 'public' && !pubConfirmedConsent) {
-      setPublishError('Please confirm that this page contains no private data before publishing publicly.');
-      return;
-    }
-    setIsPublishingArtifact(true);
-    try {
-      const tags = pubTagsInput
-        .split(',')
-        .map((t) => t.trim().toLowerCase())
-        .filter(Boolean)
-        .slice(0, 8);
-
-      const created = await publishPublicArtifact({
-        title: pubTitle.trim(),
-        summary: pubSummary.trim() || pubContent.trim().slice(0, 220),
-        content: pubContent.trim(),
-        promptText: includePromptOnCard ? customPromptText.trim() : undefined,
-        category: pubCategory,
-        type: pubType,
-        tags: tags.length > 0 ? tags : [pubCategory.toLowerCase()],
-        visibility: pubVisibility,
-        showAuthorAttribution: pubShowAuthor,
-        authorName: pubShowAuthor ? userProfile.displayName || 'Zeno Researcher' : 'Zeno Researcher',
-        authorAvatar: pubShowAuthor ? userProfile.avatar : undefined,
-        modelUsed: selectedExchange?.assistantMsg?.modelUsed || 'Zeno Synthesis',
-        sources: selectedExchange?.assistantMsg?.sources || [],
-      });
-
-      if (created) {
-        setPublishedArtifact(created);
-        onArtifactPublished?.(created);
-      } else {
-        setPublishError('Could not publish page right now. Please try again.');
-      }
-    } catch (e: any) {
-      setPublishError(e?.message || 'Failed to publish artifact.');
-    } finally {
-      setIsPublishingArtifact(false);
-    }
-  };
-
-  const publishedArtifactUrl = useMemo(() => {
-    if (!publishedArtifact) return '';
-    const u = new URL(window.location.origin + window.location.pathname);
-    u.searchParams.set('artifact', publishedArtifact.id);
-    return u.toString();
-  }, [publishedArtifact]);
 
   const handleCopyShareLink = () => {
     if (!shareUrl) return;
@@ -422,14 +352,14 @@ export const ShareExportStudioModal: React.FC<ShareExportStudioModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-md animate-in fade-in duration-150"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 md:p-8 bg-black/75 backdrop-blur-md animate-in fade-in duration-150"
       onClick={onClose}
     >
       <div
-        className={`w-full max-w-4xl max-h-[90vh] rounded-2xl border flex flex-col overflow-hidden shadow-2xl ${
+        className={`w-full max-w-4xl max-h-[86vh] rounded-3xl border flex flex-col overflow-hidden shadow-2xl ${
           isDark
-            ? 'bg-[#0c0d10] border-[#22252e] text-white'
-            : 'bg-white border-slate-200 text-slate-900'
+            ? 'bg-[#0c0d10]/95 border-white/[0.14] text-white backdrop-blur-2xl'
+            : 'bg-white/95 border-slate-200 text-slate-900 backdrop-blur-2xl'
         }`}
         onClick={(e) => e.stopPropagation()}
       >
@@ -441,10 +371,10 @@ export const ShareExportStudioModal: React.FC<ShareExportStudioModalProps> = ({
         >
           <div className="min-w-0">
             <h2 className="text-sm sm:text-base font-semibold tracking-tight">
-              Zeno Share & Publish Studio
+              Zeno Share Studio
             </h2>
             <p className="text-xs text-neutral-500 mt-0.5 truncate max-w-lg">
-              {thread.title} · Transform insights into Share Cards, Public Zeno Pages, or Knowledge Vault notes
+              {thread.title} · Transform insights into Share Cards, Thread Snapshots, or Knowledge Vault notes
             </p>
           </div>
 
@@ -506,23 +436,6 @@ export const ShareExportStudioModal: React.FC<ShareExportStudioModalProps> = ({
 
           <button
             type="button"
-            onClick={() => setActiveTab('publish')}
-            className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
-              activeTab === 'publish'
-                ? isDark
-                  ? 'bg-white text-black'
-                  : 'bg-slate-900 text-white'
-                : isDark
-                ? 'text-neutral-400 hover:text-white'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Globe className="w-3.5 h-3.5" />
-            <span>Publish Public Zeno Page</span>
-          </button>
-
-          <button
-            type="button"
             onClick={() => setActiveTab('share')}
             className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
               activeTab === 'share'
@@ -557,32 +470,113 @@ export const ShareExportStudioModal: React.FC<ShareExportStudioModalProps> = ({
         </div>
 
         {/* Body Content */}
-        <div className="p-5 overflow-y-auto flex-1 space-y-5 text-xs">
+        <div className="p-5 sm:p-6 overflow-y-auto flex-1 space-y-5 text-xs">
           {/* TAB 1: ZENO SHARE CARD STUDIO */}
           {activeTab === 'quote' && (
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
               {/* Left Column: Customization & Privacy Controls */}
-              <div className="lg:col-span-5 space-y-3.5">
+              <div className="lg:col-span-5 space-y-4">
                 {assistantMessages.length > 1 && (
-                  <div>
-                    <label className="block text-[11px] font-medium text-neutral-400 mb-1">
+                  <div className="relative">
+                    <label className="block text-[11px] font-medium text-neutral-400 mb-1.5">
                       Source Response
                     </label>
-                    <select
-                      value={selectedAssistantId}
-                      onChange={(e) => setSelectedAssistantId(e.target.value)}
-                      className={`w-full px-3 py-2 rounded-lg border text-xs outline-none ${
-                        isDark
-                          ? 'bg-[#14171f] border-[#282d3a] text-white'
-                          : 'bg-white border-slate-300 text-slate-900'
-                      }`}
-                    >
-                      {assistantMessages.map((m, idx) => (
-                        <option key={m.id} value={m.id}>
-                          Response #{idx + 1}: {m.content.replace(/[#*`]/g, '').slice(0, 48)}…
-                        </option>
-                      ))}
-                    </select>
+                    {(() => {
+                      const selectedIdx = Math.max(
+                        0,
+                        assistantMessages.findIndex((m) => m.id === selectedAssistantId)
+                      );
+                      const currentMsg = assistantMessages[selectedIdx] || assistantMessages[0];
+                      const cleanPreview = (currentMsg?.content || '')
+                        .replace(/<think>[\s\S]*?<\/think>/gi, '')
+                        .replace(/[#*`]/g, '')
+                        .replace(/\s+/g, ' ')
+                        .trim();
+                      return (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setIsResponsePickerOpen((prev) => !prev)}
+                            className={`w-full px-3.5 py-2.5 rounded-xl border text-xs flex items-center justify-between gap-2.5 text-left transition-all cursor-pointer ${
+                              isDark
+                                ? 'bg-[#14171f] hover:bg-[#191d27] border-[#282d3a] text-white'
+                                : 'bg-white hover:bg-slate-50 border-slate-300 text-slate-900'
+                            }`}
+                          >
+                            <span className="truncate font-medium">
+                              Response #{selectedIdx + 1}: {cleanPreview.slice(0, 52)}
+                              {cleanPreview.length > 52 ? '…' : ''}
+                            </span>
+                            <ChevronDown
+                              className={`w-4 h-4 shrink-0 opacity-60 transition-transform duration-200 ${
+                                isResponsePickerOpen ? 'rotate-180' : ''
+                              }`}
+                            />
+                          </button>
+
+                          {isResponsePickerOpen && (
+                            <div
+                              className={`mt-2 p-2 rounded-2xl border backdrop-blur-2xl backdrop-saturate-150 shadow-2xl max-h-60 overflow-y-auto space-y-1.5 z-30 ${
+                                isDark
+                                  ? 'bg-neutral-900/95 border-white/[0.14] text-white'
+                                  : 'bg-white/95 border-slate-200 text-slate-900'
+                              }`}
+                            >
+                              {assistantMessages.map((m, idx) => {
+                                const isSelected = m.id === selectedAssistantId;
+                                const snippet = (m.content || '')
+                                  .replace(/<think>[\s\S]*?<\/think>/gi, '')
+                                  .replace(/[#*`]/g, '')
+                                  .replace(/\s+/g, ' ')
+                                  .trim();
+                                return (
+                                  <button
+                                    key={m.id}
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedAssistantId(m.id);
+                                      setIsResponsePickerOpen(false);
+                                    }}
+                                    className={`w-full px-3.5 py-2.5 rounded-xl flex items-center justify-between gap-3 text-left transition-all cursor-pointer ${
+                                      isSelected
+                                        ? isDark
+                                          ? 'bg-white/[0.12] border border-white/[0.18] text-white'
+                                          : 'bg-slate-900 text-white'
+                                        : isDark
+                                        ? 'hover:bg-white/[0.06] text-neutral-300 border border-transparent'
+                                        : 'hover:bg-slate-100 text-slate-700 border border-transparent'
+                                    }`}
+                                  >
+                                    <div className="min-w-0 flex-1">
+                                      <div className="text-[11px] font-semibold opacity-75 mb-0.5">
+                                        Response #{idx + 1}
+                                      </div>
+                                      <div className="text-xs leading-snug line-clamp-2 break-words">
+                                        {snippet.slice(0, 90)}
+                                        {snippet.length > 90 ? '…' : ''}
+                                      </div>
+                                    </div>
+                                    <div
+                                      className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
+                                        isSelected
+                                          ? isDark
+                                            ? 'border-white bg-white text-black'
+                                            : 'border-white bg-white text-slate-900'
+                                          : isDark
+                                          ? 'border-white/30'
+                                          : 'border-slate-400'
+                                      }`}
+                                    >
+                                      {isSelected && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
                 )}
 
@@ -704,46 +698,46 @@ export const ShareExportStudioModal: React.FC<ShareExportStudioModalProps> = ({
                 </div>
 
                 {/* Action Buttons */}
-                <div className="pt-2 flex flex-wrap gap-2">
+                <div className="pt-2 grid grid-cols-3 gap-2">
                   <button
                     type="button"
                     onClick={handleNativeShareCard}
-                    className={`flex-1 inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                    className={`inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap ${
                       isDark
                         ? 'bg-white text-black hover:bg-neutral-200'
                         : 'bg-slate-900 text-white hover:bg-slate-800'
                     }`}
                   >
-                    <Share2 className="w-3.5 h-3.5" />
+                    <Share2 className="w-3.5 h-3.5 shrink-0" />
                     <span>Share Card</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={handleDownloadCard}
-                    className={`inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer ${
+                    className={`inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl border text-xs font-medium transition-colors cursor-pointer whitespace-nowrap ${
                       isDark
                         ? 'border-[#282d3a] hover:bg-white/5 text-white'
                         : 'border-slate-300 hover:bg-slate-100 text-slate-900'
                     }`}
                   >
-                    <Download className="w-3.5 h-3.5" />
+                    <Download className="w-3.5 h-3.5 shrink-0" />
                     <span>Download PNG</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={handleCopyCardImage}
-                    className={`inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer ${
+                    className={`inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl border text-xs font-medium transition-colors cursor-pointer whitespace-nowrap ${
                       isDark
                         ? 'border-[#282d3a] hover:bg-white/5 text-neutral-300'
                         : 'border-slate-300 hover:bg-slate-100 text-slate-700'
                     }`}
                   >
                     {copiedCardImage ? (
-                      <Check className="w-3.5 h-3.5 text-emerald-500" />
+                      <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
                     ) : (
-                      <Copy className="w-3.5 h-3.5" />
+                      <Copy className="w-3.5 h-3.5 shrink-0" />
                     )}
                     <span>{copiedCardImage ? 'Copied' : 'Copy Image'}</span>
                   </button>
@@ -770,302 +764,6 @@ export const ShareExportStudioModal: React.FC<ShareExportStudioModalProps> = ({
                   Private account details and full chat history are excluded by default.
                 </div>
               </div>
-            </div>
-          )}
-
-          {/* TAB 2: PUBLISH PUBLIC ZENO PAGE */}
-          {activeTab === 'publish' && (
-            <div className="space-y-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h3 className="text-sm font-semibold">
-                    Publish as an Independently Accessible Zeno Page
-                  </h3>
-                  <p className="text-xs text-neutral-500 mt-0.5 leading-relaxed">
-                    Create a clean web page with a permanent URL and social preview metadata. You can keep it Private or make it Public in Zeno Discover.
-                  </p>
-                </div>
-              </div>
-
-              {publishedArtifact ? (
-                <div
-                  className={`p-4 rounded-xl border space-y-3 ${
-                    isDark ? 'bg-[#11151c] border-emerald-500/30' : 'bg-emerald-50/60 border-emerald-200'
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-400">
-                      <Check className="w-4 h-4" />
-                      <span>
-                        {publishedArtifact.visibility === 'public'
-                          ? 'Published to Public Zeno Page & Zeno Discover'
-                          : 'Saved as Private Zeno Page'}
-                      </span>
-                    </span>
-                    <span className="text-[11px] font-mono text-neutral-400">
-                      ID: {publishedArtifact.id}
-                    </span>
-                  </div>
-
-                  <div
-                    className={`p-3 rounded-lg border flex flex-col sm:flex-row items-stretch sm:items-center gap-2 ${
-                      isDark ? 'bg-[#0b0d12] border-[#222634]' : 'bg-white border-slate-200'
-                    }`}
-                  >
-                    <input
-                      type="text"
-                      readOnly
-                      value={publishedArtifactUrl}
-                      className="flex-1 bg-transparent font-mono text-xs outline-none truncate"
-                    />
-                    <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          navigator.clipboard.writeText(publishedArtifactUrl);
-                          setCopiedArtifactUrl(true);
-                          trackGrowthEvent('share_action_initiated', {
-                            surface: 'public_artifact_url',
-                            artifactId: publishedArtifact.id,
-                          });
-                          setTimeout(() => setCopiedArtifactUrl(false), 2000);
-                        }}
-                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer ${
-                          isDark ? 'bg-white text-black' : 'bg-slate-900 text-white'
-                        }`}
-                      >
-                        {copiedArtifactUrl ? (
-                          <Check className="w-3.5 h-3.5 text-emerald-600" />
-                        ) : (
-                          <Copy className="w-3.5 h-3.5" />
-                        )}
-                        <span>{copiedArtifactUrl ? 'Copied URL' : 'Copy Page Link'}</span>
-                      </button>
-
-                      <a
-                        href={publishedArtifactUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium ${
-                          isDark
-                            ? 'border-[#2d3240] hover:bg-white/5 text-neutral-200'
-                            : 'border-slate-300 hover:bg-slate-100 text-slate-800'
-                        }`}
-                      >
-                        <ExternalLink className="w-3.5 h-3.5" />
-                        <span>Open Page</span>
-                      </a>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-3.5">
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div className="sm:col-span-2">
-                      <label className="block text-[11px] font-medium text-neutral-400 mb-1">
-                        Page Title
-                      </label>
-                      <input
-                        type="text"
-                        value={pubTitle}
-                        onChange={(e) => setPubTitle(e.target.value)}
-                        maxLength={140}
-                        className={`w-full px-3 py-2 rounded-lg border text-xs outline-none ${
-                          isDark
-                            ? 'bg-[#14171f] border-[#282d3a] text-white'
-                            : 'bg-white border-slate-300 text-slate-900'
-                        }`}
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[11px] font-medium text-neutral-400 mb-1">
-                        Discover Category
-                      </label>
-                      <select
-                        value={pubCategory}
-                        onChange={(e) => setPubCategory(e.target.value as DiscoverCategory)}
-                        className={`w-full px-3 py-2 rounded-lg border text-xs outline-none ${
-                          isDark
-                            ? 'bg-[#14171f] border-[#282d3a] text-white'
-                            : 'bg-white border-slate-300 text-slate-900'
-                        }`}
-                      >
-                        {DISCOVER_CATEGORIES.map((cat) => (
-                          <option key={cat} value={cat}>
-                            {cat}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div>
-                      <label className="block text-[11px] font-medium text-neutral-400 mb-1">
-                        Resource Format
-                      </label>
-                      <select
-                        value={pubType}
-                        onChange={(e) => setPubType(e.target.value as PublicArtifactType)}
-                        className={`w-full px-3 py-2 rounded-lg border text-xs outline-none ${
-                          isDark
-                            ? 'bg-[#14171f] border-[#282d3a] text-white'
-                            : 'bg-white border-slate-300 text-slate-900'
-                        }`}
-                      >
-                        <option value="research_summary">Research Summary</option>
-                        <option value="study_guide">Study Guide</option>
-                        <option value="explanation">Technical Explanation</option>
-                        <option value="structured_notes">Structured Notes</option>
-                        <option value="workflow">Reusable Workflow</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-[11px] font-medium text-neutral-400 mb-1">
-                        Tags (comma-separated)
-                      </label>
-                      <input
-                        type="text"
-                        value={pubTagsInput}
-                        onChange={(e) => setPubTagsInput(e.target.value)}
-                        placeholder="physics, transformers, study-guide"
-                        className={`w-full px-3 py-2 rounded-lg border text-xs outline-none ${
-                          isDark
-                            ? 'bg-[#14171f] border-[#282d3a] text-white'
-                            : 'bg-white border-slate-300 text-slate-900'
-                        }`}
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[11px] font-medium text-neutral-400 mb-1">
-                        Visibility Control
-                      </label>
-                      <div className="grid grid-cols-2 gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => setPubVisibility('public')}
-                          className={`inline-flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-lg border text-xs font-medium cursor-pointer ${
-                            pubVisibility === 'public'
-                              ? isDark
-                                ? 'bg-white text-black border-white'
-                                : 'bg-slate-900 text-white border-slate-900'
-                              : isDark
-                              ? 'bg-[#14171f] border-[#282d3a] text-neutral-400'
-                              : 'bg-slate-50 border-slate-200 text-slate-600'
-                          }`}
-                        >
-                          <Globe className="w-3.5 h-3.5" />
-                          <span>Public</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setPubVisibility('private')}
-                          className={`inline-flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-lg border text-xs font-medium cursor-pointer ${
-                            pubVisibility === 'private'
-                              ? isDark
-                                ? 'bg-white text-black border-white'
-                                : 'bg-slate-900 text-white border-slate-900'
-                              : isDark
-                              ? 'bg-[#14171f] border-[#282d3a] text-neutral-400'
-                              : 'bg-slate-50 border-slate-200 text-slate-600'
-                          }`}
-                        >
-                          <Lock className="w-3.5 h-3.5" />
-                          <span>Private</span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-medium text-neutral-400 mb-1">
-                      Short Preview Summary (Used for Open Graph social card & Discover preview)
-                    </label>
-                    <input
-                      type="text"
-                      value={pubSummary}
-                      onChange={(e) => setPubSummary(e.target.value)}
-                      maxLength={260}
-                      className={`w-full px-3 py-2 rounded-lg border text-xs outline-none ${
-                        isDark
-                          ? 'bg-[#14171f] border-[#282d3a] text-white'
-                          : 'bg-white border-slate-300 text-slate-900'
-                      }`}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-medium text-neutral-400 mb-1">
-                      Published Page Content (Markdown — Review & edit before publishing)
-                    </label>
-                    <textarea
-                      rows={7}
-                      value={pubContent}
-                      onChange={(e) => setPubContent(e.target.value)}
-                      className={`w-full px-3 py-2 rounded-lg border font-mono text-xs outline-none leading-relaxed resize-y ${
-                        isDark
-                          ? 'bg-[#090b0f] border-[#282d3a] text-neutral-200'
-                          : 'bg-slate-50 border-slate-300 text-slate-900'
-                      }`}
-                    />
-                  </div>
-
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
-                    <div className="space-y-1.5">
-                      <label className="inline-flex items-center gap-2 text-xs cursor-pointer select-none">
-                        <input
-                          type="checkbox"
-                          checked={pubShowAuthor}
-                          onChange={(e) => setPubShowAuthor(e.target.checked)}
-                          className="rounded"
-                        />
-                        <span>Display my name ({userProfile.displayName || 'Zeno Researcher'}) as creator</span>
-                      </label>
-
-                      {pubVisibility === 'public' && (
-                        <label className="flex items-center gap-2 text-xs cursor-pointer select-none text-amber-400/90">
-                          <input
-                            type="checkbox"
-                            checked={pubConfirmedConsent}
-                            onChange={(e) => setPubConfirmedConsent(e.target.checked)}
-                            className="rounded"
-                          />
-                          <span>
-                            I confirm this page excludes private information and may be viewed via its public link & Zeno Discover.
-                          </span>
-                        </label>
-                      )}
-                    </div>
-
-                    <button
-                      type="button"
-                      disabled={isPublishingArtifact}
-                      onClick={handlePublishPublicArtifact}
-                      className={`inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
-                        isDark
-                          ? 'bg-white text-black hover:bg-neutral-200 disabled:opacity-50'
-                          : 'bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50'
-                      }`}
-                    >
-                      <Send className="w-3.5 h-3.5" />
-                      <span>
-                        {isPublishingArtifact
-                          ? 'Publishing Page…'
-                          : pubVisibility === 'public'
-                          ? 'Confirm & Publish Public Page'
-                          : 'Save Private Page'}
-                      </span>
-                    </button>
-                  </div>
-
-                  {publishError && (
-                    <div className="text-xs text-red-400 font-medium">{publishError}</div>
-                  )}
-                </div>
-              )}
             </div>
           )}
 

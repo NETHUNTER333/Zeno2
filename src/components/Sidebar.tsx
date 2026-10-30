@@ -24,6 +24,10 @@ import {
   Compass,
   Bookmark,
   Share2,
+  Zap,
+  Flame,
+  Trophy,
+  MessageSquarePlus,
 } from 'lucide-react';
 import { GrokLogo } from './GrokLogo';
 import { ChatMessage, SavedBookmark } from '../types';
@@ -50,10 +54,10 @@ interface SidebarProps {
   onUpdateThreadTitle: (threadId: string, newTitle: string) => void;
   onExportThread?: (threadId: string, format: 'markdown' | 'pdf') => void;
   onOpenSettings: () => void;
-  onOpenAnalytics: () => void;
   onOpenAccountModal?: (tab?: string) => void;
   onOpenOnboarding?: () => void;
-  onOpenGrowthHub?: (tab: 'discover' | 'vault' | 'weekly' | 'passes') => void;
+  onOpenGrowthHub?: (tab: 'discover' | 'vault' | 'weekly' | 'passes' | 'feedback') => void;
+  onOpenPricing?: (highlightPlan?: 'free' | 'spark' | 'fire') => void;
   onSelectPinnedMessage?: (threadId: string, messageId: string, snippet: string) => void;
   theme: 'dark' | 'light';
   onToggleTheme: () => void;
@@ -270,26 +274,45 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onUpdateThreadTitle,
   onExportThread,
   onOpenSettings,
-  onOpenAnalytics,
   onOpenAccountModal,
   onOpenOnboarding,
   onOpenGrowthHub,
+  onOpenPricing,
   onSelectPinnedMessage,
   theme,
   onToggleTheme,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [isWorkspaceCollapsed, setIsWorkspaceCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('zeno_sidebar_workspace_collapsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
   const [userProfile, setUserProfile] = useState(() => UserAccountStore.getProfile());
   const [userSub, setUserSub] = useState(() => UserAccountStore.getSubscription());
+  const [usageQuota, setUsageQuota] = useState(() => UserAccountStore.getUsage());
   const [pinnedMessages, setPinnedMessages] = useState<SavedBookmark[]>(() =>
     UserAccountStore.getBookmarks()
   );
   const isDark = theme === 'dark';
 
+  const toggleWorkspaceCollapsed = () => {
+    setIsWorkspaceCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('zeno_sidebar_workspace_collapsed', String(next));
+      } catch {}
+      return next;
+    });
+  };
+
   useEffect(() => {
     const syncProfile = () => {
       setUserProfile(UserAccountStore.getProfile());
       setUserSub(UserAccountStore.getSubscription());
+      setUsageQuota(UserAccountStore.getUsage());
       setPinnedMessages(UserAccountStore.getBookmarks());
     };
     window.addEventListener('zeno-account-updated', syncProfile);
@@ -361,64 +384,103 @@ export const Sidebar: React.FC<SidebarProps> = ({
   // Build Rare UI BounceSidebar items from workspace actions, pinned messages & categorized threads
   const { bounceItems, activeBounceIndex } = useMemo(() => {
     const items: BounceSidebarItem[] = [];
-    let currentActiveIdx = 1; // Default to "New Chat" when no thread is selected
+    let currentActiveIdx = isWorkspaceCollapsed ? -1 : 1; // Default to "New Conversation" when expanded and no thread is selected
 
     items.push({
       id: 'heading-workspace',
       label: 'Workspace',
       heading: true,
+      onClick: toggleWorkspaceCollapsed,
+      trailing: (
+        <span className="inline-flex items-center gap-1 text-[10px] font-medium tracking-normal normal-case opacity-80">
+          <span className="text-[10px]">{isWorkspaceCollapsed ? 'Show' : 'Hide'}</span>
+          <ChevronRight
+            className={`w-3.5 h-3.5 transition-transform duration-200 ${
+              isWorkspaceCollapsed ? '' : 'rotate-90'
+            }`}
+          />
+        </span>
+      ),
     });
 
-    items.push({
-      id: 'action-new-chat',
-      label: 'New Conversation',
-      onClick: () => {
-        onNewChat();
-        if (window.innerWidth < 768) onClose();
-      },
-    });
+    if (!isWorkspaceCollapsed) {
+      items.push({
+        id: 'action-new-chat',
+        label: 'New Conversation',
+        onClick: () => {
+          onNewChat();
+          if (window.innerWidth < 768) onClose();
+        },
+      });
 
-    if (onOpenGrowthHub) {
       items.push({
-        id: 'action-discover',
-        label: 'Zeno Discover',
-        sublabel: 'Public research & study guides',
-        icon: <Compass className="w-3.5 h-3.5 text-sky-400" />,
+        id: 'action-pricing',
+        label: 'Plans & Pricing',
+        sublabel: 'Spark ($1/mo) · Fire ($5/mo)',
         onClick: () => {
-          onOpenGrowthHub('discover');
+          if (onOpenPricing) {
+            onOpenPricing('spark');
+          } else if (typeof window !== 'undefined') {
+            window.dispatchEvent(
+              new CustomEvent('zeno-open-pricing', { detail: { highlightPlan: 'spark' } })
+            );
+          }
           if (window.innerWidth < 768) onClose();
         },
       });
-      items.push({
-        id: 'action-vault',
-        label: 'Knowledge Vault',
-        sublabel: 'Saved insights & collections',
-        icon: <Bookmark className="w-3.5 h-3.5 text-emerald-400" />,
-        onClick: () => {
-          onOpenGrowthHub('vault');
-          if (window.innerWidth < 768) onClose();
-        },
-      });
-      items.push({
-        id: 'action-weekly',
-        label: 'Weekly Intelligence Brief',
-        sublabel: 'Progress & optional missions',
-        icon: <BarChart2 className="w-3.5 h-3.5 text-amber-400" />,
-        onClick: () => {
-          onOpenGrowthHub('weekly');
-          if (window.innerWidth < 768) onClose();
-        },
-      });
-      items.push({
-        id: 'action-passes',
-        label: 'Zeno Passes',
-        sublabel: 'Invite friends & creator profile',
-        icon: <Share2 className="w-3.5 h-3.5 text-purple-400" />,
-        onClick: () => {
-          onOpenGrowthHub('passes');
-          if (window.innerWidth < 768) onClose();
-        },
-      });
+
+      if (onOpenGrowthHub) {
+        items.push({
+          id: 'action-discover',
+          label: 'Zeno Discover',
+          sublabel: 'Public research & study guides',
+          icon: <Compass className="w-3.5 h-3.5 text-sky-400" />,
+          onClick: () => {
+            onOpenGrowthHub('discover');
+            if (window.innerWidth < 768) onClose();
+          },
+        });
+        items.push({
+          id: 'action-vault',
+          label: 'Knowledge Vault',
+          sublabel: 'Saved insights & collections',
+          icon: <Bookmark className="w-3.5 h-3.5 text-emerald-400" />,
+          onClick: () => {
+            onOpenGrowthHub('vault');
+            if (window.innerWidth < 768) onClose();
+          },
+        });
+        items.push({
+          id: 'action-weekly',
+          label: 'Weekly Intelligence Brief',
+          sublabel: 'Progress & optional missions',
+          icon: <BarChart2 className="w-3.5 h-3.5 text-amber-400" />,
+          onClick: () => {
+            onOpenGrowthHub('weekly');
+            if (window.innerWidth < 768) onClose();
+          },
+        });
+        items.push({
+          id: 'action-passes',
+          label: 'Zeno Passes & Leaderboard',
+          sublabel: 'Elite Referrer ranks & Top Contributors',
+          icon: <Trophy className="w-3.5 h-3.5 text-amber-400" />,
+          onClick: () => {
+            onOpenGrowthHub('passes');
+            if (window.innerWidth < 768) onClose();
+          },
+        });
+        items.push({
+          id: 'action-feedback',
+          label: 'Send Feedback',
+          sublabel: 'Feature requests & bug reports',
+          icon: <MessageSquarePlus className="w-3.5 h-3.5 text-pink-400" />,
+          onClick: () => {
+            onOpenGrowthHub('feedback');
+            if (window.innerWidth < 768) onClose();
+          },
+        });
+      }
     }
 
     if (filteredPinnedMessages.length > 0 || !normalizedQuery) {
@@ -541,11 +603,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
     activeThreadId,
     normalizedQuery,
     isDark,
+    isWorkspaceCollapsed,
     onNewChat,
     onClose,
     onSelectThread,
     onSelectPinnedMessage,
     onOpenGrowthHub,
+    onOpenPricing,
     onDeleteThread,
     onUpdateThreadTitle,
     onExportThread,
@@ -668,9 +732,65 @@ export const Sidebar: React.FC<SidebarProps> = ({
           )}
         </div>
 
+        {/* Active Plan & Upload Quota Card — Clean Padded Monochrome UI */}
+        <div className="px-3 pb-2.5">
+          {(() => {
+            const normPlan = UserAccountStore.getNormalizedPlan(userSub.plan);
+            return (
+              <button
+                type="button"
+                onClick={() => {
+                  if (onOpenPricing) {
+                    onOpenPricing(normPlan === 'free' ? 'spark' : 'fire');
+                  } else if (typeof window !== 'undefined') {
+                    window.dispatchEvent(
+                      new CustomEvent('zeno-open-pricing', {
+                        detail: { highlightPlan: normPlan === 'free' ? 'spark' : 'fire' },
+                      })
+                    );
+                  }
+                  if (window.innerWidth < 768) onClose();
+                }}
+                className={`w-full p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
+                  isDark
+                    ? 'bg-white/[0.04] hover:bg-white/[0.08] border-white/15 text-white'
+                    : 'bg-white hover:bg-neutral-50 border-black/10 text-[#18181b] shadow-2xs'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <span className="font-semibold text-xs tracking-tight">
+                    {normPlan === 'free'
+                      ? 'Core Basic ($0)'
+                      : normPlan === 'spark'
+                      ? 'Spark Plan ($1)'
+                      : 'Fire Plan ($5)'}
+                  </span>
+                  <span
+                    className={`text-[10px] px-2.5 py-0.5 rounded-full font-semibold ${
+                      isDark
+                        ? 'bg-white text-[#18181b]'
+                        : 'bg-[#18181b] text-white'
+                    }`}
+                  >
+                    {normPlan === 'free' ? 'Upgrade $1' : normPlan === 'spark' ? 'Fire $5' : 'Active'}
+                  </span>
+                </div>
+                <div className={`flex items-center justify-between text-[10.5px] font-mono ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
+                  <span>
+                    Uploads: {usageQuota.filesUploaded}/
+                    {usageQuota.fileUploadLimit >= 999999 ? '∞' : usageQuota.fileUploadLimit}
+                  </span>
+                  <span>
+                    Msgs: {usageQuota.messagesUsed}/
+                    {usageQuota.messageLimit >= 999999 ? '∞' : usageQuota.messageLimit}
+                  </span>
+                </div>
+              </button>
+            );
+          })()}
+        </div>
+
         {/* User Account & Settings Profile Row */}
-
-
         <div
           className={`p-3 border-t flex items-center justify-between text-xs ${
             isDark ? 'border-[#242424] text-[#8a8a8a]' : 'border-[#e5e5e5] text-[#6b6b6b]'
@@ -686,17 +806,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
             >
               <SettingsIcon className="w-4 h-4" />
               <span className="font-medium text-xs">Settings</span>
-            </button>
-
-            <button
-              onClick={onOpenAnalytics}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer ${
-                isDark ? 'hover:text-white hover:bg-[#222222]' : 'hover:text-[#0d0d0d] hover:bg-[#eaeaea]'
-              }`}
-              title="Open Workspace & Growth Analytics"
-            >
-              <BarChart2 className="w-4 h-4" />
-              <span className="font-medium text-xs">Analytics</span>
             </button>
           </div>
 

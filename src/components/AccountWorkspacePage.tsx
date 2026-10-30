@@ -14,14 +14,17 @@ import {
   CheckCircle2,
   MessageSquare,
   Trash2,
+  Zap,
+  Lock,
 } from 'lucide-react';
 import { UserAccountStore } from '../lib/userAccountStore';
 import { UserProfile } from '../types';
-import { GROK_MODELS, ModelOption } from './GrokModelPicker';
+import { GROK_MODELS, ModelOption, getModelRequiredTier } from './GrokModelPicker';
 import { ChatThread } from './Sidebar';
 import { DeleteAccountButton } from './DeleteAccountButton';
+import { PricingModal } from './PricingModal';
 
-export type AccountTab = 'profile' | 'chats_projects' | 'preferences' | 'database';
+export type AccountTab = 'profile' | 'pricing' | 'chats_projects' | 'preferences' | 'database';
 
 interface AccountWorkspacePageProps {
   onBackToChat: () => void;
@@ -81,6 +84,7 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
   const isDark = theme === 'dark';
 
   const navItems: { id: AccountTab; label: string; icon: React.ReactNode }[] = [
+    { id: 'pricing', label: 'Plans & Pricing ($1 / $5)', icon: <Zap className="w-4 h-4 text-amber-400" /> },
     { id: 'profile', label: 'Identity & Account', icon: <User className="w-4 h-4" /> },
     { id: 'chats_projects', label: 'Chat History & Export', icon: <FolderOpen className="w-4 h-4" /> },
     { id: 'preferences', label: 'App Preferences', icon: <SlidersHorizontal className="w-4 h-4" /> },
@@ -300,7 +304,17 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
 
         {/* Right Main Content Canvas */}
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 lg:p-10 scrollbar-thin">
-          <div className="max-w-3xl mx-auto space-y-6 pb-16">
+          <div className={`${activeTab === 'pricing' ? 'max-w-6xl' : 'max-w-3xl'} mx-auto space-y-6 pb-16`}>
+            {/* Tab: Plans & Pricing ($1 Spark / $5 Fire) */}
+            {activeTab === 'pricing' && (
+              <PricingModal
+                isOpen={true}
+                onClose={onBackToChat}
+                isDark={isDark}
+                embedded={true}
+              />
+            )}
+
             {/* Tab: Identity & Account */}
             {activeTab === 'profile' && (
               <div className="space-y-6">
@@ -595,10 +609,18 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {GROK_MODELS.map((model) => {
                       const isSelected = selectedModel.id === model.id;
+                      const reqTier = getModelRequiredTier(model);
+                      const isLocked = !UserAccountStore.canUseModel(reqTier);
                       return (
                         <div
                           key={model.id}
-                          onClick={() => onSelectModel(model)}
+                          onClick={() => {
+                            if (isLocked) {
+                              setActiveTab('pricing');
+                              return;
+                            }
+                            onSelectModel(model);
+                          }}
                           className={`p-3 rounded-xl border flex items-center justify-between transition-all cursor-pointer ${
                             isSelected
                               ? isDark
@@ -609,11 +631,27 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
                               : 'border-black/10 hover:bg-neutral-50 text-neutral-700'
                           }`}
                         >
-                          <div>
-                            <div className="text-xs">{model.name}</div>
-                            <div className="text-[10px] text-neutral-400 mt-0.5">{model.description}</div>
+                          <div className="min-w-0 pr-2">
+                            <div className="text-xs flex items-center gap-1.5 flex-wrap">
+                              <span>{model.name}</span>
+                              {reqTier === 'spark' && (
+                                <span className="text-[9px] px-1.5 py-0.2 rounded font-mono font-bold bg-amber-400/20 text-amber-400 border border-amber-400/30">
+                                  Spark $1
+                                </span>
+                              )}
+                              {reqTier === 'fire' && (
+                                <span className="text-[9px] px-1.5 py-0.2 rounded font-mono font-bold bg-orange-500/20 text-orange-400 border border-orange-500/30">
+                                  Fire $5
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[10px] text-neutral-400 mt-0.5 truncate">{model.description}</div>
                           </div>
-                          {isSelected && <Check className="w-4 h-4 text-blue-400" />}
+                          {isLocked ? (
+                            <Lock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                          ) : isSelected ? (
+                            <Check className="w-4 h-4 text-blue-400 shrink-0" />
+                          ) : null}
                         </div>
                       );
                     })}

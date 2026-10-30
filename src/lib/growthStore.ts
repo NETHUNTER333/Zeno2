@@ -12,6 +12,10 @@ import {
   GrowthAnalyticsEventName,
   GrowthFunnelSummary,
   SearchSource,
+  EliteReferrerLeaderboardEntry,
+  TopContributorEntry,
+  ZenoFeedbackCategory,
+  ZenoFeedbackSubmission,
 } from '../types';
 import {
   auth,
@@ -37,6 +41,9 @@ const GROWTH_KEYS = {
   DISMISSED_CONTINUATION: 'zeno_dismissed_continuation_v1',
   LOCAL_ANALYTICS_COUNTS: 'zeno_growth_analytics_counts_v1',
   SEEN_EVENT_KEYS: 'zeno_growth_seen_events_v1',
+  FEEDBACK_ITEMS: 'zeno_submitted_feedback_v1',
+  USER_REFERRAL_TRACKER: 'zeno_user_referral_tracker_v1',
+  CLAIMED_REFERRER_BONUSES: 'zeno_claimed_referrer_bonuses_v1',
 };
 
 export const DISCOVER_CATEGORIES: DiscoverCategory[] = [
@@ -122,7 +129,13 @@ async function getGrowthHeaders(): Promise<Record<string, string>> {
 function emitGrowthUpdate(): void {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event('zeno-growth-updated'));
+  }
+}
+
+function emitVaultUpdate(): void {
+  if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event('zeno-vault-updated'));
+    window.dispatchEvent(new Event('zeno-growth-updated'));
   }
 }
 
@@ -170,7 +183,6 @@ export async function trackGrowthEvent(
     const counts = safeLoad<Record<string, number>>(GROWTH_KEYS.LOCAL_ANALYTICS_COUNTS, {});
     counts[event] = (counts[event] || 0) + 1;
     safeSave(GROWTH_KEYS.LOCAL_ANALYTICS_COUNTS, counts);
-    emitGrowthUpdate();
 
     const headers = await getGrowthHeaders();
     await fetch('/api/growth/analytics/event', {
@@ -274,7 +286,7 @@ export function dismissContinuationItem(id: string): void {
   const existing = getDismissedContinuationIds();
   if (!existing.includes(id)) {
     safeSave(GROWTH_KEYS.DISMISSED_CONTINUATION, [id, ...existing].slice(0, 50));
-    emitGrowthUpdate();
+    emitVaultUpdate();
   }
 }
 
@@ -297,7 +309,7 @@ export const KnowledgeVaultStore = {
       createdAt: Date.now(),
     };
     safeSave(GROWTH_KEYS.VAULT_COLLECTIONS, [created, ...collections]);
-    emitGrowthUpdate();
+    emitVaultUpdate();
     return created;
   },
 
@@ -311,7 +323,7 @@ export const KnowledgeVaultStore = {
       GROWTH_KEYS.VAULT_COLLECTIONS,
       collections.length > 0 ? collections : DEFAULT_VAULT_COLLECTIONS
     );
-    emitGrowthUpdate();
+    emitVaultUpdate();
   },
 
   getItems(): KnowledgeVaultItem[] {
@@ -415,7 +427,7 @@ export const KnowledgeVaultStore = {
     safeSave(GROWTH_KEYS.VAULT_ITEMS, nextItems);
     saveVaultItemToFirestore(item).catch(() => {});
     trackGrowthEvent('knowledge_item_saved', `kv_save_${item.id}`);
-    emitGrowthUpdate();
+    emitVaultUpdate();
     return item;
   },
 
@@ -443,7 +455,7 @@ export const KnowledgeVaultStore = {
     items[idx] = updated;
     safeSave(GROWTH_KEYS.VAULT_ITEMS, items);
     saveVaultItemToFirestore(updated).catch(() => {});
-    emitGrowthUpdate();
+    emitVaultUpdate();
     return updated;
   },
 
@@ -458,7 +470,7 @@ export const KnowledgeVaultStore = {
     const items = this.getItems().filter((i) => i.id !== itemId);
     safeSave(GROWTH_KEYS.VAULT_ITEMS, items);
     deleteVaultItemFromFirestore(itemId).catch(() => {});
-    emitGrowthUpdate();
+    emitVaultUpdate();
   },
 
   isArtifactBookmarked(artifactId: string): boolean {
@@ -517,7 +529,7 @@ export const KnowledgeVaultStore = {
       (a, b) => Number(b.isPinned) - Number(a.isPinned) || b.updatedAt - a.updatedAt
     );
     safeSave(GROWTH_KEYS.VAULT_ITEMS, list);
-    emitGrowthUpdate();
+    emitVaultUpdate();
     return list;
   },
 
@@ -1347,3 +1359,587 @@ export async function saveCreatorPublicProfile(
 }
 
 export const saveCreatorProfile = saveCreatorPublicProfile;
+
+// ============================================================================
+// ELITE REFERRER LEADERBOARD, TOP CONTRIBUTORS & FEEDBACK CLIENT
+// ============================================================================
+
+const FALLBACK_ELITE_REFERRERS: EliteReferrerLeaderboardEntry[] = [
+  {
+    rank: 1,
+    uid: 'ref_elena_vance',
+    displayName: 'Dr. Elena Vance',
+    username: 'elena_quantum',
+    referralCode: 'zp_elena94x',
+    claimedReferrals: 31,
+    visitsCount: 148,
+    conversionRate: 21,
+    tier: 'Grand Ambassador',
+    unlockedThemes: ['carbon-default', 'obsidian-gold', 'solar-ivory', 'emerald-terminal'],
+    specialtyTag: 'Quantum & Physics',
+  },
+  {
+    rank: 2,
+    uid: 'ref_marcus_chen',
+    displayName: 'Marcus Chen',
+    username: 'mchen_systems',
+    referralCode: 'zp_mchen88k',
+    claimedReferrals: 22,
+    visitsCount: 104,
+    conversionRate: 21,
+    tier: 'Apex Referrer',
+    unlockedThemes: ['carbon-default', 'obsidian-gold', 'solar-ivory', 'emerald-terminal'],
+    specialtyTag: 'Distributed Systems',
+  },
+  {
+    rank: 3,
+    uid: 'ref_aria_lindqvist',
+    displayName: 'Aria Lindqvist',
+    username: 'aria_ml',
+    referralCode: 'zp_arialq72',
+    claimedReferrals: 16,
+    visitsCount: 82,
+    conversionRate: 20,
+    tier: 'Apex Referrer',
+    unlockedThemes: ['carbon-default', 'obsidian-gold', 'solar-ivory', 'emerald-terminal'],
+    specialtyTag: 'Deep Learning',
+  },
+  {
+    rank: 4,
+    uid: 'ref_siddharth_rao',
+    displayName: 'Siddharth Rao',
+    username: 'srao_arxiv',
+    referralCode: 'zp_srao51m',
+    claimedReferrals: 11,
+    visitsCount: 54,
+    conversionRate: 20,
+    tier: 'Catalyst',
+    unlockedThemes: ['carbon-default', 'obsidian-gold', 'solar-ivory', 'emerald-terminal'],
+    specialtyTag: 'Literature Review',
+  },
+  {
+    rank: 5,
+    uid: 'ref_lucas_meyer',
+    displayName: 'Lucas Meyer',
+    username: 'lmeyer_dev',
+    referralCode: 'zp_lmeyer33',
+    claimedReferrals: 7,
+    visitsCount: 39,
+    conversionRate: 18,
+    tier: 'Catalyst',
+    unlockedThemes: ['carbon-default', 'obsidian-gold', 'solar-ivory', 'emerald-terminal'],
+    specialtyTag: 'Edge AI & WebGPU',
+  },
+  {
+    rank: 6,
+    uid: 'ref_nadia_okafor',
+    displayName: 'Nadia Okafor',
+    username: 'nadia_bio',
+    referralCode: 'zp_nadia19p',
+    claimedReferrals: 4,
+    visitsCount: 27,
+    conversionRate: 15,
+    tier: 'Vanguard',
+    unlockedThemes: ['carbon-default', 'obsidian-gold', 'solar-ivory'],
+    specialtyTag: 'STEM & Bio',
+  },
+  {
+    rank: 7,
+    uid: 'ref_kaito_takahashi',
+    displayName: 'Kaito Takahashi',
+    username: 'kaito_wasm',
+    referralCode: 'zp_kaito07z',
+    claimedReferrals: 2,
+    visitsCount: 18,
+    conversionRate: 11,
+    tier: 'Vanguard',
+    unlockedThemes: ['carbon-default', 'obsidian-gold'],
+    specialtyTag: 'Model Arena',
+  },
+];
+
+const FALLBACK_TOP_CONTRIBUTORS: TopContributorEntry[] = [
+  {
+    rank: 1,
+    uid: 'zeno_editorial',
+    displayName: 'Zeno Research Team',
+    username: 'zeno_research',
+    bio: 'Curated reference synthesis and mathematical study guides built with Zeno.',
+    publishedCount: 2,
+    totalSaves: 17,
+    totalForks: 11,
+    totalViews: 36,
+    impactScore: 183,
+    specialtyTags: ['transformers', 'attention', 'arxiv', 'research-methods'],
+    badge: 'Distinguished Fellow',
+    topArtifactTitle: 'How to Synthesize a 40-Page Research Paper in 15 Minutes',
+    topArtifactId: 'art_scientific_literature_synthesis',
+  },
+  {
+    rank: 2,
+    uid: 'zeno_systems',
+    displayName: 'Zeno Systems Lab',
+    username: 'zeno_systems',
+    bio: 'Production architecture patterns and systems engineering notes.',
+    publishedCount: 2,
+    totalSaves: 13,
+    totalForks: 8,
+    totalViews: 31,
+    impactScore: 147,
+    specialtyTags: ['typescript', 'redis', 'webgpu', 'distributed-systems'],
+    badge: 'Distinguished Fellow',
+    topArtifactTitle: 'Atomic Token Bucket & Sliding Window Rate Limiting in Redis + TypeScript',
+    topArtifactId: 'art_distributed_rate_limiter_ts',
+  },
+  {
+    rank: 3,
+    uid: 'zeno_study',
+    displayName: 'Zeno Study Studio',
+    username: 'zeno_study',
+    bio: 'High-yield study sheets and university STEM exam guides.',
+    publishedCount: 1,
+    totalSaves: 10,
+    totalForks: 6,
+    totalViews: 21,
+    impactScore: 103,
+    specialtyTags: ['organic-chemistry', 'stem', 'exam-prep'],
+    badge: 'Principal Author',
+    topArtifactTitle: 'SN1, SN2, E1 & E2 Reaction Mechanisms Decision Matrix',
+    topArtifactId: 'art_organic_chemistry_mechanisms_sheet',
+  },
+  {
+    rank: 4,
+    uid: 'zeno_learning',
+    displayName: 'Zeno Learning Lab',
+    username: 'zeno_learning',
+    bio: 'Evidence-based learning frameworks and exam preparation workflows.',
+    publishedCount: 1,
+    totalSaves: 9,
+    totalForks: 5,
+    totalViews: 17,
+    impactScore: 90,
+    specialtyTags: ['active-recall', 'spaced-repetition', 'cognitive-science'],
+    badge: 'Principal Author',
+    topArtifactTitle: 'Active Recall vs. Passive Highlighting: Exam Mastery Protocol',
+    topArtifactId: 'art_spaced_repetition_active_recall',
+  },
+];
+
+function computeTierFromCount(count: number): EliteReferrerLeaderboardEntry['tier'] {
+  if (count >= 25) return 'Grand Ambassador';
+  if (count >= 12) return 'Apex Referrer';
+  if (count >= 5) return 'Catalyst';
+  if (count >= 1) return 'Vanguard';
+  return 'Scout';
+}
+
+export interface LocalUserReferralRecord {
+  uid: string;
+  displayName: string;
+  username: string;
+  referralCode: string;
+  referredCount: number;
+  lastUpdatedAt: number;
+  bonusClaimed: boolean;
+  bonusClaimedAt?: number;
+  bonusRewardLabel?: string;
+}
+
+export function getLocalReferralTracker(): Record<string, LocalUserReferralRecord> {
+  return safeLoad<Record<string, LocalUserReferralRecord>>(GROWTH_KEYS.USER_REFERRAL_TRACKER, {});
+}
+
+export function getClaimedReferrerBonuses(): Record<
+  string,
+  { claimedAt: number; rewardLabel: string; referredCountAtClaim: number }
+> {
+  return safeLoad<
+    Record<string, { claimedAt: number; rewardLabel: string; referredCountAtClaim: number }>
+  >(GROWTH_KEYS.CLAIMED_REFERRER_BONUSES, {});
+}
+
+export function syncReferralTrackerWithEntries(
+  entries: EliteReferrerLeaderboardEntry[]
+): EliteReferrerLeaderboardEntry[] {
+  const tracker = getLocalReferralTracker();
+  const claimedMap = getClaimedReferrerBonuses();
+
+  const updatedEntries = entries.map((entry) => {
+    const existingByUid = tracker[entry.uid];
+    const existingByCode = Object.values(tracker).find(
+      (r) => r.referralCode && r.referralCode === entry.referralCode
+    );
+    const localRecord = existingByUid || existingByCode;
+    const effectiveCount = Math.max(
+      Number(entry.claimedReferrals || 0),
+      Number(localRecord?.referredCount || 0)
+    );
+    const isClaimed = Boolean(
+      claimedMap[entry.uid] ||
+        claimedMap[entry.referralCode] ||
+        localRecord?.bonusClaimed
+    );
+
+    tracker[entry.uid] = {
+      uid: entry.uid,
+      displayName: entry.displayName,
+      username: entry.username,
+      referralCode: entry.referralCode,
+      referredCount: effectiveCount,
+      lastUpdatedAt: localRecord?.lastUpdatedAt || Date.now(),
+      bonusClaimed: isClaimed,
+      bonusClaimedAt:
+        claimedMap[entry.uid]?.claimedAt ||
+        localRecord?.bonusClaimedAt,
+      bonusRewardLabel:
+        claimedMap[entry.uid]?.rewardLabel ||
+        localRecord?.bonusRewardLabel,
+    };
+
+    return {
+      ...entry,
+      claimedReferrals: effectiveCount,
+      tier: computeTierFromCount(effectiveCount),
+    };
+  });
+
+  // Sort by effective referredCount descending and update rank numbers
+  updatedEntries.sort((a, b) => b.claimedReferrals - a.claimedReferrals);
+  updatedEntries.forEach((item, idx) => {
+    item.rank = idx + 1;
+  });
+
+  safeSave(GROWTH_KEYS.USER_REFERRAL_TRACKER, tracker);
+  return updatedEntries;
+}
+
+export function incrementLocalReferralCountForUser(params: {
+  uid?: string;
+  referralCode?: string;
+  displayName?: string;
+  username?: string;
+  delta?: number;
+}): LocalUserReferralRecord {
+  const tracker = getLocalReferralTracker();
+  const delta = params.delta ?? 1;
+  const matchKey =
+    (params.uid && tracker[params.uid] ? params.uid : undefined) ||
+    Object.keys(tracker).find(
+      (k) => params.referralCode && tracker[k]?.referralCode === params.referralCode
+    ) ||
+    params.uid ||
+    params.referralCode ||
+    getOrCreateClientId();
+
+  const existing = tracker[matchKey];
+  const nextCount = Math.max(0, (existing?.referredCount || 0) + delta);
+  const updated: LocalUserReferralRecord = {
+    uid: existing?.uid || params.uid || matchKey,
+    displayName:
+      existing?.displayName ||
+      params.displayName ||
+      UserAccountStore.getProfile().displayName ||
+      'Zeno Researcher',
+    username:
+      existing?.username ||
+      params.username ||
+      UserAccountStore.getProfile().username ||
+      'researcher',
+    referralCode: existing?.referralCode || params.referralCode || 'zp_explorer',
+    referredCount: nextCount,
+    lastUpdatedAt: Date.now(),
+    bonusClaimed: Boolean(existing?.bonusClaimed),
+    bonusClaimedAt: existing?.bonusClaimedAt,
+    bonusRewardLabel: existing?.bonusRewardLabel,
+  };
+
+  tracker[updated.uid] = updated;
+  safeSave(GROWTH_KEYS.USER_REFERRAL_TRACKER, tracker);
+
+  // If this matches the current user, also sync REFERRAL_STATUS in localStorage
+  const myId = getOrCreateClientId();
+  const cachedRef = safeLoad<ZenoReferralStatus | null>(GROWTH_KEYS.REFERRAL_STATUS, null);
+  if (
+    updated.uid === myId ||
+    updated.uid === auth.currentUser?.uid ||
+    (cachedRef && cachedRef.referralCode === updated.referralCode)
+  ) {
+    if (cachedRef) {
+      const nextStatus: ZenoReferralStatus = {
+        ...cachedRef,
+        validatedSignupsCount: Math.max(cachedRef.validatedSignupsCount || 0, nextCount),
+        verifiedReferralsCount: Math.max(cachedRef.verifiedReferralsCount || 0, nextCount),
+      };
+      safeSave(GROWTH_KEYS.REFERRAL_STATUS, nextStatus);
+    }
+  }
+
+  emitGrowthUpdate();
+  return updated;
+}
+
+export function claimTopReferrerBonus(entry: {
+  uid: string;
+  displayName: string;
+  username?: string;
+  referralCode: string;
+  claimedReferrals: number;
+  rank?: number;
+  tier?: string;
+}): {
+  ok: boolean;
+  alreadyClaimed?: boolean;
+  rewardLabel: string;
+  message: string;
+} {
+  const claimedMap = getClaimedReferrerBonuses();
+  const tracker = getLocalReferralTracker();
+
+  if (claimedMap[entry.uid] || tracker[entry.uid]?.bonusClaimed) {
+    const prev = claimedMap[entry.uid];
+    return {
+      ok: false,
+      alreadyClaimed: true,
+      rewardLabel: prev?.rewardLabel || 'Top Referrer Bonus',
+      message: `Bonus for ${entry.displayName} was already claimed.`,
+    };
+  }
+
+  const rewardLabel =
+    entry.claimedReferrals >= 20 || entry.rank === 1
+      ? '+5 File Uploads, +25 Messages & Obsidian Gold + Emerald Themes'
+      : entry.claimedReferrals >= 10 || (entry.rank && entry.rank <= 3)
+      ? '+5 File Uploads, +25 Messages & Emerald Terminal Theme'
+      : '+3 File Uploads, +15 Messages & Obsidian Gold Theme';
+
+  const now = Date.now();
+  claimedMap[entry.uid] = {
+    claimedAt: now,
+    rewardLabel,
+    referredCountAtClaim: entry.claimedReferrals,
+  };
+  safeSave(GROWTH_KEYS.CLAIMED_REFERRER_BONUSES, claimedMap);
+
+  const existing = tracker[entry.uid];
+  tracker[entry.uid] = {
+    uid: entry.uid,
+    displayName: entry.displayName,
+    username: entry.username || existing?.username || 'researcher',
+    referralCode: entry.referralCode,
+    referredCount: Math.max(entry.claimedReferrals, existing?.referredCount || 0),
+    lastUpdatedAt: now,
+    bonusClaimed: true,
+    bonusClaimedAt: now,
+    bonusRewardLabel: rewardLabel,
+  };
+  safeSave(GROWTH_KEYS.USER_REFERRAL_TRACKER, tracker);
+
+  // Unlock cosmetic share card themes in local referral status
+  const cachedRef = safeLoad<ZenoReferralStatus | null>(GROWTH_KEYS.REFERRAL_STATUS, null);
+  if (cachedRef) {
+    const mergedThemes = Array.from(
+      new Set([
+        ...(cachedRef.unlockedThemes || ['carbon', 'ivory', 'slate']),
+        'obsidian-gold',
+        'emerald-terminal',
+      ])
+    );
+    safeSave(GROWTH_KEYS.REFERRAL_STATUS, {
+      ...cachedRef,
+      unlockedThemes: mergedThemes,
+    });
+  }
+
+  // Grant bonus daily upload and message quota
+  UserAccountStore.grantReferrerBonusQuota(5, 25);
+  emitGrowthUpdate();
+
+  return {
+    ok: true,
+    rewardLabel,
+    message: `Claimed Top Referrer Bonus for ${entry.displayName} (${entry.claimedReferrals} referrals): ${rewardLabel}!`,
+  };
+}
+
+export async function fetchGrowthLeaderboards(): Promise<{
+  eliteReferrers: EliteReferrerLeaderboardEntry[];
+  topContributors: TopContributorEntry[];
+  myRank: EliteReferrerLeaderboardEntry | null;
+}> {
+  try {
+    const headers = await getGrowthHeaders();
+    const res = await fetch('/api/growth/leaderboard', { headers });
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data?.eliteReferrers) && Array.isArray(data?.topContributors)) {
+        const syncedReferrers = syncReferralTrackerWithEntries(
+          data.eliteReferrers as EliteReferrerLeaderboardEntry[]
+        );
+        const syncedMyRank =
+          syncedReferrers.find((r) => r.isCurrentUser) ||
+          (data.myRank
+            ? syncedReferrers.find((r) => r.uid === data.myRank.uid) ||
+              (data.myRank as EliteReferrerLeaderboardEntry)
+            : null);
+        return {
+          eliteReferrers: syncedReferrers,
+          topContributors: data.topContributors as TopContributorEntry[],
+          myRank: syncedMyRank,
+        };
+      }
+    }
+  } catch {}
+
+  const cachedRef = safeLoad<ZenoReferralStatus | null>(GROWTH_KEYS.REFERRAL_STATUS, null);
+  const myUid = getOrCreateClientId();
+  const tracker = getLocalReferralTracker();
+  const localMyCount = tracker[myUid]?.referredCount || cachedRef?.validatedSignupsCount || 0;
+  const myEntry: EliteReferrerLeaderboardEntry = {
+    rank: FALLBACK_ELITE_REFERRERS.length + 1,
+    uid: myUid,
+    displayName: UserAccountStore.getProfile().displayName || 'You (Zeno Explorer)',
+    username: UserAccountStore.getProfile().username || 'you',
+    referralCode: cachedRef?.referralCode || 'zp_explorer',
+    claimedReferrals: localMyCount,
+    visitsCount: cachedRef?.visitsCount || 0,
+    conversionRate: 0,
+    tier: computeTierFromCount(localMyCount),
+    unlockedThemes: cachedRef?.unlockedThemes || ['carbon-default'],
+    specialtyTag: 'Active Member',
+    isCurrentUser: true,
+  };
+
+  const syncedFallback = syncReferralTrackerWithEntries([
+    ...FALLBACK_ELITE_REFERRERS,
+    myEntry,
+  ]);
+  const mySynced = syncedFallback.find((r) => r.isCurrentUser || r.uid === myUid) || myEntry;
+
+  return {
+    eliteReferrers: syncedFallback,
+    topContributors: FALLBACK_TOP_CONTRIBUTORS,
+    myRank: mySynced,
+  };
+}
+
+export async function claimReferralCodeManual(
+  rawCode: string
+): Promise<{ ok: boolean; message: string }> {
+  const code = rawCode.trim();
+  if (!/^zp_[a-zA-Z0-9_-]{3,28}$/.test(code)) {
+    return {
+      ok: false,
+      message: 'Please enter a valid Zeno Pass code starting with zp_ (e.g. zp_elena94x).',
+    };
+  }
+
+  try {
+    const headers = await getGrowthHeaders();
+    const res = await fetch('/api/growth/referrals/claim', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        referralCode: code,
+        code,
+        visitTimestampMs: Date.now(),
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data?.success) {
+      localStorage.removeItem(GROWTH_KEYS.PENDING_REF_CODE);
+      incrementLocalReferralCountForUser({ referralCode: code, delta: 1 });
+      emitGrowthUpdate();
+      return {
+        ok: true,
+        message: `Referral pass ${code} verified! Local & leaderboard referral counter updated.`,
+      };
+    }
+    return {
+      ok: false,
+      message:
+        data?.error?.message ||
+        data?.message ||
+        'Could not claim this referral code (self-referrals and duplicate claims are blocked).',
+    };
+  } catch {
+    incrementLocalReferralCountForUser({ referralCode: code, delta: 1 });
+    return {
+      ok: true,
+      message: `Referral pass ${code} recorded in local referral tracker.`,
+    };
+  }
+}
+
+export async function submitZenoFeedback(input: {
+  category: ZenoFeedbackCategory;
+  rating: number;
+  subject: string;
+  message: string;
+  includeDiagnostics?: boolean;
+  diagnosticsSummary?: string;
+}): Promise<{ ok: boolean; item?: ZenoFeedbackSubmission; error?: string }> {
+  const cleanMessage = (input.message || '').trim();
+  if (cleanMessage.length < 4) {
+    return { ok: false, error: 'Please write at least a few words of feedback.' };
+  }
+
+  const cleanSubject = (input.subject || '').trim() || cleanMessage.slice(0, 72);
+  try {
+    const headers = await getGrowthHeaders();
+    const res = await fetch('/api/growth/feedback', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        category: input.category,
+        rating: input.rating,
+        subject: cleanSubject,
+        message: cleanMessage,
+        includeDiagnostics: Boolean(input.includeDiagnostics),
+        diagnosticsSummary: input.diagnosticsSummary,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data?.item) {
+      const savedList = safeLoad<ZenoFeedbackSubmission[]>(GROWTH_KEYS.FEEDBACK_ITEMS, []);
+      const nextList = [data.item as ZenoFeedbackSubmission, ...savedList].slice(0, 30);
+      safeSave(GROWTH_KEYS.FEEDBACK_ITEMS, nextList);
+      emitGrowthUpdate();
+      return { ok: true, item: data.item as ZenoFeedbackSubmission };
+    }
+    return {
+      ok: false,
+      error: data?.error?.message || 'Could not submit feedback right now.',
+    };
+  } catch {
+    const fallbackItem: ZenoFeedbackSubmission = {
+      id: `fb_local_${Date.now().toString(36)}`,
+      category: input.category,
+      rating: input.rating,
+      subject: cleanSubject,
+      message: cleanMessage,
+      includeDiagnostics: Boolean(input.includeDiagnostics),
+      status: 'routed',
+      createdAt: Date.now(),
+    };
+    const savedList = safeLoad<ZenoFeedbackSubmission[]>(GROWTH_KEYS.FEEDBACK_ITEMS, []);
+    safeSave(GROWTH_KEYS.FEEDBACK_ITEMS, [fallbackItem, ...savedList].slice(0, 30));
+    emitGrowthUpdate();
+    return { ok: true, item: fallbackItem };
+  }
+}
+
+export async function fetchMySubmittedFeedback(): Promise<ZenoFeedbackSubmission[]> {
+  const local = safeLoad<ZenoFeedbackSubmission[]>(GROWTH_KEYS.FEEDBACK_ITEMS, []);
+  try {
+    const headers = await getGrowthHeaders();
+    const res = await fetch('/api/growth/feedback/mine', { headers });
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data?.items) && data.items.length > 0) {
+        safeSave(GROWTH_KEYS.FEEDBACK_ITEMS, data.items);
+        return data.items as ZenoFeedbackSubmission[];
+      }
+    }
+  } catch {}
+  return local;
+}

@@ -748,5 +748,93 @@ export async function deletePublicArtifactFromFirestore(artifactId: string) {
   }
 }
 
+export interface FirestoreDailyQuotaDoc {
+  quotaDate: string;
+  userId: string;
+  plan: 'free' | 'spark' | 'fire';
+  messagesUsed: number;
+  filesUploaded: number;
+  searchesUsed: number;
+  deepResearchUsed: number;
+  pdfStudyUsed: number;
+  tokensUsed: number;
+  updatedAt: number;
+}
 
+export function getCurrentUtcDateString(): string {
+  return new Date().toISOString().slice(0, 10);
+}
 
+export async function loadUserDailyQuotaFromFirestore(
+  quotaDate = getCurrentUtcDateString()
+): Promise<FirestoreDailyQuotaDoc | null> {
+  const user = auth.currentUser;
+  if (!user) return null;
+  const safeDate = String(quotaDate).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 32);
+  const path = `users/${user.uid}/quotas/${safeDate}`;
+  try {
+    const snap = await getDoc(doc(db, 'users', user.uid, 'quotas', safeDate));
+    if (!snap.exists()) return null;
+    return snap.data() as FirestoreDailyQuotaDoc;
+  } catch (error) {
+    if (!isFirestoreOfflineError(error)) {
+      handleFirestoreError(error, OperationType.GET, path);
+    }
+    return null;
+  }
+}
+
+export async function syncUserDailyQuotaToFirestore(input: {
+  plan: 'free' | 'spark' | 'fire';
+  messagesUsed: number;
+  filesUploaded: number;
+  searchesUsed: number;
+  deepResearchUsed: number;
+  pdfStudyUsed: number;
+  tokensUsed: number;
+  quotaDate?: string;
+}): Promise<FirestoreDailyQuotaDoc | null> {
+  const user = auth.currentUser;
+  if (!user) return null;
+  const safeDate = String(input.quotaDate || getCurrentUtcDateString())
+    .replace(/[^a-zA-Z0-9_-]/g, '_')
+    .slice(0, 32);
+  const path = `users/${user.uid}/quotas/${safeDate}`;
+  const docRef = doc(db, 'users', user.uid, 'quotas', safeDate);
+
+  try {
+    let existing: Partial<FirestoreDailyQuotaDoc> | null = null;
+    try {
+      const snap = await getDoc(docRef);
+      if (snap.exists()) {
+        existing = snap.data() as Partial<FirestoreDailyQuotaDoc>;
+      }
+    } catch {
+      // Proceed with incoming values if offline or not found
+    }
+
+    const validPlan: 'free' | 'spark' | 'fire' =
+      input.plan === 'fire' || input.plan === 'spark' ? input.plan : 'free';
+
+    const payload: FirestoreDailyQuotaDoc = {
+      quotaDate: safeDate,
+      userId: user.uid,
+      plan: validPlan,
+      messagesUsed: Math.max(Number(existing?.messagesUsed || 0), Math.max(0, Math.floor(Number(input.messagesUsed || 0)))),
+      filesUploaded: Math.max(Number(existing?.filesUploaded || 0), Math.max(0, Math.floor(Number(input.filesUploaded || 0)))),
+      searchesUsed: Math.max(Number(existing?.searchesUsed || 0), Math.max(0, Math.floor(Number(input.searchesUsed || 0)))),
+      deepResearchUsed: Math.max(Number(existing?.deepResearchUsed || 0), Math.max(0, Math.floor(Number(input.deepResearchUsed || 0)))),
+      pdfStudyUsed: Math.max(Number(existing?.pdfStudyUsed || 0), Math.max(0, Math.floor(Number(input.pdfStudyUsed || 0)))),
+      tokensUsed: Math.max(Number(existing?.tokensUsed || 0), Math.max(0, Math.floor(Number(input.tokensUsed || 0)))),
+      updatedAt: Date.now(),
+    };
+
+    await setDoc(docRef, payload);
+    return payload;
+  } catch (error) {
+    if (!isFirestoreOfflineError(error)) {
+      handleFirestoreError(error, OperationType.WRITE, path);
+    }
+    return null;
+  }
+}

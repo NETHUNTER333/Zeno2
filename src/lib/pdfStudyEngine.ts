@@ -259,16 +259,16 @@ export function buildDeterministicDocumentStudyBundle(
       ? [
           ...rawSentences,
           'The Transformer architecture dispenses with recurrence and convolutions entirely, relying solely on self-attention mechanisms to model global dependencies between input and output tokens.',
-          'Scaled dot-product attention computes Attention(Q, K, V) = softmax((QK^T) / sqrt(d_k))V, scaling by 1/sqrt(d_k) so large dot products do not push the softmax into regions with vanishingly small gradients.',
-          'Multi-head attention linearly projects queries, keys, and values h = 8 times with different learned projections to d_k = d_v = 64 dimensions, allowing joint attention across multiple representation subspaces.',
-          'Self-attention layers connect all positions with O(1) sequential operations compared to O(n) for recurrent layers, enabling massive training parallelization across sequence positions.',
-          'Because the Transformer contains no recurrence or convolution, sinusoidal positional encodings of wavelength 2*pi to 10000*2*pi are added to token embeddings so the model can leverage sequence order.',
-          'Each encoder layer consists of a multi-head self-attention mechanism followed by a position-wise fully connected feed-forward network FFN(x) = max(0, xW_1 + b_1)W_2 + b_2 with residual connections and layer normalization.',
-          'In the decoder, masked multi-head self-attention sets future positions to -infinity before the softmax to preserve the auto-regressive property and prevent leftward information flow.',
-          'When sequence length n is smaller than representation dimensionality d, self-attention is strictly faster per layer than recurrent or convolutional layers with kernel width k.',
-          'During training, the authors applied label smoothing (epsilon_ls = 0.1) and the Adam optimizer with a warmup learning rate schedule proportional to d_model^(-0.5) * min(step^(-0.5), step * warmup^(-1.5)).',
-          'On the WMT 2014 English-to-German translation task, the big Transformer model achieved a state-of-the-art 28.4 BLEU score, outperforming previous ensembles at a fraction of the training cost.',
-          'For very long sequences where n > d, self-attention could be restricted to a neighborhood of size r around each output position, reducing maximum path length to O(n/r).',
+          'Scaled dot-product attention computes $\\text{Attention}(Q, K, V) = \\text{softmax}\\left(\\frac{QK^T}{\\sqrt{d_k}}\\right)V$, scaling by $\\frac{1}{\\sqrt{d_k}}$ so large dot products do not push the softmax into regions with vanishingly small gradients.',
+          'Multi-head attention linearly projects queries, keys, and values $h = 8$ times with different learned projections to $d_k = d_v = 64$ dimensions, allowing joint attention across multiple representation subspaces.',
+          'Self-attention layers connect all positions with $\\mathcal{O}(1)$ sequential operations compared to $\\mathcal{O}(n)$ for recurrent layers, enabling massive training parallelization across sequence positions.',
+          'Because the Transformer contains no recurrence or convolution, sinusoidal positional encodings of wavelength $2\\pi$ to $10000 \\cdot 2\\pi$ are added to token embeddings so the model can leverage sequence order.',
+          'Each encoder layer consists of a multi-head self-attention mechanism followed by a position-wise fully connected feed-forward network $\\text{FFN}(x) = \\max(0, xW_1 + b_1)W_2 + b_2$ with residual connections and layer normalization.',
+          'In the decoder, masked multi-head self-attention sets future positions to $-\\infty$ before the softmax to preserve the auto-regressive property and prevent leftward information flow.',
+          'When sequence length $n$ is smaller than representation dimensionality $d$, self-attention is strictly faster per layer than recurrent or convolutional layers with kernel width $k$.',
+          'During training, the authors applied label smoothing ($\\epsilon_{ls} = 0.1$) and the Adam optimizer with a warmup learning rate schedule proportional to $d_{\\text{model}}^{-0.5} \\cdot \\min(\\text{step}^{-0.5}, \\text{step} \\cdot \\text{warmup}^{-1.5})$.',
+          'On the WMT 2014 English-to-German translation task, the big Transformer model achieved a state-of-the-art $28.4$ BLEU score, outperforming previous ensembles at a fraction of the training cost.',
+          'For very long sequences where $n > d$, self-attention could be restricted to a neighborhood of size $r$ around each output position, reducing maximum path length to $\\mathcal{O}(n/r)$.',
           'Encoder-decoder attention layers take queries from the previous decoder layer while keys and values come from the output of the encoder stack, allowing every decoder position to attend over all input positions.',
         ]
       : [
@@ -308,6 +308,7 @@ export function buildDeterministicDocumentStudyBundle(
     const slice = uniqueSentences.slice(i * sentencesPerSection, (i + 1) * sentencesPerSection);
     const combined = slice.join(' ').trim();
     const leadWords = (slice[0] || '')
+      .replace(/\$[^$]+\$/g, '')
       .replace(/[^\w\s]/g, '')
       .split(/\s+/)
       .filter((w) => w.length > 3 && !/^(this|that|with|from|into|when|what|where)$/i.test(w))
@@ -322,7 +323,7 @@ export function buildDeterministicDocumentStudyBundle(
       ),
       title: leadWords || `Section ${i + 1}: Core Analysis`,
       summary:
-        combined.slice(0, 260) ||
+        combined.slice(0, 340) ||
         `Covers key concepts, analytical framework, and supporting evidence in part ${i + 1} of ${cleanTitle}.`,
     });
   }
@@ -378,16 +379,16 @@ export function buildDeterministicDocumentStudyBundle(
           {
             id: 'pdf-q-easy-3',
             question:
-              'What are the three input vectors used to compute Scaled Dot-Product Attention?',
+              'What are the three input matrices used to compute Scaled Dot-Product Attention?',
             options: [
-              'Weights (W), Biases (B), and Gradients (G)',
-              'Encoder (E), Decoder (D), and Hidden State (H)',
-              'Queries (Q), Keys (K), and Values (V)',
-              'Tokens (T), Positions (P), and Logits (L)',
+              'Weights ($W$), Biases ($B$), and Gradients ($G$)',
+              'Encoder ($E$), Decoder ($D$), and Hidden State ($H$)',
+              'Queries ($Q$), Keys ($K$), and Values ($V$)',
+              'Tokens ($T$), Positions ($P$), and Logits ($L$)',
             ],
             correctIndex: 2,
             explanation:
-              'Scaled Dot-Product Attention maps a Query (Q) and a set of Key-Value (K, V) pairs to an output weighted by the compatibility of Q and K.',
+              'Scaled Dot-Product Attention maps a Query ($Q$) and a set of Key-Value ($K, V$) pairs to an output weighted by the compatibility of $Q$ and $K$.',
             pageRef: 4,
             difficulty: 'easy',
           },
@@ -397,13 +398,13 @@ export function buildDeterministicDocumentStudyBundle(
               'What are the two main sub-layers inside each Encoder layer of the Transformer?',
             options: [
               'A max-pooling layer followed by a bidirectional GRU cell.',
-              'A k-nearest-neighbors lookup table followed by a linear classifier.',
+              'A $k$-nearest-neighbors lookup table followed by a linear classifier.',
               'A dropout layer followed by a batch normalization layer.',
               'A multi-head self-attention mechanism followed by a position-wise fully connected feed-forward network.',
             ],
             correctIndex: 3,
             explanation:
-              'Each encoder layer has two sub-layers: (1) multi-head self-attention and (2) a position-wise feed-forward network, each wrapped with a residual connection and LayerNorm.',
+              'Each encoder layer has two sub-layers: (1) multi-head self-attention and (2) a position-wise feed-forward network, each wrapped with a residual connection and $\\text{LayerNorm}(x + \\text{Sublayer}(x))$.',
             pageRef: 3,
             difficulty: 'easy',
           },
@@ -419,7 +420,7 @@ export function buildDeterministicDocumentStudyBundle(
             ],
             correctIndex: 0,
             explanation:
-              'Masked self-attention sets illegal connections (future tokens) to -infinity before the softmax so predictions for position i depend only on known outputs at positions less than i.',
+              'Masked self-attention sets illegal connections (future tokens) to $-\\infty$ before the softmax so predictions for position $i$ depend only on known outputs at positions $< i$.',
             pageRef: 3,
             difficulty: 'easy',
           },
@@ -429,23 +430,23 @@ export function buildDeterministicDocumentStudyBundle(
           {
             id: 'pdf-fc-easy-1',
             front: 'What does the Transformer replace RNNs and CNNs with?',
-            back: 'Self-attention mechanisms (specifically Multi-Head Scaled Dot-Product Attention) and position-wise feed-forward networks.',
+            back: 'Self-attention mechanisms (Multi-Head Scaled Dot-Product Attention) and position-wise feed-forward networks.',
             category: 'Foundations',
             pageRef: 1,
             difficulty: 'easy',
           },
           {
             id: 'pdf-fc-easy-2',
-            front: 'What are Q, K, and V in the attention mechanism?',
-            back: 'Queries (Q), Keys (K), and Values (V) — the three learned linear projections of token representations used to compute attention weights.',
+            front: 'What are $Q$, $K$, and $V$ in the attention mechanism?',
+            back: 'Queries ($Q$), Keys ($K$), and Values ($V$) — the three learned linear projections of token representations used to compute attention weights.',
             category: 'Core Concept',
             pageRef: 4,
             difficulty: 'easy',
           },
           {
             id: 'pdf-fc-easy-3',
-            front: 'How many encoder and decoder layers (N) are in the base Transformer?',
-            back: 'N = 6 identical layers in the Encoder stack and N = 6 identical layers in the Decoder stack.',
+            front: 'How many encoder and decoder layers ($N$) are in the base Transformer?',
+            back: '$N = 6$ identical layers in the Encoder stack and $N = 6$ identical layers in the Decoder stack.',
             category: 'Architecture',
             pageRef: 3,
             difficulty: 'easy',
@@ -461,7 +462,7 @@ export function buildDeterministicDocumentStudyBundle(
           {
             id: 'pdf-fc-easy-5',
             front: 'What wraps every sub-layer in the Encoder and Decoder?',
-            back: 'A residual skip connection followed by Layer Normalization: LayerNorm(x + Sublayer(x)).',
+            back: 'A residual skip connection followed by Layer Normalization: $\\text{LayerNorm}(x + \\text{Sublayer}(x))$.',
             category: 'Architecture',
             pageRef: 3,
             difficulty: 'easy',
@@ -469,7 +470,7 @@ export function buildDeterministicDocumentStudyBundle(
           {
             id: 'pdf-fc-easy-6',
             front: 'What primary advantage does the Transformer have during training over RNNs?',
-            back: 'Significantly greater parallelization across tokens in a sequence, cutting training time to a fraction of recurrent architectures.',
+            back: 'Significantly greater parallelization across tokens in a sequence ($\\mathcal{O}(1)$ sequential operations), cutting training time to a fraction of recurrent architectures.',
             category: 'Key Takeaway',
             pageRef: 2,
             difficulty: 'easy',
@@ -484,44 +485,44 @@ export function buildDeterministicDocumentStudyBundle(
           {
             id: 'pdf-q-med-1',
             question:
-              'In Scaled Dot-Product Attention, why are the query-key dot products divided by sqrt(d_k) before applying softmax?',
+              'In Scaled Dot-Product Attention, why are the query-key dot products divided by $\\sqrt{d_k}$ before applying softmax?',
             options: [
               'To ensure the output matrix has unit determinant for orthogonal weight initialization.',
-              'Because for large d_k, dot products grow large in magnitude, pushing the softmax function into regions with extremely small gradients.',
-              'To reduce the number of trainable parameters in the feed-forward network by a factor of d_k.',
-              'To normalize sequence length n when batch sizes vary across GPUs.',
+              'Because for large $d_k$, dot products grow large in magnitude, pushing the softmax function into regions with extremely small gradients.',
+              'To reduce the number of trainable parameters in the feed-forward network by a factor of $d_k$.',
+              'To normalize sequence length $n$ when batch sizes vary across GPUs.',
             ],
             correctIndex: 1,
             explanation:
-              'When d_k is large, the variance of q·k scales with d_k. Dividing by sqrt(d_k) keeps variance at 1 and prevents softmax saturation and vanishing gradients.',
+              'When $d_k$ is large, the variance of $q \\cdot k$ scales with $d_k$. Dividing by $\\sqrt{d_k}$ keeps variance at $1$ and prevents softmax saturation and vanishing gradients.',
             pageRef: 4,
             difficulty: 'medium',
           },
           {
             id: 'pdf-q-med-2',
             question:
-              'How does Multi-Head Attention enable richer representation learning than a single attention head of dimension d_model?',
+              'How does Multi-Head Attention enable richer representation learning than a single attention head of dimension $d_{\\text{model}}$?',
             options: [
-              'It runs h = 8 parallel attention heads in lower-dimensional subspaces (d_k = d_model / h = 64), allowing the model to jointly attend to information from different representation subspaces at different positions.',
-              'It increases the total computational cost by 8x compared to single-head attention of full dimensionality.',
-              'It applies recurrent LSTM gating between each of the 8 heads sequentially.',
+              'It runs $h = 8$ parallel attention heads in lower-dimensional subspaces ($d_k = d_{\\text{model}} / h = 64$), allowing the model to jointly attend to information from different representation subspaces at different positions.',
+              'It increases the total computational cost by $8\\times$ compared to single-head attention of full dimensionality.',
+              'It applies recurrent LSTM gating between each of the $8$ heads sequentially.',
               'It restricts each head to attend to only a single fixed word part-of-speech.',
             ],
             correctIndex: 0,
             explanation:
-              'Multi-head attention projects Q, K, V into h = 8 subspaces of dimension d_k = 64. Averaging in a single head inhibits this joint multi-subspace focus, while reduced d_k keeps total compute similar to single-head attention.',
+              'Multi-head attention projects $Q, K, V$ into $h = 8$ subspaces of dimension $d_k = 64$. Averaging in a single head inhibits this joint multi-subspace focus, while reduced $d_k$ keeps total compute similar to single-head attention.',
             pageRef: 5,
             difficulty: 'medium',
           },
           {
             id: 'pdf-q-med-3',
             question:
-              'In the Decoder’s second sub-layer (Encoder-Decoder Cross-Attention), where do the Queries (Q), Keys (K), and Values (V) originate?',
+              'In the Decoder’s second sub-layer (Encoder-Decoder Cross-Attention), where do the Queries ($Q$), Keys ($K$), and Values ($V$) originate?',
             options: [
-              'Q, K, and V all come directly from the Encoder output.',
-              'Q comes from the Encoder output, while K and V come from the previous Decoder layer.',
-              'Queries (Q) come from the previous Decoder sub-layer, while Keys (K) and Values (V) come from the output of the Encoder stack.',
-              'Q, K, and V are sampled randomly from sinusoidal positional encodings.',
+              '$Q$, $K$, and $V$ all come directly from the Encoder output.',
+              '$Q$ comes from the Encoder output, while $K$ and $V$ come from the previous Decoder layer.',
+              'Queries ($Q$) come from the previous Decoder sub-layer, while Keys ($K$) and Values ($V$) come from the output of the Encoder stack.',
+              '$Q$, $K$, and $V$ are sampled randomly from sinusoidal positional encodings.',
             ],
             correctIndex: 2,
             explanation:
@@ -535,13 +536,13 @@ export function buildDeterministicDocumentStudyBundle(
               'Why did the authors choose sinusoidal functions of different wavelengths for Positional Encoding alongside learned positional embeddings?',
             options: [
               'Sinusoidal encodings eliminate the need for matrix multiplication in the attention layer.',
-              'For any fixed offset k, PE_(pos+k) can be represented as a linear function of PE_pos, allowing the model to attend by relative position and extrapolate to longer sequences.',
-              'Learned positional embeddings failed to converge and achieved 10 BLEU points lower accuracy.',
-              'Sinusoidal functions force all attention weights to be strictly binary (0 or 1).',
+              'For any fixed offset $k$, $PE_{\\text{pos}+k}$ can be represented as a linear function of $PE_{\\text{pos}}$, allowing the model to attend by relative position and extrapolate to longer sequences.',
+              'Learned positional embeddings failed to converge and achieved $10$ BLEU points lower accuracy.',
+              'Sinusoidal functions force all attention weights to be strictly binary ($0$ or $1$).',
             ],
             correctIndex: 1,
             explanation:
-              'Both learned and sinusoidal encodings produced nearly identical results, but sinusoidal functions allow PE_(pos+k) to be expressed as a linear transformation of PE_pos and generalize to sequence lengths longer than those seen in training.',
+              'Both learned and sinusoidal encodings produced nearly identical results, but sinusoidal functions allow $PE_{\\text{pos}+k}$ to be expressed as a linear transformation of $PE_{\\text{pos}}$ and generalize to sequence lengths longer than those seen in training.',
             pageRef: 6,
             difficulty: 'medium',
           },
@@ -550,14 +551,14 @@ export function buildDeterministicDocumentStudyBundle(
             question:
               'What is the exact structure and dimensionality of the Position-Wise Feed-Forward Network (FFN) in the base Transformer?',
             options: [
-              'A single linear projection from d_model = 512 to 512 with sigmoid activation.',
-              'A 3-layer convolutional block with kernel size 3 and tanh activation.',
-              'Two linear transformations with a ReLU activation in between: FFN(x) = max(0, xW_1 + b_1)W_2 + b_2, with d_model = 512 and inner dimension d_ff = 2048.',
+              'A single linear projection from $d_{\\text{model}} = 512$ to $512$ with sigmoid activation.',
+              'A 3-layer convolutional block with kernel size $3$ and $\\tanh$ activation.',
+              'Two linear transformations with a ReLU activation in between: $\\text{FFN}(x) = \\max(0, xW_1 + b_1)W_2 + b_2$, with $d_{\\text{model}} = 512$ and inner dimension $d_{ff} = 2048$.',
               'A recurrent highway network shared across all sequence tokens simultaneously.',
             ],
             correctIndex: 2,
             explanation:
-              'Each layer contains a position-wise FFN consisting of two linear transformations (equivalent to 1x1 convolutions) with a ReLU activation in between, expanding from d_model = 512 to d_ff = 2048 and projecting back to 512.',
+              'Each layer contains a position-wise FFN consisting of two linear transformations (equivalent to $1 \\times 1$ convolutions) with a ReLU activation in between, expanding from $d_{\\text{model}} = 512$ to $d_{ff} = 2048$ and projecting back to $512$.',
             pageRef: 5,
             difficulty: 'medium',
           },
@@ -567,15 +568,15 @@ export function buildDeterministicDocumentStudyBundle(
           {
             id: 'pdf-fc-med-1',
             front: 'Write the exact formula for Scaled Dot-Product Attention and explain the scaling factor.',
-            back: 'Attention(Q, K, V) = softmax((QK^T) / sqrt(d_k))V. Scaling by 1/sqrt(d_k) prevents large dot products from saturating the softmax into vanishing-gradient regions.',
+            back: '$$\\text{Attention}(Q, K, V) = \\text{softmax}\\left(\\frac{QK^T}{\\sqrt{d_k}}\\right)V$$ Scaling by $\\frac{1}{\\sqrt{d_k}}$ prevents large dot products from saturating the softmax into vanishing-gradient regions.',
             category: 'Formula',
             pageRef: 4,
             difficulty: 'medium',
           },
           {
             id: 'pdf-fc-med-2',
-            front: 'How are the h heads combined in Multi-Head Attention?',
-            back: 'MultiHead(Q, K, V) = Concat(head_1, ..., head_h)W^O, where head_i = Attention(QW_i^Q, KW_i^K, VW_i^V) with h = 8 and d_k = d_v = 64.',
+            front: 'How are the $h$ heads combined in Multi-Head Attention?',
+            back: '$\\text{MultiHead}(Q, K, V) = \\text{Concat}(\\text{head}_1, \\dots, \\text{head}_h)W^O$, where $\\text{head}_i = \\text{Attention}(QW_i^Q, KW_i^K, VW_i^V)$ with $h = 8$ and $d_k = d_v = 64$.',
             category: 'Architecture',
             pageRef: 5,
             difficulty: 'medium',
@@ -583,15 +584,15 @@ export function buildDeterministicDocumentStudyBundle(
           {
             id: 'pdf-fc-med-3',
             front: 'How does Encoder-Decoder Attention differ from Self-Attention?',
-            back: 'In Encoder-Decoder attention, Queries (Q) come from the previous decoder layer whereas Keys (K) and Values (V) come from the encoder stack output.',
+            back: 'In Encoder-Decoder attention, Queries ($Q$) come from the previous decoder layer whereas Keys ($K$) and Values ($V$) come from the encoder stack output.',
             category: 'Core Mechanism',
             pageRef: 5,
             difficulty: 'medium',
           },
           {
             id: 'pdf-fc-med-4',
-            front: 'What is the inner dimensionality d_ff of the Position-Wise Feed-Forward Network in the base model?',
-            back: 'Input and output dimensionality is d_model = 512, and the inner ReLU layer dimensionality is d_ff = 2048.',
+            front: 'What is the inner dimensionality $d_{ff}$ of the Position-Wise Feed-Forward Network in the base model?',
+            back: 'Input and output dimensionality is $d_{\\text{model}} = 512$, and the inner ReLU layer dimensionality is $d_{ff} = 2048$.',
             category: 'Architecture',
             pageRef: 5,
             difficulty: 'medium',
@@ -599,7 +600,7 @@ export function buildDeterministicDocumentStudyBundle(
           {
             id: 'pdf-fc-med-5',
             front: 'Which three weight matrices share the exact same learned parameters in the Transformer?',
-            back: 'The input embedding matrix, the output (target) embedding matrix, and the pre-softmax linear transformation weight matrix (scaled by sqrt(d_model)).',
+            back: 'The input embedding matrix, the output (target) embedding matrix, and the pre-softmax linear transformation weight matrix (scaled by $\\sqrt{d_{\\text{model}}}$).',
             category: 'Core Mechanism',
             pageRef: 5,
             difficulty: 'medium',
@@ -607,7 +608,7 @@ export function buildDeterministicDocumentStudyBundle(
           {
             id: 'pdf-fc-med-6',
             front: 'Why did the authors hypothesize sinusoidal positional encodings help relative position modeling?',
-            back: 'Because by trigonometric identities, PE(pos + k) can be written as a linear function of PE(pos) for any fixed offset k.',
+            back: 'Because by trigonometric identities, $PE_{\\text{pos} + k}$ can be written as a linear function of $PE_{\\text{pos}}$ for any fixed offset $k$.',
             category: 'Formula',
             pageRef: 6,
             difficulty: 'medium',
@@ -622,48 +623,48 @@ export function buildDeterministicDocumentStudyBundle(
         {
           id: 'pdf-q-hard-1',
           question:
-            'Assume the components of query q and key k are independent random variables with mean 0 and variance 1. What are the mean and variance of their unscaled dot product q · k = sum_{i=1}^{d_k} q_i k_i?',
+            'Assume the components of query $q$ and key $k$ are independent random variables with mean $0$ and variance $1$. What are the mean and variance of their unscaled dot product $q \\cdot k = \\sum_{i=1}^{d_k} q_i k_i$?',
           options: [
-            'Mean 0 and variance d_k (standard deviation sqrt(d_k)), which is why scaling by 1/sqrt(d_k) restores unit variance.',
-            'Mean d_k and variance 1, requiring subtraction of d_k before softmax.',
-            'Mean 0 and variance d_k^2, requiring division by d_k.',
-            'Mean 1/sqrt(d_k) and variance 1/d_k.',
+            'Mean $0$ and variance $d_k$ (standard deviation $\\sqrt{d_k}$), which is why scaling by $1/\\sqrt{d_k}$ restores unit variance.',
+            'Mean $d_k$ and variance $1$, requiring subtraction of $d_k$ before softmax.',
+            'Mean $0$ and variance $d_k^2$, requiring division by $d_k$.',
+            'Mean $1/\\sqrt{d_k}$ and variance $1/d_k$.',
           ],
           correctIndex: 0,
           explanation:
-            'Each product q_i k_i has E[q_i k_i] = E[q_i]E[k_i] = 0 and Var(q_i k_i) = E[q_i^2]E[k_i^2] = 1. Summing d_k independent terms yields mean 0 and variance d_k; dividing by sqrt(d_k) normalizes variance back to 1.',
+            'Each product $q_i k_i$ has $\\mathbb{E}[q_i k_i] = 0$ and $\\text{Var}(q_i k_i) = 1$. Summing $d_k$ independent terms yields mean $0$ and variance $d_k$; dividing by $\\sqrt{d_k}$ normalizes variance back to $1$.',
           pageRef: 4,
           difficulty: 'hard',
         },
         {
           id: 'pdf-q-hard-2',
           question:
-            'Compare the complexity per layer, sequential operations, and maximum path length between positions for Self-Attention vs. a Recurrent layer (sequence length n, dimension d):',
+            'Compare the complexity per layer, sequential operations, and maximum path length between positions for Self-Attention vs. a Recurrent layer (sequence length $n$, dimension $d$):',
           options: [
-            'Self-Attention: O(n · d^2) complexity, O(n) sequential ops, O(n) path length; Recurrent: O(n^2 · d) complexity, O(1) sequential ops, O(1) path length.',
-            'Self-Attention: O(n^2 · d) complexity, O(1) sequential ops, O(1) maximum path length; Recurrent: O(n · d^2) complexity, O(n) sequential ops, O(n) maximum path length.',
-            'Both Self-Attention and Recurrent layers have O(n · log n · d) complexity and O(log n) maximum path length.',
-            'Self-Attention has O(d^3) complexity independent of n, whereas Recurrent layers have O(n^3) complexity.',
+            'Self-Attention: $\\mathcal{O}(n \\cdot d^2)$ complexity, $\\mathcal{O}(n)$ sequential ops, $\\mathcal{O}(n)$ path length; Recurrent: $\\mathcal{O}(n^2 \\cdot d)$ complexity, $\\mathcal{O}(1)$ sequential ops, $\\mathcal{O}(1)$ path length.',
+            'Self-Attention: $\\mathcal{O}(n^2 \\cdot d)$ complexity, $\\mathcal{O}(1)$ sequential ops, $\\mathcal{O}(1)$ maximum path length; Recurrent: $\\mathcal{O}(n \\cdot d^2)$ complexity, $\\mathcal{O}(n)$ sequential ops, $\\mathcal{O}(n)$ maximum path length.',
+            'Both Self-Attention and Recurrent layers have $\\mathcal{O}(n \\log n \\cdot d)$ complexity and $\\mathcal{O}(\\log n)$ maximum path length.',
+            'Self-Attention has $\\mathcal{O}(d^3)$ complexity independent of $n$, whereas Recurrent layers have $\\mathcal{O}(n^3)$ complexity.',
           ],
           correctIndex: 1,
           explanation:
-            'Table 1 of the paper shows Self-Attention requires O(n^2 · d) complexity per layer, O(1) sequential operations, and O(1) maximum path length between any two token positions, whereas Recurrent layers require O(n · d^2) complexity, O(n) sequential ops, and O(n) path length.',
+            'Table 1 of the paper shows Self-Attention requires $\\mathcal{O}(n^2 \\cdot d)$ complexity per layer, $\\mathcal{O}(1)$ sequential operations, and $\\mathcal{O}(1)$ maximum path length between any two token positions, whereas Recurrent layers require $\\mathcal{O}(n \\cdot d^2)$ complexity, $\\mathcal{O}(n)$ sequential ops, and $\\mathcal{O}(n)$ path length.',
           pageRef: 6,
           difficulty: 'hard',
         },
         {
           id: 'pdf-q-hard-3',
           question:
-            'If Self-Attention is restricted to a local neighborhood of size r centered around each output position for very long sequences (n >> d), how do the per-layer complexity and maximum path length change?',
+            'If Self-Attention is restricted to a local neighborhood of size $r$ centered around each output position for very long sequences ($n \\gg d$), how do the per-layer complexity and maximum path length change?',
           options: [
-            'Complexity becomes O(r · n · d) and the maximum path length between arbitrary input-output positions increases from O(1) to O(n / r).',
-            'Complexity remains O(n^2 · d) while maximum path length drops to O(log_r(n)).',
-            'Complexity drops to O(n / r) and sequential operations increase to O(n).',
-            'Complexity becomes O(r^2 · d) and maximum path length remains O(1).',
+            'Complexity becomes $\\mathcal{O}(r \\cdot n \\cdot d)$ and the maximum path length between arbitrary input-output positions increases from $\\mathcal{O}(1)$ to $\\mathcal{O}(n / r)$.',
+            'Complexity remains $\\mathcal{O}(n^2 \\cdot d)$ while maximum path length drops to $\\mathcal{O}(\\log_r n)$.',
+            'Complexity drops to $\\mathcal{O}(n / r)$ and sequential operations increase to $\\mathcal{O}(n)$.',
+            'Complexity becomes $\\mathcal{O}(r^2 \\cdot d)$ and maximum path length remains $\\mathcal{O}(1)$.',
           ],
           correctIndex: 0,
           explanation:
-            'Restricting self-attention to a window of size r reduces per-layer complexity from O(n^2 · d) to O(r · n · d), at the trade-off of increasing the maximum path length between distant positions from O(1) to O(n / r).',
+            'Restricting self-attention to a window of size $r$ reduces per-layer complexity from $\\mathcal{O}(n^2 \\cdot d)$ to $\\mathcal{O}(r \\cdot n \\cdot d)$, at the trade-off of increasing the maximum path length between distant positions from $\\mathcal{O}(1)$ to $\\mathcal{O}(n / r)$.',
           pageRef: 6,
           difficulty: 'hard',
         },
@@ -672,30 +673,30 @@ export function buildDeterministicDocumentStudyBundle(
           question:
             'What exact learning rate schedule and regularization hyperparameters were critical to stabilizing Transformer training in Section 5?',
           options: [
-            'Constant learning rate of 1e-2 with L1 weight decay and no dropout.',
-            'lrate = d_model^(-0.5) · min(step_num^(-0.5), step_num · warmup_steps^(-1.5)) with warmup_steps = 4000, residual dropout P_drop = 0.1, and label smoothing epsilon_ls = 0.1.',
-            'Cosine annealing with restarts every 500 steps and label smoothing epsilon_ls = 0.5.',
-            'SGD with Nesterov momentum 0.99 and gradient clipping at 0.01 without warmup.',
+            'Constant learning rate of $10^{-2}$ with $L_1$ weight decay and no dropout.',
+            '$\\text{lrate} = d_{\\text{model}}^{-0.5} \\cdot \\min(\\text{step\\_num}^{-0.5}, \\text{step\\_num} \\cdot \\text{warmup\\_steps}^{-1.5})$ with $\\text{warmup\\_steps} = 4000$, residual dropout $P_{\\text{drop}} = 0.1$, and label smoothing $\\epsilon_{ls} = 0.1$.',
+            'Cosine annealing with restarts every $500$ steps and label smoothing $\\epsilon_{ls} = 0.5$.',
+            'SGD with Nesterov momentum $0.99$ and gradient clipping at $0.01$ without warmup.',
           ],
           correctIndex: 1,
           explanation:
-            'The Transformer uses Adam (beta_1 = 0.9, beta_2 = 0.98, epsilon = 10^-9) with linear warmup for 4000 steps followed by inverse-square-root decay, plus P_drop = 0.1 and label smoothing epsilon_ls = 0.1 (which hurts perplexity but improves accuracy and BLEU).',
+            'The Transformer uses Adam ($\\beta_1 = 0.9, \\beta_2 = 0.98, \\epsilon = 10^{-9}$) with linear warmup for $4000$ steps followed by inverse-square-root decay, plus $P_{\\text{drop}} = 0.1$ and label smoothing $\\epsilon_{ls} = 0.1$.',
           pageRef: 7,
           difficulty: 'hard',
         },
         {
           id: 'pdf-q-hard-5',
           question:
-            'For a dilated convolutional layer of kernel width k < n, what is the minimum number of stacked layers (maximum path length) required to connect all pairs of input and output positions compared to a contiguous convolution?',
+            'For a dilated convolutional layer of kernel width $k < n$, what is the minimum number of stacked layers (maximum path length) required to connect all pairs of input and output positions compared to a contiguous convolution?',
           options: [
-            'O(log_k(n)) for dilated convolutions vs. O(n / k) for contiguous convolutions (and O(1) for unrestricted self-attention).',
-            'O(1) for both dilated and contiguous convolutions.',
-            'O(n^2) for dilated convolutions vs. O(k · n) for contiguous convolutions.',
-            'O(k) for dilated convolutions vs. O(log_2(n)) for contiguous convolutions.',
+            '$\\mathcal{O}(\\log_k n)$ for dilated convolutions vs. $\\mathcal{O}(n / k)$ for contiguous convolutions (and $\\mathcal{O}(1)$ for unrestricted self-attention).',
+            '$\\mathcal{O}(1)$ for both dilated and contiguous convolutions.',
+            '$\\mathcal{O}(n^2)$ for dilated convolutions vs. $\\mathcal{O}(k \\cdot n)$ for contiguous convolutions.',
+            '$\\mathcal{O}(k)$ for dilated convolutions vs. $\\mathcal{O}(\\log_2 n)$ for contiguous convolutions.',
           ],
           correctIndex: 0,
           explanation:
-            'A single convolutional layer with kernel width k < n does not connect all pairs of positions; doing so requires a stack of O(n / k) contiguous convolutional layers or O(log_k(n)) dilated convolutional layers, compared to O(1) for self-attention.',
+            'A single convolutional layer with kernel width $k < n$ does not connect all pairs of positions; doing so requires a stack of $\\mathcal{O}(n / k)$ contiguous convolutional layers or $\\mathcal{O}(\\log_k n)$ dilated convolutional layers, compared to $\\mathcal{O}(1)$ for self-attention.',
           pageRef: 6,
           difficulty: 'hard',
         },
@@ -704,8 +705,8 @@ export function buildDeterministicDocumentStudyBundle(
       const hardCards: DocumentFlashcardItem[] = [
         {
           id: 'pdf-fc-hard-1',
-          front: 'Prove why q · k has variance d_k when q_i, k_i ~ (mean 0, var 1) i.i.d.',
-          back: 'Var(sum_{i=1}^{d_k} q_i k_i) = sum_{i=1}^{d_k} Var(q_i k_i) = d_k * (1 * 1) = d_k. Dividing by sqrt(d_k) scales the variance back to 1.',
+          front: 'Prove why $q \\cdot k$ has variance $d_k$ when $q_i, k_i \\sim (0, 1)$ i.i.d.',
+          back: '$$\\text{Var}\\left(\\sum_{i=1}^{d_k} q_i k_i\\right) = \\sum_{i=1}^{d_k} \\text{Var}(q_i k_i) = d_k$$ Dividing by $\\sqrt{d_k}$ scales the variance back to $1$.',
           category: 'First-Principles Math',
           pageRef: 4,
           difficulty: 'hard',
@@ -713,7 +714,7 @@ export function buildDeterministicDocumentStudyBundle(
         {
           id: 'pdf-fc-hard-2',
           front: 'Compare complexity per layer, sequential ops, and max path length for Self-Attention vs. Recurrent vs. Convolutional layers.',
-          back: 'Self-Attention: O(n^2·d) complexity, O(1) seq ops, O(1) path. Recurrent: O(n·d^2) complexity, O(n) seq ops, O(n) path. Convolutional: O(k·n·d^2) complexity, O(1) seq ops, O(log_k(n)) or O(n/k) path.',
+          back: 'Self-Attention: $\\mathcal{O}(n^2 d)$ complexity, $\\mathcal{O}(1)$ seq ops, $\\mathcal{O}(1)$ path. Recurrent: $\\mathcal{O}(n d^2)$ complexity, $\\mathcal{O}(n)$ seq ops, $\\mathcal{O}(n)$ path. Convolutional: $\\mathcal{O}(k n d^2)$ complexity, $\\mathcal{O}(1)$ seq ops, $\\mathcal{O}(\\log_k n)$ or $\\mathcal{O}(n/k)$ path.',
           category: 'Complexity Analysis',
           pageRef: 6,
           difficulty: 'hard',
@@ -721,7 +722,7 @@ export function buildDeterministicDocumentStudyBundle(
         {
           id: 'pdf-fc-hard-3',
           front: 'What is the exact sinusoidal Positional Encoding formula for even and odd dimensions?',
-          back: 'PE_(pos, 2i) = sin(pos / 10000^(2i / d_model)) and PE_(pos, 2i+1) = cos(pos / 10000^(2i / d_model)).',
+          back: '$$PE_{(\\text{pos}, 2i)} = \\sin\\left(\\frac{\\text{pos}}{10000^{2i / d_{\\text{model}}}}\\right), \\quad PE_{(\\text{pos}, 2i+1)} = \\cos\\left(\\frac{\\text{pos}}{10000^{2i / d_{\\text{model}}}}\\right)$$',
           category: 'Formula',
           pageRef: 6,
           difficulty: 'hard',
@@ -729,14 +730,14 @@ export function buildDeterministicDocumentStudyBundle(
         {
           id: 'pdf-fc-hard-4',
           front: 'Write the Transformer warmup learning rate equation and its warmup_steps value.',
-          back: 'lrate = d_model^(-0.5) * min(step_num^(-0.5), step_num * warmup_steps^(-1.5)), with warmup_steps = 4000.',
+          back: '$$\\text{lrate} = d_{\\text{model}}^{-0.5} \\cdot \\min(\\text{step}^{-0.5},\\; \\text{step} \\cdot \\text{warmup}^{-1.5}), \\quad \\text{warmup} = 4000$$',
           category: 'Optimization',
           pageRef: 7,
           difficulty: 'hard',
         },
         {
           id: 'pdf-fc-hard-5',
-          front: 'What effect does Label Smoothing (epsilon_ls = 0.1) have on perplexity vs. BLEU score?',
+          front: 'What effect does Label Smoothing ($\\epsilon_{ls} = 0.1$) have on perplexity vs. BLEU score?',
           back: 'Label smoothing hurts (increases) perplexity because the model learns to be less confident, but it significantly improves translation accuracy and BLEU score.',
           category: 'Empirical Ablation',
           pageRef: 8,
@@ -744,8 +745,8 @@ export function buildDeterministicDocumentStudyBundle(
         },
         {
           id: 'pdf-fc-hard-6',
-          front: 'In the ablation study (Table 3), what happens when attention heads h = 1 or when h is too large (e.g., h = 32, d_k = 16)?',
-          back: 'Single-head attention is 0.9 BLEU worse than the best setting, and quality also drops when h is too large because reduced d_k degrades key-query compatibility resolution.',
+          front: 'In the ablation study (Table 3), what happens when attention heads $h = 1$ or when $h$ is too large ($h = 32, d_k = 16$)?',
+          back: 'Single-head attention is $0.9$ BLEU worse than the best setting, and quality also drops when $h$ is too large because reduced $d_k$ degrades key-query compatibility resolution.',
           category: 'Empirical Ablation',
           pageRef: 9,
           difficulty: 'hard',
@@ -774,10 +775,10 @@ export function buildDeterministicDocumentStudyBundle(
 
       const questionPrompt =
         lvl === 'easy'
-          ? `[Foundational Recall] In "${cleanTitle}" (${secTitle}, Page ${pageRef}), what primary concept or definition is established?`
+          ? `In "${cleanTitle}" (${secTitle}, Page ${pageRef}), what primary concept or definition is established?`
           : lvl === 'medium'
-          ? `[Mechanism & Architecture] How does the methodology on Page ${pageRef} of "${cleanTitle}" (${secTitle}) operate and connect to the overall system?`
-          : `[Critical Analysis & Edge Cases] Evaluating the technical trade-offs and empirical implications in "${cleanTitle}" (Page ${pageRef}), which rigorous conclusion holds?`;
+          ? `How does the methodology on Page ${pageRef} of "${cleanTitle}" (${secTitle}) operate and connect to the overall system?`
+          : `Evaluating the technical trade-offs and empirical implications in "${cleanTitle}" (Page ${pageRef}), which conclusion holds?`;
 
       const distractors =
         lvl === 'easy'
@@ -792,12 +793,12 @@ export function buildDeterministicDocumentStudyBundle(
           ? [
               'It bypasses intermediate verification stages and executes strictly sequentially without feedback.',
               alt1 !== cleanSent
-                ? `It invertly assumes: ${alt1.slice(0, 100)}...`
+                ? `It inversely assumes: ${alt1.slice(0, 100)}...`
                 : 'It decouples the input representation from the target objective function.',
               'The mechanism only applies to static single-variable inputs and fails on multi-dimensional data.',
             ]
           : [
-              'Asymptotic complexity scales exponentially O(2^n) because intermediate states cannot be cached or parallelized.',
+              'Asymptotic complexity scales exponentially $\\mathcal{O}(2^n)$ because intermediate states cannot be cached or parallelized.',
               'Ablation experiments in the document prove this mechanism reduces accuracy under all parameter regimes.',
               'The formulation requires strict linearity and diverges whenever non-linear activations or normalization are applied.',
             ];
@@ -814,7 +815,7 @@ export function buildDeterministicDocumentStudyBundle(
         question: questionPrompt,
         options: rotated,
         correctIndex: targetCorrect,
-        explanation: `[${lvl.toUpperCase()} Mastery — Page ${pageRef}]: ${sent}`,
+        explanation: sent,
         pageRef,
         difficulty: lvl,
       };
@@ -823,6 +824,7 @@ export function buildDeterministicDocumentStudyBundle(
     const genCards: DocumentFlashcardItem[] = selectedSentences.map((sent, idx) => {
       const pageRef = Math.min(pageCount, Math.max(1, ((idx + offset) % pageCount) + 1));
       const focusWords = sent
+        .replace(/\$[^$]+\$/g, '')
         .replace(/[^\w\s]/g, '')
         .split(/\s+/)
         .filter((w) => w.length >= 5)
@@ -860,27 +862,27 @@ export function buildDeterministicDocumentStudyBundle(
     ? [
         {
           label: 'Scaled Dot-Product Attention',
-          expression: 'Attention(Q, K, V) = softmax((QK^T) / √d_k) V',
+          expression: '$\\text{Attention}(Q, K, V) = \\text{softmax}\\left(\\frac{QK^T}{\\sqrt{d_k}}\\right) V$',
           meaning:
-            'Computes compatibility weights between Queries and Keys scaled by 1/√d_k to prevent softmax saturation and vanishing gradients.',
+            'Computes compatibility weights between Queries and Keys scaled by $1/\\sqrt{d_k}$ to prevent softmax saturation and vanishing gradients.',
         },
         {
           label: 'Multi-Head Attention',
-          expression: 'MultiHead(Q, K, V) = Concat(head_1, ..., head_h) W^O',
+          expression: '$\\text{MultiHead}(Q, K, V) = \\text{Concat}(\\text{head}_1, \\dots, \\text{head}_h) W^O$',
           meaning:
-            'Projects Q, K, V into h = 8 parallel 64-dimensional subspaces so the model jointly attends to syntactic and semantic features.',
+            'Projects $Q, K, V$ into $h = 8$ parallel $64$-dimensional subspaces so the model jointly attends to syntactic and semantic features.',
         },
         {
           label: 'Position-Wise Feed-Forward Network',
-          expression: 'FFN(x) = max(0, xW_1 + b_1)W_2 + b_2',
+          expression: '$\\text{FFN}(x) = \\max(0, xW_1 + b_1)W_2 + b_2$',
           meaning:
-            'Applies two linear transformations (512 → 2048 → 512) with ReLU activation identically and independently to each token position.',
+            'Applies two linear transformations ($512 \\to 2048 \\to 512$) with ReLU activation identically and independently to each token position.',
         },
         {
           label: 'Sinusoidal Positional Encoding',
-          expression: 'PE_(pos,2i) = sin(pos / 10000^(2i/d_model))',
+          expression: '$PE_{(\\text{pos}, 2i)} = \\sin\\left(\\text{pos} / 10000^{2i/d_{\\text{model}}}\\right)$',
           meaning:
-            'Injects sequence order via geometric wavelengths so relative offsets PE_(pos+k) can be represented as linear functions of PE_pos.',
+            'Injects sequence order via geometric wavelengths so relative offsets $PE_{\\text{pos}+k}$ can be represented as linear functions of $PE_{\\text{pos}}$.',
         },
       ]
     : [

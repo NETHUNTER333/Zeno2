@@ -428,7 +428,7 @@ export interface ActiveSession {
   lastActive: number;
 }
 
-export type SubscriptionPlan = 'free' | 'pro' | 'enterprise';
+export type SubscriptionPlan = 'free' | 'spark' | 'fire' | 'pro' | 'enterprise';
 
 export interface UserSubscription {
   plan: SubscriptionPlan;
@@ -439,10 +439,19 @@ export interface UserSubscription {
 }
 
 export interface UsageQuota {
+  messagesUsed: number;
+  messageLimit: number;
+  filesUploaded: number;
+  fileUploadLimit: number;
+  maxFilesPerMessage: number;
   tokensUsed: number;
   tokenLimit: number;
   searchesUsed: number;
   searchLimit: number;
+  deepResearchUsed: number;
+  deepResearchLimit: number;
+  pdfStudyUsed: number;
+  pdfStudyLimit: number;
   toolsUsed: number;
   toolLimit: number;
   storageBytesUsed: number;
@@ -650,5 +659,62 @@ export interface GrowthFunnelSummary {
   };
 }
 
+export type EliteReferrerTier =
+  | 'Grand Ambassador'
+  | 'Apex Referrer'
+  | 'Catalyst'
+  | 'Vanguard'
+  | 'Scout';
 
+export interface EliteReferrerLeaderboardEntry {
+  rank: number;
+  uid: string;
+  displayName: string;
+  username: string;
+  avatarUrl?: string;
+  referralCode: string;
+  claimedReferrals: number;
+  visitsCount: number;
+  conversionRate: number;
+  tier: EliteReferrerTier;
+  unlockedThemes: string[];
+  specialtyTag?: string;
+  isCurrentUser?: boolean;
+}
 
+export interface TopContributorEntry {
+  rank: number;
+  uid: string;
+  displayName: string;
+  username: string;
+  bio: string;
+  publishedCount: number;
+  totalSaves: number;
+  totalForks: number;
+  totalViews: number;
+  impactScore: number;
+  specialtyTags: string[];
+  badge: string;
+  topArtifactTitle?: string;
+  topArtifactId?: string;
+  isCurrentUser?: boolean;
+}
+
+export type ZenoFeedbackCategory =
+  | 'feature'
+  | 'bug'
+  | 'model_quality'
+  | 'ui_ux'
+  | 'research_tools'
+  | 'praise';
+
+export interface ZenoFeedbackSubmission {
+  id: string;
+  category: ZenoFeedbackCategory;
+  rating: number;
+  subject: string;
+  message: string;
+  includeDiagnostics?: boolean;
+  status: 'received' | 'routed' | 'reviewed';
+  createdAt: number;
+}

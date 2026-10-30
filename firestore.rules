@@ -100,6 +100,21 @@ service cloud.firestore {
         data.updatedAt is number;
     }
 
+    function isValidUserDailyQuota(data, userId, quotaDate) {
+      return data.keys().hasAll(['quotaDate', 'userId', 'plan', 'messagesUsed', 'filesUploaded', 'searchesUsed', 'deepResearchUsed', 'pdfStudyUsed', 'tokensUsed', 'updatedAt']) &&
+        data.keys().hasOnly(['quotaDate', 'userId', 'plan', 'messagesUsed', 'filesUploaded', 'searchesUsed', 'deepResearchUsed', 'pdfStudyUsed', 'tokensUsed', 'updatedAt']) &&
+        data.quotaDate is string && data.quotaDate == quotaDate && data.quotaDate.size() <= 32 &&
+        data.userId is string && data.userId == userId && data.userId.size() <= 128 &&
+        data.plan in ['free', 'spark', 'fire'] &&
+        data.messagesUsed is number && data.messagesUsed >= 0 &&
+        data.filesUploaded is number && data.filesUploaded >= 0 &&
+        data.searchesUsed is number && data.searchesUsed >= 0 &&
+        data.deepResearchUsed is number && data.deepResearchUsed >= 0 &&
+        data.pdfStudyUsed is number && data.pdfStudyUsed >= 0 &&
+        data.tokensUsed is number && data.tokensUsed >= 0 &&
+        data.updatedAt is number;
+    }
+
     match /users/{userId} {
       allow get: if isOwner(userId) && isValidId(userId);
       allow create: if isOwner(userId) && isValidId(userId) && isValidUserProfile(incoming(), userId);
@@ -150,6 +165,22 @@ service cloud.firestore {
           incoming().createdAt == existing().createdAt &&
           incoming().diff(existing()).affectedKeys().hasOnly(['title', 'content', 'summary', 'collectionId', 'tags', 'isPinned', 'updatedAt']);
         allow delete: if isOwner(userId) && isValidId(userId) && isValidId(itemId);
+      }
+
+      match /quotas/{quotaDate} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(quotaDate);
+        allow list: if isOwner(userId) && existing().userId == request.auth.uid;
+        allow create: if isOwner(userId) && isValidId(userId) && isValidId(quotaDate) && isValidUserDailyQuota(incoming(), userId, quotaDate);
+        allow update: if resource != null && isOwner(userId) && isValidId(userId) && isValidId(quotaDate) && isValidUserDailyQuota(incoming(), userId, quotaDate) &&
+          incoming().quotaDate == existing().quotaDate &&
+          incoming().userId == existing().userId &&
+          incoming().messagesUsed >= existing().messagesUsed &&
+          incoming().filesUploaded >= existing().filesUploaded &&
+          incoming().searchesUsed >= existing().searchesUsed &&
+          incoming().deepResearchUsed >= existing().deepResearchUsed &&
+          incoming().pdfStudyUsed >= existing().pdfStudyUsed &&
+          incoming().tokensUsed >= existing().tokensUsed;
+        allow delete: if false;
       }
     }
 

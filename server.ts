@@ -33,6 +33,11 @@ import {
 import {
   attachRequestAbortController,
   rateLimitMiddleware,
+  getServerQuotaSnapshot,
+  syncServerQuotaFromClient,
+  upgradeServerSubscriptionPlan,
+  verifyChatQuotaBeforeExecution,
+  recordServerQuotaConsumption,
 } from './server/rateLimiter';
 import {
   callTregEndpointReliable,
@@ -2997,11 +3002,53 @@ app.post('/api/auth/verify', requireFirebaseAuth, (req, res) => {
 
 // Protected Route: Authenticated User Quota & Rate Limit Status (UID derived strictly from verified token)
 app.get('/api/user/quota', requireFirebaseAuth, (req, res) => {
+  const snapshot = getServerQuotaSnapshot(req);
   res.json({
     success: true,
     uid: req.auth!.uid,
     projectId: req.auth!.projectId,
     tier: 'authenticated',
+    quota: snapshot,
+  });
+});
+
+// Server-Authoritative Daily Quota & Tier Endpoints (supports both authenticated UID and IP fallback)
+app.get('/api/quota/status', (req, res) => {
+  const snapshot = getServerQuotaSnapshot(req);
+  res.json({
+    success: true,
+    authenticated: Boolean(req.auth?.uid),
+    uid: req.auth?.uid || null,
+    quota: snapshot,
+  });
+});
+
+app.post('/api/quota/sync', (req, res) => {
+  const snapshot = syncServerQuotaFromClient(req, req.body || {});
+  res.json({
+    success: true,
+    authenticated: Boolean(req.auth?.uid),
+    uid: req.auth?.uid || null,
+    quota: snapshot,
+  });
+});
+
+app.post('/api/quota/upgrade', (req, res) => {
+  const { plan, billingCycle } = req.body || {};
+  if (plan !== 'free' && plan !== 'spark' && plan !== 'fire') {
+    return sendNormalizedError(
+      res,
+      400,
+      'quota/invalid-plan',
+      'Plan must be one of: free, spark, fire'
+    );
+  }
+  const snapshot = upgradeServerSubscriptionPlan(req, plan, billingCycle);
+  res.json({
+    success: true,
+    authenticated: Boolean(req.auth?.uid),
+    uid: req.auth?.uid || null,
+    quota: snapshot,
   });
 });
 
@@ -3582,6 +3629,30 @@ app.post('/api/tts', async (req, res) => {
       payload.language = 'hindi';
     }
 
+    // Helper to wrap raw 16-bit mono PCM (e.g. from Gemini TTS audio/L16) in a standard 44-byte RIFF WAV header
+    const wrapPcmInWavHeader = (pcmData: Buffer, sampleRate = 24000, numChannels = 1, bitsPerSample = 16): Buffer => {
+      if (pcmData.length >= 4 && pcmData.subarray(0, 4).toString('ascii') === 'RIFF') {
+        return pcmData;
+      }
+      const header = Buffer.alloc(44);
+      const byteRate = (sampleRate * numChannels * bitsPerSample) / 8;
+      const blockAlign = (numChannels * bitsPerSample) / 8;
+      header.write('RIFF', 0);
+      header.writeUInt32LE(36 + pcmData.length, 4);
+      header.write('WAVE', 8);
+      header.write('fmt ', 12);
+      header.writeUInt32LE(16, 16); // Subchunk1Size (16 for PCM)
+      header.writeUInt16LE(1, 20);  // AudioFormat (1 = PCM)
+      header.writeUInt16LE(numChannels, 22);
+      header.writeUInt32LE(sampleRate, 24);
+      header.writeUInt32LE(byteRate, 28);
+      header.writeUInt16LE(blockAlign, 32);
+      header.writeUInt16LE(bitsPerSample, 34);
+      header.write('data', 36);
+      header.writeUInt32LE(pcmData.length, 40);
+      return Buffer.concat([header, pcmData]);
+    };
+
     // Tier 1: Try Rumik AI Silk TTS first (if RUMIK_API_KEY is configured)
     if (RUMIK_API_KEY) {
       try {
@@ -3599,12 +3670,77 @@ app.post('/api/tts', async (req, res) => {
           const arrayBuffer = await ttsRes.arrayBuffer();
           if (arrayBuffer.byteLength > 100) {
             res.setHeader('Content-Type', ttsRes.headers.get('content-type') || 'audio/wav');
+            res.setHeader('X-Zeno-Voice-Gender', gender);
             res.setHeader('Cache-Control', 'no-store');
             return res.send(Buffer.from(arrayBuffer));
           }
         }
       } catch {
         // Fall through to neural TTS fallback if Rumik is out of prepaid balance (402) or unreachable
+      }
+    }
+
+    // Tier 1.5: Google Gemini Native Neural TTS (distinct Male 'Charon' vs Female 'Kore' voice across all languages)
+    const ttsGeminiClient =
+      geminiClient ||
+      (process.env.GEMINI_API_KEY
+        ? new GoogleGenAI({
+            apiKey: process.env.GEMINI_API_KEY,
+            httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
+          })
+        : null);
+
+    if (ttsGeminiClient) {
+      const geminiTtsVoice = gender === 'male' ? 'Charon' : 'Kore';
+      for (const ttsModel of ['gemini-2.5-flash-preview-tts']) {
+        try {
+          const gemRes = await Promise.race([
+            ttsGeminiClient.models.generateContent({
+              model: ttsModel,
+              contents: [{ parts: [{ text: textToSpeak }] }],
+              config: {
+                responseModalities: ['AUDIO'],
+                speechConfig: {
+                  voiceConfig: {
+                    prebuiltVoiceConfig: {
+                      voiceName: geminiTtsVoice,
+                    },
+                  },
+                },
+              },
+            }),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error('Gemini TTS timeout')), 6500)
+            ),
+          ]);
+
+          const inlineAudio = gemRes?.candidates?.[0]?.content?.parts?.find(
+            (p: any) => p?.inlineData?.data
+          )?.inlineData;
+
+          if (inlineAudio?.data) {
+            const rawAudioBuf = Buffer.from(inlineAudio.data, 'base64');
+            if (rawAudioBuf.length > 200) {
+              const mime = String(inlineAudio.mimeType || '').toLowerCase();
+              const rateMatch = mime.match(/rate=(\d+)/);
+              const sampleRate = rateMatch ? parseInt(rateMatch[1], 10) : 24000;
+              const isRawPcm =
+                mime.includes('l16') ||
+                mime.includes('pcm') ||
+                rawAudioBuf.subarray(0, 4).toString('ascii') !== 'RIFF';
+              const finalWav = isRawPcm
+                ? wrapPcmInWavHeader(rawAudioBuf, sampleRate, 1, 16)
+                : rawAudioBuf;
+              res.setHeader('Content-Type', 'audio/wav');
+              res.setHeader('X-Zeno-Voice-Gender', gender);
+              res.setHeader('X-Zeno-Voice-Engine', 'gemini-tts');
+              res.setHeader('Cache-Control', 'no-store');
+              return res.send(finalWav);
+            }
+          }
+        } catch {
+          // Proceed to Tier 2 neural voice synthesis
+        }
       }
     }
 
@@ -3641,7 +3777,50 @@ app.post('/api/tts', async (req, res) => {
       return chunks.length > 0 ? chunks.slice(0, 6) : [input.slice(0, maxLen)];
     };
 
-    // Tier 2: Neural Male/Female Voice Synthesis for languages supported by Weilnet TikTok Neural TTS
+    // Tier 2A: Amazon Polly Neural Male/Female TTS via StreamElements (100% genuine Male vs Female voices)
+    const pollyVoiceMap: Record<string, { male: string; female: string }> = {
+      english: { male: 'Matthew', female: 'Joanna' },
+      hinglish: { male: 'Brian', female: 'Aditi' },
+      spanish: { male: 'Miguel', female: 'Penelope' },
+      french: { male: 'Mathieu', female: 'Celine' },
+      german: { male: 'Hans', female: 'Marlene' },
+      japanese: { male: 'Takumi', female: 'Mizuki' },
+    };
+
+    const matchedPollyVoice = pollyVoiceMap[language]?.[gender];
+    if (matchedPollyVoice) {
+      try {
+        const chunks = splitIntoTtsChunks(textToSpeak, 220);
+        const buffers: Buffer[] = [];
+        for (const chunk of chunks) {
+          const pUrl = `https://api.streamelements.com/kappa/v2/speech?voice=${encodeURIComponent(
+            matchedPollyVoice
+          )}&text=${encodeURIComponent(chunk)}`;
+          const pRes = await fetch(pUrl, {
+            headers: { 'User-Agent': 'Mozilla/5.0' },
+            signal: AbortSignal.timeout(4500),
+          });
+          if (!pRes.ok) break;
+          const ab = await pRes.arrayBuffer();
+          if (ab.byteLength > 200) {
+            buffers.push(Buffer.from(ab));
+          } else {
+            break;
+          }
+        }
+        if (buffers.length === chunks.length && buffers.length > 0) {
+          res.setHeader('Content-Type', 'audio/mpeg');
+          res.setHeader('X-Zeno-Voice-Gender', gender);
+          res.setHeader('X-Zeno-Voice-Engine', 'polly-neural');
+          res.setHeader('Cache-Control', 'no-store');
+          return res.send(Buffer.concat(buffers));
+        }
+      } catch {
+        // Proceed to Tier 2B
+      }
+    }
+
+    // Tier 2B: Neural Male/Female Voice Synthesis for languages supported by Weilnet TikTok Neural TTS
     const neuralVoiceMap: Record<string, { male: string; female: string }> = {
       english: { male: 'en_us_006', female: 'en_us_001' },
       hinglish: { male: 'en_uk_001', female: 'en_us_002' },
@@ -3661,7 +3840,7 @@ app.post('/api/tts', async (req, res) => {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ text: chunk, voice: matchedNeuralVoice }),
-            signal: AbortSignal.timeout(5000),
+            signal: AbortSignal.timeout(4500),
           });
           if (!nRes.ok) break;
           const nJson: any = await nRes.json();
@@ -3673,6 +3852,8 @@ app.post('/api/tts', async (req, res) => {
         }
         if (buffers.length === chunks.length && buffers.length > 0) {
           res.setHeader('Content-Type', 'audio/mpeg');
+          res.setHeader('X-Zeno-Voice-Gender', gender);
+          res.setHeader('X-Zeno-Voice-Engine', 'tiktok-neural');
           res.setHeader('Cache-Control', 'no-store');
           return res.send(Buffer.concat(buffers));
         }
@@ -3706,9 +3887,53 @@ app.post('/api/tts', async (req, res) => {
       })
     );
 
+    const combinedMp3 = Buffer.concat(gBuffers);
+
+    // Since translate_tts defaults to a female vocal register, when gender === 'male' we shift pitch & formants via FFmpeg (or notify client via header)
+    if (gender === 'male') {
+      try {
+        const { spawn } = await import('child_process');
+        const maleShiftedMp3 = await new Promise<Buffer>((resolve, reject) => {
+          const ff = spawn('ffmpeg', [
+            '-hide_banner',
+            '-loglevel',
+            'error',
+            '-i',
+            'pipe:0',
+            '-af',
+            'asetrate=24000*0.79,aresample=24000,atempo=1.24,bass=g=4:f=140',
+            '-f',
+            'mp3',
+            'pipe:1',
+          ]);
+          const out: Buffer[] = [];
+          ff.stdout.on('data', (d) => out.push(d));
+          ff.on('error', reject);
+          ff.on('close', (code) => {
+            const buf = Buffer.concat(out);
+            if (code === 0 && buf.length > 200) resolve(buf);
+            else reject(new Error(`ffmpeg exited ${code}`));
+          });
+          ff.stdin.write(combinedMp3);
+          ff.stdin.end();
+        });
+
+        res.setHeader('Content-Type', 'audio/mpeg');
+        res.setHeader('X-Zeno-Voice-Gender', 'male');
+        res.setHeader('X-Zeno-Voice-Engine', 'ffmpeg-male-shifted');
+        res.setHeader('Cache-Control', 'no-store');
+        return res.send(maleShiftedMp3);
+      } catch {
+        // Tell the browser client to apply WebAudio male pitch/formant shift on playback
+        res.setHeader('X-Zeno-Tts-Pitch-Shift', 'male');
+        res.setHeader('Access-Control-Expose-Headers', 'X-Zeno-Tts-Pitch-Shift, X-Zeno-Voice-Gender');
+      }
+    }
+
     res.setHeader('Content-Type', 'audio/mpeg');
+    res.setHeader('X-Zeno-Voice-Gender', gender);
     res.setHeader('Cache-Control', 'no-store');
-    return res.send(Buffer.concat(gBuffers));
+    return res.send(combinedMp3);
   } catch (err: any) {
     return res.status(500).json({ error: err.message || 'TTS generation failed' });
   }
@@ -4273,6 +4498,38 @@ app.post('/api/treg/search', async (req, res) => {
       tregError: outcome.tregError,
       tinyfishError: outcome.tinyfishError,
       org: getTregOrg(),
+    });
+  } catch (error: any) {
+    return sendNormalizedError(res, 500, 'search/internal-error', error?.message || 'Failed to execute search');
+  }
+});
+
+// Unified /api/search Endpoint (rate-limited under search_and_extract tier + quota tracked)
+app.post('/api/search', async (req, res) => {
+  try {
+    const { query, mode = 'organic', nsfwMode = false } = req.body || {};
+    if (!query || typeof query !== 'string' || !query.trim()) {
+      return sendNormalizedError(res, 400, 'validation/missing-query', 'Query parameter is required');
+    }
+    const abortController = attachRequestAbortController(req, res);
+    const startTime = Date.now();
+    const outcome = await searchWebReliable(
+      query.trim(),
+      mode === 'news' ? 'news' : 'organic',
+      Boolean(nsfwMode),
+      abortController.signal
+    );
+    const quota = recordServerQuotaConsumption(req, { searches: 1 });
+    return res.json({
+      success: outcome.providerStatus !== 'unavailable',
+      query: query.trim(),
+      mode,
+      durationMs: Date.now() - startTime,
+      resultsCount: outcome.results.length,
+      results: outcome.results,
+      providerUsed: outcome.providerUsed,
+      fallbackUsed: outcome.fallbackUsed,
+      quota,
     });
   } catch (error: any) {
     return sendNormalizedError(res, 500, 'search/internal-error', error?.message || 'Failed to execute search');
@@ -7111,6 +7368,28 @@ app.post('/api/chat', async (req, res) => {
     const liveClock = buildRealTimeClockContext(clientClock);
     const isClockQuery = isDateOrTimeClockQuery(userQuery);
 
+    // Server-Side Quota & Model Tier Verification (prevents client localStorage bypass)
+    const incomingAttachmentsCount = Array.isArray(lastUserMessage?.attachments)
+      ? lastUserMessage.attachments.length
+      : 0;
+    const quotaCheck = verifyChatQuotaBeforeExecution(req, {
+      model,
+      attachmentsCount: incomingAttachmentsCount,
+      isResearchMode: Boolean(req.body?.isResearchMode),
+    });
+    if (!quotaCheck.allowed) {
+      return sendNormalizedError(
+        res,
+        quotaCheck.statusCode,
+        quotaCheck.code || 'quota/exceeded',
+        quotaCheck.message || 'Daily usage quota exceeded for your current plan.',
+        {
+          requiredTier: quotaCheck.requiredTier,
+          quota: quotaCheck.snapshot,
+        }
+      );
+    }
+
     let searchSources: any[] = [];
     let searchQueriesExecuted: string[] = [];
     let toolsUsed: any[] = [];
@@ -8083,9 +8362,15 @@ Rules:
     } | null = null;
 
     const userAttachments = lastUserMessage?.attachments || [];
-    // Ultra-fast instant path for casual greetings/emojis and real-time clock queries so they never wait on slow external gateways
+    // Fast contextual path for casual greetings/emojis and real-time clock queries
     if (!hasAttachments && (isCasualOrGreeting || isClockQuery)) {
       const nameGreeting = personalization?.preferredName ? ` ${personalization.preferredName}` : '';
+      const priorAssistantReplies = messages
+        .slice(0, -1)
+        .filter((m: any) => m.role === 'assistant' && typeof m.content === 'string')
+        .map((m: any) => m.content.trim());
+      const hasPriorConversation = priorAssistantReplies.length > 0;
+
       if (isClockQuery) {
         replyText = enforceAccurateClockInReply(
           '',
@@ -8095,13 +8380,53 @@ Rules:
           personalization?.preferredName
         );
       } else if (/^(thanks|thank you|thx|ty)$/i.test(cleanText)) {
-        replyText = `You're welcome${nameGreeting}! Let me know if you need anything else.`;
+        const thanksCandidates = [
+          `You're welcome${nameGreeting}! Let me know if you need anything else.`,
+          `Anytime${nameGreeting}! Happy to help.`,
+          `Glad that helped${nameGreeting}! What should we tackle next?`,
+        ];
+        replyText =
+          thanksCandidates.find((c) => !priorAssistantReplies.includes(c)) || thanksCandidates[0];
       } else if (/^(bye|goodbye|see ya|cya)$/i.test(cleanText)) {
-        replyText = `See you later${nameGreeting}! 👋`;
+        replyText = `See you later${nameGreeting}! Reach out anytime.`;
       } else if (/^how are you/i.test(cleanText)) {
-        replyText = `Doing great${nameGreeting}! How can I help you today?`;
+        replyText = `Doing well${nameGreeting}, thanks for asking! What are we working on today?`;
+      } else if (hasPriorConversation) {
+        // User sent a greeting mid-conversation or after a previous greeting — vary naturally and never repeat
+        const lastnonGreetingTopic = messages
+          .slice(0, -1)
+          .reverse()
+          .find(
+            (m: any) =>
+              m.role === 'user' &&
+              typeof m.content === 'string' &&
+              m.content.trim().length > 12
+          );
+        const followUpCandidates = lastnonGreetingTopic
+          ? [
+              `I'm right here${nameGreeting}. Want to continue where we left off, or start on something new?`,
+              `Still here${nameGreeting}! Let me know if you'd like to dive deeper or switch topics.`,
+              `What's on your mind${nameGreeting}? We can keep going or explore a new question.`,
+            ]
+          : [
+              `Hi again${nameGreeting}! What can I help you look into or build?`,
+              `I'm here${nameGreeting} — ask me anything or drop a topic whenever you're ready.`,
+              `Ready when you are${nameGreeting}. What would you like to explore?`,
+            ];
+        replyText =
+          followUpCandidates.find((c) => !priorAssistantReplies.includes(c)) ||
+          followUpCandidates[priorAssistantReplies.length % followUpCandidates.length];
       } else {
-        replyText = `Hey${nameGreeting}! How can I help you today? 👋`;
+        // First message in thread: match user's greeting style cleanly
+        if (/^hello\b/i.test(cleanText)) {
+          replyText = `Hello${nameGreeting}! What can I help you with today?`;
+        } else if (/^good\s+(morning|afternoon|evening)/i.test(cleanText)) {
+          const match = cleanText.match(/^good\s+(morning|afternoon|evening)/i);
+          const timeOfDay = match ? match[1].toLowerCase() : 'day';
+          replyText = `Good ${timeOfDay}${nameGreeting}! How can I help you today?`;
+        } else {
+          replyText = `Hey${nameGreeting}! How can I help you today?`;
+        }
       }
       const pTok = countMessagesInputTokens(openAiMessages);
       const cTok = countExactSubwordTokens(replyText);
@@ -8528,6 +8853,14 @@ Rules:
       }
     }
 
+    const updatedQuotaSnapshot = recordServerQuotaConsumption(req, {
+      messages: 1,
+      files: incomingAttachmentsCount,
+      searches: enrichedSearchSources.length > 0 ? 1 : 0,
+      deepResearch: req.body?.isResearchMode ? 1 : 0,
+      tokens: totalTokens,
+    });
+
     res.json({
       success: true,
       text: replyText,
@@ -8542,6 +8875,7 @@ Rules:
       toolsUsed,
       webSearchSteps,
       modelUsed: resolvedModelUsed,
+      quota: updatedQuotaSnapshot,
       timing: {
         firstTokenSec,
         totalSec,

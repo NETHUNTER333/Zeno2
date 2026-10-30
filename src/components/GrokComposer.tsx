@@ -1,7 +1,7 @@
 import React from 'react';
 import { ModelOption } from './GrokModelPicker';
 import { SearchMode, ChatAttachment } from '../types';
-import { ChatInput } from './kobra/chat-input';
+import { Composer } from './kobra/composer';
 import { ChatHistoryItem } from './kobra/chat-history';
 
 export interface GrokComposerProps {
@@ -21,7 +21,7 @@ export interface GrokComposerProps {
 }
 
 export const GrokComposer: React.FC<GrokComposerProps> = (props) => {
-  return <ChatInput {...props} />;
+  return <Composer {...props} />;
 };
 
 export default GrokComposer;
