@@ -15,6 +15,8 @@ import {
   Trash2,
   Search,
   X,
+  Download,
+  Edit3,
   Sparkles,
   Cpu,
   CheckCircle2,
@@ -579,7 +581,7 @@ export const DeepResearchModal: React.FC<DeepResearchModalProps> = ({
       }).then((r) => r.json());
 
       const rawSources: SearchSource[] = Array.isArray(searchRes?.sources)
-        ? searchRes.sources.slice(0, 8)
+        ? searchRes.sources.slice(0, 24)
         : [];
 
       const mappedSources: AnswerSource[] = rawSources.map((s, idx) => {
@@ -602,12 +604,12 @@ export const DeepResearchModal: React.FC<DeepResearchModalProps> = ({
         };
       });
 
-      setSources(mappedSources.slice(0, 6));
+      setSources(mappedSources.slice(0, 24));
       setThinkingSteps(buildDynamicThinkingSteps(cleanQ, mappedSources));
       setIsSearching(false);
 
       const sourceContext = mappedSources
-        .slice(0, 6)
+        .slice(0, 24)
         .map(
           (s) =>
             `[${s.id}] ${s.name} (${s.domain}) — ${s.title}\nSnippet: ${s.snippet || ''}`
@@ -1090,240 +1092,6 @@ List the numbered source citations [1], [2], etc., matching the provided sources
           className="flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden px-4 sm:px-6 md:px-8 py-3 scrollbar-thin"
         >
           <div className="max-w-3xl mx-auto w-full space-y-4 pb-8">
-            {/* InstaCloud Cluster Header & Sub-Agent Orchestration Strip */}
-            <div
-              className={`rounded-xl border p-3 sm:p-4 transition-colors ${
-                isDark
-                  ? 'border-white/[0.08] bg-[#111115]'
-                  : 'border-black/[0.08] bg-neutral-50/80 shadow-xs'
-              }`}
-            >
-              {/* Live Cluster Status Header - Minimalist & Monochrome (Zero AI Slop) */}
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-2.5 mb-3 border-inherit">
-                <div className="flex flex-wrap items-center gap-1.5 font-mono text-[10.5px]">
-                  <span
-                    className={`px-2 py-0.5 rounded border ${
-                      isDark
-                        ? 'border-white/10 bg-white/[0.04] text-neutral-300'
-                        : 'border-black/10 bg-black/[0.03] text-neutral-700'
-                    }`}
-                  >
-                    InstaCloud Edge
-                  </span>
-                  <span
-                    className={`px-2 py-0.5 rounded border ${
-                      isDark
-                        ? 'border-white/10 text-neutral-400'
-                        : 'border-black/10 text-neutral-600'
-                    }`}
-                  >
-                    Node: {agentClusterInfo.projectId ? agentClusterInfo.projectId.slice(0, 8) : 'd374ae51'}
-                  </span>
-                  <span
-                    className={`px-2 py-0.5 rounded border ${
-                      isDark
-                        ? 'border-white/10 text-neutral-400'
-                        : 'border-black/10 text-neutral-600'
-                    }`}
-                  >
-                    5 Sub-Agents
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 text-[11px] font-mono text-neutral-400 ml-auto">
-                  {thinkingStatus === 'done' ? (
-                    <span className="flex items-center gap-1 text-neutral-300">
-                      <span>✓</span>
-                      <span>Synthesized in {thinkingDuration}s</span>
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-1.5 text-neutral-400">
-                      <Loader2 className="size-3 animate-spin text-neutral-400" />
-                      <span>Running on InstaCloud...</span>
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* Prompt-Kit Chain of Thought Accordion - Clean Monochrome Steps */}
-              <div className="mb-3.5">
-                <div className="flex items-center justify-between mb-2 px-0.5">
-                  <span
-                    className={`text-[11px] font-mono uppercase tracking-wider ${
-                      isDark ? 'text-neutral-400' : 'text-neutral-600'
-                    }`}
-                  >
-                    Chain of Thought Reasoning
-                  </span>
-                </div>
-                <div
-                  className={`rounded-lg border p-2.5 sm:p-3 ${
-                    isDark ? 'border-white/[0.05] bg-black/40' : 'border-black/[0.05] bg-white'
-                  }`}
-                >
-                  <ChainOfThought>
-                    <ChainOfThoughtStep defaultOpen={true}>
-                      <ChainOfThoughtTrigger
-                        leftIcon={<span className="font-mono text-[11px] text-neutral-400 font-semibold">01</span>}
-                      >
-                        <span className="text-[12.5px] font-medium text-foreground">
-                          Problem Decomposition & Epistemological Stance
-                        </span>
-                      </ChainOfThoughtTrigger>
-                      <ChainOfThoughtContent>
-                        <ChainOfThoughtItem className="text-[12px] leading-relaxed text-neutral-400">
-                          Deconstructed query &ldquo;{question}&rdquo; into parallel academic vectors:
-                          molecular mechanisms, clinical cohort outcomes, dose-response dynamics, and
-                          adversarial counter-hypotheses.
-                        </ChainOfThoughtItem>
-                      </ChainOfThoughtContent>
-                    </ChainOfThoughtStep>
-
-                    <ChainOfThoughtStep defaultOpen={true}>
-                      <ChainOfThoughtTrigger
-                        leftIcon={<span className="font-mono text-[11px] text-neutral-400 font-semibold">02</span>}
-                      >
-                        <span className="text-[12.5px] font-medium text-foreground">
-                          Literature & Preprint Grounding (ArXiv / PubMed)
-                        </span>
-                      </ChainOfThoughtTrigger>
-                      <ChainOfThoughtContent>
-                        <ChainOfThoughtItem className="text-[12px] leading-relaxed text-neutral-400">
-                          Queried semantic indexes and live peer-reviewed sources. Cross-referenced {sources.length > 0 ? sources.length : 'active'} primary
-                          citations and author cohorts to eliminate hallucinations.
-                        </ChainOfThoughtItem>
-                      </ChainOfThoughtContent>
-                    </ChainOfThoughtStep>
-
-                    <ChainOfThoughtStep defaultOpen={true}>
-                      <ChainOfThoughtTrigger
-                        leftIcon={<span className="font-mono text-[11px] text-neutral-400 font-semibold">03</span>}
-                      >
-                        <span className="text-[12.5px] font-medium text-foreground">
-                          Quantitative Extraction & Statistical Bound Analysis
-                        </span>
-                      </ChainOfThoughtTrigger>
-                      <ChainOfThoughtContent>
-                        <ChainOfThoughtItem className="text-[12px] leading-relaxed text-neutral-400">
-                          Parsed hazard ratios, odds ratios, statistical p-values, sample sizes (N &gt; 500),
-                          and formulated rigorous LaTeX mathematical expressions for physiological pathways.
-                        </ChainOfThoughtItem>
-                      </ChainOfThoughtContent>
-                    </ChainOfThoughtStep>
-
-                    <ChainOfThoughtStep defaultOpen={true}>
-                      <ChainOfThoughtTrigger
-                        leftIcon={<span className="font-mono text-[11px] text-neutral-400 font-semibold">04</span>}
-                      >
-                        <span className="text-[12.5px] font-medium text-foreground">
-                          Adversarial Peer Review & Confounder Elimination
-                        </span>
-                      </ChainOfThoughtTrigger>
-                      <ChainOfThoughtContent>
-                        <ChainOfThoughtItem className="text-[12px] leading-relaxed text-neutral-400">
-                          Audited observational trial limitations, genetic growth plate ceilings,
-                          tolerable upper limits, and potential biochemical contraindications.
-                        </ChainOfThoughtItem>
-                      </ChainOfThoughtContent>
-                    </ChainOfThoughtStep>
-
-                    <ChainOfThoughtStep defaultOpen={true}>
-                      <ChainOfThoughtTrigger
-                        leftIcon={<span className="font-mono text-[11px] text-neutral-400 font-semibold">05</span>}
-                      >
-                        <span className="text-[12.5px] font-medium text-foreground">
-                          Full Systematic Treatise & LaTeX Typesetting
-                        </span>
-                      </ChainOfThoughtTrigger>
-                      <ChainOfThoughtContent>
-                        <ChainOfThoughtItem className="text-[12px] leading-relaxed text-neutral-400">
-                          Synthesized comprehensive multi-section publication treatise with formatted tables,
-                          inline KaTeX math formulas, structured abstract, and numbered Vancouver citations.
-                        </ChainOfThoughtItem>
-                      </ChainOfThoughtContent>
-                    </ChainOfThoughtStep>
-                  </ChainOfThought>
-                </div>
-              </div>
-
-              {/* Shadcn Trace Component - Clean Monochrome Sub-Agents on InstaCloud */}
-              <div>
-                <div className="flex items-center justify-between mb-2 px-0.5">
-                  <span
-                    className={`text-[11px] font-mono uppercase tracking-wider ${
-                      isDark ? 'text-neutral-400' : 'text-neutral-600'
-                    }`}
-                  >
-                    InstaCloud Sub-Agent Execution Traces
-                  </span>
-                  <span className="text-[10px] font-mono text-neutral-500">
-                    Cluster: instacloud-us-east
-                  </span>
-                </div>
-
-                <div
-                  className={`rounded-lg border p-2.5 sm:p-3 ${
-                    isDark ? 'border-white/[0.05] bg-black/40' : 'border-black/[0.05] bg-white'
-                  }`}
-                >
-                  <Trace className="space-y-1">
-                    {agents.map((agent) => (
-                      <TraceCollapsible key={agent.id} defaultOpen={false}>
-                        <TraceCollapsibleTrigger className="w-full flex items-center justify-between py-1 text-xs">
-                          <TraceLine status={agent.status === 'completed' ? undefined : 'running'}>
-                            <TraceIcon>
-                              {agent.status === 'completed' ? (
-                                <span className="text-neutral-300 font-mono text-xs">✓</span>
-                              ) : (
-                                <span className="text-neutral-500 font-mono text-xs">…</span>
-                              )}
-                            </TraceIcon>
-                            <TraceTitle className="font-medium text-foreground">
-                              {agent.name}
-                            </TraceTitle>
-                            <span className="text-[10px] font-mono text-neutral-500 hidden sm:inline">
-                              [{agent.role}]
-                            </span>
-                          </TraceLine>
-                          <TraceDescription className="text-[10.5px] font-mono text-neutral-400 flex items-center gap-2">
-                            <span className="text-[9.5px] px-1 rounded bg-white/[0.06] text-neutral-400 border border-current/10">
-                              {agent.node}
-                            </span>
-                            <span>{agent.latencyMs}ms</span>
-                          </TraceDescription>
-                        </TraceCollapsibleTrigger>
-                        <TraceCollapsibleContent>
-                          <div className="space-y-1.5 py-1 text-[11.5px]">
-                            <p className="text-neutral-400 italic text-[11px]">{agent.thought}</p>
-                            {agent.steps.map((st, sIdx) => (
-                              <div
-                                key={sIdx}
-                                className={`flex items-start justify-between gap-2 p-1.5 rounded text-[11px] font-mono ${
-                                  isDark ? 'bg-white/[0.03]' : 'bg-neutral-100/70'
-                                }`}
-                              >
-                                <div className="flex items-center gap-1.5">
-                                  <span className="size-1 rounded-full bg-neutral-400 shrink-0" />
-                                  <span className="font-semibold text-neutral-200">
-                                    {st.title}:
-                                  </span>
-                                  <span className="text-neutral-400">{st.detail}</span>
-                                </div>
-                                {st.latencyMs && (
-                                  <span className="text-neutral-500 tabular-nums shrink-0">
-                                    {st.latencyMs}ms
-                                  </span>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        </TraceCollapsibleContent>
-                      </TraceCollapsible>
-                    ))}
-                  </Trace>
-                </div>
-              </div>
-            </div>
-
             {/* Seamless Full-Page Content Flow - NO bubble / card wrapper */}
             <div className="w-full">
               {/* Question Title - Sleek, smaller font */}
@@ -1813,6 +1581,31 @@ List the numbered source citations [1], [2], etc., matching the provided sources
                     {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                   </button>
 
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const exportText = `# Deep Research Report: ${question}\n\n${fullAnswer}\n\n## References & Citation Links\n` +
+                        sources.map(s => `[${s.id}] ${s.name} — ${s.title}\nURL: ${s.url}`).join('\n\n');
+                      const blob = new Blob([exportText], { type: 'text/markdown;charset=utf-8' });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `${(question || 'deep_research').replace(/[^a-z0-9]/gi, '_').slice(0, 40)}_cited_report.md`;
+                      a.click();
+                      URL.revokeObjectURL(url);
+                      setLiveStatusAnnouncement('Exported report with citation links');
+                    }}
+                    title="Export report with citation links (.md)"
+                    aria-label="Export report with citations"
+                    className={`size-7 rounded-md flex items-center justify-center transition-colors cursor-pointer ${
+                      isDark
+                        ? 'text-neutral-400 hover:text-white hover:bg-white/[0.07]'
+                        : 'text-neutral-500 hover:text-black hover:bg-black/[0.05]'
+                    }`}
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                  </button>
+
                   {isStreaming || isSearching ? (
                     <button
                       type="button"
@@ -2086,13 +1879,39 @@ List the numbered source citations [1], [2], etc., matching the provided sources
                           <button
                             type="button"
                             onClick={() => {
+                              loadHistoryItem(item);
+                              setIsHistoryOpen(false);
+                              setTimeout(() => {
+                                window.print();
+                              }, 300);
+                            }}
+                            title="Export as PDF / Print report"
+                            className="opacity-70 sm:opacity-0 group-hover:opacity-150 hover:opacity-100 p-1 rounded-md transition-opacity cursor-pointer"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              loadHistoryItem(item);
+                              setIsHistoryOpen(false);
+                              setLiveStatusAnnouncement('Loaded research for editing');
+                            }}
+                            title="Edit / Re-run research"
+                            className="opacity-70 sm:opacity-0 group-hover:opacity-150 hover:opacity-100 p-1 rounded-md transition-opacity cursor-pointer"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
                               navigator.clipboard.writeText(
                                 `${item.question}\n\n${item.fullAnswer}`
                               );
                               setLiveStatusAnnouncement('Copied research to clipboard');
                             }}
                             title="Copy report"
-                            className="opacity-0 group-hover:opacity-70 hover:opacity-100 p-1 rounded-md transition-opacity cursor-pointer"
+                            className="opacity-70 sm:opacity-0 group-hover:opacity-150 hover:opacity-100 p-1 rounded-md transition-opacity cursor-pointer"
                           >
                             <Copy className="w-3.5 h-3.5" />
                           </button>
@@ -2105,7 +1924,7 @@ List the numbered source citations [1], [2], etc., matching the provided sources
                               }
                             }}
                             title="Delete this record"
-                            className="opacity-0 group-hover:opacity-70 hover:opacity-100 hover:text-red-500 p-1 rounded-md transition-opacity cursor-pointer"
+                            className="opacity-70 sm:opacity-0 group-hover:opacity-150 hover:opacity-100 hover:text-red-500 p-1 rounded-md transition-opacity cursor-pointer"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>

@@ -67,22 +67,61 @@ export const MathMarkdown: React.FC<MathMarkdownProps> = ({
 
   if (!normalized) return null;
 
+  if (inline) {
+    return (
+      <span className={`katex-markdown-body inline [&>p]:inline [&>p]:m-0 ${className}`}>
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm, remarkMath]}
+          rehypePlugins={[[rehypeKatex, { throwOnError: false, strict: false, output: 'htmlAndMathml' }]]}
+          components={{
+            p: ({ children }) => <span className="leading-relaxed">{children}</span>,
+            pre: ({ children }) => {
+              const childArray = React.Children.toArray(children);
+              const codeChild = childArray[0] as React.ReactElement<{
+                className?: string;
+                children?: React.ReactNode;
+              }>;
+              const rawClass = codeChild?.props?.className || '';
+              const langMatch = /language-([\w-]+)/.exec(rawClass);
+              const lang = (langMatch ? langMatch[1] : '').toLowerCase();
+              const codeText = String(codeChild?.props?.children || '').replace(/\n$/, '');
+              return <PrismCodeBlock code={codeText} language={lang || 'text'} isDark={isDark} />;
+            },
+            code: ({ className: codeClassName, children, ...props }) => {
+              const isBlock = Boolean(codeClassName && /language-/.test(codeClassName));
+              if (isBlock) {
+                return <code className={codeClassName} {...props}>{children}</code>;
+              }
+              return (
+                <code
+                  className={`px-1.5 py-0.5 rounded-md font-mono text-[0.86em] transition-colors ${
+                    isDark
+                      ? 'bg-white/[0.07] text-[#ececf1] border border-white/[0.08]'
+                      : 'bg-black/[0.045] text-[#141416] border border-black/[0.07]'
+                  }`}
+                  {...props}
+                >
+                  {children}
+                </code>
+              );
+            },
+          }}
+        >
+          {normalized}
+        </ReactMarkdown>
+      </span>
+    );
+  }
+
   return (
     <div
-      className={`katex-markdown-body ${
-        inline ? 'inline [&>p]:inline [&>p]:m-0' : 'space-y-2.5'
-      } ${className}`}
+      className={`katex-markdown-body space-y-2.5 ${className}`}
     >
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
         rehypePlugins={[[rehypeKatex, { throwOnError: false, strict: false, output: 'htmlAndMathml' }]]}
         components={{
-          p: ({ children }) =>
-            inline ? (
-              <span className="leading-relaxed">{children}</span>
-            ) : (
-              <p className="leading-[1.68] last:mb-0">{children}</p>
-            ),
+          p: ({ children }) => <p className="leading-[1.68] last:mb-0">{children}</p>,
           pre: ({ children }) => {
             const childArray = React.Children.toArray(children);
             const codeChild = childArray[0] as React.ReactElement<{

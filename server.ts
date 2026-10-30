@@ -115,10 +115,10 @@ async function generateGeminiContentWithFallback(contents: any, isResearchMode =
     /\b(research paper|systematic review|academic paper|scientific investigator|exhaustive|peer-reviewed|deep research)\b/i.test(
       promptText
     );
-  const geminiMaxTokens = isResearch ? 16384 : 900;
-  const geminiTimeoutMs = isResearch ? 45000 : 6500;
-  const fastGwMaxTokens = isResearch ? 8192 : 750;
-  const fastGwTimeoutMs = isResearch ? 40000 : 4500;
+  const geminiMaxTokens = isResearch ? 65536 : 900;
+  const geminiTimeoutMs = isResearch ? 60000 : 6500;
+  const fastGwMaxTokens = isResearch ? 65536 : 750;
+  const fastGwTimeoutMs = isResearch ? 55000 : 4500;
 
   const candidates: Promise<{ resp: any; modelName: string }>[] = [];
 
@@ -211,11 +211,11 @@ async function generateGeminiContentWithFallback(contents: any, isResearchMode =
         const r = await fetch('https://text.pollinations.ai/openai', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          signal: AbortSignal.timeout(isResearch ? 40000 : 6500),
+          signal: AbortSignal.timeout(isResearch ? 55000 : 6500),
           body: JSON.stringify({
             model: 'openai',
             messages: [{ role: 'user', content: promptText }],
-            max_tokens: isResearch ? 8192 : 800,
+            max_tokens: isResearch ? 65536 : 800,
             temperature: 0.5,
           }),
         });
@@ -582,7 +582,7 @@ async function generateChatCompletion(
     /\b(code|implement|write a|full|complete|detailed|comprehensive|essay|tutorial|script|function|class|component|html|python|typescript|javascript|rust|sql)\b/i.test(
       lastUserMsgText
     ) || lastUserMsgText.length > 260;
-  const fastMaxTokens = isResearchPaper ? 16384 : needsLongOutput ? 3500 : 800;
+  const fastMaxTokens = isResearchPaper ? 65536 : needsLongOutput ? 4096 : 800;
 
   const buildMetricsFromOpenAiResponse = (
     data: any,
@@ -640,11 +640,11 @@ async function generateChatCompletion(
         'HTTP-Referer': 'https://ais-dev.studio',
         'X-Title': 'Zeno AI',
       },
-      signal: AbortSignal.timeout(isResearchPaper ? 45000 : 10000),
+      signal: AbortSignal.timeout(isResearchPaper ? 60000 : 10000),
       body: JSON.stringify({
         model: targetModel,
         messages: msgs,
-        max_tokens: isResearchPaper ? 16384 : 2500,
+        max_tokens: isResearchPaper ? 65536 : 2500,
         temperature: 0.6,
       }),
     });
@@ -3685,7 +3685,9 @@ async function fetchRealXHandlePostsViaTreg(handle: string, maxPosts = 4): Promi
 
     return { posts, profile };
   } catch (err: any) {
-    console.warn(`Real X handle fetch failed for @${cleanHandle}:`, err.message);
+    if (TREG_TOKEN) {
+      console.warn(`Real X handle fetch failed for @${cleanHandle}:`, err.message);
+    }
     return { posts: [], profile: null };
   }
 }
@@ -3737,7 +3739,9 @@ async function searchRealXPostsViaTreg(query: string, maxPosts = 4): Promise<any
 
     return sortedNewest;
   } catch (err: any) {
-    console.warn('Real X search failed:', err.message);
+    if (TREG_TOKEN) {
+      console.warn('Real X search failed:', err.message);
+    }
     return [];
   }
 }

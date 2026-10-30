@@ -226,6 +226,20 @@ const Signup1 = ({
                   {isLoginMode ? "Continue with Google" : googleText}
                 </span>
               </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full cursor-pointer h-10 border-dashed"
+                onClick={() => {
+                  UserAccountStore.loginAsGuest();
+                  if (onSuccess) onSuccess();
+                }}
+                disabled={loading || resetLoading}
+              >
+                <span className="text-xs sm:text-sm font-medium">
+                  Continue as Guest
+                </span>
+              </Button>
             </div>
           </form>
 
