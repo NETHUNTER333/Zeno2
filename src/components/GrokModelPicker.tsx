@@ -9,7 +9,7 @@ export interface ModelOption {
   geminiModel: string;
   supportsVision: boolean;
   contextLength?: string;
-  requiredTier?: 'free' | 'spark' | 'fire';
+  requiredTier?: 'spark' | 'fire';
 }
 
 export const GROK_MODELS: ModelOption[] = [
@@ -519,8 +519,8 @@ export const GROK_MODELS: ModelOption[] = [
   },
   {
     id: 'ar-anyrouter-free',
-    name: 'Unified Free',
-    description: 'Smart free router',
+    name: 'Unified Router',
+    description: 'Smart routing engine',
     geminiModel: 'ar/anyrouter/free',
     supportsVision: false,
     contextLength: '1M',
@@ -767,28 +767,6 @@ export const GROK_MODELS: ModelOption[] = [
   },
 ];
 
-const FREE_MODEL_IDS = new Set([
-  'deepseek-v4.1-flash-free',
-  'itera-qwen3.8-27b-free',
-  'deepseek-v4-flash-0731-free',
-  'glm-5.3-flash-free',
-  'mimo-v2.6-flash-free',
-  'mimo-v2.5-free',
-  'agents-a1',
-  'atria-dawn',
-  'glm-5.3-free',
-  'flm-auto',
-  'intern-decision-4b',
-  'ar-anyrouter-free',
-  'ar-nemotron-3.5-bolt-e4b',
-  'ar-riva-translate-4b-v2',
-  'ar-liquid-lfm-2.5-2.6b',
-  'ar-liquid-d1',
-  'ar-openai-gpt-oss-20b',
-  'ar-apple-foundation-model',
-  'ar-glm-4.5-flash',
-]);
-
 const FIRE_MODEL_IDS = new Set([
   'thk-gpt-6.1-sol-fast',
   'thk-gpt-6-astra-fast',
@@ -822,9 +800,8 @@ const FIRE_MODEL_IDS = new Set([
   'ar-pareto-code-router',
 ]);
 
-export function getModelRequiredTier(model: ModelOption): 'free' | 'spark' | 'fire' {
-  if (model.requiredTier) return model.requiredTier;
-  if (FREE_MODEL_IDS.has(model.id)) return 'free';
+export function getModelRequiredTier(model: ModelOption): 'spark' | 'fire' {
+  if (model.requiredTier === 'fire') return 'fire';
   if (FIRE_MODEL_IDS.has(model.id)) return 'fire';
   return 'spark';
 }
@@ -840,7 +817,7 @@ export function getDefaultVisionModel(): ModelOption {
 interface GrokModelPickerProps {
   selectedModelId: string;
   onSelectModel: (model: ModelOption) => void;
-  onOpenPricing?: (highlightPlan?: 'free' | 'spark' | 'fire', reason?: string) => void;
+  onOpenPricing?: (highlightPlan?: 'spark' | 'fire', reason?: string) => void;
   isEmpty?: boolean;
   isDark?: boolean;
   dropdownDirection?: 'down' | 'up';
@@ -856,7 +833,7 @@ export const GrokModelPicker: React.FC<GrokModelPickerProps> = ({
   variant = 'header',
 }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [tierFilter, setTierFilter] = useState<'all' | 'free' | 'spark' | 'fire'>('all');
+  const [tierFilter, setTierFilter] = useState<'all' | 'spark' | 'fire'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [, setCurrentPlan] = useState<'free' | 'spark' | 'fire'>(() =>
     UserAccountStore.getNormalizedPlan()
@@ -964,9 +941,8 @@ export const GrokModelPicker: React.FC<GrokModelPickerProps> = ({
               {(
                 [
                   { id: 'all', label: 'All' },
-                  { id: 'free', label: 'Free' },
-                  { id: 'spark', label: 'Spark' },
-                  { id: 'fire', label: 'Fire' },
+                  { id: 'spark', label: 'Spark ($1)' },
+                  { id: 'fire', label: 'Fire ($5)' },
                 ] as const
               ).map((tab) => {
                 const active = tierFilter === tab.id;
@@ -1007,7 +983,7 @@ export const GrokModelPicker: React.FC<GrokModelPickerProps> = ({
                     key={m.id}
                     type="button"
                     onClick={() => {
-                      if (isLocked && (reqTier === 'spark' || reqTier === 'fire')) {
+                      if (isLocked) {
                         setIsOpen(false);
                         triggerPricingPopup(reqTier, m.name);
                         return;
@@ -1059,17 +1035,17 @@ export const GrokModelPicker: React.FC<GrokModelPickerProps> = ({
                         <Check
                           className={`w-3 h-3 ${isDark ? 'text-white' : 'text-black'}`}
                         />
-                      ) : reqTier !== 'free' ? (
+                      ) : (
                         <span
-                          className={`text-[9px] font-medium ${
+                          className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${
                             reqTier === 'fire'
-                              ? 'text-orange-400/80'
-                              : 'text-amber-400/80'
+                              ? 'text-orange-400 bg-orange-500/10 border border-orange-500/20'
+                              : 'text-sky-400 bg-sky-500/10 border border-sky-500/20'
                           }`}
                         >
                           {reqTier === 'fire' ? '$5' : '$1'}
                         </span>
-                      ) : null}
+                      )}
                     </div>
                   </button>
                 );

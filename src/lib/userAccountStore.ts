@@ -291,32 +291,32 @@ export const PLAN_LIMITS: Record<
   }
 > = {
   free: {
-    name: 'Core Basic',
+    name: 'Unsubscribed',
     priceMonthlyUsd: 0,
     priceYearlyUsd: 0,
-    fileUploadLimit: 3,
-    maxFilesPerMessage: 3,
-    messageLimit: 15,
-    searchLimit: 5,
-    deepResearchLimit: 1,
-    pdfStudyLimit: 2,
-    tokenLimit: 50000,
-    toolLimit: 10,
-    storageBytesLimit: 104857600, // 100 MB
+    fileUploadLimit: 0,
+    maxFilesPerMessage: 0,
+    messageLimit: 0,
+    searchLimit: 0,
+    deepResearchLimit: 0,
+    pdfStudyLimit: 0,
+    tokenLimit: 0,
+    toolLimit: 0,
+    storageBytesLimit: 0,
   },
   spark: {
     name: 'Spark',
     priceMonthlyUsd: 1,
     priceYearlyUsd: 10,
-    fileUploadLimit: 25,
-    maxFilesPerMessage: 10,
-    messageLimit: 150,
-    searchLimit: 75,
-    deepResearchLimit: 10,
-    pdfStudyLimit: 20,
-    tokenLimit: 1000000,
-    toolLimit: 200,
-    storageBytesLimit: 5368709120, // 5 GB
+    fileUploadLimit: 250, // 10x limit boost
+    maxFilesPerMessage: 25,
+    messageLimit: 1500, // 10x limit boost
+    searchLimit: 750, // 10x limit boost
+    deepResearchLimit: 100, // 10x limit boost
+    pdfStudyLimit: 200, // 10x limit boost
+    tokenLimit: 10000000, // 10x limit boost (10M tokens)
+    toolLimit: 2000, // 10x limit boost
+    storageBytesLimit: 53687091200, // 50 GB (10x boost)
   },
   fire: {
     name: 'Fire',
@@ -335,31 +335,31 @@ export const PLAN_LIMITS: Record<
 };
 
 export const DEFAULT_SUBSCRIPTION: UserSubscription = {
-  plan: 'free',
+  plan: 'spark',
   status: 'active',
   renewalDate: 'Nov 27, 2026',
   billingCycle: 'monthly',
-  paymentMethod: 'Free Tier',
+  paymentMethod: 'Spark ($1 USD)',
 };
 
 export const DEFAULT_USAGE: UsageQuota = {
   messagesUsed: 0,
-  messageLimit: PLAN_LIMITS.free.messageLimit,
+  messageLimit: PLAN_LIMITS.spark.messageLimit,
   filesUploaded: 0,
-  fileUploadLimit: PLAN_LIMITS.free.fileUploadLimit,
-  maxFilesPerMessage: PLAN_LIMITS.free.maxFilesPerMessage,
+  fileUploadLimit: PLAN_LIMITS.spark.fileUploadLimit,
+  maxFilesPerMessage: PLAN_LIMITS.spark.maxFilesPerMessage,
   tokensUsed: 0,
-  tokenLimit: PLAN_LIMITS.free.tokenLimit,
+  tokenLimit: PLAN_LIMITS.spark.tokenLimit,
   searchesUsed: 0,
-  searchLimit: PLAN_LIMITS.free.searchLimit,
+  searchLimit: PLAN_LIMITS.spark.searchLimit,
   deepResearchUsed: 0,
-  deepResearchLimit: PLAN_LIMITS.free.deepResearchLimit,
+  deepResearchLimit: PLAN_LIMITS.spark.deepResearchLimit,
   pdfStudyUsed: 0,
-  pdfStudyLimit: PLAN_LIMITS.free.pdfStudyLimit,
+  pdfStudyLimit: PLAN_LIMITS.spark.pdfStudyLimit,
   toolsUsed: 0,
-  toolLimit: PLAN_LIMITS.free.toolLimit,
+  toolLimit: PLAN_LIMITS.spark.toolLimit,
   storageBytesUsed: 4200000,
-  storageBytesLimit: PLAN_LIMITS.free.storageBytesLimit,
+  storageBytesLimit: PLAN_LIMITS.spark.storageBytesLimit,
   resetDate: 'Tomorrow, 12:00 AM',
 };
 
@@ -687,8 +687,7 @@ export const UserAccountStore = {
     const norm = this.getNormalizedPlan(plan);
     return PLAN_LIMITS[norm];
   },
-  canUseModel(requiredTier: 'free' | 'spark' | 'fire' = 'free'): boolean {
-    if (requiredTier === 'free') return true;
+  canUseModel(requiredTier: 'spark' | 'fire' = 'spark'): boolean {
     const current = this.getNormalizedPlan();
     if (current === 'fire') return true;
     if (current === 'spark' && requiredTier === 'spark') return true;
@@ -790,8 +789,8 @@ export const UserAccountStore = {
       maxFilesPerMessage: limits.maxFilesPerMessage,
       tokenLimit: limits.tokenLimit,
       searchLimit: limits.searchLimit,
-      deepResearchLimit: limits.deepResearchLimit,
-      pdfStudyLimit: limits.pdfStudyLimit,
+      deepResearchLimit: Math.max(999999, Number(limits.deepResearchLimit || 999999)),
+      pdfStudyLimit: Math.max(999999, Number(limits.pdfStudyLimit || 999999)),
       toolLimit: limits.toolLimit,
       storageBytesLimit: limits.storageBytesLimit,
     };
@@ -980,7 +979,7 @@ export const UserAccountStore = {
     // Client-side manual reset is disabled for anti-abuse enforcement; re-syncs from server/Firestore instead
     this.syncQuotaWithServerAndFirestore();
   },
-  grantReferrerBonusQuota(bonusUploads = 5, bonusMessages = 20): void {
+  grantReferrerBonusQuota(bonusUploads = 25, bonusMessages = 100): void {
     const raw = loadFromStorage<UsageQuota>(STORAGE_KEYS.USAGE, DEFAULT_USAGE);
     const updated: UsageQuota = {
       ...raw,

@@ -155,6 +155,13 @@ service cloud.firestore {
         allow delete: if isOwner(userId) && isValidId(userId) && isValidId(sessionId);
       }
 
+      match /deep_research/{researchId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(researchId);
+        allow list: if isOwner(userId) && isValidId(userId);
+        allow create, update: if isOwner(userId) && isValidId(userId) && isValidId(researchId);
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(researchId);
+      }
+
       match /vault_items/{itemId} {
         allow get: if isOwner(userId) && isValidId(userId) && isValidId(itemId);
         allow list: if isOwner(userId) && existing().userId == request.auth.uid;

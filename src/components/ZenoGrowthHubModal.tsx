@@ -1331,15 +1331,18 @@ export const ZenoGrowthHubModal: React.FC<ZenoGrowthHubModalProps> = ({
                     <div className="text-[11px] uppercase tracking-wider text-neutral-500 font-medium">
                       Zeno Passes · Invitation System
                     </div>
-                    <h3 className="text-sm font-semibold mt-0.5">
-                      Invite Researchers & Friends to Zeno
+                    <h3 className="text-sm font-semibold mt-0.5 flex items-center gap-2">
+                      Invite Researchers & Friends
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                        5x Bonus Active
+                      </span>
                     </h3>
                     <p
                       className={`text-xs mt-1 leading-relaxed ${
                         isDark ? 'text-neutral-400' : 'text-neutral-600'
                       }`}
                     >
-                      Share your personal Zeno Pass link. When a visitor opens your link and completes a research session within 14 days, your referral is attributed and unlocks Share Card themes.
+                      Share your personal Zeno Pass link. When a friend joins via your pass, you instantly earn a <strong>5x Referral Bonus: +25 file uploads, +125 AI messages</strong>, and premium luxury Share Card themes!
                     </p>
                   </div>
 

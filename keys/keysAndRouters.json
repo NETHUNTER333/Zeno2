@@ -11,7 +11,8 @@
     "anyRouter": "",
     "beatApi": "",
     "apinex": "",
-    "rumik": ""
+    "rumik": "",
+    "flovia": "flv_GsaIndkEVuUtlm89RKk0W8g7-Mp2aI1rWrlNw9_53pc"
   },
   "baseUrls": {
     "iteraCompute": "https://api.iteracompute.com/v1",
@@ -26,6 +27,7 @@
     "apinex": "https://api.apinex.bond/v1",
     "flm": "https://flm.stonech.at/v1",
     "rumikTts": "https://silk-api.rumik.ai/v1/tts",
+    "floviaMcp": "https://api.flovia.dev/mcp",
     "transcriptPrimary": "https://yeast-bubble-commander-biblical.trycloudflare.com/api/transcript",
     "transcriptFallback": "https://prod-main-transcript-api-6588e7-006jmayjabt.compute.instacloud-edge.com/api/transcript"
   },

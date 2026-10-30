@@ -759,11 +759,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
               >
                 <div className="flex items-center justify-between gap-2 mb-1.5">
                   <span className="font-semibold text-xs tracking-tight">
-                    {normPlan === 'free'
-                      ? 'Core Basic ($0)'
+                    {normPlan === 'fire'
+                      ? 'Fire Plan ($5)'
                       : normPlan === 'spark'
-                      ? 'Spark Plan ($1)'
-                      : 'Fire Plan ($5)'}
+                      ? 'Spark Plan ($1 · 10x)'
+                      : 'Choose Plan ($1 / $5)'}
                   </span>
                   <span
                     className={`text-[10px] px-2.5 py-0.5 rounded-full font-semibold ${
@@ -772,7 +772,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         : 'bg-[#18181b] text-white'
                     }`}
                   >
-                    {normPlan === 'free' ? 'Upgrade $1' : normPlan === 'spark' ? 'Fire $5' : 'Active'}
+                    {normPlan === 'fire' ? 'Active' : normPlan === 'spark' ? 'Upgrade $5' : 'Start $1'}
                   </span>
                 </div>
                 <div className={`flex items-center justify-between text-[10.5px] font-mono ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>

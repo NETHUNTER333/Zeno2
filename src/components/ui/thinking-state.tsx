@@ -220,10 +220,10 @@ export const ThinkingState: React.FC<ThinkingStateProps> = ({
 
   return (
     <div
-      className={`rounded-2xl border transition-all duration-200 ${
+      className={`rounded-xl border transition-all duration-200 ${
         isDark
-          ? 'bg-[#121215] border-white/[0.08] text-neutral-200 shadow-[0_14px_34px_rgba(0,0,0,0.45)]'
-          : 'bg-white border-black/[0.08] text-neutral-800 shadow-[0_10px_28px_rgba(0,0,0,0.05)]'
+          ? 'bg-white/[0.02] border-white/[0.08] text-neutral-200'
+          : 'bg-black/[0.02] border-black/[0.08] text-neutral-800'
       } ${className}`}
     >
       {/* Collapsible Header Button */}
@@ -232,7 +232,7 @@ export const ThinkingState: React.FC<ThinkingStateProps> = ({
         onClick={handleToggleOpen}
         aria-expanded={isOpen}
         aria-controls={panelId}
-        className={`w-full px-4 py-3.5 flex items-center justify-between gap-3 text-left transition-colors cursor-pointer rounded-2xl ${
+        className={`w-full px-3 py-2 flex items-center justify-between gap-2.5 text-left transition-colors cursor-pointer rounded-xl ${
           isOpen
             ? isDark
               ? 'border-b border-white/[0.06]'
@@ -240,10 +240,10 @@ export const ThinkingState: React.FC<ThinkingStateProps> = ({
             : ''
         }`}
       >
-        <div className="flex items-center gap-3 min-w-0">
+        <div className="flex items-center gap-2.5 min-w-0">
           <PixelGridIndicator isThinking={effectiveStatus === 'thinking'} />
 
-          <div className="flex items-center gap-2 text-[14px] leading-none">
+          <div className="flex items-center gap-1.5 text-xs leading-none">
             {effectiveStatus === 'thinking' ? (
               <>
                 <ShimmerText
@@ -272,7 +272,7 @@ export const ThinkingState: React.FC<ThinkingStateProps> = ({
         </div>
 
         <ChevronDown
-          className={`w-4 h-4 shrink-0 transition-transform duration-200 ${
+          className={`w-3.5 h-3.5 shrink-0 transition-transform duration-200 ${
             isOpen ? 'rotate-0' : '-rotate-90'
           } ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}
         />
@@ -283,7 +283,7 @@ export const ThinkingState: React.FC<ThinkingStateProps> = ({
         <div
           id={panelId}
           aria-live="polite"
-          className="px-4 py-4 space-y-0"
+          className="px-3.5 py-3 space-y-0 text-xs"
         >
           {visibleSteps.map((step, idx) => {
             const isLastVisible = idx === visibleSteps.length - 1;
@@ -300,15 +300,15 @@ export const ThinkingState: React.FC<ThinkingStateProps> = ({
               const hiddenCount = Math.max(0, step.sources.length - maxVisibleSources);
 
               return (
-                <div key={`step-search-${idx}`} className="flex items-stretch gap-3">
+                <div key={`step-search-${idx}`} className="flex items-stretch gap-2.5">
                   {/* Left Timeline Column */}
-                  <div className="w-5 flex flex-col items-center shrink-0">
+                  <div className="w-4 flex flex-col items-center shrink-0">
                     <div
-                      className={`w-5 h-5 flex items-center justify-center shrink-0 ${
+                      className={`w-4 h-4 flex items-center justify-center shrink-0 ${
                         isDark ? 'text-neutral-400' : 'text-neutral-500'
                       }`}
                     >
-                      <Globe className="w-4 h-4 stroke-[1.75]" />
+                      <Globe className="w-3.5 h-3.5 stroke-[1.75]" />
                     </div>
                     {showLineBelow && (
                       <div
@@ -320,16 +320,16 @@ export const ThinkingState: React.FC<ThinkingStateProps> = ({
                   </div>
 
                   {/* Right Content Column */}
-                  <div className="flex-1 min-w-0 pb-4">
+                  <div className="flex-1 min-w-0 pb-3">
                     <div
-                      className={`text-[13.5px] leading-5 mb-2.5 ${
+                      className={`text-xs leading-4 mb-2 ${
                         isDark ? 'text-neutral-400' : 'text-neutral-500'
                       }`}
                     >
                       {step.label || 'Searched'}
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-1.5">
                       {displayedSources.map((src, sIdx) => {
                         const chipKey = `${idx}-src-${sIdx}`;
                         const host = extractHostname(src.href, src.domain);
@@ -358,36 +358,36 @@ export const ThinkingState: React.FC<ThinkingStateProps> = ({
                               onMouseLeave={() => setHoveredSourceKey(null)}
                               onFocus={() => setHoveredSourceKey(chipKey)}
                               onBlur={() => setHoveredSourceKey(null)}
-                              className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border text-[13px] font-normal leading-tight transition-all ${
+                              className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[11px] font-normal leading-tight transition-all ${
                                 src.href ? 'cursor-pointer' : ''
                               } ${
                                 isDark
-                                  ? 'bg-[#17171b] border-white/[0.08] text-neutral-200 hover:border-white/[0.18] hover:bg-white/[0.05]'
-                                  : 'bg-[#f8f8fa] border-black/[0.08] text-neutral-800 hover:border-black/[0.18] hover:bg-neutral-100'
+                                  ? 'bg-[#17171b] border-white/[0.08] text-neutral-300 hover:border-white/[0.18] hover:bg-white/[0.05]'
+                                  : 'bg-[#f8f8fa] border-black/[0.08] text-neutral-700 hover:border-black/[0.18] hover:bg-neutral-100'
                               }`}
                             >
                               {src.icon ? (
-                                <span className="w-4 h-4 rounded-[4px] flex items-center justify-center shrink-0 overflow-hidden">
+                                <span className="w-3.5 h-3.5 rounded-[3px] flex items-center justify-center shrink-0 overflow-hidden">
                                   {src.icon}
                                 </span>
                               ) : faviconUrl ? (
                                 <img
                                   src={faviconUrl}
                                   alt=""
-                                  className="w-4 h-4 rounded-[3px] shrink-0 object-contain bg-white/90 p-[1px]"
+                                  className="w-3.5 h-3.5 rounded-[2px] shrink-0 object-contain bg-white/90 p-[1px]"
                                   onError={(e) => {
                                     (e.currentTarget as HTMLImageElement).style.display = 'none';
                                   }}
                                 />
                               ) : null}
-                              <span className="truncate max-w-[210px]">{src.label}</span>
+                              <span className="truncate max-w-[180px]">{src.label}</span>
                             </ChipTag>
 
                             {/* Hover/Focus Domain Tooltip */}
                             {isHovered && domainTooltip && (
                               <div
                                 role="tooltip"
-                                className={`absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-mono whitespace-nowrap z-30 pointer-events-none shadow-lg animate-in fade-in duration-100 ${
+                                className={`absolute left-1/2 -translate-x-1/2 bottom-full mb-1 px-2 py-0.5 rounded-md border text-[10px] font-mono whitespace-nowrap z-30 pointer-events-none shadow-lg animate-in fade-in duration-100 ${
                                   isDark
                                     ? 'bg-[#1f1f24] border-white/15 text-neutral-300'
                                     : 'bg-neutral-900 border-black/15 text-white'
@@ -409,7 +409,7 @@ export const ThinkingState: React.FC<ThinkingStateProps> = ({
                               [idx]: true,
                             }))
                           }
-                          className={`inline-flex items-center px-3 py-1.5 rounded-xl border text-[13px] font-normal leading-tight transition-colors cursor-pointer ${
+                          className={`inline-flex items-center px-2 py-1 rounded-lg border text-[11px] font-normal leading-tight transition-colors cursor-pointer ${
                             isDark
                               ? 'bg-[#17171b] border-white/[0.08] text-neutral-400 hover:text-neutral-200 hover:border-white/[0.16]'
                               : 'bg-[#f8f8fa] border-black/[0.08] text-neutral-500 hover:text-neutral-800 hover:border-black/[0.16]'
@@ -426,15 +426,15 @@ export const ThinkingState: React.FC<ThinkingStateProps> = ({
 
             // Thought step
             return (
-              <div key={`step-thought-${idx}`} className="flex items-stretch gap-3">
+              <div key={`step-thought-${idx}`} className="flex items-stretch gap-2.5">
                 {/* Left Timeline Column */}
-                <div className="w-5 flex flex-col items-center shrink-0">
-                  <div className="h-5 flex items-center justify-center shrink-0">
+                <div className="w-4 flex flex-col items-center shrink-0">
+                  <div className="h-4 flex items-center justify-center shrink-0">
                     {isCurrentlyActive ? (
-                      <span className="w-2 h-2 rounded-[2px] bg-[#3b82f6] animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.8)]" />
+                      <span className="w-1.5 h-1.5 rounded-[2px] bg-[#3b82f6] animate-pulse shadow-[0_0_6px_rgba(59,130,246,0.8)]" />
                     ) : (
                       <span
-                        className={`w-1.5 h-1.5 rounded-full ${
+                        className={`w-1 h-1 rounded-full ${
                           isDark ? 'bg-neutral-500' : 'bg-neutral-400'
                         }`}
                       />
@@ -442,7 +442,7 @@ export const ThinkingState: React.FC<ThinkingStateProps> = ({
                   </div>
                   {showLineBelow && (
                     <div
-                      className={`w-px flex-1 my-1 min-h-[10px] ${
+                      className={`w-px flex-1 my-0.5 min-h-[8px] ${
                         isDark ? 'bg-white/[0.08]' : 'bg-black/[0.08]'
                       }`}
                     />
@@ -450,16 +450,16 @@ export const ThinkingState: React.FC<ThinkingStateProps> = ({
                 </div>
 
                 {/* Right Content Column */}
-                <div className="flex-1 min-w-0 pb-3.5 flex items-center">
+                <div className="flex-1 min-w-0 pb-2.5 flex items-center">
                   {isCurrentlyActive ? (
                     <ShimmerText
                       text={step.text}
                       isDark={isDark}
-                      className="text-[14px] leading-5 font-normal"
+                      className="text-xs leading-4 font-normal"
                     />
                   ) : (
                     <span
-                      className={`text-[14px] leading-5 ${
+                      className={`text-xs leading-4 ${
                         isDark ? 'text-neutral-400' : 'text-neutral-500'
                       }`}
                     >

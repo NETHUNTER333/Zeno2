@@ -1793,16 +1793,6 @@ export default function App() {
                         isResearchMode={isResearchMode}
                         onToggleResearchMode={(enabled) => setIsResearchMode(enabled)}
                         onOpenDeepResearch={(topic) => {
-                          const u = UserAccountStore.getUsage();
-                          if (u.deepResearchUsed >= u.deepResearchLimit) {
-                            setPricingModalState({
-                              isOpen: true,
-                              highlightPlan:
-                                UserAccountStore.getNormalizedPlan() === 'free' ? 'spark' : 'fire',
-                              limitReason: `Deep Research limit reached (${u.deepResearchUsed}/${u.deepResearchLimit} runs used). Upgrade to Spark ($1/mo) for 10 runs/day or Fire ($5/mo) for unlimited Deep Research.`,
-                            });
-                            return;
-                          }
                           UserAccountStore.recordDeepResearchRun();
                           setDeepResearchState({
                             isOpen: true,
@@ -1813,16 +1803,6 @@ export default function App() {
                           setUrlReaderState({ isOpen: true, initialUrl: url })
                         }
                         onOpenArxivReader={(payload) => {
-                          const u = UserAccountStore.getUsage();
-                          if (u.pdfStudyUsed >= u.pdfStudyLimit) {
-                            setPricingModalState({
-                              isOpen: true,
-                              highlightPlan:
-                                UserAccountStore.getNormalizedPlan() === 'free' ? 'spark' : 'fire',
-                              limitReason: `PDF Study Studio limit reached (${u.pdfStudyUsed}/${u.pdfStudyLimit} sessions used). Upgrade to Spark ($1/mo) for 20 sessions/day or Fire ($5/mo) for unlimited PDF Studio.`,
-                            });
-                            return;
-                          }
                           UserAccountStore.recordPdfStudySession();
                           setPdfStudioState({
                             isOpen: true,
@@ -1949,16 +1929,6 @@ export default function App() {
                         isResearchMode={isResearchMode}
                         onToggleResearchMode={(enabled) => setIsResearchMode(enabled)}
                         onOpenDeepResearch={(topic) => {
-                          const u = UserAccountStore.getUsage();
-                          if (u.deepResearchUsed >= u.deepResearchLimit) {
-                            setPricingModalState({
-                              isOpen: true,
-                              highlightPlan:
-                                UserAccountStore.getNormalizedPlan() === 'free' ? 'spark' : 'fire',
-                              limitReason: `Deep Research limit reached (${u.deepResearchUsed}/${u.deepResearchLimit} runs used). Upgrade to Spark ($1/mo) for 10 runs/day or Fire ($5/mo) for unlimited Deep Research.`,
-                            });
-                            return;
-                          }
                           UserAccountStore.recordDeepResearchRun();
                           setDeepResearchState({
                             isOpen: true,
@@ -1969,16 +1939,6 @@ export default function App() {
                           setUrlReaderState({ isOpen: true, initialUrl: url })
                         }
                         onOpenArxivReader={(payload) => {
-                          const u = UserAccountStore.getUsage();
-                          if (u.pdfStudyUsed >= u.pdfStudyLimit) {
-                            setPricingModalState({
-                              isOpen: true,
-                              highlightPlan:
-                                UserAccountStore.getNormalizedPlan() === 'free' ? 'spark' : 'fire',
-                              limitReason: `PDF Study Studio limit reached (${u.pdfStudyUsed}/${u.pdfStudyLimit} sessions used). Upgrade to Spark ($1/mo) for 20 sessions/day or Fire ($5/mo) for unlimited PDF Studio.`,
-                            });
-                            return;
-                          }
                           UserAccountStore.recordPdfStudySession();
                           setPdfStudioState({
                             isOpen: true,
@@ -2152,7 +2112,7 @@ export default function App() {
             }}
           />
 
-          {/* Full-Page Pricing & Plans Modal (Core Basic $0 · Spark $1 · Fire $5) */}
+          {/* Full-Page Pricing & Plans Modal (Spark $1 · Fire $5 — 10x Limits on $1 Plan) */}
           <PricingModal
             isOpen={pricingModalState.isOpen}
             onClose={() => setPricingModalState((prev) => ({ ...prev, isOpen: false }))}

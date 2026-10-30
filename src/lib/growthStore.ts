@@ -1707,10 +1707,10 @@ export function claimTopReferrerBonus(entry: {
 
   const rewardLabel =
     entry.claimedReferrals >= 20 || entry.rank === 1
-      ? '+5 File Uploads, +25 Messages & Obsidian Gold + Emerald Themes'
+      ? '+25 File Uploads, +125 Messages & Obsidian Gold + Emerald Themes (5x Referral Bonus)'
       : entry.claimedReferrals >= 10 || (entry.rank && entry.rank <= 3)
-      ? '+5 File Uploads, +25 Messages & Emerald Terminal Theme'
-      : '+3 File Uploads, +15 Messages & Obsidian Gold Theme';
+      ? '+25 File Uploads, +125 Messages & Emerald Terminal Theme (5x Referral Bonus)'
+      : '+15 File Uploads, +75 Messages & Obsidian Gold Theme (5x Referral Bonus)';
 
   const now = Date.now();
   claimedMap[entry.uid] = {
@@ -1750,8 +1750,8 @@ export function claimTopReferrerBonus(entry: {
     });
   }
 
-  // Grant bonus daily upload and message quota
-  UserAccountStore.grantReferrerBonusQuota(5, 25);
+  // Grant 5x bonus daily upload and message quota
+  UserAccountStore.grantReferrerBonusQuota(25, 125);
   emitGrowthUpdate();
 
   return {

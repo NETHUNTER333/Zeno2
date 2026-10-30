@@ -451,26 +451,26 @@ export interface ServerPlanLimits {
 
 export const SERVER_PLAN_LIMITS: Record<SubscriptionPlanTier, ServerPlanLimits> = {
   free: {
-    name: 'Core Basic',
+    name: 'Unsubscribed',
     priceMonthly: 0,
-    fileUploadLimit: 3,
-    maxFilesPerMessage: 3,
-    messageLimit: 15,
-    searchLimit: 5,
-    deepResearchLimit: 1,
-    pdfStudyLimit: 2,
-    tokenLimit: 50_000,
+    fileUploadLimit: 0,
+    maxFilesPerMessage: 0,
+    messageLimit: 0,
+    searchLimit: 0,
+    deepResearchLimit: 0,
+    pdfStudyLimit: 0,
+    tokenLimit: 0,
   },
   spark: {
     name: 'Spark',
     priceMonthly: 1,
-    fileUploadLimit: 25,
-    maxFilesPerMessage: 10,
-    messageLimit: 150,
-    searchLimit: 75,
-    deepResearchLimit: 10,
-    pdfStudyLimit: 20,
-    tokenLimit: 1_000_000,
+    fileUploadLimit: 250, // 10x limit boost
+    maxFilesPerMessage: 25,
+    messageLimit: 1500, // 10x limit boost
+    searchLimit: 750, // 10x limit boost
+    deepResearchLimit: 100, // 10x limit boost
+    pdfStudyLimit: 200, // 10x limit boost
+    tokenLimit: 10_000_000, // 10x limit boost
   },
   fire: {
     name: 'Fire',
@@ -609,10 +609,6 @@ const SERVER_FIRE_MODELS = new Set<string>([
 
 export function classifyServerModelTier(rawModel: string | undefined): SubscriptionPlanTier {
   const model = String(rawModel || '').trim();
-  if (!model) return 'free';
-  if (SERVER_FREE_MODELS.has(model) || model.endsWith(':free') || model.endsWith('-free') || model.startsWith('free/')) {
-    return 'free';
-  }
   if (SERVER_FIRE_MODELS.has(model)) {
     return 'fire';
   }
@@ -739,7 +735,7 @@ function getOrInitDailyQuotaRecord(req: Request): ServerDailyQuotaRecord {
 
   const savedPlan = planByPrincipal.get(principalKey) ||
     (uid && clientIp ? planByPrincipal.get(`ip:${clientIp}`) : undefined) || {
-      plan: 'free' as SubscriptionPlanTier,
+      plan: 'spark' as SubscriptionPlanTier,
       billingCycle: 'monthly' as const,
     };
 
@@ -936,55 +932,55 @@ export function verifyChatQuotaBeforeExecution(
     return { allowed: true, statusCode: 200, snapshot };
   }
 
-  // 2. Daily Prompt / Message Quota Enforcement (15 on Free, 150 on Spark, Unlimited on Fire)
+  // 2. Daily Prompt / Message Quota Enforcement (1,500 on Spark, Unlimited on Fire)
   if (snapshot.messagesUsed >= limits.messageLimit) {
-    const upgradeTarget: SubscriptionPlanTier = plan === 'free' ? 'spark' : 'fire';
+    const upgradeTarget: SubscriptionPlanTier = plan === 'spark' ? 'fire' : 'spark';
     return {
       allowed: false,
       statusCode: 429,
       code: 'quota/messages_exceeded',
       requiredTier: upgradeTarget,
-      message: `Daily message limit reached (${snapshot.messagesUsed}/${limits.messageLimit} prompts used on ${limits.name}). Upgrade to Spark ($1/mo) for 150 messages/day or Fire ($5/mo) for unlimited messages.`,
+      message: `Daily message limit reached (${snapshot.messagesUsed}/${limits.messageLimit} prompts used on ${limits.name}). Upgrade to Fire ($5/mo) for unlimited messages.`,
       snapshot,
     };
   }
 
-  // 3. Daily File Upload Quota Enforcement (3 on Free, 25 on Spark, Unlimited on Fire)
+  // 3. Daily File Upload Quota Enforcement (250 on Spark, Unlimited on Fire)
   const attachmentsCount = Math.max(0, Number(options.attachmentsCount) || 0);
   if (attachmentsCount > 0) {
     if (attachmentsCount > limits.maxFilesPerMessage) {
-      const upgradeTarget: SubscriptionPlanTier = plan === 'free' ? 'spark' : 'fire';
+      const upgradeTarget: SubscriptionPlanTier = plan === 'spark' ? 'fire' : 'spark';
       return {
         allowed: false,
         statusCode: 429,
         code: 'quota/uploads_exceeded',
         requiredTier: upgradeTarget,
-        message: `Your ${limits.name} plan allows up to ${limits.maxFilesPerMessage} files per message. Upgrade to attach more files.`,
+        message: `Your ${limits.name} plan allows up to ${limits.maxFilesPerMessage} files per message. Upgrade to Fire ($5/mo) for unlimited files.`,
         snapshot,
       };
     }
     if (snapshot.filesUploaded + attachmentsCount > limits.fileUploadLimit) {
-      const upgradeTarget: SubscriptionPlanTier = plan === 'free' ? 'spark' : 'fire';
+      const upgradeTarget: SubscriptionPlanTier = plan === 'spark' ? 'fire' : 'spark';
       return {
         allowed: false,
         statusCode: 429,
         code: 'quota/uploads_exceeded',
         requiredTier: upgradeTarget,
-        message: `Daily file upload limit reached (${snapshot.filesUploaded}/${limits.fileUploadLimit} files used on ${limits.name}). Upgrade to Spark ($1/mo) for 25 uploads/day or Fire ($5/mo) for unlimited uploads.`,
+        message: `Daily file upload limit reached (${snapshot.filesUploaded}/${limits.fileUploadLimit} files used on ${limits.name}). Upgrade to Fire ($5/mo) for unlimited uploads.`,
         snapshot,
       };
     }
   }
 
-  // 4. Deep Research Quota Enforcement (1 on Free, 10 on Spark, Unlimited on Fire)
+  // 4. Deep Research Quota Enforcement (100 on Spark, Unlimited on Fire)
   if (options.isResearchMode && snapshot.deepResearchUsed >= limits.deepResearchLimit) {
-    const upgradeTarget: SubscriptionPlanTier = plan === 'free' ? 'spark' : 'fire';
+    const upgradeTarget: SubscriptionPlanTier = plan === 'spark' ? 'fire' : 'spark';
     return {
       allowed: false,
       statusCode: 429,
       code: 'quota/deep_research_exceeded',
       requiredTier: upgradeTarget,
-      message: `Daily Deep Research limit reached (${snapshot.deepResearchUsed}/${limits.deepResearchLimit} runs used on ${limits.name}). Upgrade to Spark ($1/mo) or Fire ($5/mo) for more autonomous research runs.`,
+      message: `Daily Deep Research limit reached (${snapshot.deepResearchUsed}/${limits.deepResearchLimit} runs used on ${limits.name}). Upgrade to Fire ($5/mo) for unlimited autonomous research runs.`,
       snapshot,
     };
   }
