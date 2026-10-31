@@ -6514,8 +6514,12 @@ async function extractYouTubeTranscriptSubclip(
 
   // Tier 1: Primary Residential-IP Backend (trycloudflare) with 120s timeout and InstaCloud fallback on 429/5xx/failure
   try {
-    const primaryUrl = 'https://inform-minimum-percent-newman.trycloudflare.com/api/transcript';
-    const fallbackUrl = 'https://prod-main-transcript-api-6588e7-006jmayjabt.compute.instacloud-edge.com/api/transcript';
+    const primaryUrl =
+      (keysAndRouters?.baseUrls as any)?.transcriptPrimary ||
+      'https://manufacture-polar-bench-emotions.trycloudflare.com/api/transcript';
+    const fallbackUrl =
+      (keysAndRouters?.baseUrls as any)?.transcriptFallback ||
+      'https://prod-main-transcript-api-6588e7-006jmayjabt.compute.instacloud-edge.com/api/transcript';
 
     let res: Response | null = null;
     let usedUrl = primaryUrl;
