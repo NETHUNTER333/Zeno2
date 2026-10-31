@@ -7034,9 +7034,11 @@ async function extractYouTubeTranscriptSubclip(
   // Tier 1: Fast Residential-IP Backend (3.5s timeout so UI never hangs)
   try {
     const primaryUrl =
+      process.env.TRANSCRIPT_PRIMARY_URL ||
       (keysAndRouters?.baseUrls as any)?.transcriptPrimary ||
-      'https://manufacture-polar-bench-emotions.trycloudflare.com/api/transcript';
+      'https://prod-main-transcript-api-6588e7-006jmayjabt.compute.instacloud-edge.com/api/transcript';
     const fallbackUrl =
+      process.env.TRANSCRIPT_FALLBACK_URL ||
       (keysAndRouters?.baseUrls as any)?.transcriptFallback ||
       'https://prod-main-transcript-api-6588e7-006jmayjabt.compute.instacloud-edge.com/api/transcript';
 
@@ -7052,7 +7054,7 @@ async function extractYouTubeTranscriptSubclip(
           videoId,
           lang: preferredLang,
         }),
-        signal: AbortSignal.timeout(3000),
+        signal: AbortSignal.timeout(20000),
       });
 
       if (pRes.ok) {
@@ -7070,7 +7072,7 @@ async function extractYouTubeTranscriptSubclip(
             videoId,
             lang: preferredLang,
           }),
-          signal: AbortSignal.timeout(3000),
+          signal: AbortSignal.timeout(20000),
         });
         if (fRes.ok) res = fRes;
       } else {
@@ -7090,7 +7092,7 @@ async function extractYouTubeTranscriptSubclip(
             videoId,
             lang: preferredLang,
           }),
-          signal: AbortSignal.timeout(3000),
+          signal: AbortSignal.timeout(20000),
         });
         if (fRes.ok) res = fRes;
       } catch {}
