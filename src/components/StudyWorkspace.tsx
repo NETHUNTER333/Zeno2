@@ -138,10 +138,19 @@ const LANGUAGES = [
 export function extractYouTubeIdFromInput(input?: string | null): string | null {
   const trimmed = (input || '').trim();
   if (!trimmed) return null;
-  const match = trimmed.match(
-    /(?:youtube\.com\/(?:watch\?.*v=|shorts\/|embed\/|live\/|v\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/i
+
+  // 1. YouTube URLs (watch?v=, shorts/, embed/, live/, v/, youtu.be/)
+  const urlMatch = trimmed.match(
+    /(?:youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/|live\/|v\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/i
   );
-  return match ? match[1] : null;
+  if (urlMatch) return urlMatch[1];
+
+  // 2. Direct 11-character video ID (YouTube IDs are exactly 11 chars: base64url charset)
+  if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) {
+    return trimmed;
+  }
+
+  return null;
 }
 
 function cleanCaptionText(raw: string): string {
@@ -819,11 +828,8 @@ export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
             .map((s: any) => {
               const rawName = String(s.name || '').trim();
               const wrappedMatch = rawName.match(/^YouTube Video\s*\((.+?)\)$/i);
-              const isWordId =
-                typeof s.videoId === 'string' &&
-                (/^[a-zA-Z]{11}$/.test(s.videoId) || Boolean(wrappedMatch));
-              if (wrappedMatch || isWordId) {
-                const fixedTopic = (wrappedMatch ? wrappedMatch[1] : rawName).trim();
+              if (wrappedMatch) {
+                const fixedTopic = wrappedMatch[1].trim();
                 return {
                   ...s,
                   name: fixedTopic,
@@ -1177,7 +1183,7 @@ ${fullTranscriptText}`;
     synthesizeDeepStatementSummary(cleanTopic, fb.segments);
   };
 
-  // Load YouTube Video
+  // Load YouTube Video (Direct Link or Video ID: loads ONLY this exact video, autoplays, no related videos)
   const loadYouTubeSource = async (
     targetVidId: string,
     hintTitle?: string,
@@ -1188,19 +1194,13 @@ ${fullTranscriptText}`;
       .replace(/^YouTube Video\s*\((.+?)\)(?:\s*by\s*YouTube)?$/i, '$1')
       .trim();
 
-    // Guard against plain words (like "Chloroplast") being passed as a videoId
-    if (
-      targetVidId !== 'Y9by14g7Cbs' &&
-      (/^[a-zA-Z]{11}$/.test(targetVidId) ||
-        (hintTitle && /^YouTube Video\s*\(/i.test(hintTitle)))
-    ) {
-      await loadTopicStudySpace(cleanHint || targetVidId);
-      return;
-    }
-
     setViewMode('workspace');
     setSourceType('youtube');
     setActiveVideoId(targetVidId);
+    setShowSourceViewer(true);
+    setAutoPlayVideo(true);
+    setTopicVideos([]); // STRICT REQUIREMENT: Only give this video, no multiple/related videos!
+    setOpenTabs((prev) => prev.filter((t) => t.type !== 'videos')); // Suppress videos tab
     setLoadingContent(true);
     setAiExhaustiveSummary('');
     setFocusedModuleView(null);
@@ -1210,30 +1210,36 @@ ${fullTranscriptText}`;
     setRevealedDontKnowMap({});
 
     let title =
-      cleanHint || (targetVidId === 'Y9by14g7Cbs' ? 'Who Is Kimchi' : 'YouTube Video');
+      cleanHint && cleanHint !== targetVidId
+        ? cleanHint
+        : targetVidId === 'Y9by14g7Cbs'
+        ? 'Who Is Kimchi'
+        : 'YouTube Video';
     let author = hintAuthor || (targetVidId === 'Y9by14g7Cbs' ? 'Rube' : 'YouTube');
-    let oembedValid = targetVidId === 'Y9by14g7Cbs';
 
     try {
       const oembedRes = await fetch(
         `https://www.youtube.com/oembed?url=${encodeURIComponent(
           `https://www.youtube.com/watch?v=${targetVidId}`
         )}&format=json`,
-        { signal: AbortSignal.timeout(3500) }
+        { signal: AbortSignal.timeout(3000) }
       );
       if (oembedRes.ok) {
-        oembedValid = true;
         const oembed = await oembedRes.json();
         if (oembed.title) title = oembed.title;
         if (oembed.author_name) author = oembed.author_name;
+      } else {
+        const noembedRes = await fetch(
+          `https://noembed.com/embed?url=https://www.youtube.com/watch?v=${targetVidId}`,
+          { signal: AbortSignal.timeout(2000) }
+        );
+        if (noembedRes.ok) {
+          const noembed = await noembedRes.json();
+          if (noembed.title) title = noembed.title;
+          if (noembed.author_name) author = noembed.author_name;
+        }
       }
     } catch {}
-
-    // If the YouTube video is invalid/unavailable and we have no cached transcript, fall back to topic study space
-    if (!oembedValid && (!cachedTranscript || cachedTranscript.length === 0)) {
-      await loadTopicStudySpace(cleanHint || targetVidId);
-      return;
-    }
 
     setResolvedTitle(title);
     setResolvedAuthor(author);
@@ -1252,27 +1258,36 @@ ${fullTranscriptText}`;
           });
           if (res.ok) {
             const data = await res.json();
+            if (data.title && (title === 'YouTube Video' || !cleanHint || cleanHint === targetVidId)) {
+              title = data.title;
+              setResolvedTitle(title);
+            }
+            if (data.author && (author === 'YouTube' || !hintAuthor)) {
+              author = data.author;
+              setResolvedAuthor(author);
+            }
             if (data.success && Array.isArray(data.segments) && data.segments.length > 0) {
               rawLoadedSegments = data.segments;
-              if (data.title) title = data.title;
-              if (data.author) author = data.author;
             }
           }
         } catch {}
       }
 
-      // If this video has no extractable captions, generate real study notes, flashcards & quiz from the video's title/topic via /api/study/topic!
+      // If this video has no extractable captions, generate real study notes, flashcards & quiz from the video's title via /api/study/topic!
       if (rawLoadedSegments.length === 0 && targetVidId !== 'Y9by14g7Cbs') {
         try {
+          const studyQuery = title && title !== 'YouTube Video' ? title : `YouTube Video ${targetVidId}`;
           const authHeaders = await getAuthHeaders();
           const topicRes = await fetch('/api/study/topic', {
             method: 'POST',
             headers: authHeaders,
-            body: JSON.stringify({ query: title }),
+            body: JSON.stringify({ query: studyQuery }),
             signal: AbortSignal.timeout(15000),
           });
           if (topicRes.ok) {
             const data = await topicRes.json();
+            // Strictly enforce no extra related videos for direct video links
+            setTopicVideos([]);
             const sections: DetailedStatementItem[] = Array.isArray(data.sections)
               ? data.sections.map((s: any, idx: number) => ({
                   index: idx + 1,
@@ -1338,6 +1353,8 @@ ${fullTranscriptText}`;
             setResolvedTitle(title);
             setResolvedAuthor(author);
             setLoadingContent(false);
+            setShowSourceViewer(true);
+            setAutoPlayVideo(true);
             return;
           }
         } catch {}
@@ -1357,6 +1374,8 @@ ${fullTranscriptText}`;
       setResolvedTitle(title);
       setResolvedAuthor(author);
       setLoadingContent(false);
+      setShowSourceViewer(true);
+      setAutoPlayVideo(true);
 
       // Upgrade flashcards, quiz, and concepts via AI /api/youtube/study when real segments are present
       if (rawLoadedSegments.length > 0 && targetVidId !== 'Y9by14g7Cbs') {
@@ -1385,6 +1404,7 @@ ${fullTranscriptText}`;
       synthesizeDeepStatementSummary(title, synthesized.segments);
     } finally {
       setLoadingContent(false);
+      setTopicVideos([]); // Guarantee no related videos appear
       setSpaces((prev) => {
         const exists = prev.some((s) => s.videoId === targetVidId || s.name === title);
         if (exists) return prev;
@@ -1411,6 +1431,12 @@ ${fullTranscriptText}`;
     url = ''
   ) => {
     const cleanText = (text || '').trim();
+    // If it's a YouTube link or video ID, load directly as YouTube video
+    const ytId = extractYouTubeIdFromInput(title || cleanText);
+    if (ytId) {
+      await loadYouTubeSource(ytId);
+      return;
+    }
     // If it's a short topic/question rather than a full pasted document/PDF, fetch real YouTube videos + topic study guide!
     if (type !== 'pdf' && cleanText.length < 240) {
       await loadTopicStudySpace(title || cleanText);
@@ -2420,15 +2446,15 @@ ${fullTranscriptText}`;
                 }`}
               >
                 {activeVideoId ? (
-                  <div className="aspect-video w-full max-h-[300px] bg-black">
+                  <div className="aspect-video w-full max-h-[360px] bg-black">
                     <iframe
-                      key={`${activeVideoId}-${seekSeconds}-${autoPlayVideo ? 1 : 0}`}
-                      src={`https://www.youtube-nocookie.com/embed/${activeVideoId}?start=${seekSeconds}${
-                        autoPlayVideo ? '&autoplay=1' : ''
-                      }&rel=0&modestbranding=1`}
+                      key={`${activeVideoId}-${seekSeconds}`}
+                      src={`https://www.youtube-nocookie.com/embed/${activeVideoId}?autoplay=1&enablejsapi=1&rel=0&modestbranding=1${
+                        seekSeconds > 0 ? `&start=${seekSeconds}` : ''
+                      }`}
                       title={resolvedTitle}
                       className="w-full h-full border-0"
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                       allowFullScreen
                     />
                   </div>
@@ -2488,7 +2514,7 @@ ${fullTranscriptText}`;
               );
             })}
 
-            {topicVideos.length > 0 && !openTabs.some((t) => t.type === 'videos') && (
+            {sourceType === 'topic' && topicVideos.length > 0 && !openTabs.some((t) => t.type === 'videos') && (
               <button
                 type="button"
                 onClick={() => openOrFocusTab('videos', `Videos (${topicVideos.length})`)}
@@ -2713,7 +2739,7 @@ ${fullTranscriptText}`;
                             icon: Layers,
                             onClick: () => openOrFocusTab('flashcards', 'Flashcards'),
                           },
-                          ...(topicVideos.length > 0
+                          ...(sourceType === 'topic' && topicVideos.length > 0
                             ? [
                                 {
                                   id: 'videos',
@@ -2791,8 +2817,8 @@ ${fullTranscriptText}`;
                       </div>
                     </div>
 
-                    {/* Related YouTube Videos in Study Tools Hub */}
-                    {topicVideos.length > 0 && (
+                    {/* Related YouTube Videos in Study Tools Hub — ONLY for general topic queries */}
+                    {sourceType === 'topic' && topicVideos.length > 0 && (
                       <div className="space-y-3">
                         <div className="flex items-center justify-between">
                           <h2 className="text-sm font-semibold">Related YouTube Videos</h2>
@@ -3098,73 +3124,137 @@ ${fullTranscriptText}`;
                           </p>
                         </section>
 
-                        {/* Related YouTube Videos + Live Web Search Backend for YouTube */}
-                        <section className="space-y-3">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <h3 className="text-sm font-semibold">
-                              YouTube Videos ({topicVideos.length})
-                            </h3>
-                            <div className="flex items-center gap-2">
-                              {topicVideos.length > 0 && (
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    openOrFocusTab('videos', `Videos (${topicVideos.length})`)
-                                  }
-                                  className={`text-xs ${textMuted} hover:opacity-100 cursor-pointer`}
-                                >
-                                  View all ({topicVideos.length})
-                                </button>
-                              )}
+                        {/* When studying a direct YouTube link/ID: Show player prompt if drawer is closed, NEVER show 10+ random related videos */}
+                        {sourceType === 'youtube' && activeVideoId && !showSourceViewer && (
+                          <div className={`p-4 rounded-2xl border flex items-center justify-between gap-3 ${bgCard}`}>
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="size-9 rounded-xl flex items-center justify-center shrink-0 bg-red-600 text-white">
+                                <Video className="w-4 h-4" />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="text-xs sm:text-sm font-medium truncate">{resolvedTitle}</div>
+                                <div className={`text-[11px] truncate ${textMuted}`}>{resolvedAuthor || 'YouTube Video'}</div>
+                              </div>
                             </div>
-                          </div>
-
-                          {/* YouTube Web Search Bar */}
-                          <form
-                            onSubmit={(e) => {
-                              e.preventDefault();
-                              handleSearchYouTubeWeb(ytWebSearchQuery || resolvedTitle, false);
-                            }}
-                            className={`flex items-center gap-2 p-2 rounded-2xl border ${bgCard}`}
-                          >
-                            <Search className={`w-4 h-4 ml-2 shrink-0 ${textMuted}`} />
-                            <input
-                              type="text"
-                              value={ytWebSearchQuery}
-                              onChange={(e) => setYtWebSearchQuery(e.target.value)}
-                              placeholder={`Search YouTube videos via Web Search (e.g., ${resolvedTitle} lecture)...`}
-                              className="flex-1 bg-transparent border-0 text-xs sm:text-sm outline-none"
-                            />
                             <button
-                              type="submit"
-                              disabled={ytWebSearching}
-                              className={`px-3 py-1.5 rounded-xl text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer shrink-0 ${
-                                isDark
-                                  ? 'bg-white text-black hover:bg-neutral-200'
-                                  : 'bg-black text-white hover:bg-neutral-800'
+                              type="button"
+                              onClick={() => {
+                                setShowSourceViewer(true);
+                                setAutoPlayVideo(true);
+                              }}
+                              className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer ${
+                                isDark ? 'bg-white text-black' : 'bg-black text-white'
                               }`}
                             >
-                              {ytWebSearching ? (
-                                <>
-                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                  <span>Searching...</span>
-                                </>
-                              ) : (
-                                <span>Search YouTube</span>
-                              )}
+                              <Play className="w-3.5 h-3.5" />
+                              <span>Watch Video</span>
                             </button>
-                          </form>
+                          </div>
+                        )}
 
-                          {topicVideos.length > 0 ? (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                              {topicVideos.slice(0, 4).map((vid) => (
-                                <div
-                                  key={vid.videoId || vid.link}
-                                  className={`p-3 rounded-2xl border flex flex-col justify-between gap-2.5 ${bgCard}`}
-                                >
-                                  <div className="flex gap-3">
-                                    {vid.thumbnail && (
-                                      <div
+                        {/* Related YouTube Videos + Live Web Search Backend — ONLY for general topic queries */}
+                        {sourceType === 'topic' && (
+                          <section className="space-y-3">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <h3 className="text-sm font-semibold">
+                                YouTube Videos ({topicVideos.length})
+                              </h3>
+                              <div className="flex items-center gap-2">
+                                {topicVideos.length > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      openOrFocusTab('videos', `Videos (${topicVideos.length})`)
+                                    }
+                                    className={`text-xs ${textMuted} hover:opacity-100 cursor-pointer`}
+                                  >
+                                    View all ({topicVideos.length})
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* YouTube Web Search Bar */}
+                            <form
+                              onSubmit={(e) => {
+                                e.preventDefault();
+                                handleSearchYouTubeWeb(ytWebSearchQuery || resolvedTitle, false);
+                              }}
+                              className={`flex items-center gap-2 p-2 rounded-2xl border ${bgCard}`}
+                            >
+                              <Search className={`w-4 h-4 ml-2 shrink-0 ${textMuted}`} />
+                              <input
+                                type="text"
+                                value={ytWebSearchQuery}
+                                onChange={(e) => setYtWebSearchQuery(e.target.value)}
+                                placeholder={`Search YouTube videos via Web Search (e.g., ${resolvedTitle} lecture)...`}
+                                className="flex-1 bg-transparent border-0 text-xs sm:text-sm outline-none"
+                              />
+                              <button
+                                type="submit"
+                                disabled={ytWebSearching}
+                                className={`px-3 py-1.5 rounded-xl text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer shrink-0 ${
+                                  isDark
+                                    ? 'bg-white text-black hover:bg-neutral-200'
+                                    : 'bg-black text-white hover:bg-neutral-800'
+                                }`}
+                              >
+                                {ytWebSearching ? (
+                                  <>
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                    <span>Searching...</span>
+                                  </>
+                                ) : (
+                                  <span>Search YouTube</span>
+                                )}
+                              </button>
+                            </form>
+
+                            {topicVideos.length > 0 ? (
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                {topicVideos.slice(0, 4).map((vid) => (
+                                  <div
+                                    key={vid.videoId || vid.link}
+                                    className={`p-3 rounded-2xl border flex flex-col justify-between gap-2.5 ${bgCard}`}
+                                  >
+                                    <div className="flex gap-3">
+                                      {vid.thumbnail && (
+                                        <div
+                                          onClick={() => {
+                                            if (vid.videoId) {
+                                              setActiveVideoId(vid.videoId);
+                                              setShowSourceViewer(true);
+                                              setAutoPlayVideo(true);
+                                            }
+                                          }}
+                                          className="relative w-28 h-16 rounded-xl overflow-hidden bg-black shrink-0 cursor-pointer group"
+                                        >
+                                          <img
+                                            src={vid.thumbnail}
+                                            alt={vid.title}
+                                            className="w-full h-full object-cover group-hover:opacity-80 transition-opacity"
+                                          />
+                                          {vid.length && (
+                                            <span className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/80 text-white text-[10px] font-mono">
+                                              {vid.length}
+                                            </span>
+                                          )}
+                                        </div>
+                                      )}
+                                      <div className="min-w-0 flex-1">
+                                        <div className="text-xs sm:text-sm font-medium line-clamp-2 leading-snug">
+                                          {vid.title}
+                                        </div>
+                                        <div className={`text-[11px] mt-1 truncate ${textMuted}`}>
+                                          {vid.author}
+                                          {vid.views ? ` · ${vid.views}` : ''}
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    <div className="flex items-center gap-2 pt-1">
+                                      <button
+                                        type="button"
                                         onClick={() => {
                                           if (vid.videoId) {
                                             setActiveVideoId(vid.videoId);
@@ -3172,74 +3262,40 @@ ${fullTranscriptText}`;
                                             setAutoPlayVideo(true);
                                           }
                                         }}
-                                        className="relative w-28 h-16 rounded-xl overflow-hidden bg-black shrink-0 cursor-pointer group"
+                                        className={`flex-1 py-1.5 px-2.5 rounded-xl border text-xs font-medium inline-flex items-center justify-center gap-1.5 cursor-pointer ${borderSubtle}`}
                                       >
-                                        <img
-                                          src={vid.thumbnail}
-                                          alt={vid.title}
-                                          className="w-full h-full object-cover group-hover:opacity-80 transition-opacity"
-                                        />
-                                        {vid.length && (
-                                          <span className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/80 text-white text-[10px] font-mono">
-                                            {vid.length}
-                                          </span>
-                                        )}
-                                      </div>
-                                    )}
-                                    <div className="min-w-0 flex-1">
-                                      <div className="text-xs sm:text-sm font-medium line-clamp-2 leading-snug">
-                                        {vid.title}
-                                      </div>
-                                      <div className={`text-[11px] mt-1 truncate ${textMuted}`}>
-                                        {vid.author}
-                                        {vid.views ? ` · ${vid.views}` : ''}
-                                      </div>
+                                        <Play className="w-3 h-3" />
+                                        <span>Watch</span>
+                                      </button>
+                                      {vid.videoId && (
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            loadYouTubeSource(vid.videoId!, vid.title, vid.author)
+                                          }
+                                          className={`flex-1 py-1.5 px-2.5 rounded-xl text-xs font-medium inline-flex items-center justify-center gap-1.5 cursor-pointer ${
+                                            isDark
+                                              ? 'bg-white text-black hover:bg-neutral-200'
+                                              : 'bg-black text-white hover:bg-neutral-800'
+                                          }`}
+                                        >
+                                          <BookOpen className="w-3 h-3" />
+                                          <span>Study Video</span>
+                                        </button>
+                                      )}
                                     </div>
                                   </div>
-
-                                  <div className="flex items-center gap-2 pt-1">
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        if (vid.videoId) {
-                                          setActiveVideoId(vid.videoId);
-                                          setShowSourceViewer(true);
-                                          setAutoPlayVideo(true);
-                                        }
-                                      }}
-                                      className={`flex-1 py-1.5 px-2.5 rounded-xl border text-xs font-medium inline-flex items-center justify-center gap-1.5 cursor-pointer ${borderSubtle}`}
-                                    >
-                                      <Play className="w-3 h-3" />
-                                      <span>Watch</span>
-                                    </button>
-                                    {vid.videoId && (
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          loadYouTubeSource(vid.videoId!, vid.title, vid.author)
-                                        }
-                                        className={`flex-1 py-1.5 px-2.5 rounded-xl text-xs font-medium inline-flex items-center justify-center gap-1.5 cursor-pointer ${
-                                          isDark
-                                            ? 'bg-white text-black hover:bg-neutral-200'
-                                            : 'bg-black text-white hover:bg-neutral-800'
-                                        }`}
-                                      >
-                                        <BookOpen className="w-3 h-3" />
-                                        <span>Study Video</span>
-                                      </button>
-                                    )}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <div className={`p-4 rounded-2xl border text-xs ${bgCard} ${textMuted}`}>
-                              {ytWebSearching
-                                ? `Searching YouTube & Web for "${ytWebSearchQuery || resolvedTitle}"...`
-                                : `Click "Search YouTube" above to fetch educational videos for "${resolvedTitle}".`}
-                            </div>
-                          )}
-                        </section>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className={`p-4 rounded-2xl border text-xs ${bgCard} ${textMuted}`}>
+                                {ytWebSearching
+                                  ? `Searching YouTube & Web for "${ytWebSearchQuery || resolvedTitle}"...`
+                                  : `Click "Search YouTube" above to fetch educational videos for "${resolvedTitle}".`}
+                              </div>
+                            )}
+                          </section>
+                        )}
 
                         {/* Detailed Notes (When expanded) */}
                         {aiExhaustiveSummary && (

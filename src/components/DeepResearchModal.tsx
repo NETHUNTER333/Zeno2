@@ -835,7 +835,7 @@ ${sourceContext ? `Grounding Sources:\n${sourceContext}\n` : ''}`;
   return (
     <div
       onClick={() => setActiveChipPreview(null)}
-      className={`fixed inset-0 z-50 w-full h-[100dvh] flex flex-col overflow-hidden select-text transition-colors duration-200 ${
+      className={`fixed inset-0 z-50 w-full h-[100dvh] flex flex-col overflow-hidden select-text transition-colors duration-200 relative ${
         isDark ? 'bg-[#0a0a0c] text-white' : 'bg-[#fafafa] text-[#000000]'
       }`}
     >
@@ -844,35 +844,37 @@ ${sourceContext ? `Grounding Sources:\n${sourceContext}\n` : ''}`;
         {liveStatusAnnouncement}
       </div>
 
-      {/* Top Header Bar */}
-      <div className={`shrink-0 border-b ${isDark ? 'bg-[#0e0e11]/90 border-white/[0.08]' : 'bg-white/90 border-black/[0.06]'} backdrop-blur-md z-20`}>
-        <div className="max-w-3xl mx-auto w-full px-4 sm:px-6 pt-[max(0.6rem,env(safe-area-inset-top))] pb-2.5 flex items-center justify-between">
+      {/* Floating Top Pill Controls (Zero Scrim / Zero Border / Clean Glass Pills) */}
+      <div className="absolute top-0 left-0 right-0 z-30 pointer-events-none px-3 sm:px-6 pt-[max(0.6rem,env(safe-area-inset-top))] pb-2">
+        <div className="max-w-3xl mx-auto w-full flex items-center justify-between gap-2">
+          {/* Back Pill Button */}
           <button
             type="button"
             onClick={onClose}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors cursor-pointer ${
+            className={`pointer-events-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border backdrop-blur-2xl transition-all active:scale-95 cursor-pointer shadow-xs ${
               isDark
-                ? 'bg-[#18181c] border-white/[0.1] text-neutral-300 hover:text-white hover:bg-white/[0.08]'
-                : 'bg-white border-black/[0.08] text-neutral-700 hover:text-black hover:bg-neutral-100 shadow-xs'
+                ? 'bg-neutral-900/75 hover:bg-neutral-800/85 border-white/[0.14] text-neutral-200 hover:text-white shadow-[0_4px_16px_rgba(0,0,0,0.4)]'
+                : 'bg-white/85 hover:bg-white border-black/[0.1] text-neutral-700 hover:text-black shadow-[0_4px_16px_rgba(0,0,0,0.06)]'
             }`}
           >
             <ArrowLeft className="w-3.5 h-3.5" />
             <span>Back</span>
           </button>
 
-          <div className="flex items-center gap-2">
+          {/* Right Action Pills */}
+          <div className="flex items-center gap-1.5 sm:gap-2">
             <button
               type="button"
               onClick={() => setIsHistoryOpen((prev) => !prev)}
               title="Research History"
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors cursor-pointer ${
+              className={`pointer-events-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border backdrop-blur-2xl whitespace-nowrap transition-all active:scale-95 cursor-pointer shadow-xs ${
                 isHistoryOpen
                   ? isDark
                     ? 'bg-white text-black border-white'
-                    : 'bg-[#18181b] text-white border-[#18181b]'
+                    : 'bg-neutral-900 text-white border-neutral-900'
                   : isDark
-                  ? 'bg-[#18181c] border-white/[0.1] text-neutral-300 hover:text-white hover:bg-white/[0.08]'
-                  : 'bg-white border-black/[0.08] text-neutral-700 hover:text-black hover:bg-neutral-100 shadow-xs'
+                  ? 'bg-neutral-900/75 hover:bg-neutral-800/85 border-white/[0.14] text-neutral-200 hover:text-white shadow-[0_4px_16px_rgba(0,0,0,0.4)]'
+                  : 'bg-white/85 hover:bg-white border-black/[0.1] text-neutral-700 hover:text-black shadow-[0_4px_16px_rgba(0,0,0,0.06)]'
               }`}
             >
               <Clock className="w-3.5 h-3.5" />
@@ -899,14 +901,14 @@ ${sourceContext ? `Grounding Sources:\n${sourceContext}\n` : ''}`;
                 type="button"
                 onClick={resetToCleanPage}
                 title="Start a new research topic"
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors cursor-pointer ${
+                className={`pointer-events-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border backdrop-blur-2xl whitespace-nowrap transition-all active:scale-95 cursor-pointer shadow-xs ${
                   isDark
-                    ? 'bg-[#18181c] border-white/[0.1] text-neutral-300 hover:text-white hover:bg-white/[0.08]'
-                    : 'bg-white border-black/[0.08] text-neutral-700 hover:text-black hover:bg-neutral-100 shadow-xs'
+                    ? 'bg-neutral-900/75 hover:bg-neutral-800/85 border-white/[0.14] text-neutral-200 hover:text-white shadow-[0_4px_16px_rgba(0,0,0,0.4)]'
+                    : 'bg-white/85 hover:bg-white border-black/[0.1] text-neutral-700 hover:text-black shadow-[0_4px_16px_rgba(0,0,0,0.06)]'
                 }`}
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>New Research</span>
+                <span>New</span>
               </button>
             )}
 
@@ -930,13 +932,14 @@ ${sourceContext ? `Grounding Sources:\n${sourceContext}\n` : ''}`;
                   onInsertReportToChat(turns[0].question, combined, allSources, []);
                   onClose();
                 }}
-                className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition-colors cursor-pointer ${
+                className={`pointer-events-auto inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium border backdrop-blur-2xl whitespace-nowrap transition-all active:scale-95 cursor-pointer shadow-xs ${
                   isDark
-                    ? 'bg-white text-black hover:bg-neutral-200'
-                    : 'bg-[#18181b] text-white hover:bg-neutral-800'
+                    ? 'bg-white text-black hover:bg-neutral-200 border-white'
+                    : 'bg-neutral-900 text-white hover:bg-neutral-800 border-neutral-900 shadow-[0_4px_16px_rgba(0,0,0,0.12)]'
                 }`}
               >
-                Open in Chat
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Chat</span>
               </button>
             )}
           </div>
@@ -946,7 +949,7 @@ ${sourceContext ? `Grounding Sources:\n${sourceContext}\n` : ''}`;
       {/* Main Content Area */}
       {turns.length === 0 ? (
         /* Empty State: Center Grok Logo and Recent Research */
-        <div className="flex-1 min-h-0 flex flex-col items-center justify-center px-4 overflow-y-auto scrollbar-thin py-6">
+        <div className="flex-1 min-h-0 flex flex-col items-center justify-center px-4 overflow-y-auto scrollbar-thin pt-20 pb-28">
           <div className="max-w-xl w-full flex flex-col items-center">
             <GrokLogo size="lg" isDark={isDark} />
 
@@ -1021,9 +1024,9 @@ ${sourceContext ? `Grounding Sources:\n${sourceContext}\n` : ''}`;
         /* Multi-Turn Research Chat View */
         <div
           ref={scrollViewportRef}
-          className="flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden px-4 sm:px-6 md:px-8 py-5 scrollbar-thin"
+          className="flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden px-4 sm:px-6 md:px-8 pt-18 sm:pt-20 pb-32 sm:pb-36 scrollbar-thin"
         >
-          <div className="max-w-3xl mx-auto w-full space-y-8 pb-10">
+          <div className="max-w-3xl mx-auto w-full space-y-7">
             {turns.map((turn, tIdx) => {
               const isCurrentTurnStreaming = isStreaming && streamingTurnId === turn.id;
               const isCurrentTurnSearching = isSearching && streamingTurnId === turn.id;
@@ -1055,43 +1058,37 @@ ${sourceContext ? `Grounding Sources:\n${sourceContext}\n` : ''}`;
                   className={`w-full ${
                     tIdx > 0
                       ? isDark
-                        ? 'pt-7 border-t border-white/[0.08]'
-                        : 'pt-7 border-t border-black/[0.08]'
+                        ? 'pt-6 border-t border-white/[0.08]'
+                        : 'pt-6 border-t border-black/[0.08]'
                       : ''
                   }`}
                 >
-                  {/* User Inquiry Header */}
-                  <div className="flex items-start gap-2.5 mb-3.5">
-                    <div
-                      className={`shrink-0 size-6 rounded-full flex items-center justify-center text-[11px] font-semibold mt-0.5 ${
-                        isDark ? 'bg-white/10 text-white' : 'bg-black/10 text-neutral-900'
-                      }`}
-                    >
-                      {tIdx + 1}
-                    </div>
-                    <div className="flex-1">
-                      <h2
-                        className={`text-base sm:text-[17px] font-semibold tracking-tight leading-snug ${
-                          isDark ? 'text-white' : 'text-neutral-900'
+                  {/* Modern Sleek User Inquiry Header (No Big Ass Number Circle) */}
+                  <div className="mb-3">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <span
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10.5px] font-medium border backdrop-blur-md ${
+                          isDark
+                            ? 'border-white/[0.12] bg-white/[0.06] text-neutral-300'
+                            : 'border-black/[0.08] bg-black/[0.04] text-neutral-700'
                         }`}
                       >
-                        {turn.question}
-                      </h2>
-                      {tIdx > 0 && (
-                        <span
-                          className={`inline-block text-[10.5px] font-medium mt-0.5 ${
-                            isDark ? 'text-neutral-400' : 'text-neutral-500'
-                          }`}
-                        >
-                          Follow-up Inquiry
-                        </span>
-                      )}
+                        <Search className="w-2.5 h-2.5 opacity-70" />
+                        <span>{tIdx === 0 ? 'Research Inquiry' : `Follow-up #${tIdx + 1}`}</span>
+                      </span>
                     </div>
+                    <h2
+                      className={`text-base sm:text-[18px] font-semibold tracking-tight leading-snug ${
+                        isDark ? 'text-white' : 'text-neutral-900'
+                      }`}
+                    >
+                      {turn.question}
+                    </h2>
                   </div>
 
                   {/* Sources Carousel for this turn */}
                   {(turnSources.length > 0 || isCurrentTurnSearching) && (
-                    <div className="mb-4">
+                    <div className="mb-3.5">
                       {isCurrentTurnSearching && turnSources.length === 0 && (
                         <div className="mb-2">
                           <ShimmerText
@@ -1462,109 +1459,119 @@ ${sourceContext ? `Grounding Sources:\n${sourceContext}\n` : ''}`;
                     )}
                   </div>
 
-                  {/* Turn Action Bar */}
+                  {/* Modern Pill-Shaped Action Buttons with Crisp Small Icons */}
                   {turn.fullAnswer && !isCurrentTurnStreaming && (
                     <div
-                      className={`mt-4 pt-2.5 flex items-center justify-between gap-3 text-xs ${
+                      className={`mt-4 pt-2.5 flex items-center justify-between gap-3 text-xs flex-wrap ${
                         isDark ? 'text-neutral-400' : 'text-neutral-500'
                       }`}
                     >
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {/* Copy Pill */}
                         <button
                           type="button"
                           onClick={() => handleCopyTurn(turn)}
-                          title="Copy answer and sources"
-                          aria-label="Copy answer"
-                          className={`size-7 rounded-md flex items-center justify-center transition-colors cursor-pointer ${
-                            isDark
-                              ? 'text-neutral-400 hover:text-white hover:bg-white/[0.07]'
-                              : 'text-neutral-500 hover:text-black hover:bg-black/[0.05]'
+                          title="Copy answer and citations"
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border backdrop-blur-md transition-all active:scale-95 cursor-pointer ${
+                            copiedTurnId === turn.id
+                              ? isDark
+                                ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                                : 'bg-emerald-50 text-emerald-600 border-emerald-200'
+                              : isDark
+                              ? 'border-white/[0.1] bg-white/[0.04] text-neutral-300 hover:text-white hover:bg-white/[0.08]'
+                              : 'border-black/[0.08] bg-black/[0.03] text-neutral-700 hover:text-black hover:bg-black/[0.06]'
                           }`}
                         >
                           {copiedTurnId === turn.id ? (
-                            <Check className="w-3.5 h-3.5 text-emerald-500" />
+                            <Check className="w-3 h-3 text-emerald-500" />
                           ) : (
-                            <Copy className="w-3.5 h-3.5" />
+                            <Copy className="w-3 h-3" />
                           )}
+                          <span>{copiedTurnId === turn.id ? 'Copied' : 'Copy'}</span>
                         </button>
 
+                        {/* Export Pill */}
                         <button
                           type="button"
                           onClick={() => handleExportMarkdown(turn)}
-                          title="Export report with citation links (.md)"
-                          aria-label="Export report"
-                          className={`size-7 rounded-md flex items-center justify-center transition-colors cursor-pointer ${
+                          title="Export report (.md)"
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border backdrop-blur-md transition-all active:scale-95 cursor-pointer ${
                             isDark
-                              ? 'text-neutral-400 hover:text-white hover:bg-white/[0.07]'
-                              : 'text-neutral-500 hover:text-black hover:bg-black/[0.05]'
+                              ? 'border-white/[0.1] bg-white/[0.04] text-neutral-300 hover:text-white hover:bg-white/[0.08]'
+                              : 'border-black/[0.08] bg-black/[0.03] text-neutral-700 hover:text-black hover:bg-black/[0.06]'
                           }`}
                         >
-                          <Download className="w-3.5 h-3.5" />
+                          <Download className="w-3 h-3" />
+                          <span>Export</span>
                         </button>
 
+                        {/* Regenerate / Retry Pill */}
                         {tIdx === turns.length - 1 && (
                           <button
                             type="button"
                             onClick={() => executeResearchTurn(turn.question)}
                             title="Regenerate this answer"
-                            aria-label="Regenerate"
-                            className={`size-7 rounded-md flex items-center justify-center transition-colors cursor-pointer ${
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border backdrop-blur-md transition-all active:scale-95 cursor-pointer ${
                               isDark
-                                ? 'text-neutral-400 hover:text-white hover:bg-white/[0.07]'
-                                : 'text-neutral-500 hover:text-black hover:bg-black/[0.05]'
+                                ? 'border-white/[0.1] bg-white/[0.04] text-neutral-300 hover:text-white hover:bg-white/[0.08]'
+                                : 'border-black/[0.08] bg-black/[0.03] text-neutral-700 hover:text-black hover:bg-black/[0.06]'
                             }`}
                           >
-                            <RotateCcw className="w-3.5 h-3.5" />
+                            <RotateCcw className="w-3 h-3" />
+                            <span>Retry</span>
                           </button>
                         )}
 
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setFeedbackMap((prev) => ({
-                              ...prev,
-                              [turn.id]: prev[turn.id] === 'up' ? null : 'up',
-                            }));
-                            setLiveStatusAnnouncement('Feedback recorded: helpful');
-                          }}
-                          title="Helpful"
-                          aria-label="Thumbs up"
-                          className={`size-7 rounded-md flex items-center justify-center transition-colors cursor-pointer ${
-                            feedbackMap[turn.id] === 'up'
-                              ? isDark
-                                ? 'bg-white text-black'
-                                : 'bg-neutral-900 text-white'
-                              : isDark
-                              ? 'text-neutral-400 hover:text-white hover:bg-white/[0.07]'
-                              : 'text-neutral-500 hover:text-black hover:bg-black/[0.05]'
-                          }`}
-                        >
-                          <ThumbsUp className="w-3.5 h-3.5" />
-                        </button>
+                        {/* Small Pill Thumbs Up/Down */}
+                        <div className="flex items-center gap-1 ml-0.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFeedbackMap((prev) => ({
+                                ...prev,
+                                [turn.id]: prev[turn.id] === 'up' ? null : 'up',
+                              }));
+                              setLiveStatusAnnouncement('Feedback recorded: helpful');
+                            }}
+                            title="Helpful"
+                            aria-label="Thumbs up"
+                            className={`size-6 rounded-full border flex items-center justify-center transition-all cursor-pointer ${
+                              feedbackMap[turn.id] === 'up'
+                                ? isDark
+                                  ? 'bg-white text-black border-white'
+                                  : 'bg-neutral-900 text-white border-neutral-900'
+                                : isDark
+                                ? 'border-white/[0.1] text-neutral-400 hover:text-white hover:bg-white/[0.08]'
+                                : 'border-black/[0.08] text-neutral-600 hover:text-black hover:bg-black/[0.05]'
+                            }`}
+                          >
+                            <ThumbsUp className="w-2.5 h-2.5" />
+                          </button>
 
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setFeedbackMap((prev) => ({
-                              ...prev,
-                              [turn.id]: prev[turn.id] === 'down' ? null : 'down',
-                            }));
-                            setLiveStatusAnnouncement('Feedback recorded: not helpful');
-                          }}
-                          title="Not helpful"
-                          aria-label="Thumbs down"
-                          className={`size-7 rounded-md flex items-center justify-center transition-colors cursor-pointer ${
-                            feedbackMap[turn.id] === 'down'
-                              ? isDark
-                                ? 'bg-white text-black'
-                                : 'bg-neutral-900 text-white'
-                              : isDark
-                              ? 'text-neutral-400 hover:text-white hover:bg-white/[0.07]'
-                              : 'text-neutral-500 hover:text-black hover:bg-black/[0.05]'
-                          }`}
-                        >
-                          <ThumbsDown className="w-3.5 h-3.5" />
-                        </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFeedbackMap((prev) => ({
+                                ...prev,
+                                [turn.id]: prev[turn.id] === 'down' ? null : 'down',
+                              }));
+                              setLiveStatusAnnouncement('Feedback recorded: not helpful');
+                            }}
+                            title="Not helpful"
+                            aria-label="Thumbs down"
+                            className={`size-6 rounded-full border flex items-center justify-center transition-all cursor-pointer ${
+                              feedbackMap[turn.id] === 'down'
+                                ? isDark
+                                  ? 'bg-white text-black border-white'
+                                  : 'bg-neutral-900 text-white border-neutral-900'
+                                : isDark
+                                ? 'border-white/[0.1] text-neutral-400 hover:text-white hover:bg-white/[0.08]'
+                                : 'border-black/[0.08] text-neutral-600 hover:text-black hover:bg-black/[0.05]'
+                            }`}
+                          >
+                            <ThumbsDown className="w-2.5 h-2.5" />
+                          </button>
+                        </div>
                       </div>
 
                       {turn.durationSec ? (
@@ -1611,11 +1618,9 @@ ${sourceContext ? `Grounding Sources:\n${sourceContext}\n` : ''}`;
         </div>
       )}
 
-      {/* Docked Follow-up Prompt Input Bar */}
-      <div className={`shrink-0 w-full px-3 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4 sm:pb-5 border-t ${
-        isDark ? 'bg-[#0a0a0c]/90 border-white/[0.08]' : 'bg-[#fafafa]/90 border-black/[0.06]'
-      } backdrop-blur-md`}>
-        <div className="max-w-3xl mx-auto w-full">
+      {/* Floating Bottom Prompt Input Bar (Zero Scrim / Zero Border / Floating Dock) */}
+      <div className="absolute bottom-0 left-0 right-0 z-30 pointer-events-none px-3 sm:px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:pb-5">
+        <div className="max-w-3xl mx-auto w-full pointer-events-auto">
           <ChatInput
             onSend={(message: string) => {
               executeResearchTurn(message);
