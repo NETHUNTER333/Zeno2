@@ -1183,7 +1183,19 @@ export const UserAccountStore = {
 
   getUsage(): UsageQuota {
     const limits = this.getPlanLimits();
-    const raw = loadFromStorage<UsageQuota>(STORAGE_KEYS.USAGE, DEFAULT_USAGE);
+    const raw = loadFromStorage<
+      UsageQuota & {
+        bonusMessagesGranted?: number;
+        bonusUploadsGranted?: number;
+        bonusQuizzesGranted?: number;
+        bonusDeepResearchGranted?: number;
+      }
+    >(STORAGE_KEYS.USAGE, DEFAULT_USAGE);
+    const bonusMsgs = Number(raw.bonusMessagesGranted || 0);
+    const bonusUploads = Number(raw.bonusUploadsGranted || 0);
+    const bonusQuizzes = Number(raw.bonusQuizzesGranted || 0);
+    const bonusResearch = Number(raw.bonusDeepResearchGranted || 0);
+
     return {
       ...DEFAULT_USAGE,
       ...raw,
@@ -1194,13 +1206,13 @@ export const UserAccountStore = {
       pdfStudyUsed: Number(raw.pdfStudyUsed || 0),
       tokensUsed: Number(raw.tokensUsed || 0),
       toolsUsed: Number(raw.toolsUsed || 0),
-      messageLimit: limits.messageLimit,
-      fileUploadLimit: limits.fileUploadLimit,
-      maxFilesPerMessage: limits.maxFilesPerMessage,
+      messageLimit: limits.messageLimit + bonusMsgs,
+      fileUploadLimit: limits.fileUploadLimit + bonusUploads,
+      maxFilesPerMessage: Math.max(limits.maxFilesPerMessage, bonusUploads > 0 ? 10 : 0),
       tokenLimit: limits.tokenLimit,
-      searchLimit: limits.searchLimit,
-      deepResearchLimit: Math.max(999999, Number(limits.deepResearchLimit || 999999)),
-      pdfStudyLimit: Math.max(999999, Number(limits.pdfStudyLimit || 999999)),
+      searchLimit: limits.searchLimit + bonusResearch,
+      deepResearchLimit: Math.max(999999, Number(limits.deepResearchLimit || 999999) + bonusResearch),
+      pdfStudyLimit: Math.max(999999, Number(limits.pdfStudyLimit || 999999) + bonusQuizzes),
       toolLimit: limits.toolLimit,
       storageBytesLimit: limits.storageBytesLimit,
     };
@@ -1393,20 +1405,62 @@ export const UserAccountStore = {
     // Client-side manual reset is disabled for anti-abuse enforcement; re-syncs from server/Firestore instead
     this.syncQuotaWithServerAndFirestore();
   },
-  grantReferrerBonusQuota(bonusUploads = 25, bonusMessages = 100): void {
-    const raw = loadFromStorage<UsageQuota>(STORAGE_KEYS.USAGE, DEFAULT_USAGE);
-    const updated: UsageQuota = {
+  grantReferrerBonusQuota(
+    bonusUploads = 25,
+    bonusMessages = 100,
+    bonusQuizzes = 10,
+    bonusDeepResearch = 10
+  ): void {
+    const raw = loadFromStorage<UsageQuota & {
+      bonusMessagesGranted?: number;
+      bonusUploadsGranted?: number;
+      bonusQuizzesGranted?: number;
+      bonusDeepResearchGranted?: number;
+    }>(STORAGE_KEYS.USAGE, DEFAULT_USAGE);
+    const prevBonusMsgs = Number(raw.bonusMessagesGranted || 0);
+    const prevBonusUploads = Number(raw.bonusUploadsGranted || 0);
+    const prevBonusQuizzes = Number(raw.bonusQuizzesGranted || 0);
+    const prevBonusResearch = Number(raw.bonusDeepResearchGranted || 0);
+
+    const updated = {
       ...raw,
       filesUploaded: Math.max(0, Number(raw.filesUploaded || 0) - bonusUploads),
       messagesUsed: Math.max(0, Number(raw.messagesUsed || 0) - bonusMessages),
+      pdfStudyUsed: Math.max(0, Number(raw.pdfStudyUsed || 0) - bonusQuizzes),
+      deepResearchUsed: Math.max(0, Number(raw.deepResearchUsed || 0) - bonusDeepResearch),
+      bonusMessagesGranted: prevBonusMsgs + bonusMessages,
+      bonusUploadsGranted: prevBonusUploads + bonusUploads,
+      bonusQuizzesGranted: prevBonusQuizzes + bonusQuizzes,
+      bonusDeepResearchGranted: prevBonusResearch + bonusDeepResearch,
+      messageLimit: Number(raw.messageLimit || DEFAULT_USAGE.messageLimit) + bonusMessages,
+      fileUploadLimit: Number(raw.fileUploadLimit || DEFAULT_USAGE.fileUploadLimit) + bonusUploads,
+      pdfStudyLimit: Number(raw.pdfStudyLimit || DEFAULT_USAGE.pdfStudyLimit) + bonusQuizzes,
+      deepResearchLimit:
+        Number(raw.deepResearchLimit || DEFAULT_USAGE.deepResearchLimit) + bonusDeepResearch,
     };
     saveToStorage(STORAGE_KEYS.USAGE, updated);
     this.emitChange();
   },
 
+  getStoredThreadsFallback(): Array<{
+    createdAt?: number;
+    messages?: Array<{ timestamp?: number; modelUsed?: string }>;
+  }> {
+    try {
+      const raw = localStorage.getItem('zeno_threads');
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  },
+
   getDailyStreak(
     threads?: Array<{ createdAt?: number; messages?: Array<{ timestamp?: number }> }>
   ): DailyStreakData {
+    const effectiveThreads =
+      Array.isArray(threads) && threads.length > 0 ? threads : this.getStoredThreadsFallback();
     const todayKey = toLocalDateKey();
     const raw = loadFromStorage<Partial<DailyStreakData>>(STORAGE_KEYS.DAILY_STREAK, {});
     const dateSet = new Set<string>(Array.isArray(raw.activeDates) ? raw.activeDates : []);
@@ -1418,9 +1472,9 @@ export const UserAccountStore = {
     }
 
     // Backfill active dates & interaction counts from conversation threads
-    if (Array.isArray(threads)) {
+    if (Array.isArray(effectiveThreads)) {
       const threadCounts: Record<string, number> = {};
-      for (const t of threads) {
+      for (const t of effectiveThreads) {
         if (typeof t.createdAt === 'number' && t.createdAt > 0) {
           const k = toLocalDateKey(t.createdAt);
           dateSet.add(k);
@@ -1671,7 +1725,9 @@ export const UserAccountStore = {
   getEvaluatedBadges(
     threads?: Array<{ createdAt?: number; messages?: Array<{ timestamp?: number; modelUsed?: string }> }>
   ): EvaluatedBadge[] {
-    const streak = this.getDailyStreak(threads);
+    const effectiveThreads =
+      Array.isArray(threads) && threads.length > 0 ? threads : this.getStoredThreadsFallback();
+    const streak = this.getDailyStreak(effectiveThreads);
     const usage = this.getUsage();
     const bookmarks = this.getBookmarks();
     const citations = this.getCitations();
@@ -1693,8 +1749,8 @@ export const UserAccountStore = {
     );
 
     const modelSet = new Set<string>(streak.exploredModels || ['zro-deepseek-v4.1-flash']);
-    if (Array.isArray(threads)) {
-      for (const t of threads) {
+    if (Array.isArray(effectiveThreads)) {
+      for (const t of effectiveThreads) {
         if (Array.isArray(t.messages)) {
           for (const m of t.messages) {
             if (m?.modelUsed) modelSet.add(String(m.modelUsed));
@@ -1751,15 +1807,20 @@ export const UserAccountStore = {
           currentValue = 1;
       }
 
-      const isUnlocked = currentValue >= b.targetValue;
-      const progressPct = Math.min(100, Math.round((currentValue / b.targetValue) * 100));
+      const isClaimed = claimedSet.has(b.id);
+      const isUnlocked = isClaimed || currentValue >= b.targetValue;
+      const progressPct = isUnlocked
+        ? 100
+        : Math.min(100, Math.round((currentValue / b.targetValue) * 100));
 
       return {
         ...b,
-        currentValue: Math.min(currentValue, b.targetValue * 10),
+        currentValue: isUnlocked
+          ? Math.max(currentValue, b.targetValue)
+          : Math.min(currentValue, b.targetValue * 10),
         progressPct,
         isUnlocked,
-        isClaimed: claimedSet.has(b.id),
+        isClaimed,
         isFeatured: featuredId === b.id,
       };
     });
@@ -1767,17 +1828,21 @@ export const UserAccountStore = {
 
   claimBadgeReward(
     badgeId: string,
-    allowPreviewGrant = false
+    _allowPreviewGrant = true
   ): {
     streak: DailyStreakData;
     rewarded: boolean;
     badge?: AchievementBadge;
   } {
+    const raw = loadFromStorage<Partial<DailyStreakData>>(STORAGE_KEYS.DAILY_STREAK, {});
     const current = this.getDailyStreak();
-    const evaluated = this.getEvaluatedBadges();
-    const target = evaluated.find((b) => b.id === badgeId);
-    if (!target || (!allowPreviewGrant && !target.isUnlocked) || target.isClaimed) {
-      return { streak: current, rewarded: false };
+    const target = ACHIEVEMENT_BADGES.find((b) => b.id === badgeId);
+    const alreadyClaimed =
+      (Array.isArray(raw.claimedBadges) && raw.claimedBadges.includes(badgeId)) ||
+      (Array.isArray(current.claimedBadges) && current.claimedBadges.includes(badgeId));
+
+    if (!target || alreadyClaimed) {
+      return { streak: current, rewarded: false, badge: target };
     }
 
     const updatedClaimed = Array.from(
@@ -1795,7 +1860,7 @@ export const UserAccountStore = {
     };
 
     saveToStorage(STORAGE_KEYS.DAILY_STREAK, updated);
-    this.grantReferrerBonusQuota(target.bonusUploads, target.bonusMessages);
+    this.grantReferrerBonusQuota(target.bonusUploads, target.bonusMessages, 5, 5);
     this.emitChange();
     this.syncProfileAndSettingsWithBackend({ streak: updated }).catch(() => {});
     return { streak: updated, rewarded: true, badge: target };
@@ -2062,22 +2127,21 @@ export const UserAccountStore = {
 
   claimStreakMilestone(
     milestoneDays: number,
-    allowPreviewGrant = false
+    _allowPreviewGrant = true
   ): {
     streak: DailyStreakData;
     rewarded: boolean;
     milestone?: StreakMilestone;
   } {
+    const raw = loadFromStorage<Partial<DailyStreakData>>(STORAGE_KEYS.DAILY_STREAK, {});
     const current = this.getDailyStreak();
     const milestone = STREAK_MILESTONES.find((m) => m.days === milestoneDays);
-    const maxReached = Math.max(current.currentStreak, current.longestStreak);
+    const alreadyClaimed =
+      (Array.isArray(raw.claimedMilestones) && raw.claimedMilestones.includes(milestoneDays)) ||
+      current.claimedMilestones.includes(milestoneDays);
 
-    if (
-      !milestone ||
-      (!allowPreviewGrant && maxReached < milestone.days) ||
-      current.claimedMilestones.includes(milestone.days)
-    ) {
-      return { streak: current, rewarded: false };
+    if (!milestone || alreadyClaimed) {
+      return { streak: current, rewarded: false, milestone };
     }
 
     const updatedClaimed = Array.from(
@@ -2105,7 +2169,7 @@ export const UserAccountStore = {
     };
 
     saveToStorage(STORAGE_KEYS.DAILY_STREAK, updated);
-    this.grantReferrerBonusQuota(milestone.bonusUploads, milestone.bonusMessages);
+    this.grantReferrerBonusQuota(milestone.bonusUploads, milestone.bonusMessages, 10, 5);
     this.emitChange();
     return { streak: updated, rewarded: true, milestone };
   },

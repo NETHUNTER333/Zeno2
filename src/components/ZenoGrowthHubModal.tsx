@@ -40,6 +40,11 @@ import {
   claimTopReferrerBonus,
   incrementLocalReferralCountForUser,
   LocalUserReferralRecord,
+  REFERRAL_8_REWARD_TIERS,
+  getEightReferralTrackerState,
+  addOneReferralProgress,
+  claimEightReferralTier,
+  EightReferralTrackerState,
 } from '../lib/growthStore';
 import {
   renderWeeklyReportCardToCanvas,
@@ -162,6 +167,9 @@ export const ZenoGrowthHubModal: React.FC<ZenoGrowthHubModalProps> = ({
     Record<string, { claimedAt: number; rewardLabel: string; referredCountAtClaim: number }>
   >(() => getClaimedReferrerBonuses());
   const [bonusClaimNotice, setBonusClaimNotice] = useState<string | null>(null);
+  const [eightRefState, setEightRefState] = useState<EightReferralTrackerState>(() =>
+    getEightReferralTrackerState()
+  );
 
   // --- TAB 5: FEEDBACK & SUGGESTIONS STATE ---
   const [feedbackCategory, setFeedbackCategory] = useState<ZenoFeedbackCategory>('feature');
@@ -218,34 +226,15 @@ export const ZenoGrowthHubModal: React.FC<ZenoGrowthHubModalProps> = ({
     };
   }, [isOpen, activeTab, discoverCategory, discoverQuery, discoverSort]);
 
-  // Load Referral Status, Leaderboards & Creator Profile when Passes tab opens
   useEffect(() => {
     if (!isOpen || activeTab !== 'passes') return;
-    setLeaderboardLoading(true);
-    setLocalReferralTracker(getLocalReferralTracker());
-    setClaimedBonusesMap(getClaimedReferrerBonuses());
+    setEightRefState(getEightReferralTrackerState());
     fetchMyReferralStatus().then((st) => {
-      if (st) setReferralStatus(st);
+      if (st) {
+        setReferralStatus(st);
+        setEightRefState(getEightReferralTrackerState());
+      }
     });
-    fetchGrowthLeaderboards()
-      .then((lb) => {
-        setEliteReferrers(lb.eliteReferrers);
-        setTopContributors(lb.topContributors);
-        setMyReferralRank(lb.myRank);
-        setLocalReferralTracker(getLocalReferralTracker());
-        setClaimedBonusesMap(getClaimedReferrerBonuses());
-      })
-      .finally(() => {
-        setLeaderboardLoading(false);
-      });
-    const uid = auth.currentUser?.uid;
-    if (uid) {
-      fetchCreatorPublicProfile(uid).then((res) => {
-        if (res?.profile) {
-          setCreatorProfile(res.profile);
-        }
-      });
-    }
   }, [isOpen, activeTab]);
 
   const handleClaimReferrerBonus = (entry: EliteReferrerLeaderboardEntry) => {
@@ -514,7 +503,7 @@ export const ZenoGrowthHubModal: React.FC<ZenoGrowthHubModalProps> = ({
             { id: 'discover', label: 'Discover' },
             { id: 'vault', label: `Knowledge Vault (${vaultItems.length})` },
             { id: 'weekly', label: 'Weekly Brief' },
-            { id: 'passes', label: 'Zeno Passes & Leaderboard' },
+            { id: 'passes', label: 'Referrals (8x Rewards)' },
             { id: 'feedback', label: 'Feedback' },
           ] as const
         ).map((t) => (
@@ -1319,568 +1308,238 @@ export const ZenoGrowthHubModal: React.FC<ZenoGrowthHubModalProps> = ({
           )}
 
           {/* =========================================================
-              TAB 4: ZENO PASSES, ELITE REFERRER LEADERBOARD & TOP CONTRIBUTORS
+              TAB 4: 8-REFERRAL TRACKER & REWARD CLAIMER (ZERO SLOP)
              ========================================================= */}
           {activeTab === 'passes' && (
-            <div className="space-y-6">
-              {/* Top Row: Zeno Passes Invite Loop + Creator Profile */}
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-                {/* Left Column: Zeno Passes Referral Loop */}
-                <div className={`lg:col-span-6 p-4 sm:p-5 rounded-2xl border space-y-4 ${cardSurface}`}>
+            <div className="max-w-3xl mx-auto space-y-5">
+              {/* Main 8-Referral Tracker & Link Card */}
+              <div className={`p-5 rounded-2xl border space-y-4 ${cardSurface}`}>
+                <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <div className="text-[11px] uppercase tracking-wider text-neutral-500 font-medium">
-                      Zeno Passes · Invitation System
+                      8-Referral Reward Tracker
                     </div>
-                    <h3 className="text-sm font-semibold mt-0.5 flex items-center gap-2">
-                      Invite Researchers & Friends
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                        5x Bonus Active
-                      </span>
+                    <h3 className="text-base font-semibold mt-0.5">
+                      Invite 8 Friends · Unlock Free Messages, Uploads & Study Quizzes
                     </h3>
                     <p
                       className={`text-xs mt-1 leading-relaxed ${
                         isDark ? 'text-neutral-400' : 'text-neutral-600'
                       }`}
                     >
-                      Share your personal Zeno Pass link. When a friend joins via your pass, you instantly earn a <strong>5x Referral Bonus: +25 file uploads, +125 AI messages</strong>, and premium luxury Share Card themes!
+                      Every friend you invite unlocks free AI messages, file/PDF uploads, Study Space quizzes, and Deep Research runs.
                     </p>
                   </div>
 
-                  <div className={`p-2.5 rounded-xl border flex items-center gap-2 ${subCardSurface}`}>
+                  <div className="text-right shrink-0">
+                    <div className="text-xl font-bold font-mono tabular-nums text-[#FC4C01]">
+                      {Math.min(eightRefState.count, 8)} / 8
+                    </div>
+                    <div className="text-[10px] uppercase tracking-wider text-neutral-500 font-mono">
+                      Referrals Completed
+                    </div>
+                  </div>
+                </div>
+
+                {/* 8-Step Segmented Progress Bar */}
+                <div className="space-y-1.5">
+                  <div className="grid grid-cols-8 gap-1.5">
+                    {Array.from({ length: 8 }).map((_, idx) => {
+                      const stepNum = idx + 1;
+                      const isDone = eightRefState.count >= stepNum;
+                      return (
+                        <div
+                          key={stepNum}
+                          className={`h-2.5 rounded-full transition-all ${
+                            isDone
+                              ? 'bg-[#FC4C01]'
+                              : isDark
+                              ? 'bg-white/[0.08]'
+                              : 'bg-black/[0.08]'
+                          }`}
+                          title={`Referral ${stepNum} of 8`}
+                        />
+                      );
+                    })}
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-neutral-500 font-mono">
+                    <span>0 Referrals</span>
+                    <span>
+                      {eightRefState.count >= 8
+                        ? 'All 8 Referrals Reached!'
+                        : `${Math.max(0, 8 - eightRefState.count)} more for Jackpot Drop`}
+                    </span>
+                    <span>8 Referrals</span>
+                  </div>
+                </div>
+
+                {/* Invite Link Copy Row + Record Referral */}
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                  <div
+                    className={`flex-1 p-2.5 rounded-xl border flex items-center gap-2 ${subCardSurface}`}
+                  >
                     <input
                       type="text"
                       readOnly
-                      value={
-                        referralStatus?.referralUrl || 'Generating your unique Zeno Pass link…'
-                      }
+                      value={referralStatus?.referralUrl || eightRefState.inviteUrl}
                       className="flex-1 bg-transparent font-mono text-xs outline-none truncate px-1"
                     />
                     <button
                       type="button"
                       onClick={() => {
-                        if (!referralStatus?.referralUrl) return;
-                        navigator.clipboard.writeText(referralStatus.referralUrl);
+                        const url = referralStatus?.referralUrl || eightRefState.inviteUrl;
+                        navigator.clipboard.writeText(url);
                         setCopiedRefLink(true);
                         trackGrowthEvent('share_action_initiated', { surface: 'referral_link' });
                         setTimeout(() => setCopiedRefLink(false), 2000);
                       }}
-                      className={`px-3.5 py-1.5 rounded-full text-xs font-semibold cursor-pointer shrink-0 ${primaryBtn}`}
+                      className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold cursor-pointer shrink-0 ${primaryBtn}`}
                     >
-                      {copiedRefLink ? 'Copied' : 'Copy Link'}
+                      {copiedRefLink ? 'Copied ✓' : 'Copy Invite Link'}
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-2.5">
-                    <div className={`p-3 rounded-xl border ${subCardSurface}`}>
-                      <div className="text-[10px] uppercase tracking-wider text-neutral-500 font-medium">
-                        Invite Code
-                      </div>
-                      <div className="text-xs font-mono font-semibold mt-1 truncate">
-                        {referralStatus?.code || '—'}
-                      </div>
-                    </div>
-                    <div className={`p-3 rounded-xl border ${subCardSurface}`}>
-                      <div className="text-[10px] uppercase tracking-wider text-neutral-500 font-medium">
-                        Link Visits
-                      </div>
-                      <div className="text-lg font-bold mt-0.5 tabular-nums">
-                        {referralStatus?.visitsCount || 0}
-                      </div>
-                    </div>
-                    <div className={`p-3 rounded-xl border ${subCardSurface}`}>
-                      <div className="text-[10px] uppercase tracking-wider text-neutral-500 font-medium">
-                        Claimed Passes
-                      </div>
-                      <div className="text-lg font-bold mt-0.5 tabular-nums">
-                        {referralStatus?.verifiedReferralsCount || 0}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Redeem a Friend's Zeno Pass Code */}
-                  <div className={`p-3.5 rounded-xl border space-y-2 ${subCardSurface}`}>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-[11px] font-semibold">
-                        Claim a friend's Zeno Pass code
-                      </span>
-                      <span className="text-[10px] text-neutral-500">14-day window</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        value={claimPassInput}
-                        onChange={(e) => setClaimPassInput(e.target.value)}
-                        placeholder="Enter pass code (e.g. zp_elena94x)"
-                        className={`flex-1 px-3 py-1.5 rounded-full border font-mono text-xs outline-none ${inputSurface}`}
-                      />
-                      <button
-                        type="button"
-                        disabled={claimingPass || !claimPassInput.trim()}
-                        onClick={async () => {
-                          setClaimingPass(true);
-                          setClaimPassFeedback(null);
-                          try {
-                            const res = await claimReferralCodeManual(claimPassInput);
-                            setClaimPassFeedback(res);
-                            if (res.ok) {
-                              setClaimPassInput('');
-                              const [st, lb] = await Promise.all([
-                                fetchMyReferralStatus(),
-                                fetchGrowthLeaderboards(),
-                              ]);
-                              if (st) setReferralStatus(st);
-                              setEliteReferrers(lb.eliteReferrers);
-                              setTopContributors(lb.topContributors);
-                              setMyReferralRank(lb.myRank);
-                            }
-                          } finally {
-                            setClaimingPass(false);
-                          }
-                        }}
-                        className={`px-3.5 py-1.5 rounded-full text-xs font-semibold cursor-pointer disabled:opacity-50 ${primaryBtn}`}
-                      >
-                        {claimingPass ? 'Verifying…' : 'Claim Pass'}
-                      </button>
-                    </div>
-                    {claimPassFeedback && (
-                      <div className="text-[11px] font-medium">{claimPassFeedback.message}</div>
-                    )}
-                  </div>
-
-                  <div className="flex items-center justify-between gap-2 pt-1">
-                    <div className="text-xs text-neutral-500">
-                      Referred so far:{' '}
-                      <strong className={isDark ? 'text-white' : 'text-black'}>
-                        {myReferralRank
-                          ? localReferralTracker[myReferralRank.uid]?.referredCount ??
-                            myReferralRank.claimedReferrals
-                          : referralStatus?.verifiedReferralsCount || 0}
-                      </strong>{' '}
-                      · Themes: <span className="font-mono">{unlockedThemes.join(', ')}</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => handleIncrementLocalReferral(myReferralRank)}
-                      className={`px-3 py-1.5 rounded-full border text-[11px] font-medium transition-colors cursor-pointer shrink-0 ${secondaryBtn}`}
-                    >
-                      +1 Record Referral
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const updated = addOneReferralProgress();
+                      setEightRefState(updated);
+                      setBonusClaimNotice(
+                        `Referral recorded (${updated.count}/8). Claim your unlocked rewards below!`
+                      );
+                      setTimeout(() => setBonusClaimNotice(null), 4000);
+                    }}
+                    className={`px-4 py-2.5 rounded-xl border text-xs font-semibold cursor-pointer shrink-0 transition-colors ${secondaryBtn}`}
+                  >
+                    +1 Record Referral
+                  </button>
                 </div>
 
-                {/* Right Column: Optional Public Creator Profile */}
-                <div className={`lg:col-span-6 p-4 sm:p-5 rounded-2xl border space-y-4 ${cardSurface}`}>
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <h3 className="text-sm font-semibold">Optional Public Creator Profile</h3>
-                      <p className="text-[11px] text-neutral-500">
-                        Control what appears when users click your name on a published Zeno Page.
-                      </p>
-                    </div>
+                {/* Redeem Friend Pass Code */}
+                <div className={`p-3.5 rounded-xl border space-y-2 ${subCardSurface}`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-semibold">Have a friend's Zeno Pass code?</span>
+                    <span className="text-[11px] font-mono text-neutral-500">
+                      Your Code: {referralStatus?.code || eightRefState.code}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={claimPassInput}
+                      onChange={(e) => setClaimPassInput(e.target.value)}
+                      placeholder="Enter pass code (e.g. zp_98124)"
+                      className={`flex-1 px-3 py-1.5 rounded-lg border font-mono text-xs outline-none ${inputSurface}`}
+                    />
                     <button
                       type="button"
-                      onClick={() =>
-                        setCreatorProfile((p) => ({ ...p, isPublic: !p.isPublic }))
-                      }
-                      className={`px-3 py-1 rounded-full border text-xs font-medium cursor-pointer shrink-0 ${
-                        creatorProfile.isPublic ? primaryBtn : secondaryBtn
-                      }`}
+                      disabled={claimingPass || !claimPassInput.trim()}
+                      onClick={async () => {
+                        setClaimingPass(true);
+                        setClaimPassFeedback(null);
+                        try {
+                          const res = await claimReferralCodeManual(claimPassInput);
+                          setClaimPassFeedback(res);
+                          const updated = addOneReferralProgress();
+                          setEightRefState(updated);
+                          if (res.ok) {
+                            setClaimPassInput('');
+                          }
+                        } finally {
+                          setClaimingPass(false);
+                        }
+                      }}
+                      className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50 ${primaryBtn}`}
                     >
-                      {creatorProfile.isPublic ? 'Public Profile On' : 'Private Profile'}
+                      {claimingPass ? 'Verifying…' : 'Redeem Code'}
                     </button>
                   </div>
-
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block text-[11px] text-neutral-500 mb-1">
-                        Public Display Name
-                      </label>
-                      <input
-                        type="text"
-                        value={creatorProfile.displayName}
-                        onChange={(e) =>
-                          setCreatorProfile((p) => ({ ...p, displayName: e.target.value }))
-                        }
-                        maxLength={60}
-                        className={`w-full px-3.5 py-2 rounded-xl border text-xs outline-none ${inputSurface}`}
-                      />
+                  {claimPassFeedback && (
+                    <div className="text-[11px] font-medium text-[#FC4C01]">
+                      {claimPassFeedback.message}
                     </div>
-
-                    <div>
-                      <label className="block text-[11px] text-neutral-500 mb-1">
-                        Short Biography / Research Focus
-                      </label>
-                      <textarea
-                        rows={3}
-                        value={creatorProfile.bio || ''}
-                        onChange={(e) =>
-                          setCreatorProfile((p) => ({ ...p, bio: e.target.value }))
-                        }
-                        maxLength={280}
-                        placeholder="e.g. Exploring ML systems, physics, and study workflows..."
-                        className={`w-full px-3.5 py-2 rounded-xl border text-xs outline-none ${inputSurface}`}
-                      />
-                    </div>
-
-                    <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-                      <span className="text-[11px] text-neutral-500">
-                        Email addresses and private notes are never exposed publicly.
-                      </span>
-                      <button
-                        type="button"
-                        disabled={savingProfile}
-                        onClick={handleSaveCreatorProfile}
-                        className={`px-4 py-2 rounded-full text-xs font-semibold cursor-pointer ${primaryBtn}`}
-                      >
-                        {savingProfile
-                          ? 'Saving…'
-                          : profileSavedToast
-                          ? 'Saved Profile ✓'
-                          : 'Save Profile'}
-                      </button>
-                    </div>
-                  </div>
+                  )}
                 </div>
               </div>
 
-              {/* =========================================================
-                  ELITE REFERRER LEADERBOARD & TOP CONTRIBUTORS SECTION
-                 ========================================================= */}
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-                {/* Left 7 Cols: Elite Referrer Leaderboard */}
-                <div className={`lg:col-span-7 p-4 sm:p-5 rounded-2xl border space-y-4 ${cardSurface}`}>
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <div className="text-[10px] uppercase tracking-wider text-neutral-500 font-medium">
-                        Verified Referral Rankings
-                      </div>
-                      <h3 className="text-sm sm:text-base font-semibold">
-                        Elite Referrer Leaderboard
-                      </h3>
-                    </div>
-
-                    {myReferralRank && (
-                      <div
-                        className={`px-3 py-1.5 rounded-full border text-[11px] flex items-center gap-2 ${subCardSurface}`}
-                      >
-                        <span className="text-neutral-500">Your Rank:</span>
-                        <strong>#{myReferralRank.rank}</strong>
-                        <span className="opacity-30">|</span>
-                        <span>
-                          {localReferralTracker[myReferralRank.uid]?.referredCount ??
-                            myReferralRank.claimedReferrals}{' '}
-                          Referred
-                        </span>
-                      </div>
-                    )}
-                  </div>
-
-                  {bonusClaimNotice && (
-                    <div
-                      className={`p-3 rounded-xl border text-xs flex items-center justify-between gap-2 ${subCardSurface}`}
-                    >
-                      <span className="font-medium">{bonusClaimNotice}</span>
-                      <button
-                        type="button"
-                        onClick={() => setBonusClaimNotice(null)}
-                        className="text-[11px] text-neutral-500 hover:text-current cursor-pointer"
-                      >
-                        Dismiss
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Top 3 Podium Cards */}
-                  {eliteReferrers.length >= 3 && (
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      {eliteReferrers.slice(0, 3).map((leader) => {
-                        const trackedCount =
-                          localReferralTracker[leader.uid]?.referredCount ??
-                          leader.claimedReferrals;
-                        const isBonusClaimed = Boolean(
-                          claimedBonusesMap[leader.uid] ||
-                            localReferralTracker[leader.uid]?.bonusClaimed
-                        );
-                        return (
-                          <div
-                            key={leader.uid}
-                            className={`p-3.5 rounded-xl border flex flex-col justify-between gap-3 ${subCardSurface}`}
-                          >
-                            <div className="flex items-center justify-between">
-                              <span
-                                className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                                  isDark
-                                    ? 'bg-white text-black'
-                                    : 'bg-neutral-900 text-white'
-                                }`}
-                              >
-                                RANK #{leader.rank}
-                              </span>
-                              <span className="text-[10px] text-neutral-500 tabular-nums">
-                                {leader.conversionRate}% conv
-                              </span>
-                            </div>
-
-                            <div>
-                              <div className="text-xs font-semibold truncate">
-                                {leader.displayName} {leader.isCurrentUser ? '(You)' : ''}
-                              </div>
-                              <div className="text-[11px] text-neutral-500 truncate">
-                                @{leader.username} · {leader.tier}
-                              </div>
-                            </div>
-
-                            <div
-                              className={`pt-2.5 border-t space-y-2 ${
-                                isDark ? 'border-white/[0.06]' : 'border-black/[0.06]'
-                              }`}
-                            >
-                              <div className="flex items-end justify-between">
-                                <div>
-                                  <div className="text-[9px] uppercase text-neutral-500">
-                                    Referred
-                                  </div>
-                                  <div className="text-base font-bold tabular-nums">
-                                    {trackedCount}
-                                  </div>
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={() => handleIncrementLocalReferral(leader)}
-                                  className="text-[10px] text-neutral-500 hover:text-current cursor-pointer"
-                                >
-                                  +1 ref
-                                </button>
-                              </div>
-
-                              <button
-                                type="button"
-                                disabled={isBonusClaimed}
-                                onClick={() => handleClaimReferrerBonus(leader)}
-                                className={`w-full py-1.5 px-3 rounded-full text-[11px] font-semibold transition-colors cursor-pointer ${
-                                  isBonusClaimed
-                                    ? 'opacity-50 cursor-default border border-current/20'
-                                    : primaryBtn
-                                }`}
-                              >
-                                {isBonusClaimed ? 'Bonus Claimed' : 'Claim Bonus'}
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {/* Full Ranked Table */}
-                  {leaderboardLoading ? (
-                    <div className="py-8 text-center text-neutral-500">
-                      Loading leaderboard…
-                    </div>
-                  ) : (
-                    <div className={`rounded-xl border overflow-hidden ${subCardSurface}`}>
-                      <div
-                        className={`px-3.5 py-2.5 border-b grid grid-cols-12 text-[10px] uppercase tracking-wider text-neutral-500 font-medium ${
-                          isDark ? 'border-white/[0.06]' : 'border-black/[0.06]'
-                        }`}
-                      >
-                        <div className="col-span-1">#</div>
-                        <div className="col-span-5">Researcher</div>
-                        <div className="col-span-3 text-right">Referred</div>
-                        <div className="col-span-3 text-right">Bonus</div>
-                      </div>
-
-                      <div
-                        className={`divide-y max-h-80 overflow-y-auto ${
-                          isDark ? 'divide-white/[0.06]' : 'divide-black/[0.06]'
-                        }`}
-                      >
-                        {eliteReferrers.map((entry) => {
-                          const trackedCount =
-                            localReferralTracker[entry.uid]?.referredCount ??
-                            entry.claimedReferrals;
-                          const isBonusClaimed = Boolean(
-                            claimedBonusesMap[entry.uid] ||
-                              localReferralTracker[entry.uid]?.bonusClaimed
-                          );
-                          const canClaimBonus = trackedCount >= 1;
-
-                          return (
-                            <div
-                              key={entry.uid}
-                              className={`px-3.5 py-2.5 grid grid-cols-12 items-center gap-2 text-xs ${
-                                entry.isCurrentUser
-                                  ? isDark
-                                    ? 'bg-white/[0.04]'
-                                    : 'bg-black/[0.03]'
-                                  : ''
-                              }`}
-                            >
-                              <div className="col-span-1 font-semibold tabular-nums">
-                                {entry.rank}
-                              </div>
-
-                              <div className="col-span-5 min-w-0">
-                                <div className="font-medium truncate">
-                                  {entry.displayName} {entry.isCurrentUser ? '(You)' : ''}
-                                </div>
-                                <div className="text-[10px] text-neutral-500 truncate">
-                                  @{entry.username} · {entry.tier}
-                                </div>
-                              </div>
-
-                              <div className="col-span-3 text-right tabular-nums">
-                                <span className="font-semibold">{trackedCount}</span>
-                                <span className="block text-[10px] text-neutral-500">
-                                  {entry.visitsCount} visits
-                                </span>
-                              </div>
-
-                              <div className="col-span-3 flex justify-end">
-                                {isBonusClaimed ? (
-                                  <span className="text-[10px] text-neutral-500 font-medium">
-                                    Claimed
-                                  </span>
-                                ) : canClaimBonus ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleClaimReferrerBonus(entry)}
-                                    className={`px-2.5 py-1 rounded-full text-[10px] font-semibold cursor-pointer ${primaryBtn}`}
-                                  >
-                                    Claim
-                                  </button>
-                                ) : (
-                                  <span className="text-[10px] text-neutral-500">1+ ref</span>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
+              {bonusClaimNotice && (
+                <div className="px-4 py-3 rounded-xl border border-[#FC4C01]/40 bg-[#FC4C01]/10 text-xs font-medium flex items-center justify-between gap-2">
+                  <span>{bonusClaimNotice}</span>
+                  <button
+                    type="button"
+                    onClick={() => setBonusClaimNotice(null)}
+                    className="text-[11px] opacity-75 hover:opacity-100 cursor-pointer"
+                  >
+                    Dismiss
+                  </button>
                 </div>
+              )}
 
-                {/* Right 5 Cols: Top Contributors Section */}
-                <div className={`lg:col-span-5 p-4 sm:p-5 rounded-2xl border space-y-4 ${cardSurface}`}>
-                  <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <div className="text-[10px] uppercase tracking-wider text-neutral-500 font-medium">
-                        Community Impact
-                      </div>
-                      <h3 className="text-sm sm:text-base font-semibold">Top Contributors</h3>
-                    </div>
-                    <span className="text-[10px] text-neutral-500">By Saves & Forks</span>
-                  </div>
+              {/* 4 Milestone Reward Tiers up to 8 Referrals */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                {REFERRAL_8_REWARD_TIERS.map((tier) => {
+                  const isClaimed = eightRefState.claimedTiers.includes(tier.targetReferrals);
+                  const isUnlocked = eightRefState.count >= tier.targetReferrals;
 
-                  <div className="space-y-3">
-                    {topContributors.map((contrib) => (
-                      <div
-                        key={contrib.uid + contrib.username}
-                        className={`p-3.5 rounded-xl border space-y-2.5 ${subCardSurface}`}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-1.5">
-                              <span
-                                className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                                  isDark
-                                    ? 'bg-white/[0.08] text-white'
-                                    : 'bg-black/[0.08] text-black'
-                                }`}
-                              >
-                                #{contrib.rank}
-                              </span>
-                              <h4 className="text-xs font-semibold truncate">
-                                {contrib.displayName}
-                              </h4>
-                            </div>
-                            <div className="text-[11px] text-neutral-500 mt-0.5">
-                              @{contrib.username} · {contrib.badge}
-                            </div>
-                          </div>
-
-                          <span
-                            className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold tabular-nums shrink-0 ${
-                              isDark
-                                ? 'bg-white/[0.06] text-neutral-200'
-                                : 'bg-neutral-100 text-neutral-800'
-                            }`}
-                          >
-                            {contrib.impactScore} pts
+                  return (
+                    <div
+                      key={tier.targetReferrals}
+                      className={`p-4 rounded-2xl border flex flex-col justify-between gap-3 transition-colors ${
+                        isClaimed
+                          ? subCardSurface
+                          : isUnlocked
+                          ? 'border-[#FC4C01]/50 bg-[#FC4C01]/[0.06]'
+                          : cardSurface
+                      }`}
+                    >
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-semibold">{tier.title}</span>
+                          <span className="text-[11px] font-mono tabular-nums text-[#FC4C01] font-semibold">
+                            {Math.min(eightRefState.count, tier.targetReferrals)}/{tier.targetReferrals} Refs
                           </span>
                         </div>
-
-                        <p className="text-[11px] text-neutral-500 line-clamp-2">{contrib.bio}</p>
-
-                        <div className="grid grid-cols-3 gap-2 pt-1">
-                          <div
-                            className={`px-2.5 py-2 rounded-lg border ${
-                              isDark
-                                ? 'bg-[#121215] border-white/[0.06]'
-                                : 'bg-[#f8f8fa] border-black/[0.06]'
-                            }`}
-                          >
-                            <div className="text-[9px] uppercase text-neutral-500">Published</div>
-                            <div className="text-xs font-bold mt-0.5 tabular-nums">
-                              {contrib.publishedCount}
-                            </div>
-                          </div>
-                          <div
-                            className={`px-2.5 py-2 rounded-lg border ${
-                              isDark
-                                ? 'bg-[#121215] border-white/[0.06]'
-                                : 'bg-[#f8f8fa] border-black/[0.06]'
-                            }`}
-                          >
-                            <div className="text-[9px] uppercase text-neutral-500">Saves</div>
-                            <div className="text-xs font-bold mt-0.5 tabular-nums">
-                              {contrib.totalSaves}
-                            </div>
-                          </div>
-                          <div
-                            className={`px-2.5 py-2 rounded-lg border ${
-                              isDark
-                                ? 'bg-[#121215] border-white/[0.06]'
-                                : 'bg-[#f8f8fa] border-black/[0.06]'
-                            }`}
-                          >
-                            <div className="text-[9px] uppercase text-neutral-500">Forks</div>
-                            <div className="text-xs font-bold mt-0.5 tabular-nums">
-                              {contrib.totalForks}
-                            </div>
-                          </div>
+                        <div className="text-[11px] text-neutral-500">{tier.subtitle}</div>
+                        <div className="pt-1 text-[11px] font-mono text-[#FC4C01] space-x-2">
+                          <span>+{tier.bonusMessages} Msgs</span>
+                          <span>·</span>
+                          <span>+{tier.bonusUploads} Uploads</span>
+                          <span>·</span>
+                          <span>+{tier.bonusQuizzes} Quizzes</span>
                         </div>
+                      </div>
 
-                        {contrib.topArtifactTitle && (
-                          <div
-                            className={`pt-2 border-t flex items-center justify-between gap-2 ${
-                              isDark ? 'border-white/[0.06]' : 'border-black/[0.06]'
+                      <div className="pt-2 border-t border-neutral-500/10 flex items-center justify-between gap-2">
+                        <span className="text-[10px] font-mono text-neutral-500">
+                          +{tier.bonusDeepResearch} Deep Research
+                        </span>
+
+                        {isClaimed ? (
+                          <span className="text-xs font-mono font-semibold text-emerald-500">
+                            Claimed ✓
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const res = claimEightReferralTier(tier.targetReferrals);
+                              setEightRefState(res.state);
+                              setBonusClaimNotice(res.message);
+                              setTimeout(() => setBonusClaimNotice(null), 4500);
+                            }}
+                            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-colors ${
+                              isUnlocked
+                                ? 'bg-[#FC4C01] hover:bg-[#e04300] text-white'
+                                : primaryBtn
                             }`}
                           >
-                            <div className="text-[11px] text-neutral-500 truncate">
-                              Top guide:{' '}
-                              <span className={isDark ? 'text-neutral-200' : 'text-neutral-800'}>
-                                {contrib.topArtifactTitle}
-                              </span>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setDiscoverQuery(contrib.displayName);
-                                setDiscoverCategory('All');
-                                setActiveTab('discover');
-                              }}
-                              className="text-[11px] font-semibold hover:underline shrink-0 cursor-pointer"
-                            >
-                              View →
-                            </button>
-                          </div>
+                            {isUnlocked ? 'Claim Reward' : `Claim (+${tier.bonusMessages} Msgs)`}
+                          </button>
                         )}
                       </div>
-                    ))}
-                  </div>
-                </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}

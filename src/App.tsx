@@ -45,6 +45,7 @@ import { ZenoGrowthHubModal, GrowthHubTab } from './components/ZenoGrowthHubModa
 import { PublicArtifactView } from './components/PublicArtifactView';
 import { StreakReminderToast } from './components/StreakReminderToast';
 import { AchievementToast } from './components/AchievementToast';
+import { HomeReferralPopup } from './components/HomeReferralPopup';
 import {
   captureReferralFromUrlIfPresent,
   claimPendingReferralIfEligible,
@@ -1921,8 +1922,9 @@ export default function App() {
                     <GrokLogo size="lg" isDark={isDark} />
                   </div>
 
-                  {/* Bottom Anchored Area: Prompt Input */}
+                  {/* Bottom Anchored Area: 8-Referral Notification Popup & Prompt Input */}
                   <div className="w-full max-w-3xl flex flex-col items-center mt-auto">
+                    <HomeReferralPopup theme={theme} />
                     {/* ChatInput (@kobra/chat-input with @kobra/chat-history & upward model selector) */}
                     <div className="w-full">
                       <ChatInput

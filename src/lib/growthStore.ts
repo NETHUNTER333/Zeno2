@@ -1943,3 +1943,181 @@ export async function fetchMySubmittedFeedback(): Promise<ZenoFeedbackSubmission
   } catch {}
   return local;
 }
+
+// ============================================================================
+// 8-REFERRAL TRACKER & REWARD GIVER (MESSAGES, UPLOADS, QUIZZES & RESEARCH)
+// ============================================================================
+
+export interface ReferralRewardTier {
+  targetReferrals: number;
+  title: string;
+  subtitle: string;
+  bonusMessages: number;
+  bonusUploads: number;
+  bonusQuizzes: number;
+  bonusDeepResearch: number;
+}
+
+export const REFERRAL_8_REWARD_TIERS: ReferralRewardTier[] = [
+  {
+    targetReferrals: 1,
+    title: '1 Referral · Starter Pack',
+    subtitle: 'First friend invited',
+    bonusMessages: 150,
+    bonusUploads: 30,
+    bonusQuizzes: 15,
+    bonusDeepResearch: 10,
+  },
+  {
+    targetReferrals: 3,
+    title: '3 Referrals · Study Boost',
+    subtitle: '3 friends invited',
+    bonusMessages: 350,
+    bonusUploads: 75,
+    bonusQuizzes: 35,
+    bonusDeepResearch: 20,
+  },
+  {
+    targetReferrals: 5,
+    title: '5 Referrals · Power Pack',
+    subtitle: '5 friends invited',
+    bonusMessages: 700,
+    bonusUploads: 150,
+    bonusQuizzes: 60,
+    bonusDeepResearch: 40,
+  },
+  {
+    targetReferrals: 8,
+    title: '8 Referrals · Jackpot Drop',
+    subtitle: 'Complete all 8 referrals',
+    bonusMessages: 1800,
+    bonusUploads: 400,
+    bonusQuizzes: 150,
+    bonusDeepResearch: 100,
+  },
+];
+
+const EIGHT_REF_STORAGE_KEY = 'zeno_eight_referral_rewards_v1';
+const HOME_REF_POPUP_DISMISSED_KEY = 'zeno_home_ref_popup_dismissed_v1';
+
+export interface EightReferralTrackerState {
+  count: number;
+  target: number;
+  claimedTiers: number[];
+  code: string;
+  inviteUrl: string;
+  dismissedOnHome: boolean;
+}
+
+export function getEightReferralTrackerState(): EightReferralTrackerState {
+  const origin =
+    typeof window !== 'undefined' ? window.location.origin : 'https://zeno0x.vercel.app';
+  const myUid = getOrCreateClientId();
+  const cachedRef = safeLoad<ZenoReferralStatus | null>(GROWTH_KEYS.REFERRAL_STATUS, null);
+  const tracker = getLocalReferralTracker();
+  const savedRewards = safeLoad<{ count?: number; claimedTiers?: number[] }>(
+    EIGHT_REF_STORAGE_KEY,
+    {}
+  );
+
+  const code =
+    cachedRef?.referralCode ||
+    cachedRef?.code ||
+    `zp_${myUid.replace(/[^a-zA-Z0-9]/g, '').slice(-8)}`;
+  const inviteUrl = `${origin}/?ref=${encodeURIComponent(code)}`;
+
+  const count = Math.max(
+    0,
+    Number(savedRewards.count || 0),
+    Number(tracker[myUid]?.referredCount || 0),
+    Number(cachedRef?.validatedSignupsCount || 0),
+    Number(cachedRef?.verifiedReferralsCount || 0)
+  );
+
+  const claimedTiers = Array.isArray(savedRewards.claimedTiers)
+    ? Array.from(new Set(savedRewards.claimedTiers.map(Number).filter((n) => n > 0))).sort(
+        (a, b) => a - b
+      )
+    : [];
+
+  let dismissedOnHome = false;
+  try {
+    dismissedOnHome = localStorage.getItem(HOME_REF_POPUP_DISMISSED_KEY) === 'true';
+  } catch {}
+
+  return {
+    count,
+    target: 8,
+    claimedTiers,
+    code,
+    inviteUrl,
+    dismissedOnHome,
+  };
+}
+
+export function setHomeReferralPopupDismissed(dismissed: boolean): void {
+  try {
+    if (dismissed) {
+      localStorage.setItem(HOME_REF_POPUP_DISMISSED_KEY, 'true');
+    } else {
+      localStorage.removeItem(HOME_REF_POPUP_DISMISSED_KEY);
+    }
+  } catch {}
+  emitGrowthUpdate();
+}
+
+export function addOneReferralProgress(): EightReferralTrackerState {
+  const state = getEightReferralTrackerState();
+  const nextCount = state.count + 1;
+  safeSave(EIGHT_REF_STORAGE_KEY, {
+    count: nextCount,
+    claimedTiers: state.claimedTiers,
+  });
+  incrementLocalReferralCountForUser({
+    uid: getOrCreateClientId(),
+    referralCode: state.code,
+    delta: 1,
+  });
+  emitGrowthUpdate();
+  return getEightReferralTrackerState();
+}
+
+export function claimEightReferralTier(targetReferrals: number): {
+  ok: boolean;
+  tier?: ReferralRewardTier;
+  message: string;
+  state: EightReferralTrackerState;
+} {
+  const state = getEightReferralTrackerState();
+  const tier = REFERRAL_8_REWARD_TIERS.find((t) => t.targetReferrals === targetReferrals);
+  if (!tier) {
+    return { ok: false, message: 'Invalid reward tier.', state };
+  }
+  if (state.claimedTiers.includes(tier.targetReferrals)) {
+    return { ok: false, tier, message: `${tier.title} already claimed.`, state };
+  }
+
+  const nextClaimed = Array.from(new Set([...state.claimedTiers, tier.targetReferrals])).sort(
+    (a, b) => a - b
+  );
+  safeSave(EIGHT_REF_STORAGE_KEY, {
+    count: Math.max(state.count, tier.targetReferrals),
+    claimedTiers: nextClaimed,
+  });
+
+  UserAccountStore.grantReferrerBonusQuota(
+    tier.bonusUploads,
+    tier.bonusMessages,
+    tier.bonusQuizzes,
+    tier.bonusDeepResearch
+  );
+
+  emitGrowthUpdate();
+  return {
+    ok: true,
+    tier,
+    message: `Unlocked & claimed ${tier.title}: +${tier.bonusMessages} Messages, +${tier.bonusUploads} Uploads, +${tier.bonusQuizzes} Quizzes!`,
+    state: getEightReferralTrackerState(),
+  };
+}
+

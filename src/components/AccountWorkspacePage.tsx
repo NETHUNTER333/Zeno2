@@ -662,36 +662,6 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
                     </div>
                   </div>
 
-                  {/* Milestone Achievement Toast Triggers (7-Day, 30-Day, 100-Day) */}
-                  <div
-                    className={`p-3 rounded-xl border flex flex-wrap items-center justify-between gap-2 ${
-                      isDark
-                        ? 'bg-black/40 border-white/10'
-                        : 'bg-neutral-50 border-black/10'
-                    }`}
-                  >
-                    <div className="text-xs">
-                      <span className="font-semibold">Achievement Unlocked Toast System</span>
-                      <span className="text-neutral-400 ml-1.5">
-                        Triggers automatically on 7-day, 30-day, and 100-day streak milestones:
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      {[7, 30, 100].map((mDays) => (
-                        <button
-                          key={mDays}
-                          type="button"
-                          onClick={() => {
-                            UserAccountStore.triggerMilestoneToastPreview(mDays);
-                          }}
-                          className="px-2.5 py-1 rounded-lg border border-[#FC4C01]/40 bg-[#FC4C01]/10 hover:bg-[#FC4C01]/20 text-[#FC4C01] text-[11px] font-mono tabular-nums font-semibold cursor-pointer transition-colors"
-                        >
-                          Preview {mDays}-Day Unlock
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 pt-1">
                     {badges.map((b) => (
                       <div
@@ -722,7 +692,7 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
 
                         <div className="flex items-center justify-between gap-1.5 pt-1.5 border-t border-neutral-500/10">
                           <span className="text-[10px] font-mono tabular-nums text-[#FC4C01]">
-                            +{b.bonusMessages} Msgs
+                            +{b.bonusMessages} Msgs · +{b.bonusUploads} Uploads
                           </span>
                           <div className="flex items-center gap-1">
                             {b.isUnlocked && !b.isFeatured && (
@@ -756,14 +726,15 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
                                 type="button"
                                 onClick={() => {
                                   const res = UserAccountStore.claimBadgeReward(b.id);
+                                  setBadges(UserAccountStore.getEvaluatedBadges(threads));
+                                  setStreak(UserAccountStore.getDailyStreak(threads));
                                   if (res.rewarded) {
-                                    setBadges(UserAccountStore.getEvaluatedBadges(threads));
                                     triggerSuccessAlert(
-                                      `Claimed ${b.title} (+${b.bonusMessages} msgs)`
+                                      `Claimed ${b.title} (+${b.bonusMessages} msgs, +${b.bonusUploads} uploads)`
                                     );
                                   }
                                 }}
-                                className="px-2 py-0.5 rounded bg-[#FC4C01] text-white text-[10px] font-semibold inline-flex items-center gap-1 cursor-pointer"
+                                className="px-2.5 py-1 rounded-lg bg-[#FC4C01] hover:bg-[#e04300] text-white text-[10px] font-semibold inline-flex items-center gap-1 cursor-pointer transition-colors"
                               >
                                 <Gift className="w-2.5 h-2.5" /> Claim
                               </button>
