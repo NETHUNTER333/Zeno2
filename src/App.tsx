@@ -1725,22 +1725,20 @@ export default function App() {
                           isOpen: true,
                           highlightPlan:
                             UserAccountStore.getNormalizedPlan() === 'free' ? 'spark' : 'fire',
-                          limitReason: `PDF Study Studio limit reached (${u.pdfStudyUsed}/${u.pdfStudyLimit} sessions used). Upgrade to Spark ($1/mo) for 20 sessions/day or Fire ($5/mo) for unlimited PDF Studio.`,
+                          limitReason: `Study Space limit reached (${u.pdfStudyUsed}/${u.pdfStudyLimit} sessions used). Upgrade to Spark ($1/mo) for 20 sessions/day or Fire ($5/mo) for unlimited Study Space.`,
                         });
                         return;
                       }
                       UserAccountStore.recordPdfStudySession();
-                      setPdfStudioState({
-                        isOpen: true,
-                        initialTab: 'quiz',
-                      });
+                      setActiveStudyVideo(null);
+                      setCurrentView('study');
                     }}
                     className={`pointer-events-auto flex items-center gap-1.5 px-3 py-1.5 rounded-full border backdrop-blur-2xl backdrop-saturate-150 text-[11px] font-semibold tracking-tight transition-all cursor-pointer whitespace-nowrap active:scale-95 ${
                       isDark
                         ? 'bg-neutral-900/55 hover:bg-neutral-800/65 border-white/[0.16] text-white shadow-[0_8px_32px_rgba(0,0,0,0.55)]'
                         : 'bg-white/65 hover:bg-white/85 border-black/[0.1] text-[#0d0d0d] shadow-[0_8px_32px_rgba(0,0,0,0.1)]'
                     }`}
-                    title="Open PDF Study Studio"
+                    title="Open Study Space"
                   >
                     <span>Study</span>
                   </button>

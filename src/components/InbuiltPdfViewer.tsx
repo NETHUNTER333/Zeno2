@@ -49,6 +49,7 @@ import {
 } from '../lib/pdfStudyEngine';
 
 export type PdfStudioTab =
+  | 'learn'
   | 'quiz'
   | 'flashcards'
   | 'summary'
@@ -908,6 +909,7 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
                   <div className="space-y-0.5">
                     {(
                       [
+                        { id: 'learn', label: 'Learn Tab', meta: 'All Tools' },
                         {
                           id: 'quiz',
                           label: 'Quiz',
@@ -1240,6 +1242,7 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
                 <div className="flex items-center gap-1.5 whitespace-nowrap">
                   {(
                     [
+                      { id: 'learn', label: 'Learn Tab' },
                       {
                         id: 'quiz',
                         label: `Quiz${allQuizItems.length ? ` (${allQuizItems.length})` : ''}`,
@@ -1311,6 +1314,103 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
 
               {/* Studio Content Viewport */}
               <div className="flex-1 overflow-y-auto px-3.5 sm:px-6 py-4 scrollbar-thin">
+                {/* ========================================================= */}
+                {/* TAB 0: LEARN TAB (2-Column Monochrome Options Grid)       */}
+                {/* ========================================================= */}
+                {studioTab === 'learn' && (
+                  <div className="max-w-3xl mx-auto space-y-6">
+                    <div className="space-y-3">
+                      <div className={`text-xs font-medium ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
+                        Generate
+                      </div>
+                      <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
+                        {[
+                          { label: 'Podcast / Audio', icon: Volume2, onClick: () => handleToggleReadAloud() },
+                          { label: 'Document Reader', icon: FileText, onClick: () => setLayoutMode('document') },
+                          { label: 'Summary', icon: ListTree, onClick: () => setStudioTab('summary') },
+                          { label: 'Quiz', icon: HelpCircle, onClick: () => setStudioTab('quiz') },
+                          { label: 'Flashcards', icon: Layers, onClick: () => setStudioTab('flashcards') },
+                          { label: 'Cheatsheet & Notes', icon: BookOpen, onClick: () => setStudioTab('cheatsheet') },
+                          { label: 'Concepts & Math', icon: Sigma, onClick: () => setStudioTab('explanation') },
+                          { label: 'Ask PDF Tutor', icon: MessageSquare, onClick: () => setStudioTab('chat') },
+                        ].map((item) => {
+                          const Icon = item.icon;
+                          return (
+                            <button
+                              key={item.label}
+                              type="button"
+                              onClick={item.onClick}
+                              className={`p-3.5 rounded-2xl border flex items-center justify-between gap-2 text-left transition-all cursor-pointer ${
+                                isDark
+                                  ? 'bg-[#12141c] border-white/[0.08] hover:border-white/[0.22]'
+                                  : 'bg-white border-black/[0.08] hover:border-black/[0.22]'
+                              }`}
+                            >
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div
+                                  className={`size-9 rounded-xl border flex items-center justify-center shrink-0 ${
+                                    isDark
+                                      ? 'bg-white/[0.06] border-white/[0.08] text-neutral-200'
+                                      : 'bg-black/[0.04] border-black/[0.06] text-neutral-800'
+                                  }`}
+                                >
+                                  <Icon className="w-4 h-4" />
+                                </div>
+                                <span className="text-xs sm:text-sm font-medium truncate">
+                                  {item.label}
+                                </span>
+                              </div>
+                              <ChevronRight className="w-3.5 h-3.5 opacity-45 shrink-0" />
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2.5">
+                      <div className={`text-xs font-medium ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
+                        My Sets
+                      </div>
+                      {[
+                        {
+                          title: 'Detailed Summary',
+                          sub: `Summary · ${studyBundle?.summary.keyPoints.length || 0} takeaways`,
+                          tab: 'summary' as const,
+                        },
+                        {
+                          title: `${activePdfName.slice(0, 24)} Flashcards`,
+                          sub: `Flashcards · ${allFlashcards.length} cards`,
+                          tab: 'flashcards' as const,
+                        },
+                        {
+                          title: `${activePdfName.slice(0, 24)} Quiz`,
+                          sub: `Quiz · ${allQuizItems.length} questions`,
+                          tab: 'quiz' as const,
+                        },
+                      ].map((s) => (
+                        <button
+                          key={s.title}
+                          type="button"
+                          onClick={() => setStudioTab(s.tab)}
+                          className={`w-full p-3 rounded-2xl border flex items-center justify-between text-left transition-colors cursor-pointer ${
+                            isDark
+                              ? 'bg-[#11131a] border-white/[0.07] hover:border-white/[0.2]'
+                              : 'bg-white border-black/[0.07] hover:border-black/[0.2]'
+                          }`}
+                        >
+                          <div>
+                            <div className="text-xs sm:text-sm font-medium">{s.title}</div>
+                            <div className={`text-xs ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
+                              {s.sub}
+                            </div>
+                          </div>
+                          <ChevronRight className="w-4 h-4 opacity-50" />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* ========================================================= */}
                 {/* TAB 1: INTERACTIVE QUIZ                                   */}
                 {/* ========================================================= */}
@@ -1474,6 +1574,43 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
                                 <MathMarkdown content={q.explanation} isDark={isDark} inline />
                               </div>
                             )}
+
+                            {/* Ask Chat & Don't Know Row */}
+                            <div className="mt-3 pt-2.5 flex items-center justify-end gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setStudioTab('chat');
+                                  handleSendPdfChat(`Walk me through this question: "${q.question}"`);
+                                }}
+                                className={`px-3 py-1.5 rounded-full border text-[11px] font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
+                                  isDark
+                                    ? 'border-white/[0.1] text-neutral-300 hover:bg-white/[0.06]'
+                                    : 'border-black/[0.1] text-neutral-700 hover:bg-black/[0.04]'
+                                }`}
+                              >
+                                <MessageSquare className="w-3 h-3" />
+                                <span>Ask chat</span>
+                              </button>
+                              {!hasAnswered && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setQuizAnswers((prev) => ({
+                                      ...prev,
+                                      [q.id]: q.correctIndex,
+                                    }))
+                                  }
+                                  className={`px-3 py-1.5 rounded-full border text-[11px] font-medium transition-colors cursor-pointer ${
+                                    isDark
+                                      ? 'border-white/[0.1] text-neutral-300 hover:bg-white/[0.06]'
+                                      : 'border-black/[0.1] text-neutral-700 hover:bg-black/[0.04]'
+                                  }`}
+                                >
+                                  Don't know
+                                </button>
+                              )}
+                            </div>
                           </div>
                         );
                       })}

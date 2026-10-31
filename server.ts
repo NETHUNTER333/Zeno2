@@ -7022,6 +7022,364 @@ function buildDeterministicStudyBundle(
   };
 }
 
+// Fast direct YouTube Innertube video search (works without API keys and returns real YouTube videos for any topic)
+async function searchYouTubeDirectFallback(query: string, limit = 8): Promise<any[]> {
+  const results: any[] = [];
+  const seen = new Set<string>();
+  try {
+    const res = await fetch('https://www.youtube.com/youtubei/v1/search?prettyPrint=false', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      },
+      body: JSON.stringify({
+        context: {
+          client: {
+            clientName: 'WEB',
+            clientVersion: '2.20240726.00.00',
+            hl: 'en',
+            gl: 'US',
+          },
+        },
+        query,
+      }),
+      signal: AbortSignal.timeout(4000),
+    });
+
+    if (res.ok) {
+      const data: any = await res.json();
+      const contents =
+        data?.contents?.twoColumnSearchResultsRenderer?.primaryContents?.sectionListRenderer
+          ?.contents || [];
+      for (const sec of contents) {
+        const items = sec?.itemSectionRenderer?.contents || [];
+        for (const item of items) {
+          const vr = item?.videoRenderer;
+          if (!vr?.videoId || seen.has(vr.videoId)) continue;
+          seen.add(vr.videoId);
+          const title =
+            vr.title?.runs?.map((r: any) => r.text).join('') ||
+            vr.title?.simpleText ||
+            'YouTube Video';
+          const author =
+            vr.ownerText?.runs?.[0]?.text ||
+            vr.longBylineText?.runs?.[0]?.text ||
+            'YouTube';
+          const length =
+            vr.lengthText?.simpleText ||
+            vr.lengthText?.accessibility?.accessibilityData?.label ||
+            '';
+          const views =
+            vr.shortViewCountText?.simpleText ||
+            vr.viewCountText?.simpleText ||
+            '';
+          const snippet =
+            vr.detailedMetadataSnippets?.[0]?.snippetText?.runs
+              ?.map((r: any) => r.text)
+              .join('') || '';
+          results.push({
+            videoId: vr.videoId,
+            title,
+            author,
+            source: 'YouTube',
+            link: `https://www.youtube.com/watch?v=${vr.videoId}`,
+            embedUrl: `https://www.youtube-nocookie.com/embed/${vr.videoId}?rel=0`,
+            thumbnail: `https://i.ytimg.com/vi/${vr.videoId}/hqdefault.jpg`,
+            length,
+            views,
+            snippet,
+          });
+          if (results.length >= limit) break;
+        }
+        if (results.length >= limit) break;
+      }
+    }
+  } catch {}
+  return results;
+}
+
+// Fetch real educational paragraphs from Wikipedia for a topic/question
+async function fetchWikipediaTopicParagraphs(query: string): Promise<{
+  title: string;
+  paragraphs: string[];
+}> {
+  try {
+    const cleanQ = query
+      .replace(/^(what|how|why|explain|tell me about|describe|define)\s+(is|are|does|do)?\s*/i, '')
+      .trim();
+    const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(
+      cleanQ || query
+    )}&srlimit=3&format=json&origin=*`;
+    const sRes = await fetch(searchUrl, {
+      headers: { 'User-Agent': 'ZenoStudy/1.0' },
+      signal: AbortSignal.timeout(3500),
+    });
+    if (!sRes.ok) return { title: query, paragraphs: [] };
+    const sJson: any = await sRes.json();
+    const hits = sJson?.query?.search || [];
+    if (hits.length === 0) return { title: query, paragraphs: [] };
+
+    const pageTitles = hits.slice(0, 2).map((h: any) => h.title);
+    const extractPromises = pageTitles.map(async (t: string) => {
+      const exUrl = `https://en.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext=1&titles=${encodeURIComponent(
+        t
+      )}&format=json&origin=*`;
+      const eRes = await fetch(exUrl, {
+        headers: { 'User-Agent': 'ZenoStudy/1.0' },
+        signal: AbortSignal.timeout(3500),
+      });
+      if (!eRes.ok) return '';
+      const eJson: any = await eRes.json();
+      const pages = Object.values(eJson?.query?.pages || {}) as any[];
+      return String(pages[0]?.extract || '');
+    });
+
+    const extracts = await Promise.all(extractPromises);
+    const combinedText = extracts.join('\n\n');
+    const paragraphs = combinedText
+      .split(/\n+/)
+      .map((p) => p.replace(/^==+.*?==+$/g, '').trim())
+      .filter((p) => p.length >= 90 && !p.startsWith('=='));
+
+    return {
+      title: hits[0]?.title || query,
+      paragraphs: paragraphs.slice(0, 12),
+    };
+  } catch {
+    return { title: query, paragraphs: [] };
+  }
+}
+
+// POST /api/study/topic — Fetch real YouTube videos + real educational study guide, flashcards, and quiz for any user question/topic
+app.post('/api/study/topic', async (req, res) => {
+  try {
+    const rawQuery = String(req.body?.query || req.body?.topic || '').trim();
+    if (!rawQuery) {
+      return res.status(400).json({ success: false, error: 'Topic or question is required' });
+    }
+
+    // Run YouTube video search (Innertube + Treg) and Wikipedia/web context fetch in parallel
+    const [ytDirect, ytTreg, wikiData, webResults] = await Promise.all([
+      searchYouTubeDirectFallback(rawQuery, 8),
+      searchYouTubeViaTreg(rawQuery, false).catch(() => []),
+      fetchWikipediaTopicParagraphs(rawQuery),
+      searchWebViaTreg(rawQuery, 'organic', false).catch(() => []),
+    ]);
+
+    // Merge and deduplicate YouTube videos
+    const videos: any[] = [];
+    const seenVideoIds = new Set<string>();
+    for (const v of [...ytDirect, ...ytTreg]) {
+      const vidId = v.videoId || extractYouTubeId(v.link || '');
+      if (!vidId || seenVideoIds.has(vidId)) continue;
+      seenVideoIds.add(vidId);
+      videos.push({
+        videoId: vidId,
+        title: v.title || 'YouTube Video',
+        author: v.author || 'YouTube',
+        source: 'YouTube',
+        link: `https://www.youtube.com/watch?v=${vidId}`,
+        embedUrl: `https://www.youtube-nocookie.com/embed/${vidId}?rel=0`,
+        thumbnail: v.thumbnail || `https://i.ytimg.com/vi/${vidId}/hqdefault.jpg`,
+        length: v.length || '',
+        views: v.views || '',
+        snippet: v.snippet || '',
+      });
+      if (videos.length >= 8) break;
+    }
+
+    // Build factual grounding context from Wikipedia, web snippets, and video descriptions
+    const webSnippets = (webResults || [])
+      .slice(0, 6)
+      .map((r: any) => `${r.title}: ${r.snippet}`)
+      .filter((s: string) => s.length > 30);
+
+    const groundingParagraphs = [
+      ...wikiData.paragraphs,
+      ...webSnippets,
+      ...videos
+        .filter((v) => v.snippet && v.snippet.length > 35)
+        .map((v) => `${v.title} (${v.author}): ${v.snippet}`),
+    ];
+
+    const groundingContext = groundingParagraphs.slice(0, 12).join('\n\n').slice(0, 10000);
+
+    const prompt = `You are a clear, knowledgeable educator creating a study guide for the topic or question: "${rawQuery}".
+Write in clear, natural, everyday educational English. Do NOT use pretentious jargon, military labels, or computer-science boilerplate.
+
+${groundingContext ? `Reference Facts:\n${groundingContext}\n\n` : ''}Return ONLY valid JSON matching this exact structure (no markdown fences):
+{
+  "overview": "A clear, direct, 3-4 sentence answer and overview explaining the topic thoroughly.",
+  "sections": [
+    {
+      "title": "Clear section heading (e.g., How Calories Fuel Human Growth)",
+      "claim": "1 sentence key takeaway for this section.",
+      "elaboration": "3-4 sentences of clear, factual explanation with real examples or numbers."
+    }
+  ],
+  "concepts": [
+    {
+      "term": "Key Term",
+      "definition": "Simple, accurate 1-2 sentence definition.",
+      "mechanism": "How it works or why it matters in practice."
+    }
+  ],
+  "flashcards": [
+    {
+      "id": "fc-1",
+      "front": "Clear study question",
+      "back": "Direct, accurate answer",
+      "category": "Key Concept"
+    }
+  ],
+  "quiz": [
+    {
+      "id": "q-1",
+      "question": "Clear multiple-choice question testing understanding of ${rawQuery}?",
+      "options": ["Option A", "Option B", "Option C", "Option D"],
+      "correctIndex": 0,
+      "explanation": "Clear explanation of why the correct option is right."
+    }
+  ]
+}
+
+Requirements:
+- Provide 5 to 7 detailed items in "sections" that directly answer and break down "${rawQuery}".
+- Provide 4 to 6 items in "concepts".
+- Provide 6 to 8 items in "flashcards".
+- Provide 5 multiple-choice questions in "quiz" with 4 realistic options and varied correctIndex (0-3).`;
+
+    let parsed: any = null;
+
+    if (geminiClient || process.env.GEMINI_API_KEY) {
+      try {
+        const { resp } = await Promise.race([
+          generateGeminiContentWithFallback([{ parts: [{ text: prompt }] }]),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('Topic study timeout')), 7000)
+          ),
+        ]);
+        const rawText = (resp?.text || '').trim();
+        const firstBrace = rawText.indexOf('{');
+        const lastBrace = rawText.lastIndexOf('}');
+        if (firstBrace !== -1 && lastBrace > firstBrace) {
+          parsed = JSON.parse(rawText.slice(firstBrace, lastBrace + 1));
+        }
+      } catch {}
+    }
+
+    if (!parsed) {
+      try {
+        const completion = await Promise.race([
+          generateChatCompletion(
+            [
+              {
+                role: 'system',
+                content: 'Return ONLY valid JSON matching the requested educational study schema.',
+              },
+              { role: 'user', content: prompt },
+            ],
+            'gemini-3.8-flash-free'
+          ),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('Chat fallback timeout')), 7000)
+          ),
+        ]);
+        const rawText = (completion?.text || '').trim();
+        const firstBrace = rawText.indexOf('{');
+        const lastBrace = rawText.lastIndexOf('}');
+        if (firstBrace !== -1 && lastBrace > firstBrace) {
+          parsed = JSON.parse(rawText.slice(firstBrace, lastBrace + 1));
+        }
+      } catch {}
+    }
+
+    // Build clean, factual fallback from Wikipedia/web paragraphs if LLM JSON parsing failed
+    const fallbackParagraphs =
+      groundingParagraphs.length > 0
+        ? groundingParagraphs
+        : [
+            `${rawQuery} encompasses the core principles, biological or practical mechanisms, and real-world factors that govern how this topic operates in practice.`,
+          ];
+
+    const finalOverview =
+      parsed?.overview ||
+      fallbackParagraphs.slice(0, 2).join(' ');
+
+    const finalSections =
+      Array.isArray(parsed?.sections) && parsed.sections.length > 0
+        ? parsed.sections.map((s: any, idx: number) => ({
+            index: idx + 1,
+            heading: String(s.title || s.heading || `Key Point ${idx + 1}`),
+            claim: String(s.claim || s.summary || ''),
+            elaboration: String(s.elaboration || s.summary || s.claim || ''),
+          }))
+        : fallbackParagraphs.slice(0, 6).map((p: string, idx: number) => {
+            const firstSent = p.split(/(?<=[.!?])\s+/)[0] || p.slice(0, 120);
+            return {
+              index: idx + 1,
+              heading: `Point ${idx + 1}`,
+              claim: firstSent,
+              elaboration: p,
+            };
+          });
+
+    const finalConcepts =
+      Array.isArray(parsed?.concepts) && parsed.concepts.length > 0
+        ? parsed.concepts
+        : finalSections.slice(0, 4).map((s: any) => ({
+            term: s.heading,
+            definition: s.claim,
+            mechanism: s.elaboration,
+          }));
+
+    const finalFlashcards =
+      Array.isArray(parsed?.flashcards) && parsed.flashcards.length > 0
+        ? parsed.flashcards
+        : finalSections.map((s: any, idx: number) => ({
+            id: `fc-${idx + 1}`,
+            front: `What is the key takeaway regarding ${s.heading}?`,
+            back: s.elaboration,
+            category: rawQuery.slice(0, 24),
+          }));
+
+    const finalQuiz =
+      Array.isArray(parsed?.quiz) && parsed.quiz.length > 0
+        ? parsed.quiz
+        : finalSections.slice(0, 5).map((s: any, idx: number) => ({
+            id: `q-${idx + 1}`,
+            question: `Which statement accurately describes ${s.heading} in the context of ${rawQuery}?`,
+            options: [
+              s.claim || s.elaboration.slice(0, 140),
+              'It has no measurable effect or role in this process.',
+              'It operates only in isolated synthetic conditions unrelated to the topic.',
+              'It reverses the primary mechanism described in the study material.',
+            ],
+            correctIndex: 0,
+            explanation: s.elaboration,
+          }));
+
+    return res.json({
+      success: true,
+      query: rawQuery,
+      overview: finalOverview,
+      sections: finalSections,
+      concepts: finalConcepts,
+      flashcards: finalFlashcards,
+      quiz: finalQuiz,
+      videos,
+    });
+  } catch (err: any) {
+    console.error('Topic study error:', err);
+    return res.status(500).json({
+      success: false,
+      error: err.message || 'Failed to generate topic study space',
+    });
+  }
+});
+
 // POST /api/youtube/transcript — Extract timed transcript & video metadata via InstaCloud Subclip + Innertube
 app.post('/api/youtube/transcript', async (req, res) => {
   try {

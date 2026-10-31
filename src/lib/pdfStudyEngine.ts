@@ -253,32 +253,19 @@ export function buildDeterministicDocumentStudyBundle(
     );
 
   const enrichedPool =
-    rawSentences.length >= 12
+    rawSentences.length >= 1
       ? rawSentences
       : isTransformerDoc
       ? [
-          ...rawSentences,
           'The Transformer architecture dispenses with recurrence and convolutions entirely, relying solely on self-attention mechanisms to model global dependencies between input and output tokens.',
           'Scaled dot-product attention computes $\\text{Attention}(Q, K, V) = \\text{softmax}\\left(\\frac{QK^T}{\\sqrt{d_k}}\\right)V$, scaling by $\\frac{1}{\\sqrt{d_k}}$ so large dot products do not push the softmax into regions with vanishingly small gradients.',
           'Multi-head attention linearly projects queries, keys, and values $h = 8$ times with different learned projections to $d_k = d_v = 64$ dimensions, allowing joint attention across multiple representation subspaces.',
           'Self-attention layers connect all positions with $\\mathcal{O}(1)$ sequential operations compared to $\\mathcal{O}(n)$ for recurrent layers, enabling massive training parallelization across sequence positions.',
           'Because the Transformer contains no recurrence or convolution, sinusoidal positional encodings of wavelength $2\\pi$ to $10000 \\cdot 2\\pi$ are added to token embeddings so the model can leverage sequence order.',
           'Each encoder layer consists of a multi-head self-attention mechanism followed by a position-wise fully connected feed-forward network $\\text{FFN}(x) = \\max(0, xW_1 + b_1)W_2 + b_2$ with residual connections and layer normalization.',
-          'In the decoder, masked multi-head self-attention sets future positions to $-\\infty$ before the softmax to preserve the auto-regressive property and prevent leftward information flow.',
-          'When sequence length $n$ is smaller than representation dimensionality $d$, self-attention is strictly faster per layer than recurrent or convolutional layers with kernel width $k$.',
-          'During training, the authors applied label smoothing ($\\epsilon_{ls} = 0.1$) and the Adam optimizer with a warmup learning rate schedule proportional to $d_{\\text{model}}^{-0.5} \\cdot \\min(\\text{step}^{-0.5}, \\text{step} \\cdot \\text{warmup}^{-1.5})$.',
-          'On the WMT 2014 English-to-German translation task, the big Transformer model achieved a state-of-the-art $28.4$ BLEU score, outperforming previous ensembles at a fraction of the training cost.',
-          'For very long sequences where $n > d$, self-attention could be restricted to a neighborhood of size $r$ around each output position, reducing maximum path length to $\\mathcal{O}(n/r)$.',
-          'Encoder-decoder attention layers take queries from the previous decoder layer while keys and values come from the output of the encoder stack, allowing every decoder position to attend over all input positions.',
         ]
       : [
-          ...rawSentences,
-          `The primary objective of "${cleanTitle}" is to establish a rigorous, reproducible framework that resolves key bottlenecks in prior approaches.`,
-          `Instead of relying on sequential bottlenecks, the methodology in "${cleanTitle}" decomposes the problem into modular, parallelizable stages with explicit verification.`,
-          `Quantitative evaluation in "${cleanTitle}" demonstrates significant improvements in throughput, accuracy, and resource efficiency across standard benchmarks.`,
-          `A critical design trade-off in "${cleanTitle}" balances computational complexity against representational fidelity under real-world constraints.`,
-          `Ablation studies confirm that removing the core normalization and scaling mechanisms degrades stability and convergence speed.`,
-          `Boundary conditions and edge cases require careful parameter tuning to prevent overfitting and numerical instability at scale.`,
+          normalized.trim() || `Study material for ${cleanTitle}.`,
         ];
 
   // Deduplicate sentences while preserving order
@@ -769,39 +756,24 @@ export function buildDeterministicDocumentStudyBundle(
       const cleanSent = sent.length > 145 ? `${sent.slice(0, 142)}...` : sent;
       const alt1 =
         uniqueSentences[(offset + idx + 3) % uniqueSentences.length]?.slice(0, 135) ||
-        'It relies exclusively on unverified manual heuristics without formal validation.';
+        'It relies on unverified assumptions not supported by the source material.';
       const pageRef = Math.min(pageCount, Math.max(1, ((idx + offset) % pageCount) + 1));
-      const secTitle = sections[idx % sections.length]?.title || `Section ${idx + 1}`;
+      const secTitle = sections[idx % sections.length]?.title || `Part ${idx + 1}`;
 
       const questionPrompt =
         lvl === 'easy'
-          ? `In "${cleanTitle}" (${secTitle}, Page ${pageRef}), what primary concept or definition is established?`
+          ? `What key point is established in "${cleanTitle}" (${secTitle})?`
           : lvl === 'medium'
-          ? `How does the methodology on Page ${pageRef} of "${cleanTitle}" (${secTitle}) operate and connect to the overall system?`
-          : `Evaluating the technical trade-offs and empirical implications in "${cleanTitle}" (Page ${pageRef}), which conclusion holds?`;
+          ? `Which statement accurately describes the mechanism or findings in "${cleanTitle}" (${secTitle})?`
+          : `Based on the evidence in "${cleanTitle}" (${secTitle}), which conclusion is supported?`;
 
-      const distractors =
-        lvl === 'easy'
-          ? [
-              alt1 !== cleanSent
-                ? `${alt1}...`
-                : 'It discards all structured inputs in favor of random initialization.',
-              'The document states that this component is optional and unused in practice.',
-              'None of the above definitions appear in the uploaded document.',
-            ]
-          : lvl === 'medium'
-          ? [
-              'It bypasses intermediate verification stages and executes strictly sequentially without feedback.',
-              alt1 !== cleanSent
-                ? `It inversely assumes: ${alt1.slice(0, 100)}...`
-                : 'It decouples the input representation from the target objective function.',
-              'The mechanism only applies to static single-variable inputs and fails on multi-dimensional data.',
-            ]
-          : [
-              'Asymptotic complexity scales exponentially $\\mathcal{O}(2^n)$ because intermediate states cannot be cached or parallelized.',
-              'Ablation experiments in the document prove this mechanism reduces accuracy under all parameter regimes.',
-              'The formulation requires strict linearity and diverges whenever non-linear activations or normalization are applied.',
-            ];
+      const distractors = [
+        alt1 !== cleanSent
+          ? `${alt1}...`
+          : 'It contradicts the primary evidence presented in this section.',
+        'The source states that this factor has no measurable impact in practice.',
+        'None of these statements are supported by the study material.',
+      ];
 
       const rawOptions = [cleanSent, ...distractors.slice(0, 3)];
       const targetCorrect = (idx + (lvl === 'easy' ? 0 : lvl === 'medium' ? 1 : 2)) % 4;
