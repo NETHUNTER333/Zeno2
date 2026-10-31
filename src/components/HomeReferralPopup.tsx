@@ -3,7 +3,6 @@ import { Gift, Copy, Check, X, Plus, Sparkles } from 'lucide-react';
 import {
   getEightReferralTrackerState,
   setHomeReferralPopupDismissed,
-  addOneReferralProgress,
   claimEightReferralTier,
   REFERRAL_8_REWARD_TIERS,
 } from '../lib/growthStore';
@@ -46,12 +45,6 @@ export const HomeReferralPopup: React.FC<HomeReferralPopupProps> = ({ theme = 'd
     } catch {
       // ignore
     }
-  };
-
-  const handleAddReferral = () => {
-    const next = addOneReferralProgress();
-    setTracker(next);
-    showToast(`Referral recorded (${Math.min(8, next.count)}/8)`);
   };
 
   const handleClaimTier = (targetReferrals: number) => {
@@ -227,30 +220,17 @@ export const HomeReferralPopup: React.FC<HomeReferralPopupProps> = ({ theme = 'd
               <div className="flex items-center gap-1.5 ml-auto">
                 <button
                   type="button"
-                  onClick={handleAddReferral}
-                  className={`px-2 py-1 rounded-lg border text-[10.5px] font-semibold inline-flex items-center gap-1 cursor-pointer transition-colors ${
-                    isDark
-                      ? 'border-white/15 bg-white/[0.04] hover:bg-white/10 text-neutral-200'
-                      : 'border-black/15 bg-black/[0.03] hover:bg-black/8 text-neutral-800'
-                  }`}
-                  title="Track a completed referral (+1)"
-                >
-                  <Plus className="w-2.5 h-2.5 text-[#FC4C01]" />
-                  +1 Referral
-                </button>
-                <button
-                  type="button"
                   onClick={handleCopyInvite}
-                  className="px-2.5 py-1 rounded-lg bg-[#FC4C01] hover:bg-[#e04300] text-white text-[10.5px] font-semibold inline-flex items-center gap-1 cursor-pointer transition-colors"
+                  className="px-3 py-1.5 rounded-lg bg-[#FC4C01] hover:bg-[#e04300] text-white text-[11px] font-semibold inline-flex items-center gap-1.5 cursor-pointer transition-colors"
                 >
                   {copied ? (
                     <>
-                      <Check className="w-2.5 h-2.5" />
-                      Copied
+                      <Check className="w-3 h-3" />
+                      Copied Invite Link
                     </>
                   ) : (
                     <>
-                      <Copy className="w-2.5 h-2.5" />
+                      <Copy className="w-3 h-3" />
                       Invite Link
                     </>
                   )}

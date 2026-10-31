@@ -216,6 +216,43 @@ export function isBoilerplateOrJunkSearchResult(
     }
   }
 
+  const asksAboutMicrosoft =
+    /\b(microsoft|windows|azure|xbox|office|outlook|onedrive|surface|edge\s+browser|copilot)\b/i.test(q);
+
+  if (!asksAboutMicrosoft) {
+    if (
+      /^(account|accounts|login|signin|myaccount|support|profile|auth|portal|admin|login\.live|account\.live)\./i.test(
+        dom
+      ) ||
+      /^(microsoft\.com|live\.com|bing\.com|msn\.com|login\.live\.com|account\.microsoft\.com|office\.com)$/i.test(
+        dom
+      ) ||
+      /(?:^|\.)(live\.com|msn\.com|login\.live\.com|account\.microsoft\.com)$/i.test(dom)
+    ) {
+      return true;
+    }
+    if (
+      dom === 'microsoft.com' &&
+      (/^(microsoft\s*-\s*official\s*home\s*page|microsoft\s*account|sign\s*in\s*to\s*your\s*account|sign\s*in|login|create\s*your\s*account)$/i.test(
+        title
+      ) ||
+        /sign in to see and manage the data in your microsoft account|microsoft account sign in|official home page/i.test(
+          snippet
+        ) ||
+        url.replace(/\/+$/, '') === 'https://www.microsoft.com' ||
+        url.replace(/\/+$/, '') === 'https://microsoft.com')
+    ) {
+      return true;
+    }
+    if (
+      /^(microsoft\s*-\s*official\s*home\s*page|microsoft\s*account|sign\s*in\s*to\s*your\s*account|sign\s*in|login|create\s*your\s*account)/i.test(
+        title
+      )
+    ) {
+      return true;
+    }
+  }
+
   if (
     /^(sign in\s*-\s*google|google dashboard|google translate|google search|voice)$/i.test(title) &&
     dom.endsWith('google.com')
@@ -526,6 +563,13 @@ export async function fallbackPublicWebSearchWithStatus(
           domain = new URL(link).hostname.replace(/^www\./i, '');
         } catch {}
         if (!domain || domain.includes('wikipedia.org')) continue;
+        if (
+          !/\b(microsoft|windows|azure|xbox|office)\b/i.test(query) &&
+          (/(^|\.)(microsoft\.com|live\.com|bing\.com|msn\.com|office\.com)$/i.test(domain) ||
+            /^(microsoft|sign in|create your account)/i.test(title))
+        ) {
+          continue;
+        }
         items.push({
           position: items.length + 1,
           title,
@@ -774,7 +818,7 @@ export async function fallbackPublicWebSearchWithStatus(
   };
 
   const isScienceOrMedical =
-    /\b(steroids?|hormones?|growth|endocrin|clinical|medical|biolog|physiolog|pharmacol|therapy|treatment|syndrome|disease|receptor|pathway|gene|protein|cell|vitamin|metabolism|skeletal|height|epiphyseal|igf|testosterone|estrogen|cortisol|anabolic|pubmed|trial|cohort|dosage|toxicity|neuro|cardio|oncolog|immunol|chemistry|physics|quantum)\b/i.test(
+    /\b(gravity|gravitational|relativity|spacetime|newton|einstein|quantum|physics|astronomy|cosmology|galaxy|planetary|orbits?|mass|force|energy|steroids?|hormones?|growth|endocrin|clinical|medical|biolog|physiolog|pharmacol|therapy|treatment|syndrome|disease|receptor|pathway|gene|protein|cell|vitamin|metabolism|skeletal|height|epiphyseal|igf|testosterone|estrogen|cortisol|anabolic|pubmed|trial|cohort|dosage|toxicity|neuro|cardio|oncolog|immunol|chemistry)\b/i.test(
       query
     );
 

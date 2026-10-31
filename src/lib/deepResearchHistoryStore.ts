@@ -20,6 +20,17 @@ export interface AnswerSource {
   snippet?: string;
 }
 
+export interface DeepResearchTurn {
+  id: string;
+  question: string;
+  fullAnswer: string;
+  sources: AnswerSource[];
+  thinkingSteps?: ThinkingStep[];
+  durationSec?: number;
+  thinkingDuration?: number;
+  createdAt: number;
+}
+
 export interface DeepResearchRecord {
   id: string;
   topic: string;
@@ -30,6 +41,7 @@ export interface DeepResearchRecord {
   durationSec: number;
   thinkingDuration?: number;
   followUps?: string[];
+  turns?: DeepResearchTurn[];
   modelId?: string;
   createdAt: number;
 }
@@ -99,6 +111,7 @@ export const DeepResearchHistoryStore = {
       durationSec: input.durationSec || 0,
       thinkingDuration: input.thinkingDuration || 1,
       followUps: input.followUps || [],
+      turns: input.turns || [],
       modelId: input.modelId || 'deepseek-v4.1',
       createdAt,
     };
@@ -124,6 +137,7 @@ export const DeepResearchHistoryStore = {
           durationSec: record.durationSec,
           thinkingDuration: record.thinkingDuration,
           followUps: record.followUps,
+          turns: record.turns || [],
           modelId: record.modelId,
           createdAt: record.createdAt,
         });

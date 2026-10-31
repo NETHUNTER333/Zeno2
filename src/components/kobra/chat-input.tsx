@@ -808,68 +808,38 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           <button
             type="button"
             onClick={() => setIsPlusMenuOpen(!isPlusMenuOpen)}
-            className={`relative size-8 rounded-full flex items-center justify-center transition-colors cursor-pointer ${
-              isPlusMenuOpen
-                ? isDark
-                  ? 'bg-white text-black'
-                  : 'bg-[#18181b] text-white'
-                : isDark
-                ? 'bg-white/[0.06] text-[#d4d4d8] hover:text-white hover:bg-white/[0.12]'
-                : 'bg-[#f4f4f5] text-[#52525b] hover:text-[#18181b] hover:bg-neutral-200/80'
-            }`}
+            className={`relative size-8 rounded-full flex items-center justify-center transition-all cursor-pointer ${
+              isDark
+                ? 'text-[#a1a1aa] hover:text-white hover:bg-white/10 active:scale-95'
+                : 'text-[#71717a] hover:text-[#09090b] hover:bg-black/5 active:scale-95'
+            } ${isPlusMenuOpen ? (isDark ? 'text-white bg-white/10' : 'text-[#09090b] bg-black/5') : ''}`}
             title="Attach files, images, code, or toggle Research mode"
             aria-label="Add files or options"
           >
-            <Plus className="w-4 h-4 stroke-[2.2]" />
+            <Plus
+              className={`w-4 h-4 stroke-[2] transition-transform duration-200 ${
+                isPlusMenuOpen ? 'rotate-45' : ''
+              }`}
+            />
             {isResearchMode && (
               <span
-                className={`absolute -top-0.5 -right-0.5 size-2.5 rounded-full ring-2 ${
-                  isDark ? 'bg-white ring-[#141418]' : 'bg-[#18181b] ring-white'
+                className={`absolute -top-0.5 -right-0.5 size-2 rounded-full ring-2 ${
+                  isDark ? 'bg-[#FC4C01] ring-[#141418]' : 'bg-[#FC4C01] ring-white'
                 }`}
                 title="Research mode is active"
               />
             )}
           </button>
 
-          {/* Ultra-Compact Monochrome Pill Plus Menu Dropup (No icons, no lines, small font) */}
+          {/* Ultra-Compact Clean Plus Menu Dropup */}
           {isPlusMenuOpen && (
             <div
-              className={`absolute bottom-full left-0 mb-2.5 w-48 rounded-2xl border p-1.5 z-50 text-[11px] font-normal animate-in fade-in zoom-in-95 duration-150 ${
+              className={`absolute bottom-full left-0 mb-2.5 w-44 rounded-2xl border p-1.5 z-50 text-[11px] font-normal animate-in fade-in zoom-in-95 duration-150 ${
                 isDark
                   ? 'bg-[#141418] border-white/[0.12] text-white/90 shadow-[0_16px_40px_rgba(0,0,0,0.85)]'
                   : 'bg-white border-black/[0.1] text-[#18181b] shadow-[0_16px_40px_rgba(0,0,0,0.14)]'
               }`}
             >
-              {/* Compact Pill Quota Row */}
-              <div
-                className={`mb-1 px-2.5 py-1 rounded-full border flex items-center justify-between text-[10px] font-normal ${
-                  isDark
-                    ? 'bg-[#1c1c22] border-white/[0.08] text-white/80'
-                    : 'bg-[#f4f4f5] border-black/[0.06] text-[#18181b]/80'
-                }`}
-              >
-                <span>
-                  Uploads {usageQuota.filesUploaded + attachments.length}/
-                  {usageQuota.fileUploadLimit >= 999999 ? '∞' : usageQuota.fileUploadLimit}
-                </span>
-                {currentPlan !== 'fire' && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsPlusMenuOpen(false);
-                      openPricingModal(currentPlan === 'free' ? 'spark' : 'fire');
-                    }}
-                    className={`px-2 py-0.5 rounded-full text-[9.5px] font-normal transition-colors cursor-pointer ${
-                      isDark
-                        ? 'bg-white text-black hover:bg-neutral-200'
-                        : 'bg-[#18181b] text-white hover:bg-neutral-800'
-                    }`}
-                  >
-                    {currentPlan === 'free' ? 'Spark $3' : 'Fire $7'}
-                  </button>
-                )}
-              </div>
-
               <div className="space-y-0.5">
                 <button
                   type="button"
@@ -947,14 +917,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                   }`}
                 >
                   <span className="truncate">Web Search</span>
-                  <span
-                    className={`text-[9.5px] px-2 py-0.5 rounded-full font-normal border ${
-                      isDark
-                        ? 'bg-white text-black border-white'
-                        : 'bg-[#18181b] text-white border-[#18181b]'
-                    }`}
-                  >
-                    {searchMode === 'news' ? 'On · News' : 'Always On'}
+                  <span className="text-[10px] text-neutral-400 font-mono">
+                    {searchMode === 'news' ? 'News' : 'Always On'}
                   </span>
                 </button>
 

@@ -2028,7 +2028,6 @@ export function getEightReferralTrackerState(): EightReferralTrackerState {
 
   const count = Math.max(
     0,
-    Number(savedRewards.count || 0),
     Number(tracker[myUid]?.referredCount || 0),
     Number(cachedRef?.validatedSignupsCount || 0),
     Number(cachedRef?.verifiedReferralsCount || 0)
@@ -2067,18 +2066,6 @@ export function setHomeReferralPopupDismissed(dismissed: boolean): void {
 }
 
 export function addOneReferralProgress(): EightReferralTrackerState {
-  const state = getEightReferralTrackerState();
-  const nextCount = state.count + 1;
-  safeSave(EIGHT_REF_STORAGE_KEY, {
-    count: nextCount,
-    claimedTiers: state.claimedTiers,
-  });
-  incrementLocalReferralCountForUser({
-    uid: getOrCreateClientId(),
-    referralCode: state.code,
-    delta: 1,
-  });
-  emitGrowthUpdate();
   return getEightReferralTrackerState();
 }
 
@@ -2093,6 +2080,14 @@ export function claimEightReferralTier(targetReferrals: number): {
   if (!tier) {
     return { ok: false, message: 'Invalid reward tier.', state };
   }
+  if (state.count < tier.targetReferrals) {
+    return {
+      ok: false,
+      tier,
+      message: `You need ${tier.targetReferrals} verified referrals to claim ${tier.title}. Share your invite link to reach this milestone!`,
+      state,
+    };
+  }
   if (state.claimedTiers.includes(tier.targetReferrals)) {
     return { ok: false, tier, message: `${tier.title} already claimed.`, state };
   }
@@ -2101,7 +2096,7 @@ export function claimEightReferralTier(targetReferrals: number): {
     (a, b) => a - b
   );
   safeSave(EIGHT_REF_STORAGE_KEY, {
-    count: Math.max(state.count, tier.targetReferrals),
+    count: state.count,
     claimedTiers: nextClaimed,
   });
 

@@ -1398,21 +1398,6 @@ export const ZenoGrowthHubModal: React.FC<ZenoGrowthHubModalProps> = ({
                       {copiedRefLink ? 'Copied ✓' : 'Copy Invite Link'}
                     </button>
                   </div>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const updated = addOneReferralProgress();
-                      setEightRefState(updated);
-                      setBonusClaimNotice(
-                        `Referral recorded (${updated.count}/8). Claim your unlocked rewards below!`
-                      );
-                      setTimeout(() => setBonusClaimNotice(null), 4000);
-                    }}
-                    className={`px-4 py-2.5 rounded-xl border text-xs font-semibold cursor-pointer shrink-0 transition-colors ${secondaryBtn}`}
-                  >
-                    +1 Record Referral
-                  </button>
                 </div>
 
                 {/* Redeem Friend Pass Code */}

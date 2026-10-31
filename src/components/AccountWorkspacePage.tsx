@@ -51,6 +51,7 @@ interface AccountWorkspacePageProps {
   onToggleNsfwMode: (enabled: boolean) => void;
   onClearAllHistory: () => void;
   onSelectThread?: (threadId: string) => void;
+  onDeleteThread?: (threadId: string) => void;
 }
 
 export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
@@ -67,6 +68,7 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
   onToggleNsfwMode,
   onClearAllHistory,
   onSelectThread,
+  onDeleteThread,
 }) => {
   const [activeTab, setActiveTab] = useState<AccountTab>(initialTab);
   const [profile, setProfile] = useState<UserProfile>(() => UserAccountStore.getProfile());
@@ -859,6 +861,17 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
                               }`}
                             >
                               Open
+                            </button>
+                          )}
+                          {onDeleteThread && (
+                            <button
+                              type="button"
+                              onClick={() => onDeleteThread(t.id)}
+                              title="Delete thread"
+                              aria-label="Delete thread"
+                              className="p-1.5 rounded-lg border border-red-500/20 bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="w-3 h-3" />
                             </button>
                           )}
                         </div>

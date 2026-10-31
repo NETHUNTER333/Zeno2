@@ -46,6 +46,7 @@ import { PublicArtifactView } from './components/PublicArtifactView';
 import { StreakReminderToast } from './components/StreakReminderToast';
 import { AchievementToast } from './components/AchievementToast';
 import { HomeReferralPopup } from './components/HomeReferralPopup';
+import { DeleteThreadConfirmDialog, DeleteThreadTarget } from './components/DeleteThreadConfirmDialog';
 import {
   captureReferralFromUrlIfPresent,
   claimPendingReferralIfEligible,
@@ -1379,7 +1380,19 @@ export default function App() {
     setCurrentView('chat');
   };
 
+  const [pendingDeleteThread, setPendingDeleteThread] = useState<DeleteThreadTarget | null>(null);
+
   const handleDeleteThread = (threadId: string) => {
+    const target = threads.find((t) => t.id === threadId);
+    setPendingDeleteThread({
+      id: threadId,
+      title: target?.title || 'Untitled conversation',
+      messageCount: target?.messages?.length || 0,
+    });
+  };
+
+  const confirmDeleteThread = (threadId: string) => {
+    setPendingDeleteThread(null);
     setThreads((prev) => prev.filter((t) => t.id !== threadId));
     if (activeThreadId === threadId) {
       setActiveThreadId(null);
@@ -1790,6 +1803,7 @@ export default function App() {
                 onToggleNsfwMode={(enabled) => setNsfwMode(enabled)}
                 onClearAllHistory={handleClearAllHistory}
                 onSelectThread={handleSelectThread}
+                onDeleteThread={handleDeleteThread}
               />
             </div>
           ) : currentView === 'study' ? (
@@ -2274,28 +2288,36 @@ export default function App() {
             limitReason={pricingModalState.limitReason}
             isDark={isDark}
           />
+
+          {/* Daily Streak Reminder Notification / Toast (Only active after user signs in) */}
+          <StreakReminderToast
+            isDark={isDark}
+            onQuickAction={(promptText) => {
+              if (currentView !== 'chat') {
+                setCurrentView('chat');
+              }
+              if (promptText) {
+                handleSend(promptText);
+              }
+            }}
+            onOpenStreakSettings={() => {
+              setAccountPageTab('profile');
+              setCurrentView('account');
+            }}
+          />
+
+          {/* Achievement Unlocked Milestone & Badge Toast Notification System (Only after login) */}
+          <AchievementToast isDark={isDark} />
+
+          {/* Thread Deletion Confirmation Dialog */}
+          <DeleteThreadConfirmDialog
+            thread={pendingDeleteThread}
+            isDark={isDark}
+            onConfirm={confirmDeleteThread}
+            onCancel={() => setPendingDeleteThread(null)}
+          />
         </>
       )}
-
-      {/* Daily Streak Reminder Notification / Toast */}
-      <StreakReminderToast
-        isDark={isDark}
-        onQuickAction={(promptText) => {
-          if (currentView !== 'chat') {
-            setCurrentView('chat');
-          }
-          if (promptText) {
-            handleSend(promptText);
-          }
-        }}
-        onOpenStreakSettings={() => {
-          setAccountPageTab('profile');
-          setCurrentView('account');
-        }}
-      />
-
-      {/* Achievement Unlocked Milestone & Badge Toast Notification System */}
-      <AchievementToast isDark={isDark} />
     </div>
   );
 }
