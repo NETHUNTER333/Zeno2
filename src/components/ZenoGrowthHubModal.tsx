@@ -538,7 +538,7 @@ export const ZenoGrowthHubModal: React.FC<ZenoGrowthHubModalProps> = ({
       </div>
 
       {/* Main Content Viewport */}
-      <div className="flex-1 overflow-y-auto p-4 sm:p-6 text-xs">
+      <div className="flex-1 overflow-y-auto slim-scrollbar p-4 sm:p-6 text-xs">
         <div className="max-w-6xl mx-auto">
           {/* =========================================================
               TAB 1: ZENO DISCOVER (PUBLIC COMMUNITY LIBRARY)

@@ -14,10 +14,34 @@ export interface ModelOption {
 
 export const GROK_MODELS: ModelOption[] = [
   {
+    id: 'zro-deepseek-v4.1-flash',
+    name: 'DeepSeek V4.1 Flash',
+    description: '1M zero-latency',
+    geminiModel: 'zro/deepseek-v4.1-flash',
+    supportsVision: false,
+    contextLength: '1M',
+  },
+  {
+    id: 'zro-glm-5.3-flash',
+    name: 'GLM 5.3 Flash (1M)',
+    description: 'Fast reasoning & vision',
+    geminiModel: 'zro/glm-5.3-flash',
+    supportsVision: true,
+    contextLength: '1M',
+  },
+  {
+    id: 'zro-deepseek-v4-flash-0731',
+    name: 'DeepSeek V4 (0731)',
+    description: 'Coding & math',
+    geminiModel: 'zro/deepseek-v4-flash-0731',
+    supportsVision: false,
+    contextLength: '1M',
+  },
+  {
     id: 'deepseek-v4.1-flash-free',
     name: 'DeepSeek V4.1',
     description: 'Instant reasoning',
-    geminiModel: 'thk/deepseek-v4.1-flash:free',
+    geminiModel: 'zro/deepseek-v4.1-flash',
     supportsVision: false,
     contextLength: '1M',
   },
@@ -33,7 +57,7 @@ export const GROK_MODELS: ModelOption[] = [
     id: 'deepseek-v4-flash-0731-free',
     name: 'DeepSeek V4 Flash',
     description: 'Analytical reasoning',
-    geminiModel: 'thk/deepseek-v4-flash:free',
+    geminiModel: 'zro/deepseek-v4-flash-0731',
     supportsVision: false,
     contextLength: '1M',
   },
@@ -41,9 +65,9 @@ export const GROK_MODELS: ModelOption[] = [
     id: 'glm-5.3-flash-free',
     name: 'GLM 5.3 Flash',
     description: 'Low-latency vision',
-    geminiModel: 'glm-5.3-flash-free',
+    geminiModel: 'zro/glm-5.3-flash',
     supportsVision: true,
-    contextLength: '128K',
+    contextLength: '1M',
   },
   {
     id: 'mimo-v2.6-flash-free',
@@ -298,14 +322,6 @@ export const GROK_MODELS: ModelOption[] = [
     name: 'Claude Opus 5.5 Pro',
     description: 'Flagship reasoning',
     geminiModel: 'radox/claude-opus-5.5',
-    supportsVision: true,
-    contextLength: '1M',
-  },
-  {
-    id: 'radox-claude-mythos-preview',
-    name: 'Claude Mythos',
-    description: 'Next-gen intelligence',
-    geminiModel: 'radox/claude-mythos-preview',
     supportsVision: true,
     contextLength: '1M',
   },
@@ -775,7 +791,6 @@ const FIRE_MODEL_IDS = new Set([
   'thk-gemini-4-argon',
   'larp-gpt-6',
   'radox-claude-opus-5.5',
-  'radox-claude-mythos-preview',
   'radox-claude-fable-5.1',
   'radox-gpt-5.6-sol',
   'radox-gpt-5.6-terra',
@@ -871,7 +886,7 @@ export const GrokModelPicker: React.FC<GrokModelPickerProps> = ({
   });
 
   const triggerPricingPopup = (tier: 'spark' | 'fire', modelName: string) => {
-    const planLabel = tier === 'spark' ? 'Spark ($1/mo)' : 'Fire ($5/mo)';
+    const planLabel = tier === 'spark' ? 'Spark ($3/mo)' : 'Fire ($7/mo)';
     const reason = `${modelName} requires the ${planLabel} plan. Upgrade now to unlock it.`;
     if (onOpenPricing) {
       onOpenPricing(tier, reason);
@@ -941,8 +956,8 @@ export const GrokModelPicker: React.FC<GrokModelPickerProps> = ({
               {(
                 [
                   { id: 'all', label: 'All' },
-                  { id: 'spark', label: 'Spark ($1)' },
-                  { id: 'fire', label: 'Fire ($5)' },
+                  { id: 'spark', label: 'Spark ($3)' },
+                  { id: 'fire', label: 'Fire ($7)' },
                 ] as const
               ).map((tab) => {
                 const active = tierFilter === tab.id;
@@ -969,7 +984,7 @@ export const GrokModelPicker: React.FC<GrokModelPickerProps> = ({
           </div>
 
           {/* Compact Models List */}
-          <div className="space-y-0.5 overflow-y-auto scrollbar-thin pr-0.5">
+          <div className="space-y-0.5 overflow-y-auto slim-scrollbar pr-0.5">
             {filteredModels.length === 0 ? (
               <div className="py-4 text-center text-[10px] opacity-50">No models found</div>
             ) : (
@@ -988,6 +1003,7 @@ export const GrokModelPicker: React.FC<GrokModelPickerProps> = ({
                         triggerPricingPopup(reqTier, m.name);
                         return;
                       }
+                      UserAccountStore.recordModelExplored(m.id);
                       onSelectModel(m);
                       setIsOpen(false);
                     }}
@@ -1043,7 +1059,7 @@ export const GrokModelPicker: React.FC<GrokModelPickerProps> = ({
                               : 'text-sky-400 bg-sky-500/10 border border-sky-500/20'
                           }`}
                         >
-                          {reqTier === 'fire' ? '$5' : '$1'}
+                          {reqTier === 'fire' ? '$7' : '$3'}
                         </span>
                       )}
                     </div>

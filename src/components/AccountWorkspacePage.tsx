@@ -15,14 +15,25 @@ import {
   MessageSquare,
   Trash2,
   Zap,
-  Lock,
+  Flame,
+  Bell,
+  Clock,
+  RefreshCw,
+  Award,
+  Gift,
+  Shield,
 } from 'lucide-react';
-import { UserAccountStore } from '../lib/userAccountStore';
+import {
+  UserAccountStore,
+  DailyStreakData,
+  EvaluatedBadge,
+} from '../lib/userAccountStore';
 import { UserProfile } from '../types';
-import { GROK_MODELS, ModelOption, getModelRequiredTier } from './GrokModelPicker';
+import { ModelOption } from './GrokModelPicker';
 import { ChatThread } from './Sidebar';
 import { DeleteAccountButton } from './DeleteAccountButton';
 import { PricingModal } from './PricingModal';
+import { getAuthHeaders } from '../lib/firebase';
 
 export type AccountTab = 'profile' | 'pricing' | 'chats_projects' | 'preferences' | 'database';
 
@@ -59,12 +70,48 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<AccountTab>(initialTab);
   const [profile, setProfile] = useState<UserProfile>(() => UserAccountStore.getProfile());
+  const [streak, setStreak] = useState<DailyStreakData>(() =>
+    UserAccountStore.getDailyStreak(threads)
+  );
+  const [badges, setBadges] = useState<EvaluatedBadge[]>(() =>
+    UserAccountStore.getEvaluatedBadges(threads)
+  );
+  const [backendSyncedAt, setBackendSyncedAt] = useState<number | null>(null);
+  const [syncingBackend, setSyncingBackend] = useState<boolean>(false);
   const [savedSuccessAlert, setSavedSuccessAlert] = useState<string | null>(null);
   const [confirmClearHistory, setConfirmClearHistory] = useState(false);
 
   useEffect(() => {
     setActiveTab(initialTab);
   }, [initialTab]);
+
+  useEffect(() => {
+    const refreshFromStore = () => {
+      setProfile(UserAccountStore.getProfile());
+      setStreak(UserAccountStore.getDailyStreak(threads));
+      setBadges(UserAccountStore.getEvaluatedBadges(threads));
+    };
+    window.addEventListener('zeno-account-updated', refreshFromStore);
+    return () => window.removeEventListener('zeno-account-updated', refreshFromStore);
+  }, [threads]);
+
+  useEffect(() => {
+    // Load & sync profile + active model + streak reminder settings with backend on mount
+    let cancelled = false;
+    (async () => {
+      try {
+        const headers = await getAuthHeaders();
+        const res = await fetch('/api/user/profile-backend', { headers });
+        if (res.ok && !cancelled) {
+          const data = await res.json();
+          if (data?.syncedAt) setBackendSyncedAt(data.syncedAt);
+        }
+      } catch {}
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -84,18 +131,39 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
   const isDark = theme === 'dark';
 
   const navItems: { id: AccountTab; label: string; icon: React.ReactNode }[] = [
-    { id: 'pricing', label: 'Plans & Pricing ($1 / $5)', icon: <Zap className="w-4 h-4 text-amber-400" /> },
-    { id: 'profile', label: 'Identity & Account', icon: <User className="w-4 h-4" /> },
-    { id: 'chats_projects', label: 'Chat History & Export', icon: <FolderOpen className="w-4 h-4" /> },
+    { id: 'profile', label: 'Profile & Backend', icon: <User className="w-4 h-4" /> },
+    { id: 'pricing', label: 'Plans & Pricing ($3 / $7)', icon: <Zap className="w-4 h-4 text-[#FC4C01]" /> },
     { id: 'preferences', label: 'App Preferences', icon: <SlidersHorizontal className="w-4 h-4" /> },
+    { id: 'chats_projects', label: 'Chat History & Export', icon: <FolderOpen className="w-4 h-4" /> },
     { id: 'database', label: 'Firebase & Cloud Backend', icon: <Database className="w-4 h-4" /> },
   ];
+
+  const syncWithProfileBackend = async (extra?: Record<string, any>) => {
+    setSyncingBackend(true);
+    const resp = await UserAccountStore.syncProfileAndSettingsWithBackend({
+      preferences: {
+        selectedModelId: selectedModel.id,
+        selectedModelName: selectedModel.name,
+        webSearchDefault,
+        nsfwMode,
+        theme,
+      },
+      ...(extra || {}),
+    });
+    if (resp?.syncedAt) {
+      setBackendSyncedAt(resp.syncedAt);
+    } else {
+      setBackendSyncedAt(Date.now());
+    }
+    setSyncingBackend(false);
+  };
 
   const handleSaveProfile = (updates: Partial<UserProfile>) => {
     const updated = { ...profile, ...updates };
     setProfile(updated);
     UserAccountStore.saveProfile(updated);
-    triggerSuccessAlert('Account updated');
+    syncWithProfileBackend({ profile: updated });
+    triggerSuccessAlert('Profile & backend synced');
   };
 
   const handleExportAll = () => {
@@ -207,7 +275,7 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden relative">
         {/* Mobile Tab Switcher */}
         <div
-          className={`md:hidden flex items-center gap-1.5 p-3 border-b shrink-0 overflow-x-auto ${
+          className={`md:hidden flex items-center gap-1.5 p-3 border-b shrink-0 overflow-x-auto scrollbar-none ${
             isDark ? 'border-white/10 bg-[#121215]' : 'border-black/10 bg-neutral-50'
           }`}
         >
@@ -236,7 +304,7 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
 
         {/* Desktop Left Navigation Rail */}
         <aside
-          className={`hidden md:flex flex-col w-64 lg:w-72 shrink-0 border-r p-4 justify-between overflow-y-auto ${
+          className={`hidden md:flex flex-col w-64 lg:w-72 shrink-0 border-r p-4 justify-between overflow-y-auto slim-scrollbar ${
             isDark ? 'border-white/10 bg-[#0d0d10]' : 'border-black/10 bg-[#f7f7f9]'
           }`}
         >
@@ -303,7 +371,7 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
         </aside>
 
         {/* Right Main Content Canvas */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 lg:p-10 scrollbar-thin">
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 lg:p-10 slim-scrollbar">
           <div className={`${activeTab === 'pricing' ? 'max-w-6xl' : 'max-w-3xl'} mx-auto space-y-6 pb-16`}>
             {/* Tab: Plans & Pricing ($1 Spark / $5 Fire) */}
             {activeTab === 'pricing' && (
@@ -315,16 +383,46 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
               />
             )}
 
-            {/* Tab: Identity & Account */}
+            {/* Tab: Profile, AI Model & Backend */}
             {activeTab === 'profile' && (
               <div className="space-y-6">
-                <div>
-                  <h2 className="text-xl sm:text-2xl font-bold tracking-tight">Identity & Account</h2>
-                  <p className="text-xs sm:text-sm text-neutral-400 mt-1">
-                    Manage your display name and account details.
-                  </p>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-xl sm:text-2xl font-bold tracking-tight">
+                      Profile & Backend
+                    </h2>
+                    <p className="text-xs sm:text-sm text-neutral-400 mt-1">
+                      Unified profile identity, daily streak reminders, and live backend sync.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      syncWithProfileBackend();
+                      triggerSuccessAlert('Synced profile & AI settings to backend');
+                    }}
+                    className={`px-3.5 py-2 rounded-xl border text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
+                      isDark
+                        ? 'bg-white/[0.05] hover:bg-white/[0.1] border-white/15 text-white'
+                        : 'bg-white hover:bg-neutral-100 border-black/15 text-black'
+                    }`}
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${syncingBackend ? 'animate-spin' : ''}`} />
+                    <span>
+                      {syncingBackend
+                        ? 'Syncing Backend...'
+                        : backendSyncedAt
+                        ? `Backend Synced · ${new Date(backendSyncedAt).toLocaleTimeString([], {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}`
+                        : 'Sync Backend Now'}
+                    </span>
+                  </button>
                 </div>
 
+                {/* Identity Card */}
                 <div
                   className={`p-5 rounded-2xl border space-y-4 ${
                     isDark ? 'bg-white/[0.02] border-white/10' : 'bg-white border-black/10 shadow-xs'
@@ -391,6 +489,293 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
                         }`}
                       />
                     </div>
+                  </div>
+                </div>
+
+                {/* Daily Streak & Reminder Notification Settings Card */}
+                <div
+                  className={`p-5 rounded-2xl border space-y-4 ${
+                    isDark ? 'bg-white/[0.02] border-white/10' : 'bg-white border-black/10 shadow-xs'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-[#FC4C01]/15 border border-[#FC4C01]/40 flex items-center justify-center shrink-0">
+                        <Flame className="w-4 h-4 text-[#FC4C01] fill-[#FC4C01]" />
+                      </div>
+                      <div>
+                        <div className="text-sm font-bold flex items-center gap-2">
+                          <span>Daily Streak & Reminder Notifications</span>
+                          <span className="px-2 py-0.5 rounded text-[11px] font-mono tabular-nums bg-[#FC4C01]/15 text-[#FC4C01] border border-[#FC4C01]/30">
+                            {streak.currentStreak}d Streak
+                          </span>
+                        </div>
+                        <div className="text-xs text-neutral-400 mt-0.5">
+                          Reminds you via toast notification if you haven't completed your daily Zeno interaction by your scheduled time.
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const updated = UserAccountStore.updateStreakReminderSettings({
+                          reminderEnabled: !streak.reminderEnabled,
+                        });
+                        setStreak(updated);
+                        triggerSuccessAlert(
+                          updated.reminderEnabled
+                            ? `Daily reminder enabled (${updated.reminderTime})`
+                            : 'Daily reminder paused'
+                        );
+                      }}
+                      className={`w-11 h-6 rounded-full transition-colors relative shrink-0 cursor-pointer ${
+                        streak.reminderEnabled
+                          ? 'bg-[#FC4C01]'
+                          : isDark
+                          ? 'bg-neutral-700'
+                          : 'bg-neutral-300'
+                      }`}
+                    >
+                      <span
+                        className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-transform ${
+                          streak.reminderEnabled ? 'translate-x-5' : ''
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-neutral-500/10">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs text-neutral-400 inline-flex items-center gap-1 font-mono">
+                        <Clock className="w-3.5 h-3.5 text-[#FC4C01]" />
+                        <span>Reminder Time:</span>
+                      </span>
+                      {['09:00', '12:00', '18:00', '20:00', '21:30'].map((t) => {
+                        const isAct = (streak.reminderTime || '18:00') === t;
+                        return (
+                          <button
+                            key={t}
+                            type="button"
+                            onClick={() => {
+                              const updated = UserAccountStore.updateStreakReminderSettings({
+                                reminderEnabled: true,
+                                reminderTime: t,
+                              });
+                              setStreak(updated);
+                              triggerSuccessAlert(`Reminder scheduled for ${t}`);
+                            }}
+                            className={`px-2.5 py-1 rounded-lg border text-xs font-mono tabular-nums cursor-pointer transition-colors ${
+                              isAct
+                                ? 'bg-[#FC4C01]/15 border-[#FC4C01] text-[#FC4C01] font-semibold'
+                                : isDark
+                                ? 'border-white/10 hover:border-white/25 text-neutral-300'
+                                : 'border-black/10 hover:border-black/25 text-neutral-700'
+                            }`}
+                          >
+                            {t}
+                          </button>
+                        );
+                      })}
+                      <input
+                        type="time"
+                        value={streak.reminderTime || '18:00'}
+                        onChange={(e) => {
+                          const updated = UserAccountStore.updateStreakReminderSettings({
+                            reminderEnabled: true,
+                            reminderTime: e.target.value,
+                          });
+                          setStreak(updated);
+                        }}
+                        className={`px-2.5 py-1 rounded-lg border text-xs font-mono outline-none ${
+                          isDark
+                            ? 'bg-black/50 border-white/15 text-white'
+                            : 'bg-neutral-50 border-black/15 text-black'
+                        }`}
+                      />
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        window.dispatchEvent(new Event('zeno-trigger-streak-reminder'));
+                      }}
+                      className={`px-3 py-1.5 rounded-xl border text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer transition-colors ${
+                        isDark
+                          ? 'bg-white/[0.06] hover:bg-white/[0.12] border-white/15 text-white'
+                          : 'bg-neutral-100 hover:bg-neutral-200 border-black/15 text-black'
+                      }`}
+                    >
+                      <Bell className="w-3.5 h-3.5 text-[#FC4C01]" />
+                      <span>Preview Reminder Toast</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Streaks & Achievement Badges Vault Card */}
+                <div
+                  className={`p-5 rounded-2xl border space-y-4 ${
+                    isDark ? 'bg-white/[0.02] border-white/10' : 'bg-white border-black/10 shadow-xs'
+                  }`}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-[#FC4C01]/15 border border-[#FC4C01]/40 flex items-center justify-center shrink-0">
+                        <Award className="w-4 h-4 text-[#FC4C01]" />
+                      </div>
+                      <div>
+                        <div className="text-sm font-bold flex items-center gap-2">
+                          <span>Streaks & Achievement Badges</span>
+                          <span className="px-2 py-0.5 rounded text-[11px] font-mono tabular-nums bg-[#FC4C01]/15 text-[#FC4C01] border border-[#FC4C01]/30">
+                            {badges.filter((b) => b.isUnlocked).length}/{badges.length} Unlocked
+                          </span>
+                        </div>
+                        <div className="text-xs text-neutral-400 mt-0.5">
+                          Earn badges by maintaining streaks, exploring models, and running study sessions. Claim bonus messages & shields.
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="px-2.5 py-1 rounded-lg border border-white/10 text-xs font-mono tabular-nums inline-flex items-center gap-1">
+                        <Shield className="w-3.5 h-3.5 text-[#FC4C01]" />
+                        <span>
+                          {streak.streakFreezes}/{streak.maxStreakFreezes || 3} Shields
+                        </span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onBackToChat();
+                          setTimeout(() => {
+                            window.dispatchEvent(
+                              new CustomEvent('zeno-open-streak-modal', {
+                                detail: { tab: 'badges' },
+                              })
+                            );
+                          }, 60);
+                        }}
+                        className="px-3 py-1.5 rounded-xl bg-[#FC4C01] hover:bg-[#e04300] text-white text-xs font-semibold cursor-pointer transition-colors"
+                      >
+                        Open Streak & Badges Center
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Milestone Achievement Toast Triggers (7-Day, 30-Day, 100-Day) */}
+                  <div
+                    className={`p-3 rounded-xl border flex flex-wrap items-center justify-between gap-2 ${
+                      isDark
+                        ? 'bg-black/40 border-white/10'
+                        : 'bg-neutral-50 border-black/10'
+                    }`}
+                  >
+                    <div className="text-xs">
+                      <span className="font-semibold">Achievement Unlocked Toast System</span>
+                      <span className="text-neutral-400 ml-1.5">
+                        Triggers automatically on 7-day, 30-day, and 100-day streak milestones:
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {[7, 30, 100].map((mDays) => (
+                        <button
+                          key={mDays}
+                          type="button"
+                          onClick={() => {
+                            UserAccountStore.triggerMilestoneToastPreview(mDays);
+                          }}
+                          className="px-2.5 py-1 rounded-lg border border-[#FC4C01]/40 bg-[#FC4C01]/10 hover:bg-[#FC4C01]/20 text-[#FC4C01] text-[11px] font-mono tabular-nums font-semibold cursor-pointer transition-colors"
+                        >
+                          Preview {mDays}-Day Unlock
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 pt-1">
+                    {badges.map((b) => (
+                      <div
+                        key={b.id}
+                        className={`p-3 rounded-xl border flex flex-col justify-between gap-2 ${
+                          b.isUnlocked
+                            ? b.isFeatured
+                              ? 'bg-[#FC4C01]/10 border-[#FC4C01]/50'
+                              : isDark
+                              ? 'bg-white/[0.03] border-white/15'
+                              : 'bg-neutral-50 border-black/15'
+                            : isDark
+                            ? 'bg-black/30 border-white/[0.06] opacity-70'
+                            : 'bg-neutral-50/60 border-black/[0.06] opacity-75'
+                        }`}
+                      >
+                        <div>
+                          <div className="flex items-center justify-between gap-1.5">
+                            <span className="text-xs font-semibold truncate">{b.title}</span>
+                            <span className="text-[10px] font-mono tabular-nums text-[#FC4C01]">
+                              {Math.min(b.currentValue, b.targetValue)}/{b.targetValue}
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-neutral-400 mt-0.5 line-clamp-2">
+                            {b.subtitle}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-1.5 pt-1.5 border-t border-neutral-500/10">
+                          <span className="text-[10px] font-mono tabular-nums text-[#FC4C01]">
+                            +{b.bonusMessages} Msgs
+                          </span>
+                          <div className="flex items-center gap-1">
+                            {b.isUnlocked && !b.isFeatured && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  UserAccountStore.setFeaturedBadge(b.id);
+                                  setBadges(UserAccountStore.getEvaluatedBadges(threads));
+                                  triggerSuccessAlert(`Equipped "${b.title}" badge`);
+                                }}
+                                className={`px-2 py-0.5 rounded border text-[10px] font-medium cursor-pointer ${
+                                  isDark
+                                    ? 'border-white/15 hover:bg-white/10 text-white'
+                                    : 'border-black/15 hover:bg-black/5 text-black'
+                                }`}
+                              >
+                                Equip
+                              </button>
+                            )}
+                            {b.isFeatured && (
+                              <span className="px-1.5 py-0.5 rounded bg-[#FC4C01]/20 text-[#FC4C01] text-[9.5px] font-mono font-semibold">
+                                Equipped
+                              </span>
+                            )}
+                            {b.isClaimed ? (
+                              <span className="text-[10px] font-mono text-neutral-400 inline-flex items-center gap-0.5">
+                                <Check className="w-3 h-3 text-[#FC4C01]" /> Claimed
+                              </span>
+                            ) : b.isUnlocked ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const res = UserAccountStore.claimBadgeReward(b.id);
+                                  if (res.rewarded) {
+                                    setBadges(UserAccountStore.getEvaluatedBadges(threads));
+                                    triggerSuccessAlert(
+                                      `Claimed ${b.title} (+${b.bonusMessages} msgs)`
+                                    );
+                                  }
+                                }}
+                                className="px-2 py-0.5 rounded bg-[#FC4C01] text-white text-[10px] font-semibold inline-flex items-center gap-1 cursor-pointer"
+                              >
+                                <Gift className="w-2.5 h-2.5" /> Claim
+                              </button>
+                            ) : (
+                              <span className="text-[10px] font-mono text-neutral-500">
+                                {b.progressPct}%
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
 
@@ -551,7 +936,7 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
                 <div>
                   <h2 className="text-xl sm:text-2xl font-bold tracking-tight">App Preferences</h2>
                   <p className="text-xs sm:text-sm text-neutral-400 mt-1">
-                    Theme appearance, reasoning model, and search grounding.
+                    Theme appearance and search grounding.
                   </p>
                 </div>
 
@@ -594,67 +979,6 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
                       </div>
                       {!isDark && <Check className="w-4 h-4" />}
                     </button>
-                  </div>
-                </div>
-
-                {/* Default Model */}
-                <div
-                  className={`p-5 rounded-2xl border space-y-4 ${
-                    isDark ? 'bg-white/[0.02] border-white/10' : 'bg-white border-black/10 shadow-xs'
-                  }`}
-                >
-                  <div className="text-xs font-bold uppercase tracking-wider text-neutral-400">
-                    Active Reasoning Model
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {GROK_MODELS.map((model) => {
-                      const isSelected = selectedModel.id === model.id;
-                      const reqTier = getModelRequiredTier(model);
-                      const isLocked = !UserAccountStore.canUseModel(reqTier);
-                      return (
-                        <div
-                          key={model.id}
-                          onClick={() => {
-                            if (isLocked) {
-                              setActiveTab('pricing');
-                              return;
-                            }
-                            onSelectModel(model);
-                          }}
-                          className={`p-3 rounded-xl border flex items-center justify-between transition-all cursor-pointer ${
-                            isSelected
-                              ? isDark
-                                ? 'border-white bg-white/[0.08] text-white font-semibold'
-                                : 'border-black bg-black/5 text-black font-semibold'
-                              : isDark
-                              ? 'border-white/10 hover:bg-white/[0.03] text-neutral-300'
-                              : 'border-black/10 hover:bg-neutral-50 text-neutral-700'
-                          }`}
-                        >
-                          <div className="min-w-0 pr-2">
-                            <div className="text-xs flex items-center gap-1.5 flex-wrap">
-                              <span>{model.name}</span>
-                              {reqTier === 'spark' && (
-                                <span className="text-[9px] px-1.5 py-0.2 rounded font-mono font-bold bg-amber-400/20 text-amber-400 border border-amber-400/30">
-                                  Spark $1
-                                </span>
-                              )}
-                              {reqTier === 'fire' && (
-                                <span className="text-[9px] px-1.5 py-0.2 rounded font-mono font-bold bg-orange-500/20 text-orange-400 border border-orange-500/30">
-                                  Fire $5
-                                </span>
-                              )}
-                            </div>
-                            <div className="text-[10px] text-neutral-400 mt-0.5 truncate">{model.description}</div>
-                          </div>
-                          {isLocked ? (
-                            <Lock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                          ) : isSelected ? (
-                            <Check className="w-4 h-4 text-blue-400 shrink-0" />
-                          ) : null}
-                        </div>
-                      );
-                    })}
                   </div>
                 </div>
 

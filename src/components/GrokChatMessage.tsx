@@ -1545,17 +1545,11 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                       );
                     }
 
-                    // Check for Generative UI tag or interactive HTML markup
+                    // Only render GenerativeUiViewer when explicitly tagged as generative-ui
                     const isGenUi =
                       className?.includes('generative-ui') ||
                       className?.includes('open-generative-ui') ||
-                      className?.includes('a2ui') ||
-                      (className?.includes('html') &&
-                        (strContent.includes('<script') ||
-                          strContent.includes('<button') ||
-                          strContent.includes('<input') ||
-                          strContent.includes('class=') ||
-                          strContent.includes('className=')));
+                      className?.includes('a2ui');
 
                     if (isGenUi) {
                       return <GenerativeUiViewer code={strContent} title="Interactive Component" />;

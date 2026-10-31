@@ -25,3 +25,7 @@ skills-lock.json
 .vercel
 
 .insta/.agent-session-*.tmp
+.insta/zeno_quota_ledger.json
+keysAndRouters.json
+keys/
+

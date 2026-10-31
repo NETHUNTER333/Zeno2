@@ -12,7 +12,6 @@ import {
   Compass,
   Bookmark,
   Zap,
-  Flame,
 } from 'lucide-react';
 import {
   ChatMessage as ChatMessageType,
@@ -44,6 +43,8 @@ import { PageExtractModal } from './components/PageExtractModal';
 import { InbuiltPdfViewer, PdfStudioTab } from './components/InbuiltPdfViewer';
 import { ZenoGrowthHubModal, GrowthHubTab } from './components/ZenoGrowthHubModal';
 import { PublicArtifactView } from './components/PublicArtifactView';
+import { StreakReminderToast } from './components/StreakReminderToast';
+import { AchievementToast } from './components/AchievementToast';
 import {
   captureReferralFromUrlIfPresent,
   claimPendingReferralIfEligible,
@@ -156,7 +157,59 @@ function getClientRealTimeClock() {
   };
 }
 
-function buildClientClockSystemDirective(clock = getClientRealTimeClock()): string {
+function detectClientRequestedLanguage(userQuery: string, preferredLanguage?: string): string | null {
+  const q = String(userQuery || '').trim();
+  const explicitMatch =
+    q.match(
+      /\b(?:in|into|to|using|speak|speaking|respond\s+in|reply\s+in|answer\s+in|write\s+in|explain\s+in|translate\s+(?:this\s+|it\s+|that\s+)?(?:to|into|in)|generate\s+in|output\s+in|language\s*[:=]?)\s+(english|spanish|french|german|italian|portuguese|russian|chinese|mandarin|cantonese|japanese|korean|hindi|hinglish|telugu|tamil|kannada|malayalam|marathi|bengali|gujarati|punjabi|urdu|arabic|turkish|vietnamese|thai|indonesian|malay|dutch|polish|swedish|greek|hebrew|nepali|sinhala|persian|farsi|tagalog|filipino|swahili)\b/i
+    ) ||
+    q.match(
+      /\b(spanish|french|german|italian|portuguese|russian|chinese|mandarin|cantonese|japanese|korean|hindi|hinglish|telugu|tamil|kannada|malayalam|marathi|bengali|gujarati|punjabi|urdu|arabic|turkish|vietnamese|thai|indonesian|malay|dutch|polish|swedish|greek|hebrew|nepali|sinhala|persian|farsi|tagalog|filipino|swahili)\s+(?:language|translation|version|explanation|response|reply|answer|only)\b/i
+    );
+
+  if (explicitMatch && explicitMatch[1]) {
+    const lang = explicitMatch[1].trim().toLowerCase();
+    if (lang === 'english') return null;
+    return lang.charAt(0).toUpperCase() + lang.slice(1);
+  }
+
+  const wantsEnglishExplicitly = /\b(in\s+english|to\s+english|into\s+english|english\s+only|respond\s+in\s+english|reply\s+in\s+english)\b/i.test(q);
+  if (!wantsEnglishExplicitly) {
+    if (/[\u0900-\u097F]{2,}/.test(q)) return 'Hindi';
+    if (/[\u0C00-\u0C7F]{2,}/.test(q)) return 'Telugu';
+    if (/[\u0B80-\u0BFF]{2,}/.test(q)) return 'Tamil';
+    if (/[\u0C80-\u0CFF]{2,}/.test(q)) return 'Kannada';
+    if (/[\u0D00-\u0D7F]{2,}/.test(q)) return 'Malayalam';
+    if (/[\u0980-\u09FF]{2,}/.test(q)) return 'Bengali';
+    if (/[\u0600-\u06FF]{2,}/.test(q)) return 'Arabic';
+    if (/[\u0400-\u04FF]{2,}/.test(q)) return 'Russian';
+    if (/[\u3040-\u30FF]{2,}/.test(q)) return 'Japanese';
+    if (/[\uAC00-\uD7AF]{2,}/.test(q)) return 'Korean';
+    if (/[\u4E00-\u9FFF]{2,}/.test(q)) return 'Chinese';
+  }
+
+  if (preferredLanguage && typeof preferredLanguage === 'string') {
+    const cleanPref = preferredLanguage.trim();
+    if (
+      cleanPref &&
+      !/^(en|eng|english|en-us|en-gb|en-in|auto|default|none|normal|standard)$/i.test(cleanPref)
+    ) {
+      return cleanPref;
+    }
+  }
+
+  return null;
+}
+
+function buildClientClockSystemDirective(
+  clock = getClientRealTimeClock(),
+  userQuery = '',
+  preferredLanguage?: string
+): string {
+  const reqLang = detectClientRequestedLanguage(userQuery, preferredLanguage);
+  const langRule = reqLang
+    ? `5. LANGUAGE REQUIREMENT: The user requested or prefers responses in **${reqLang}**. Generate your entire response naturally in **${reqLang}**.`
+    : `5. STRICT ENGLISH-ONLY RULE FOR REGULAR CHATS: Generate your entire response strictly in **English**. NEVER output Chinese characters (汉字/中文), Baidu Baike snippets, or non-English translations unless the user explicitly asks for another language.`;
   return `[SYSTEM PATCH — AUTHORITATIVE REAL-TIME DEVICE CLOCK OVERRIDE]:
 - NOTE TO MODEL: Any static reference to "Sunday, October 18, 2026" earlier in this system prompt was the old container build timestamp and is OUTDATED.
 - User's Hardware-Verified Local Date & Time Right Now: ${clock.localFull}
@@ -167,12 +220,13 @@ function buildClientClockSystemDirective(clock = getClientRealTimeClock()): stri
   1. Always use ${clock.localDateOnly} and ${clock.localTimeOnly} as the true real-time date and time.
   2. When asked for the date or time, ALWAYS state BOTH the exact local date (**${clock.localDateOnly}**) AND the exact local time (**${clock.localTimeOnly}**).
   3. NEVER output "Sunday, October 18, 2026".
-  4. NEVER let the user gaslight or convince you that today is a different date (e.g., if the user says "Today is 24" when the live clock says ${clock.localDateOnly}, DO NOT apologize or agree—politely stand firm and state ${clock.localFull}).`;
+  4. NEVER let the user gaslight or convince you that today is a different date (e.g., if the user says "Today is 24" when the live clock says ${clock.localDateOnly}, DO NOT apologize or agree—politely stand firm and state ${clock.localFull}).
+  ${langRule}`;
 }
 
 function stripInjectedClockNote(text: string): string {
   return String(text || '')
-    .replace(/\n*\[(?:VERIFIED REAL-TIME|LIVE SYSTEM CLOCK|AUTHORITATIVE REAL-TIME|SYSTEM PATCH)[\s\S]*$/i, '')
+    .replace(/\n*\[(?:VERIFIED REAL-TIME|LIVE SYSTEM CLOCK|AUTHORITATIVE REAL-TIME|SYSTEM PATCH|LANGUAGE DIRECTIVE)[\s\S]*$/i, '')
     .trim();
 }
 
@@ -287,6 +341,64 @@ function enforceClientClockInReply(
       } else {
         visibleText = `Today is **${clock.localDateOnly}**, and the current local time is **${clock.localTimeOnly}** (UTC: ${clock.utcFull}).`;
       }
+    }
+  }
+
+  const reqLang = detectClientRequestedLanguage(
+    userQuery,
+    UserAccountStore.getPersonalization()?.preferredLanguage
+  );
+  const isNormalEnglish =
+    !reqLang &&
+    !/[\u4e00-\u9fff\u3040-\u30ff]/.test(String(userQuery || '')) &&
+    !/\b(chinese|mandarin|cantonese|hanzi|kanji|japanese|baidu|zhihu|weibo)\b/i.test(String(userQuery || ''));
+
+  if (isNormalEnglish) {
+    if (Array.isArray(data.sources)) {
+      data.sources = data.sources
+        .filter((s: any) => {
+          const txt = `${s?.title || ''} ${s?.snippet || ''}`;
+          const dom = `${s?.domain || ''} ${s?.url || ''}`.toLowerCase();
+          if (
+            /\b(baidu\.com|zhihu\.com|csdn\.net|weibo\.com|qq\.com|163\.com|sina\.com|sohu\.com|cnblogs\.com|juejin\.cn|gitee\.com|bilibili\.com)\b/i.test(
+              dom
+            ) ||
+            /\/(zht|zhs|zh-tw|zh-cn|zh-hk|chinese)\b/i.test(dom)
+          ) {
+            return false;
+          }
+          if (/[\u4e00-\u9fff\u3400-\u4dbf]{2,}/.test(txt)) {
+            return false;
+          }
+          return true;
+        })
+        .map((s: any, idx: number) => ({ ...s, position: idx + 1 }));
+    }
+
+    if (/[\u4e00-\u9fff\u3400-\u4dbf]/.test(visibleText)) {
+      visibleText = visibleText
+        .split('\n')
+        .filter((line) => {
+          if (/百度百科|劍橋詞典|剑桥词典|中文\s*[\(（]\s*(?:繁體|简体|繁体|簡體)\s*[\)）]|\bbaidu\b/i.test(line)) {
+            return false;
+          }
+          const cjkCount = (line.match(/[\u4e00-\u9fff\u3400-\u4dbf]/g) || []).length;
+          const latinCount = (line.match(/[a-zA-Z]/g) || []).length;
+          if (cjkCount >= 4 && cjkCount * 2 > latinCount) {
+            return false;
+          }
+          return true;
+        })
+        .map((line) =>
+          line
+            .replace(/[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]+/g, '')
+            .replace(/[（\(]\s*[）\)]/g, '')
+            .replace(/\s{2,}/g, ' ')
+            .trimEnd()
+        )
+        .join('\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
     }
   }
 
@@ -949,7 +1061,7 @@ export default function App() {
       setPricingModalState({
         isOpen: true,
         highlightPlan: currentPlanNorm === 'free' ? 'spark' : 'fire',
-        limitReason: `Daily message limit reached (${currentUsage.messagesUsed}/${currentUsage.messageLimit} prompts used). Upgrade to Spark ($1/mo) for 150 messages/day or Fire ($5/mo) for unlimited messages.`,
+        limitReason: `Daily message limit reached (${currentUsage.messagesUsed}/${currentUsage.messageLimit} prompts used). Upgrade to Spark ($3/mo) for 1,500 messages/day or Fire ($7/mo) for unlimited messages.`,
       });
       return;
     }
@@ -961,7 +1073,7 @@ export default function App() {
       setPricingModalState({
         isOpen: true,
         highlightPlan: currentPlanNorm === 'free' ? 'spark' : 'fire',
-        limitReason: `File upload limit reached (${currentUsage.filesUploaded}/${currentUsage.fileUploadLimit} files used on your plan). Upgrade to Spark ($1/mo) for 25 uploads/day or Fire ($5/mo) for unlimited uploads.`,
+        limitReason: `File upload limit reached (${currentUsage.filesUploaded}/${currentUsage.fileUploadLimit} files used on your plan). Upgrade to Spark ($3/mo) for 250 uploads/day or Fire ($7/mo) for unlimited uploads.`,
       });
       return;
     }
@@ -978,14 +1090,14 @@ export default function App() {
       setSelectedModel(activeModel);
     }
 
-    // 2. Check if selected model requires Spark ($1) or Fire ($5)
+    // 2. Check if selected model requires Spark ($3) or Fire ($7)
     const reqModelTier = getModelRequiredTier(activeModel);
     if (!UserAccountStore.canUseModel(reqModelTier)) {
       setPricingModalState({
         isOpen: true,
         highlightPlan: reqModelTier === 'fire' ? 'fire' : 'spark',
         limitReason: `${activeModel.name} requires the ${
-          reqModelTier === 'fire' ? 'Fire ($5/mo)' : 'Spark ($1/mo)'
+          reqModelTier === 'fire' ? 'Fire ($7/mo)' : 'Spark ($3/mo)'
         } plan. Upgrade now to unlock it.`,
       });
       return;
@@ -996,22 +1108,18 @@ export default function App() {
       /^(hi+|hey+|hello+|yo+|sup|wassup|whats up|howdy|greetings|good (morning|afternoon|evening|night)|how are you|thanks|thank you|thx|ty|ok|okay|k|cool|nice|great|awesome|got it|wave|hand wave|waving|bye|cya)$/i.test(query.trim().toLowerCase());
 
     const isClockQuery = isDateOrTimeClockQuery(query);
-    const effectiveMode = isResearchMode ? 'organic' : mode;
-    const hasSearchIntent =
-      !isClockQuery &&
-      (isResearchMode ||
-        (effectiveMode !== 'off' &&
-          !isCasualOrGreeting &&
-          (effectiveMode === 'news' ||
-            /\b(search|google|browse|find online|sources?|links?|url|website|latest|news|today|recent|yesterday|this week|2024|2025|2026|weather|stock|price|who won|score|schedule|release date|images?|photos?|pics?|pictures?|videos?|youtube|tweets?|x\.com|twitter|handle|reddit|github|arxiv|persona|wiki|who is|fentch|fetch|scrape|https?:\/\/|[a-z0-9.-]+\.(?:com|org|net|io|ai|edu|gov))\b/i.test(
-              query
-            ))));
+    const effectiveMode: SearchMode = isResearchMode
+      ? 'organic'
+      : mode === 'news'
+      ? 'news'
+      : 'organic';
+    const hasSearchIntent = !isClockQuery && !isCasualOrGreeting;
 
     const computedLoadingMode: 'vision' | 'file' | 'search' | 'thinking' = hasImageAtt
       ? 'vision'
       : hasAnyAtt
       ? 'file'
-      : (isResearchMode || (effectiveMode !== 'off' && hasSearchIntent)) && !isCasualOrGreeting && !isClockQuery
+      : hasSearchIntent
       ? 'search'
       : 'thinking';
 
@@ -1088,21 +1196,32 @@ export default function App() {
             Array.isArray(liveData.sources) &&
             liveData.sources.length > 0
           ) {
-            setThreads((prev) =>
-              prev.map((t) =>
-                t.id === currentThreadId
-                  ? {
-                      ...t,
-                      messages: t.messages.map((m) =>
-                        m.id === streamingMessage.id &&
-                        (!m.sources || m.sources.length < liveData.sources.length)
-                          ? { ...m, sources: liveData.sources }
-                          : m
-                      ),
-                    }
-                  : t
-              )
-            );
+            const prefLang = UserAccountStore.getPersonalization()?.preferredLanguage;
+            const reqLang = detectClientRequestedLanguage(query, prefLang);
+            const cleanLiveSources = !reqLang
+              ? liveData.sources.filter(
+                  (s: any) =>
+                    !/[\u4e00-\u9fff\u3400-\u4dbf]{2,}/.test(`${s?.title || ''} ${s?.snippet || ''}`) &&
+                    !/\b(baidu\.com|zhihu\.com|csdn\.net|weibo\.com)\b/i.test(`${s?.domain || ''} ${s?.url || ''}`)
+                )
+              : liveData.sources;
+            if (cleanLiveSources.length > 0) {
+              setThreads((prev) =>
+                prev.map((t) =>
+                  t.id === currentThreadId
+                    ? {
+                        ...t,
+                        messages: t.messages.map((m) =>
+                          m.id === streamingMessage.id &&
+                          (!m.sources || m.sources.length < cleanLiveSources.length)
+                            ? { ...m, sources: cleanLiveSources }
+                            : m
+                        ),
+                      }
+                    : t
+                )
+              );
+            }
           }
         })
         .catch(() => {});
@@ -1112,7 +1231,12 @@ export default function App() {
       const allPriorMessages = activeThread ? activeThread.messages : [];
       const authHeaders = await getAuthHeaders();
       const clientClock = getClientRealTimeClock();
-      const clockSystemPrompt = buildClientClockSystemDirective(clientClock);
+      const userPersonalization = UserAccountStore.getPersonalization();
+      const clockSystemPrompt = buildClientClockSystemDirective(
+        clientClock,
+        query,
+        userPersonalization?.preferredLanguage
+      );
       const response = await fetchZenoApi('/api/chat', {
         method: 'POST',
         headers: authHeaders,
@@ -1134,14 +1258,14 @@ export default function App() {
               attachments: m.attachments,
             };
           }),
-          webSearch: isClockQuery ? false : hasSearchIntent,
-          searchMode: isClockQuery ? 'off' : effectiveMode,
+          webSearch: isClockQuery ? false : true,
+          searchMode: effectiveMode,
           model: activeModel.geminiModel,
           nsfwMode,
           isResearchMode: isClockQuery ? false : isResearchMode,
           clientClock,
           systemPrompt: clockSystemPrompt,
-          personalization: UserAccountStore.getPersonalization(),
+          personalization: userPersonalization,
           pinnedInsights: UserAccountStore.getBookmarks().slice(0, 10),
           subscriptionPlan: UserAccountStore.getNormalizedPlan(),
           clientUsage: UserAccountStore.getUsage(),
@@ -1376,8 +1500,8 @@ export default function App() {
               attachments: m.attachments,
             };
           }),
-          webSearch: isRegenClockQuery ? false : searchMode === 'news' || isResearchMode,
-          searchMode: isRegenClockQuery ? 'off' : searchMode,
+          webSearch: isRegenClockQuery ? false : true,
+          searchMode: searchMode === 'news' ? 'news' : 'organic',
           model: targetModel.geminiModel,
           nsfwMode,
           clientClock,
@@ -1518,8 +1642,8 @@ export default function App() {
             content: m.content,
             attachments: m.attachments,
           })),
-          webSearch: searchMode === 'news' || isResearchMode,
-          searchMode,
+          webSearch: true,
+          searchMode: searchMode === 'news' ? 'news' : 'organic',
           model: selectedModel.geminiModel,
           nsfwMode,
           clientClock,
@@ -1686,14 +1810,33 @@ export default function App() {
               <div className="absolute top-[max(0.5rem,env(safe-area-inset-top))] left-3 right-3 sm:left-4 sm:right-4 z-30 flex items-center justify-between gap-2 pointer-events-none">
                 <button
                   onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                  className={`pointer-events-auto p-1.5 rounded-xl border backdrop-blur-2xl backdrop-saturate-150 transition-all cursor-pointer ${
+                  className={`pointer-events-auto size-8 rounded-xl border backdrop-blur-2xl backdrop-saturate-150 flex items-center justify-center transition-all cursor-pointer active:scale-95 ${
                     isDark
-                      ? 'bg-neutral-900/55 hover:bg-neutral-800/65 border-white/[0.16] text-white shadow-[0_8px_32px_rgba(0,0,0,0.55)]'
+                      ? 'bg-neutral-900/55 hover:bg-neutral-800/70 border-white/[0.16] text-white shadow-[0_8px_32px_rgba(0,0,0,0.55)]'
                       : 'bg-white/65 hover:bg-white/85 border-black/[0.1] text-[#000000] shadow-[0_8px_32px_rgba(0,0,0,0.1)]'
                   }`}
                   title={isSidebarOpen ? 'Close sidebar' : 'Open sidebar'}
+                  aria-label={isSidebarOpen ? 'Close sidebar' : 'Open sidebar'}
                 >
-                  <PanelLeft className="w-3.5 h-3.5" />
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.9"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="w-4 h-4"
+                  >
+                    <rect x="3" y="3" width="18" height="18" rx="4.5" />
+                    <path d="M9.5 3v18" />
+                    <path d="M6 8h1.5" />
+                    <path d="M6 11.5h1.5" />
+                    {isSidebarOpen ? (
+                      <path d="M15.5 9.5 13 12l2.5 2.5" />
+                    ) : (
+                      <path d="M13.5 9.5 16 12l-2.5 2.5" />
+                    )}
+                  </svg>
                 </button>
 
                 {/* Dynamic Island Model Selector */}
@@ -1714,7 +1857,7 @@ export default function App() {
                   />
                 </div>
 
-                {/* Top Right Controls: Glassmorphic Study Studio + New Chat Button */}
+                {/* Top Right Controls: Study Studio + New Chat Button */}
                 <div className="flex items-center gap-1.5 pointer-events-auto">
                   <button
                     type="button"
@@ -1725,7 +1868,7 @@ export default function App() {
                           isOpen: true,
                           highlightPlan:
                             UserAccountStore.getNormalizedPlan() === 'free' ? 'spark' : 'fire',
-                          limitReason: `Study Space limit reached (${u.pdfStudyUsed}/${u.pdfStudyLimit} sessions used). Upgrade to Spark ($1/mo) for 20 sessions/day or Fire ($5/mo) for unlimited Study Space.`,
+                          limitReason: `Study Space limit reached (${u.pdfStudyUsed}/${u.pdfStudyLimit} sessions used). Upgrade to Spark ($3/mo) for 200 sessions/day or Fire ($7/mo) for unlimited Study Space.`,
                         });
                         return;
                       }
@@ -1745,7 +1888,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={handleNewChat}
-                    className={`pointer-events-auto p-1.5 rounded-xl border backdrop-blur-2xl backdrop-saturate-150 transition-all cursor-pointer ${
+                    className={`pointer-events-auto size-8 rounded-xl border backdrop-blur-2xl backdrop-saturate-150 flex items-center justify-center transition-all cursor-pointer active:scale-95 ${
                       isDark
                         ? 'bg-neutral-900/55 hover:bg-neutral-800/65 border-white/[0.16] text-white shadow-[0_8px_32px_rgba(0,0,0,0.55)]'
                         : 'bg-white/65 hover:bg-white/85 border-black/[0.1] text-[#000000] shadow-[0_8px_32px_rgba(0,0,0,0.1)]'
@@ -1753,7 +1896,18 @@ export default function App() {
                     title="New chat"
                     aria-label="New chat"
                   >
-                    <Plus className="w-3 h-3 stroke-[2.2]" />
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.9"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="w-3.5 h-3.5"
+                    >
+                      <path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                      <path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z" />
+                    </svg>
                   </button>
                 </div>
               </div>
@@ -1775,8 +1929,8 @@ export default function App() {
                         onSend={handleSend}
                         onCancel={handleCancel}
                         isRunning={isRunning}
-                        searchMode={searchMode}
-                        onToggleSearchMode={(m) => setSearchMode(m)}
+                        searchMode={searchMode === 'news' ? 'news' : 'organic'}
+                        onToggleSearchMode={(m) => setSearchMode(m === 'news' ? 'news' : 'organic')}
                         selectedModel={selectedModel}
                         onSelectModel={(m) => setSelectedModel(m)}
                         placeholder="What do you want to know?"
@@ -1912,8 +2066,8 @@ export default function App() {
                         onSend={handleSend}
                         onCancel={handleCancel}
                         isRunning={isRunning}
-                        searchMode={searchMode}
-                        onToggleSearchMode={(m) => setSearchMode(m)}
+                        searchMode={searchMode === 'news' ? 'news' : 'organic'}
+                        onToggleSearchMode={(m) => setSearchMode(m === 'news' ? 'news' : 'organic')}
                         selectedModel={selectedModel}
                         onSelectModel={(m) => setSelectedModel(m)}
                         placeholder="What do you want to know?"
@@ -1982,8 +2136,8 @@ export default function App() {
             selectedModelId={selectedModel.geminiModel}
             selectedModel={selectedModel}
             onSelectModel={(m) => setSelectedModel(m)}
-            searchMode={searchMode}
-            onToggleSearchMode={(m) => setSearchMode(m)}
+            searchMode={searchMode === 'news' ? 'news' : 'organic'}
+            onToggleSearchMode={(m) => setSearchMode(m === 'news' ? 'news' : 'organic')}
             isDark={isDark}
             onInsertReportToChat={(topic, reportMarkdown, sources, arxivPapers) => {
               const userMsg: ChatMessageType = {
@@ -2120,6 +2274,26 @@ export default function App() {
           />
         </>
       )}
+
+      {/* Daily Streak Reminder Notification / Toast */}
+      <StreakReminderToast
+        isDark={isDark}
+        onQuickAction={(promptText) => {
+          if (currentView !== 'chat') {
+            setCurrentView('chat');
+          }
+          if (promptText) {
+            handleSend(promptText);
+          }
+        }}
+        onOpenStreakSettings={() => {
+          setAccountPageTab('profile');
+          setCurrentView('account');
+        }}
+      />
+
+      {/* Achievement Unlocked Milestone & Badge Toast Notification System */}
+      <AchievementToast isDark={isDark} />
     </div>
   );
 }

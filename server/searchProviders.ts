@@ -142,6 +142,257 @@ function decodeXmlEntities(str: string): string {
     .trim();
 }
 
+function isUnsolicitedNonEnglishResult(
+  item: { title?: string; snippet?: string; url?: string; domain?: string },
+  query: string
+): boolean {
+  const q = String(query || '').trim();
+  const queryHasCjk = /[\u4e00-\u9fff\u3400-\u4dbf\u3040-\u30ff\uac00-\ud7af]/.test(q);
+  const queryAsksForCjk = /\b(chinese|mandarin|cantonese|japanese|korean|baidu|zhihu|kanji|hanzi|pinyin)\b/i.test(q);
+  if (queryHasCjk || queryAsksForCjk) {
+    return false;
+  }
+
+  const dom = String(item.domain || '').toLowerCase();
+  const url = String(item.url || '').toLowerCase();
+  const title = String(item.title || '');
+  const snippet = String(item.snippet || '');
+
+  if (
+    /(?:^|\.)(baidu\.com|zhihu\.com|csdn\.net|weibo\.com|qq\.com|163\.com|sina\.com\.cn|sohu\.com|cnblogs\.com|juejin\.cn|gitee\.com|bilibili\.com|douban\.com|toutiao\.com)$/i.test(
+      dom
+    )
+  ) {
+    return true;
+  }
+
+  if (/\/(zht|zhs|zh-tw|zh-cn|zh-hk|ja|ko)\b/i.test(url)) {
+    return true;
+  }
+
+  // Reject results whose title or snippet contains Chinese/CJK or unsolicited Indic scripts when the user asked in English
+  if (
+    /[\u4e00-\u9fff\u3400-\u4dbf]{2,}/.test(title) ||
+    /[\u4e00-\u9fff\u3400-\u4dbf]{3,}/.test(snippet) ||
+    (!/[\u0900-\u0dff]/.test(q) && /[\u0900-\u0dff]{3,}/.test(`${title} ${snippet}`))
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+export function isBoilerplateOrJunkSearchResult(
+  item: { title?: string; snippet?: string; url?: string; domain?: string },
+  query = ''
+): boolean {
+  const dom = String(item.domain || '').toLowerCase().replace(/^www\./, '');
+  const url = String(item.url || '').toLowerCase();
+  const title = String(item.title || '').trim();
+  const snippet = String(item.snippet || '').trim();
+  const q = String(query || '').toLowerCase();
+
+  const asksAboutGoogleProduct =
+    /\b(google\s+(?:drive|workspace|translate|voice|docs|sheets|account|cloud|maps|play|mail|gmail))\b/i.test(q);
+
+  if (!asksAboutGoogleProduct) {
+    if (
+      /^(ogs|drive|translate|account|accounts|myaccount|workspace|voice|mail|maps|play|support|policies|consent|apis|contacts|calendar|photos|keep|meet|admin|takeout|one|store|about|safety)\.google\.com$/i.test(
+        dom
+      )
+    ) {
+      return true;
+    }
+    if (
+      dom === 'google.com' &&
+      !url.includes('/amp/') &&
+      !/scholar\.google/i.test(url) &&
+      (/^(google|google search|sign in|google account|google dashboard)$/i.test(title) ||
+        /google search provides a fast, easy way|access google drive with a google account|sign in to see and manage the data in your google account|access google voice to manage calls|use google workspace for secure collaboration/i.test(
+          snippet
+        ))
+    ) {
+      return true;
+    }
+  }
+
+  if (
+    /^(sign in\s*-\s*google|google dashboard|google translate|google search|voice)$/i.test(title) &&
+    dom.endsWith('google.com')
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Queries Europe PMC (PubMed / MEDLINE / PMC) and OpenAlex for peer-reviewed scientific,
+ * clinical, biomedical, and technical papers with real PMIDs/DOIs, journals, and abstracts.
+ */
+export async function searchScholarlyLiterature(
+  query: string,
+  maxResults = 10,
+  signal?: AbortSignal
+): Promise<SearchResultItem[]> {
+  const cleanQ = String(query || '')
+    .replace(/[^\w\s+-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!cleanQ) return [];
+
+  const fetchEuropePmc = async (): Promise<SearchResultItem[]> => {
+    const items: SearchResultItem[] = [];
+    try {
+      const epmcUrl = `https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=${encodeURIComponent(
+        cleanQ
+      )}&format=json&resultType=core&pageSize=${Math.min(10, maxResults)}`;
+      const res = await fetch(epmcUrl, {
+        headers: { Accept: 'application/json', 'User-Agent': 'ZenoResearch/1.0' },
+        signal: signal || AbortSignal.timeout(4000),
+      });
+      if (!res.ok) return items;
+      const data: any = await res.json();
+      const list = Array.isArray(data?.resultList?.result) ? data.resultList.result : [];
+      for (const r of list) {
+        const title = String(r?.title || '').replace(/<[^>]+>/g, '').trim();
+        if (!title) continue;
+        const pmid = r?.pmid ? String(r.pmid) : '';
+        const pmcid = r?.pmcid ? String(r.pmcid) : '';
+        const doi = r?.doi ? String(r.doi) : '';
+        const journal = String(r?.journalTitle || r?.bookOrReportDetails?.publisher || 'PubMed / Europe PMC').trim();
+        const year = r?.pubYear ? String(r.pubYear) : '';
+        const authors = String(r?.authorString || '').trim();
+        const rawAbstract = String(r?.abstractText || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+        const url = pmid
+          ? `https://pubmed.ncbi.nlm.nih.gov/${pmid}/`
+          : pmcid
+          ? `https://pmc.ncbi.nlm.nih.gov/articles/${pmcid}/`
+          : doi
+          ? `https://doi.org/${doi}`
+          : `https://europepmc.org/search?query=${encodeURIComponent(title)}`;
+        const domain = pmid
+          ? 'pubmed.ncbi.nlm.nih.gov'
+          : pmcid
+          ? 'pmc.ncbi.nlm.nih.gov'
+          : 'europepmc.org';
+        const citationPrefix = [authors ? authors.split(',')[0] + ' et al.' : '', journal, year]
+          .filter(Boolean)
+          .join(' · ');
+        const snippet = rawAbstract
+          ? `${citationPrefix ? `[${citationPrefix}] ` : ''}${rawAbstract.slice(0, 380)}`
+          : `${citationPrefix || 'Peer-reviewed study'} — ${title}`;
+
+        items.push({
+          position: items.length + 1,
+          title: `${title}${year ? ` (${year})` : ''} — ${journal}`,
+          url,
+          snippet,
+          displayed_url: url,
+          domain,
+          source: journal || 'PubMed',
+          date: year || undefined,
+          provider: 'multi_source',
+        });
+      }
+    } catch {}
+    return items;
+  };
+
+  const fetchOpenAlex = async (): Promise<SearchResultItem[]> => {
+    const items: SearchResultItem[] = [];
+    try {
+      const oaUrl = `https://api.openalex.org/works?search=${encodeURIComponent(
+        cleanQ
+      )}&per-page=${Math.min(8, maxResults)}&filter=has_abstract:true`;
+      const res = await fetch(oaUrl, {
+        headers: { Accept: 'application/json', 'User-Agent': 'ZenoResearch/1.0 (mailto:research@zeno.ai)' },
+        signal: signal || AbortSignal.timeout(4000),
+      });
+      if (!res.ok) return items;
+      const data: any = await res.json();
+      const results = Array.isArray(data?.results) ? data.results : [];
+      for (const work of results) {
+        const title = String(work?.title || work?.display_name || '').replace(/<[^>]+>/g, '').trim();
+        if (!title) continue;
+        // Reconstruct abstract from OpenAlex abstract_inverted_index
+        let abstractText = '';
+        const inv = work?.abstract_inverted_index;
+        if (inv && typeof inv === 'object') {
+          const wordsByPos: string[] = [];
+          for (const [word, positions] of Object.entries(inv)) {
+            if (Array.isArray(positions)) {
+              for (const pos of positions) {
+                if (typeof pos === 'number' && pos >= 0 && pos < 600) {
+                  wordsByPos[pos] = word;
+                }
+              }
+            }
+          }
+          abstractText = wordsByPos.filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+        }
+        const doiUrl = work?.doi ? String(work.doi) : '';
+        const landingUrl =
+           work?.primary_location?.landing_page_url ||
+          doiUrl ||
+          work?.id ||
+          '';
+        if (!landingUrl || !landingUrl.startsWith('http')) continue;
+        let domain = 'doi.org';
+        try {
+          domain = new URL(landingUrl).hostname.replace(/^www\./, '');
+        } catch {}
+        const venue =
+          work?.primary_location?.source?.display_name ||
+          work?.host_venue?.display_name ||
+          domain;
+        const year = work?.publication_year ? String(work.publication_year) : '';
+        const firstAuthor = work?.authorships?.[0]?.author?.display_name || '';
+        const citedBy = typeof work?.cited_by_count === 'number' ? work.cited_by_count : 0;
+        const metaPrefix = [
+          firstAuthor ? `${firstAuthor} et al.` : '',
+          venue,
+          year,
+          citedBy > 0 ? `Cited by ${citedBy}` : '',
+        ]
+          .filter(Boolean)
+          .join(' · ');
+
+        items.push({
+          position: items.length + 1,
+          title: `${title}${year ? ` (${year})` : ''} — ${venue}`,
+          url: landingUrl,
+          snippet: abstractText
+            ? `${metaPrefix ? `[${metaPrefix}] ` : ''}${abstractText.slice(0, 380)}`
+            : `${metaPrefix} — ${title}`,
+          displayed_url: landingUrl,
+          domain,
+          source: venue || domain,
+          date: year || undefined,
+          provider: 'multi_source',
+        });
+      }
+    } catch {}
+    return items;
+  };
+
+  const [epmcItems, oaItems] = await Promise.all([fetchEuropePmc(), fetchOpenAlex()]);
+  const combined: SearchResultItem[] = [];
+  const seenTitles = new Set<string>();
+  const maxLen = Math.max(epmcItems.length, oaItems.length);
+  for (let i = 0; i < maxLen; i++) {
+    for (const candidate of [epmcItems[i], oaItems[i]]) {
+      if (!candidate) continue;
+      if (isUnsolicitedNonEnglishResult(candidate, cleanQ)) continue;
+      const normTitle = candidate.title.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 55);
+      if (seenTitles.has(normTitle)) continue;
+      seenTitles.add(normTitle);
+      combined.push({ ...candidate, position: combined.length + 1 });
+    }
+  }
+  return combined.slice(0, maxResults);
+}
+
 /**
  * Public multi-source web & news search (Google News RSS, Bing Web/News RSS, DuckDuckGo HTML,
  * HackerNews Algolia, Reddit JSON, StackExchange, and max-1 Wikipedia) with publisher domain
@@ -164,12 +415,13 @@ export async function fallbackPublicWebSearchWithStatus(
   const fetchGoogleNewsRss = async (): Promise<SearchResultItem[]> => {
     const items: SearchResultItem[] = [];
     try {
-      const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-IN&gl=IN&ceid=IN:en`;
+      const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`;
       const res = await fetch(rssUrl, {
         headers: {
           'User-Agent':
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
           Accept: 'application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
         },
         signal: signal || AbortSignal.timeout(3_500),
       });
@@ -243,16 +495,17 @@ export async function fallbackPublicWebSearchWithStatus(
     return items;
   };
 
-  // 2. Bing Web RSS (organic multi-domain web results)
+  // 2. Bing Web RSS (organic multi-domain web results, forced US-English)
   const fetchBingWebRss = async (): Promise<SearchResultItem[]> => {
     const items: SearchResultItem[] = [];
     try {
-      const bingUrl = `https://www.bing.com/search?q=${encodeURIComponent(query)}&format=rss`;
+      const bingUrl = `https://www.bing.com/search?q=${encodeURIComponent(query)}&setlang=en-US&cc=US&ensearch=1&format=rss`;
       const res = await fetch(bingUrl, {
         headers: {
           'User-Agent':
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
           Accept: 'application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
         },
         signal: signal || AbortSignal.timeout(3_500),
       });
@@ -290,16 +543,18 @@ export async function fallbackPublicWebSearchWithStatus(
     return items;
   };
 
-  // 3. DuckDuckGo HTML organic search
+  // 3. DuckDuckGo HTML organic search (forced US-English region kl=us-en)
   const fetchDuckDuckGoHtml = async (): Promise<SearchResultItem[]> => {
     const items: SearchResultItem[] = [];
     try {
       const ddgRes = await fetch(
-        `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
+        `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}&kl=us-en`,
         {
           headers: {
             'User-Agent':
               'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Accept-Language': 'en-US,en;q=0.9',
+            Cookie: 'kl=us-en',
           },
           signal: signal || AbortSignal.timeout(3_500),
         }
@@ -518,6 +773,11 @@ export async function fallbackPublicWebSearchWithStatus(
     return items;
   };
 
+  const isScienceOrMedical =
+    /\b(steroids?|hormones?|growth|endocrin|clinical|medical|biolog|physiolog|pharmacol|therapy|treatment|syndrome|disease|receptor|pathway|gene|protein|cell|vitamin|metabolism|skeletal|height|epiphyseal|igf|testosterone|estrogen|cortisol|anabolic|pubmed|trial|cohort|dosage|toxicity|neuro|cardio|oncolog|immunol|chemistry|physics|quantum)\b/i.test(
+      query
+    );
+
   const [
     gnewsItems,
     bingItems,
@@ -526,6 +786,7 @@ export async function fallbackPublicWebSearchWithStatus(
     redditItems,
     soItems,
     wikiItems,
+    scholarItems,
   ] = await Promise.all([
     fetchGoogleNewsRss(),
     fetchBingWebRss(),
@@ -534,12 +795,19 @@ export async function fallbackPublicWebSearchWithStatus(
     fetchRedditSearch(),
     fetchStackOverflow(),
     fetchSingleWikipedia(),
+    isScienceOrMedical ? searchScholarlyLiterature(query, 6, signal) : Promise.resolve([]),
   ]);
+
+  if (scholarItems.length > 0) {
+    succeededProviders += 1;
+  }
 
   // Combine in priority order depending on query intent
   const nonWikiPool: SearchResultItem[] = isNewsOrLatest
-    ? [...gnewsItems, ...ddgItems, ...bingItems, ...redditItems, ...hnItems, ...soItems]
-    : [...ddgItems, ...bingItems, ...gnewsItems, ...soItems, ...hnItems, ...redditItems];
+    ? [...gnewsItems, ...ddgItems, ...bingItems, ...scholarItems, ...redditItems, ...hnItems, ...soItems]
+    : isScienceOrMedical
+    ? [...scholarItems, ...ddgItems, ...bingItems, ...gnewsItems, ...redditItems, ...soItems]
+    : [...ddgItems, ...bingItems, ...gnewsItems, ...scholarItems, ...soItems, ...hnItems, ...redditItems];
 
   // Only include the single Wikipedia reference if not a news query or if we have < 4 non-wiki results
   const combinedPool: SearchResultItem[] =
@@ -554,6 +822,7 @@ export async function fallbackPublicWebSearchWithStatus(
   const secondPass: SearchResultItem[] = [];
 
   for (const item of combinedPool) {
+    if (isUnsolicitedNonEnglishResult(item, query) || isBoilerplateOrJunkSearchResult(item, query)) continue;
     const normUrl = item.url.trim().replace(/\/+$/, '');
     if (!normUrl || seenUrls.has(normUrl)) continue;
     seenUrls.add(normUrl);
@@ -742,7 +1011,7 @@ export async function searchWebReliable(
             const data = await callTregEndpointReliable(endpointId, { q: trimmed }, { signal });
             const rawResults = Array.isArray(data?.output?.results) ? data.output.results : [];
 
-            tregResults = rawResults.map((item: any, idx: number) => {
+            const mappedTreg: SearchResultItem[] = rawResults.map((item: any, idx: number) => {
               const rawUrl = item.url || item.link || '';
               let domain = item.domain || '';
               if (!domain && rawUrl) {
@@ -762,6 +1031,15 @@ export async function searchWebReliable(
                 provider: 'treg' as const,
               };
             });
+
+            tregResults = mappedTreg.filter(
+              (item) =>
+                !isUnsolicitedNonEnglishResult(item, trimmed) &&
+                !isBoilerplateOrJunkSearchResult(item, trimmed)
+            );
+            if (rawResults.length > 0 && tregResults.length === 0) {
+              tregError = 'Treg returned only boilerplate navigation links';
+            }
             if (!isTestEnv && tregResults.length > 0 && resolveEarly) {
               earlyTimer = setTimeout(() => resolveEarly?.(), 250);
             }
@@ -778,13 +1056,20 @@ export async function searchWebReliable(
       tasks.push(
         (async () => {
           const tf = await callTinyfishSearch(trimmed, { signal, timeoutMs: isTestEnv ? 5_500 : 1_800 });
-          if (tf.results.length > 0) {
-            tinyfishResults = tf.results;
+          const cleanTf = tf.results.filter(
+            (item) =>
+              !isUnsolicitedNonEnglishResult(item, trimmed) &&
+              !isBoilerplateOrJunkSearchResult(item, trimmed)
+          );
+          if (cleanTf.length > 0) {
+            tinyfishResults = cleanTf;
             if (!isTestEnv && tregResults.length > 0 && resolveEarly) {
               (resolveEarly as () => void)();
             }
           } else if (tf.error) {
             tinyfishError = tf.error;
+          } else if (tf.results.length > 0) {
+            tinyfishError = 'TinyFish returned only boilerplate links';
           }
         })()
       );
@@ -813,6 +1098,7 @@ export async function searchWebReliable(
 
     const addResult = (item: SearchResultItem) => {
       if (!item.url || !item.url.startsWith('http')) return;
+      if (isUnsolicitedNonEnglishResult(item, trimmed) || isBoilerplateOrJunkSearchResult(item, trimmed)) return;
       const key = normalizeUrlKey(item.url);
       if (!seenUrls.has(key)) {
         seenUrls.add(key);

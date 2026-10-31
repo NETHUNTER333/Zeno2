@@ -253,19 +253,42 @@ export function buildDeterministicDocumentStudyBundle(
     );
 
   const enrichedPool =
-    rawSentences.length >= 1
+    rawSentences.length >= 25
       ? rawSentences
       : isTransformerDoc
       ? [
+          ...rawSentences,
           'The Transformer architecture dispenses with recurrence and convolutions entirely, relying solely on self-attention mechanisms to model global dependencies between input and output tokens.',
           'Scaled dot-product attention computes $\\text{Attention}(Q, K, V) = \\text{softmax}\\left(\\frac{QK^T}{\\sqrt{d_k}}\\right)V$, scaling by $\\frac{1}{\\sqrt{d_k}}$ so large dot products do not push the softmax into regions with vanishingly small gradients.',
           'Multi-head attention linearly projects queries, keys, and values $h = 8$ times with different learned projections to $d_k = d_v = 64$ dimensions, allowing joint attention across multiple representation subspaces.',
           'Self-attention layers connect all positions with $\\mathcal{O}(1)$ sequential operations compared to $\\mathcal{O}(n)$ for recurrent layers, enabling massive training parallelization across sequence positions.',
           'Because the Transformer contains no recurrence or convolution, sinusoidal positional encodings of wavelength $2\\pi$ to $10000 \\cdot 2\\pi$ are added to token embeddings so the model can leverage sequence order.',
           'Each encoder layer consists of a multi-head self-attention mechanism followed by a position-wise fully connected feed-forward network $\\text{FFN}(x) = \\max(0, xW_1 + b_1)W_2 + b_2$ with residual connections and layer normalization.',
+          'In the Decoder stack, masked multi-head self-attention sets illegal future positions to $-\\infty$ prior to softmax so autoregressive generation cannot attend to subsequent tokens.',
+          'Encoder-Decoder cross-attention takes Queries ($Q$) from the previous decoder layer and Keys ($K$) and Values ($V$) from the output of the encoder stack.',
+          'The base Transformer stacks $N = 6$ identical layers in both the encoder and decoder, with model dimensionality $d_{\\text{model}} = 512$ and inner feed-forward dimension $d_{ff} = 2048$.',
+          'Weight sharing ties the parameters of the input token embedding matrix, the target token embedding matrix, and the pre-softmax linear projection matrix, scaling embeddings by $\\sqrt{d_{\\text{model}}}$.',
+          'Sinusoidal positional encodings use $PE_{(\\text{pos}, 2i)} = \\sin(\\text{pos}/10000^{2i/d_{\\text{model}}})$ and $PE_{(\\text{pos}, 2i+1)} = \\cos(\\text{pos}/10000^{2i/d_{\\text{model}}})$ so relative offsets $PE_{\\text{pos}+k}$ are linear functions of $PE_{\\text{pos}}$.',
+          'Per-layer computational complexity of self-attention is $\\mathcal{O}(n^2 \\cdot d)$, making it faster than recurrent layers $\\mathcal{O}(n \\cdot d^2)$ whenever sequence length $n$ is smaller than representation dimension $d$.',
+          'When sequence length $n$ is very large, restricting self-attention to a local neighborhood of size $r$ reduces complexity to $\\mathcal{O}(r \\cdot n \\cdot d)$ while increasing maximum path length to $\\mathcal{O}(n / r)$.',
+          'Contiguous convolutional layers with kernel width $k < n$ require a stack of $\\mathcal{O}(n / k)$ layers to connect all token pairs, whereas dilated convolutions require $\\mathcal{O}(\\log_k n)$ layers.',
+          'The Transformer optimizer uses Adam with $\\beta_1 = 0.9$, $\\beta_2 = 0.98$, and $\\epsilon = 10^{-9}$, increasing learning rate linearly for $4000$ warmup steps before decaying proportionally to $\\text{step}^{-0.5}$.',
+          'Residual dropout $P_{\\text{drop}} = 0.1$ is applied to the output of each sub-layer before it is added to the sub-layer input and normalized, as well as to the sum of embeddings and positional encodings.',
+          'Label smoothing of value $\\epsilon_{ls} = 0.1$ is employed during training, which slightly increases perplexity as the model learns to be less overconfident, but improves accuracy and BLEU score.',
+          'On the WMT 2014 English-to-German translation benchmark, the big Transformer model achieved a new state-of-the-art $28.4$ BLEU, outperforming prior ensembles by more than $2.0$ BLEU.',
+          'On WMT 2014 English-to-French translation, the big Transformer achieved a single-model BLEU score of $41.8$ after training for $3.5$ days on $8$ NVIDIA P100 GPUs.',
+          'In ablation experiments (Table 3), single-head attention ($h = 1$) degrades performance by $0.9$ BLEU compared to $h = 8$, while too many heads ($h = 32, d_k = 16$) also reduces quality.',
+          'Reducing attention key dimensionality $d_k$ hurts model quality in ablations, suggesting that determining compatibility between queries and keys requires a expressive dot-product or scoring function.',
+          'During autoregressive inference, Key-Value (KV) caching stores previously computed $K$ and $V$ tensors across decoding steps so each new token only computes a single query vector.',
+          'FlashAttention optimizes exact scaled dot-product attention by tiling $Q, K, V$ blocks in fast on-chip SRAM with online softmax rescaling, avoiding $\\mathcal{O}(N^2)$ High-Bandwidth Memory reads and writes.',
+          'Low-Rank Adaptation (LoRA) freezes pre-trained Transformer weights $W_0$ and injects trainable rank-decomposition matrices $\\Delta W = B A$ ($r \\ll d$), reducing trainable fine-tuning parameters by up to $10,000\\times$.',
+          'Direct Preference Optimization (DPO) aligns language models directly on human preference pairs using a closed-form classification loss without needing a separate reward model or PPO loop.',
         ]
       : [
-          normalized.trim() || `Study material for ${cleanTitle}.`,
+          ...rawSentences,
+          `${cleanTitle} establishes core structural definitions, foundational mechanisms, and primary functional components.`,
+          `The analytical framework in ${cleanTitle} connects theoretical principles with measurable empirical outcomes and system behavior.`,
+          `Key interactions within ${cleanTitle} govern how individual stages process inputs, regulate state transitions, and produce verified outputs.`,
         ];
 
   // Deduplicate sentences while preserving order
@@ -279,26 +302,67 @@ export function buildDeterministicDocumentStudyBundle(
     }
   }
 
+  // Ensure we have at least 26 distinct factual statements by splitting clauses or expanding facets if the input text was brief
+  if (uniqueSentences.length < 26) {
+    const clauseCandidates = normalized
+      .split(/[;:]|\.\s+/)
+      .map((c) => c.trim())
+      .filter((c) => c.length >= 25 && c.length <= 320);
+    for (const c of clauseCandidates) {
+      if (uniqueSentences.length >= 28) break;
+      const key = c.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 60);
+      if (key && !seenNorm.has(key)) {
+        seenNorm.add(key);
+        uniqueSentences.push(c.endsWith('.') ? c : `${c}.`);
+      }
+    }
+  }
+
+  const aspectTemplates = [
+    (t: string, b: string) => `Core Architecture & Definition of ${t}: ${b}`,
+    (t: string, b: string) => `Primary Mechanism in ${t}: ${b}`,
+    (t: string, b: string) => `Structural Organization of ${t}: ${b}`,
+    (t: string, b: string) => `Functional Dynamics of ${t}: ${b}`,
+    (t: string, b: string) => `Key Analytical Principle in ${t}: ${b}`,
+    (t: string, b: string) => `Operational Pathway of ${t}: ${b}`,
+    (t: string, b: string) => `Regulatory & Control Factors in ${t}: ${b}`,
+    (t: string, b: string) => `Empirical Characteristics of ${t}: ${b}`,
+    (t: string, b: string) => `Comparative Advantage in ${t}: ${b}`,
+    (t: string, b: string) => `Practical Implementation of ${t}: ${b}`,
+  ];
+
+  let synthIdx = 0;
+  const baseCount = Math.max(1, uniqueSentences.length);
+  while (uniqueSentences.length < 26 && synthIdx < 30) {
+    const seed = uniqueSentences[synthIdx % baseCount] || `Study material for ${cleanTitle}.`;
+    const expanded = aspectTemplates[synthIdx % aspectTemplates.length](cleanTitle, seed);
+    uniqueSentences.push(expanded);
+    synthIdx++;
+  }
+
   const overview =
     uniqueSentences.slice(0, 3).join(' ') ||
     `Comprehensive technical & conceptual study guide for "${cleanTitle}", synthesizing core principles, mechanisms, quantitative findings, and assessment questions across ${pageCount} ${
       pageCount === 1 ? 'page' : 'pages'
     }.`;
 
-  const keyPoints = uniqueSentences.slice(0, 6);
+  const keyPoints = uniqueSentences.slice(0, 24);
 
-  const sectionCount = Math.min(5, Math.max(3, pageCount));
-  const sentencesPerSection = Math.max(1, Math.ceil(uniqueSentences.length / sectionCount));
+  const sectionCount = Math.min(24, Math.max(20, uniqueSentences.length));
   const sections: DocumentSectionSummary[] = [];
 
   for (let i = 0; i < sectionCount; i++) {
-    const slice = uniqueSentences.slice(i * sentencesPerSection, (i + 1) * sentencesPerSection);
-    const combined = slice.join(' ').trim();
-    const leadWords = (slice[0] || '')
+    const primarySent = uniqueSentences[i % uniqueSentences.length] || '';
+    const secondarySent = uniqueSentences[(i + 1) % uniqueSentences.length] || '';
+    const combined =
+      primarySent.length < 130 && secondarySent && secondarySent !== primarySent
+        ? `${primarySent} ${secondarySent}`.trim()
+        : primarySent;
+    const leadWords = primarySent
       .replace(/\$[^$]+\$/g, '')
       .replace(/[^\w\s]/g, '')
       .split(/\s+/)
-      .filter((w) => w.length > 3 && !/^(this|that|with|from|into|when|what|where)$/i.test(w))
+      .filter((w) => w.length > 3 && !/^(this|that|with|from|into|when|what|where|which|their|there|these|those)$/i.test(w))
       .slice(0, 4)
       .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
       .join(' ');
@@ -308,29 +372,32 @@ export function buildDeterministicDocumentStudyBundle(
         pageCount,
         Math.max(1, Math.round(((i + 0.5) / sectionCount) * pageCount))
       ),
-      title: leadWords || `Section ${i + 1}: Core Analysis`,
+      title: leadWords ? `${leadWords}` : `${cleanTitle} — Section ${i + 1}`,
       summary:
         combined.slice(0, 340) ||
-        `Covers key concepts, analytical framework, and supporting evidence in part ${i + 1} of ${cleanTitle}.`,
+        `Key concepts and supporting details in section ${i + 1} of ${cleanTitle}.`,
     });
   }
 
-  const concepts: DocumentConceptItem[] = sections.map((sec, idx) => ({
+  const concepts: DocumentConceptItem[] = sections.slice(0, 24).map((sec, idx) => ({
     term: sec.title,
     definition: sec.summary,
     mechanism:
       uniqueSentences[(idx * 2 + 1) % uniqueSentences.length] ||
-      `Operates as a structural pillar on Page ${sec.pageNumber} of "${cleanTitle}", linking theoretical definitions with empirical execution.`,
+      sec.summary,
     pageRef: sec.pageNumber,
   }));
 
-  // Partition or offset sentence pools so Easy, Medium, and Hard test completely different angles & passages
+  // Partition or offset sentence pools so Easy, Medium, and Hard test 25-28 questions & 26-30 flashcards
   const buildDifficultyQuiz = (
     lvl: 'easy' | 'medium' | 'hard'
   ): { quiz: DocumentQuizItem[]; flashcards: DocumentFlashcardItem[] } => {
+    const baseQuizList: DocumentQuizItem[] = [];
+    const baseCardList: DocumentFlashcardItem[] = [];
+
     if (isTransformerDoc) {
       if (lvl === 'easy') {
-        const easyQuiz: DocumentQuizItem[] = [
+        baseQuizList.push(
           {
             id: 'pdf-q-easy-1',
             question:
@@ -410,10 +477,10 @@ export function buildDeterministicDocumentStudyBundle(
               'Masked self-attention sets illegal connections (future tokens) to $-\\infty$ before the softmax so predictions for position $i$ depend only on known outputs at positions $< i$.',
             pageRef: 3,
             difficulty: 'easy',
-          },
-        ];
+          }
+        );
 
-        const easyCards: DocumentFlashcardItem[] = [
+        baseCardList.push(
           {
             id: 'pdf-fc-easy-1',
             front: 'What does the Transformer replace RNNs and CNNs with?',
@@ -461,14 +528,10 @@ export function buildDeterministicDocumentStudyBundle(
             category: 'Key Takeaway',
             pageRef: 2,
             difficulty: 'easy',
-          },
-        ];
-
-        return { quiz: easyQuiz, flashcards: easyCards };
-      }
-
-      if (lvl === 'medium') {
-        const mediumQuiz: DocumentQuizItem[] = [
+          }
+        );
+      } else if (lvl === 'medium') {
+        baseQuizList.push(
           {
             id: 'pdf-q-med-1',
             question:
@@ -548,10 +611,10 @@ export function buildDeterministicDocumentStudyBundle(
               'Each layer contains a position-wise FFN consisting of two linear transformations (equivalent to $1 \\times 1$ convolutions) with a ReLU activation in between, expanding from $d_{\\text{model}} = 512$ to $d_{ff} = 2048$ and projecting back to $512$.',
             pageRef: 5,
             difficulty: 'medium',
-          },
-        ];
+          }
+        );
 
-        const mediumCards: DocumentFlashcardItem[] = [
+        baseCardList.push(
           {
             id: 'pdf-fc-med-1',
             front: 'Write the exact formula for Scaled Dot-Product Attention and explain the scaling factor.',
@@ -599,233 +662,238 @@ export function buildDeterministicDocumentStudyBundle(
             category: 'Formula',
             pageRef: 6,
             difficulty: 'medium',
+          }
+        );
+      } else {
+        baseQuizList.push(
+          {
+            id: 'pdf-q-hard-1',
+            question:
+              'Assume the components of query $q$ and key $k$ are independent random variables with mean $0$ and variance $1$. What are the mean and variance of their unscaled dot product $q \\cdot k = \\sum_{i=1}^{d_k} q_i k_i$?',
+            options: [
+              'Mean $0$ and variance $d_k$ (standard deviation $\\sqrt{d_k}$), which is why scaling by $1/\\sqrt{d_k}$ restores unit variance.',
+              'Mean $d_k$ and variance $1$, requiring subtraction of $d_k$ before softmax.',
+              'Mean $0$ and variance $d_k^2$, requiring division by $d_k$.',
+              'Mean $1/\\sqrt{d_k}$ and variance $1/d_k$.',
+            ],
+            correctIndex: 0,
+            explanation:
+              'Each product $q_i k_i$ has $\\mathbb{E}[q_i k_i] = 0$ and $\\text{Var}(q_i k_i) = 1$. Summing $d_k$ independent terms yields mean $0$ and variance $d_k$; dividing by $\\sqrt{d_k}$ normalizes variance back to $1$.',
+            pageRef: 4,
+            difficulty: 'hard',
           },
-        ];
+          {
+            id: 'pdf-q-hard-2',
+            question:
+              'Compare the complexity per layer, sequential operations, and maximum path length between positions for Self-Attention vs. a Recurrent layer (sequence length $n$, dimension $d$):',
+            options: [
+              'Self-Attention: $\\mathcal{O}(n \\cdot d^2)$ complexity, $\\mathcal{O}(n)$ sequential ops, $\\mathcal{O}(n)$ path length; Recurrent: $\\mathcal{O}(n^2 \\cdot d)$ complexity, $\\mathcal{O}(1)$ sequential ops, $\\mathcal{O}(1)$ path length.',
+              'Self-Attention: $\\mathcal{O}(n^2 \\cdot d)$ complexity, $\\mathcal{O}(1)$ sequential ops, $\\mathcal{O}(1)$ maximum path length; Recurrent: $\\mathcal{O}(n \\cdot d^2)$ complexity, $\\mathcal{O}(n)$ sequential ops, $\\mathcal{O}(n)$ maximum path length.',
+              'Both Self-Attention and Recurrent layers have $\\mathcal{O}(n \\log n \\cdot d)$ complexity and $\\mathcal{O}(\\log n)$ maximum path length.',
+              'Self-Attention has $\\mathcal{O}(d^3)$ complexity independent of $n$, whereas Recurrent layers have $\\mathcal{O}(n^3)$ complexity.',
+            ],
+            correctIndex: 1,
+            explanation:
+              'Table 1 of the paper shows Self-Attention requires $\\mathcal{O}(n^2 \\cdot d)$ complexity per layer, $\\mathcal{O}(1)$ sequential operations, and $\\mathcal{O}(1)$ maximum path length between any two token positions, whereas Recurrent layers require $\\mathcal{O}(n \\cdot d^2)$ complexity, $\\mathcal{O}(n)$ sequential ops, and $\\mathcal{O}(n)$ path length.',
+            pageRef: 6,
+            difficulty: 'hard',
+          },
+          {
+            id: 'pdf-q-hard-3',
+            question:
+              'If Self-Attention is restricted to a local neighborhood of size $r$ centered around each output position for very long sequences ($n \\gg d$), how do the per-layer complexity and maximum path length change?',
+            options: [
+              'Complexity becomes $\\mathcal{O}(r \\cdot n \\cdot d)$ and the maximum path length between arbitrary input-output positions increases from $\\mathcal{O}(1)$ to $\\mathcal{O}(n / r)$.',
+              'Complexity remains $\\mathcal{O}(n^2 \\cdot d)$ while maximum path length drops to $\\mathcal{O}(\\log_r n)$.',
+              'Complexity drops to $\\mathcal{O}(n / r)$ and sequential operations increase to $\\mathcal{O}(n)$.',
+              'Complexity becomes $\\mathcal{O}(r^2 \\cdot d)$ and maximum path length remains $\\mathcal{O}(1)$.',
+            ],
+            correctIndex: 0,
+            explanation:
+              'Restricting self-attention to a window of size $r$ reduces per-layer complexity from $\\mathcal{O}(n^2 \\cdot d)$ to $\\mathcal{O}(r \\cdot n \\cdot d)$, at the trade-off of increasing the maximum path length between distant positions from $\\mathcal{O}(1)$ to $\\mathcal{O}(n / r)$.',
+            pageRef: 6,
+            difficulty: 'hard',
+          },
+          {
+            id: 'pdf-q-hard-4',
+            question:
+              'What exact learning rate schedule and regularization hyperparameters were critical to stabilizing Transformer training in Section 5?',
+            options: [
+              'Constant learning rate of $10^{-2}$ with $L_1$ weight decay and no dropout.',
+              '$\\text{lrate} = d_{\\text{model}}^{-0.5} \\cdot \\min(\\text{step\\_num}^{-0.5}, \\text{step\\_num} \\cdot \\text{warmup\\_steps}^{-1.5})$ with $\\text{warmup\\_steps} = 4000$, residual dropout $P_{\\text{drop}} = 0.1$, and label smoothing $\\epsilon_{ls} = 0.1$.',
+              'Cosine annealing with restarts every $500$ steps and label smoothing $\\epsilon_{ls} = 0.5$.',
+              'SGD with Nesterov momentum $0.99$ and gradient clipping at $0.01$ without warmup.',
+            ],
+            correctIndex: 1,
+            explanation:
+              'The Transformer uses Adam ($\\beta_1 = 0.9, \\beta_2 = 0.98, \\epsilon = 10^{-9}$) with linear warmup for $4000$ steps followed by inverse-square-root decay, plus $P_{\\text{drop}} = 0.1$ and label smoothing $\\epsilon_{ls} = 0.1$.',
+            pageRef: 7,
+            difficulty: 'hard',
+          },
+          {
+            id: 'pdf-q-hard-5',
+            question:
+              'For a dilated convolutional layer of kernel width $k < n$, what is the minimum number of stacked layers (maximum path length) required to connect all pairs of input and output positions compared to a contiguous convolution?',
+            options: [
+              '$\\mathcal{O}(\\log_k n)$ for dilated convolutions vs. $\\mathcal{O}(n / k)$ for contiguous convolutions (and $\\mathcal{O}(1)$ for unrestricted self-attention).',
+              '$\\mathcal{O}(1)$ for both dilated and contiguous convolutions.',
+              '$\\mathcal{O}(n^2)$ for dilated convolutions vs. $\\mathcal{O}(k \\cdot n)$ for contiguous convolutions.',
+              '$\\mathcal{O}(k)$ for dilated convolutions vs. $\\mathcal{O}(\\log_2 n)$ for contiguous convolutions.',
+            ],
+            correctIndex: 0,
+            explanation:
+              'A single convolutional layer with kernel width $k < n$ does not connect all pairs of positions; doing so requires a stack of $\\mathcal{O}(n / k)$ contiguous convolutional layers or $\\mathcal{O}(\\log_k n)$ dilated convolutional layers, compared to $\\mathcal{O}(1)$ for self-attention.',
+            pageRef: 6,
+            difficulty: 'hard',
+          }
+        );
 
-        return { quiz: mediumQuiz, flashcards: mediumCards };
+        baseCardList.push(
+          {
+            id: 'pdf-fc-hard-1',
+            front: 'Prove why $q \\cdot k$ has variance $d_k$ when $q_i, k_i \\sim (0, 1)$ i.i.d.',
+            back: '$$\\text{Var}\\left(\\sum_{i=1}^{d_k} q_i k_i\\right) = \\sum_{i=1}^{d_k} \\text{Var}(q_i k_i) = d_k$$ Dividing by $\\sqrt{d_k}$ scales the variance back to $1$.',
+            category: 'First-Principles Math',
+            pageRef: 4,
+            difficulty: 'hard',
+          },
+          {
+            id: 'pdf-fc-hard-2',
+            front: 'Compare complexity per layer, sequential ops, and max path length for Self-Attention vs. Recurrent vs. Convolutional layers.',
+            back: 'Self-Attention: $\\mathcal{O}(n^2 d)$ complexity, $\\mathcal{O}(1)$ seq ops, $\\mathcal{O}(1)$ path. Recurrent: $\\mathcal{O}(n d^2)$ complexity, $\\mathcal{O}(n)$ seq ops, $\\mathcal{O}(n)$ path. Convolutional: $\\mathcal{O}(k n d^2)$ complexity, $\\mathcal{O}(1)$ seq ops, $\\mathcal{O}(\\log_k n)$ or $\\mathcal{O}(n/k)$ path.',
+            category: 'Complexity Analysis',
+            pageRef: 6,
+            difficulty: 'hard',
+          },
+          {
+            id: 'pdf-fc-hard-3',
+            front: 'What is the exact sinusoidal Positional Encoding formula for even and odd dimensions?',
+            back: '$$PE_{(\\text{pos}, 2i)} = \\sin\\left(\\frac{\\text{pos}}{10000^{2i / d_{\\text{model}}}}\\right), \\quad PE_{(\\text{pos}, 2i+1)} = \\cos\\left(\\frac{\\text{pos}}{10000^{2i / d_{\\text{model}}}}\\right)$$',
+            category: 'Formula',
+            pageRef: 6,
+            difficulty: 'hard',
+          },
+          {
+            id: 'pdf-fc-hard-4',
+            front: 'Write the Transformer warmup learning rate equation and its warmup_steps value.',
+            back: '$$\\text{lrate} = d_{\\text{model}}^{-0.5} \\cdot \\min(\\text{step}^{-0.5},\\; \\text{step} \\cdot \\text{warmup}^{-1.5}), \\quad \\text{warmup} = 4000$$',
+            category: 'Optimization',
+            pageRef: 7,
+            difficulty: 'hard',
+          },
+          {
+            id: 'pdf-fc-hard-5',
+            front: 'What effect does Label Smoothing ($\\epsilon_{ls} = 0.1$) have on perplexity vs. BLEU score?',
+            back: 'Label smoothing hurts (increases) perplexity because the model learns to be less confident, but it significantly improves translation accuracy and BLEU score.',
+            category: 'Empirical Ablation',
+            pageRef: 8,
+            difficulty: 'hard',
+          },
+          {
+            id: 'pdf-fc-hard-6',
+            front: 'In the ablation study (Table 3), what happens when attention heads $h = 1$ or when $h$ is too large ($h = 32, d_k = 16$)?',
+            back: 'Single-head attention is $0.9$ BLEU worse than the best setting, and quality also drops when $h$ is too large because reduced $d_k$ degrades key-query compatibility resolution.',
+            category: 'Empirical Ablation',
+            pageRef: 9,
+            difficulty: 'hard',
+          }
+        );
       }
-
-      // HARD level for Transformer / Attention paper
-      const hardQuiz: DocumentQuizItem[] = [
-        {
-          id: 'pdf-q-hard-1',
-          question:
-            'Assume the components of query $q$ and key $k$ are independent random variables with mean $0$ and variance $1$. What are the mean and variance of their unscaled dot product $q \\cdot k = \\sum_{i=1}^{d_k} q_i k_i$?',
-          options: [
-            'Mean $0$ and variance $d_k$ (standard deviation $\\sqrt{d_k}$), which is why scaling by $1/\\sqrt{d_k}$ restores unit variance.',
-            'Mean $d_k$ and variance $1$, requiring subtraction of $d_k$ before softmax.',
-            'Mean $0$ and variance $d_k^2$, requiring division by $d_k$.',
-            'Mean $1/\\sqrt{d_k}$ and variance $1/d_k$.',
-          ],
-          correctIndex: 0,
-          explanation:
-            'Each product $q_i k_i$ has $\\mathbb{E}[q_i k_i] = 0$ and $\\text{Var}(q_i k_i) = 1$. Summing $d_k$ independent terms yields mean $0$ and variance $d_k$; dividing by $\\sqrt{d_k}$ normalizes variance back to $1$.',
-          pageRef: 4,
-          difficulty: 'hard',
-        },
-        {
-          id: 'pdf-q-hard-2',
-          question:
-            'Compare the complexity per layer, sequential operations, and maximum path length between positions for Self-Attention vs. a Recurrent layer (sequence length $n$, dimension $d$):',
-          options: [
-            'Self-Attention: $\\mathcal{O}(n \\cdot d^2)$ complexity, $\\mathcal{O}(n)$ sequential ops, $\\mathcal{O}(n)$ path length; Recurrent: $\\mathcal{O}(n^2 \\cdot d)$ complexity, $\\mathcal{O}(1)$ sequential ops, $\\mathcal{O}(1)$ path length.',
-            'Self-Attention: $\\mathcal{O}(n^2 \\cdot d)$ complexity, $\\mathcal{O}(1)$ sequential ops, $\\mathcal{O}(1)$ maximum path length; Recurrent: $\\mathcal{O}(n \\cdot d^2)$ complexity, $\\mathcal{O}(n)$ sequential ops, $\\mathcal{O}(n)$ maximum path length.',
-            'Both Self-Attention and Recurrent layers have $\\mathcal{O}(n \\log n \\cdot d)$ complexity and $\\mathcal{O}(\\log n)$ maximum path length.',
-            'Self-Attention has $\\mathcal{O}(d^3)$ complexity independent of $n$, whereas Recurrent layers have $\\mathcal{O}(n^3)$ complexity.',
-          ],
-          correctIndex: 1,
-          explanation:
-            'Table 1 of the paper shows Self-Attention requires $\\mathcal{O}(n^2 \\cdot d)$ complexity per layer, $\\mathcal{O}(1)$ sequential operations, and $\\mathcal{O}(1)$ maximum path length between any two token positions, whereas Recurrent layers require $\\mathcal{O}(n \\cdot d^2)$ complexity, $\\mathcal{O}(n)$ sequential ops, and $\\mathcal{O}(n)$ path length.',
-          pageRef: 6,
-          difficulty: 'hard',
-        },
-        {
-          id: 'pdf-q-hard-3',
-          question:
-            'If Self-Attention is restricted to a local neighborhood of size $r$ centered around each output position for very long sequences ($n \\gg d$), how do the per-layer complexity and maximum path length change?',
-          options: [
-            'Complexity becomes $\\mathcal{O}(r \\cdot n \\cdot d)$ and the maximum path length between arbitrary input-output positions increases from $\\mathcal{O}(1)$ to $\\mathcal{O}(n / r)$.',
-            'Complexity remains $\\mathcal{O}(n^2 \\cdot d)$ while maximum path length drops to $\\mathcal{O}(\\log_r n)$.',
-            'Complexity drops to $\\mathcal{O}(n / r)$ and sequential operations increase to $\\mathcal{O}(n)$.',
-            'Complexity becomes $\\mathcal{O}(r^2 \\cdot d)$ and maximum path length remains $\\mathcal{O}(1)$.',
-          ],
-          correctIndex: 0,
-          explanation:
-            'Restricting self-attention to a window of size $r$ reduces per-layer complexity from $\\mathcal{O}(n^2 \\cdot d)$ to $\\mathcal{O}(r \\cdot n \\cdot d)$, at the trade-off of increasing the maximum path length between distant positions from $\\mathcal{O}(1)$ to $\\mathcal{O}(n / r)$.',
-          pageRef: 6,
-          difficulty: 'hard',
-        },
-        {
-          id: 'pdf-q-hard-4',
-          question:
-            'What exact learning rate schedule and regularization hyperparameters were critical to stabilizing Transformer training in Section 5?',
-          options: [
-            'Constant learning rate of $10^{-2}$ with $L_1$ weight decay and no dropout.',
-            '$\\text{lrate} = d_{\\text{model}}^{-0.5} \\cdot \\min(\\text{step\\_num}^{-0.5}, \\text{step\\_num} \\cdot \\text{warmup\\_steps}^{-1.5})$ with $\\text{warmup\\_steps} = 4000$, residual dropout $P_{\\text{drop}} = 0.1$, and label smoothing $\\epsilon_{ls} = 0.1$.',
-            'Cosine annealing with restarts every $500$ steps and label smoothing $\\epsilon_{ls} = 0.5$.',
-            'SGD with Nesterov momentum $0.99$ and gradient clipping at $0.01$ without warmup.',
-          ],
-          correctIndex: 1,
-          explanation:
-            'The Transformer uses Adam ($\\beta_1 = 0.9, \\beta_2 = 0.98, \\epsilon = 10^{-9}$) with linear warmup for $4000$ steps followed by inverse-square-root decay, plus $P_{\\text{drop}} = 0.1$ and label smoothing $\\epsilon_{ls} = 0.1$.',
-          pageRef: 7,
-          difficulty: 'hard',
-        },
-        {
-          id: 'pdf-q-hard-5',
-          question:
-            'For a dilated convolutional layer of kernel width $k < n$, what is the minimum number of stacked layers (maximum path length) required to connect all pairs of input and output positions compared to a contiguous convolution?',
-          options: [
-            '$\\mathcal{O}(\\log_k n)$ for dilated convolutions vs. $\\mathcal{O}(n / k)$ for contiguous convolutions (and $\\mathcal{O}(1)$ for unrestricted self-attention).',
-            '$\\mathcal{O}(1)$ for both dilated and contiguous convolutions.',
-            '$\\mathcal{O}(n^2)$ for dilated convolutions vs. $\\mathcal{O}(k \\cdot n)$ for contiguous convolutions.',
-            '$\\mathcal{O}(k)$ for dilated convolutions vs. $\\mathcal{O}(\\log_2 n)$ for contiguous convolutions.',
-          ],
-          correctIndex: 0,
-          explanation:
-            'A single convolutional layer with kernel width $k < n$ does not connect all pairs of positions; doing so requires a stack of $\\mathcal{O}(n / k)$ contiguous convolutional layers or $\\mathcal{O}(\\log_k n)$ dilated convolutional layers, compared to $\\mathcal{O}(1)$ for self-attention.',
-          pageRef: 6,
-          difficulty: 'hard',
-        },
-      ];
-
-      const hardCards: DocumentFlashcardItem[] = [
-        {
-          id: 'pdf-fc-hard-1',
-          front: 'Prove why $q \\cdot k$ has variance $d_k$ when $q_i, k_i \\sim (0, 1)$ i.i.d.',
-          back: '$$\\text{Var}\\left(\\sum_{i=1}^{d_k} q_i k_i\\right) = \\sum_{i=1}^{d_k} \\text{Var}(q_i k_i) = d_k$$ Dividing by $\\sqrt{d_k}$ scales the variance back to $1$.',
-          category: 'First-Principles Math',
-          pageRef: 4,
-          difficulty: 'hard',
-        },
-        {
-          id: 'pdf-fc-hard-2',
-          front: 'Compare complexity per layer, sequential ops, and max path length for Self-Attention vs. Recurrent vs. Convolutional layers.',
-          back: 'Self-Attention: $\\mathcal{O}(n^2 d)$ complexity, $\\mathcal{O}(1)$ seq ops, $\\mathcal{O}(1)$ path. Recurrent: $\\mathcal{O}(n d^2)$ complexity, $\\mathcal{O}(n)$ seq ops, $\\mathcal{O}(n)$ path. Convolutional: $\\mathcal{O}(k n d^2)$ complexity, $\\mathcal{O}(1)$ seq ops, $\\mathcal{O}(\\log_k n)$ or $\\mathcal{O}(n/k)$ path.',
-          category: 'Complexity Analysis',
-          pageRef: 6,
-          difficulty: 'hard',
-        },
-        {
-          id: 'pdf-fc-hard-3',
-          front: 'What is the exact sinusoidal Positional Encoding formula for even and odd dimensions?',
-          back: '$$PE_{(\\text{pos}, 2i)} = \\sin\\left(\\frac{\\text{pos}}{10000^{2i / d_{\\text{model}}}}\\right), \\quad PE_{(\\text{pos}, 2i+1)} = \\cos\\left(\\frac{\\text{pos}}{10000^{2i / d_{\\text{model}}}}\\right)$$',
-          category: 'Formula',
-          pageRef: 6,
-          difficulty: 'hard',
-        },
-        {
-          id: 'pdf-fc-hard-4',
-          front: 'Write the Transformer warmup learning rate equation and its warmup_steps value.',
-          back: '$$\\text{lrate} = d_{\\text{model}}^{-0.5} \\cdot \\min(\\text{step}^{-0.5},\\; \\text{step} \\cdot \\text{warmup}^{-1.5}), \\quad \\text{warmup} = 4000$$',
-          category: 'Optimization',
-          pageRef: 7,
-          difficulty: 'hard',
-        },
-        {
-          id: 'pdf-fc-hard-5',
-          front: 'What effect does Label Smoothing ($\\epsilon_{ls} = 0.1$) have on perplexity vs. BLEU score?',
-          back: 'Label smoothing hurts (increases) perplexity because the model learns to be less confident, but it significantly improves translation accuracy and BLEU score.',
-          category: 'Empirical Ablation',
-          pageRef: 8,
-          difficulty: 'hard',
-        },
-        {
-          id: 'pdf-fc-hard-6',
-          front: 'In the ablation study (Table 3), what happens when attention heads $h = 1$ or when $h$ is too large ($h = 32, d_k = 16$)?',
-          back: 'Single-head attention is $0.9$ BLEU worse than the best setting, and quality also drops when $h$ is too large because reduced $d_k$ degrades key-query compatibility resolution.',
-          category: 'Empirical Ablation',
-          pageRef: 9,
-          difficulty: 'hard',
-        },
-      ];
-
-      return { quiz: hardQuiz, flashcards: hardCards };
     }
 
-    // General uploaded PDF document: partition sentences into 3 non-overlapping offsets & distinct cognitive templates for Easy, Medium, and Hard
-    const offset = lvl === 'easy' ? 0 : lvl === 'medium' ? 2 : 4;
+    // Top up both Transformer and general documents to 25 quiz questions and 28 flashcards
+    const offset = lvl === 'easy' ? 0 : lvl === 'medium' ? 3 : 6;
     const stepSize = lvl === 'easy' ? 1 : lvl === 'medium' ? 2 : 3;
-    const selectedSentences: string[] = [];
-    for (let i = 0; i < 5; i++) {
-      const idx = (offset + i * stepSize) % uniqueSentences.length;
-      selectedSentences.push(uniqueSentences[idx]);
-    }
 
-    const genQuiz: DocumentQuizItem[] = selectedSentences.map((sent, idx) => {
+    const qTemplates = [
+      (secT: string) => `Regarding ${secT}, which of the following statements is accurate?`,
+      (secT: string) => `Which statement best describes the mechanism or principle of ${secT}?`,
+      (secT: string) => `In the analysis of ${cleanTitle}, what is established concerning ${secT}?`,
+      (secT: string) => `Which of the following accurately characterizes ${secT}?`,
+    ];
+
+    for (let i = 0; baseQuizList.length < 25 && i < 40; i++) {
+      const sentIdx = (offset + i * stepSize) % uniqueSentences.length;
+      const sent = uniqueSentences[sentIdx];
       const cleanSent = sent.length > 145 ? `${sent.slice(0, 142)}...` : sent;
       const alt1 =
-        uniqueSentences[(offset + idx + 3) % uniqueSentences.length]?.slice(0, 135) ||
-        'It relies on unverified assumptions not supported by the source material.';
-      const pageRef = Math.min(pageCount, Math.max(1, ((idx + offset) % pageCount) + 1));
-      const secTitle = sections[idx % sections.length]?.title || `Part ${idx + 1}`;
+        uniqueSentences[(sentIdx + 2) % uniqueSentences.length]?.slice(0, 135) ||
+        `This process occurs independently of ${cleanTitle}.`;
+      const alt2 =
+        uniqueSentences[(sentIdx + 5) % uniqueSentences.length]?.slice(0, 135) ||
+        `It serves only as a passive structural boundary without active regulation.`;
+      const alt3 =
+        uniqueSentences[(sentIdx + 9) % uniqueSentences.length]?.slice(0, 135) ||
+        `It is restricted to external environmental conditions rather than internal mechanisms.`;
+      const pageRef = Math.min(pageCount, Math.max(1, ((i + offset) % pageCount) + 1));
+      const secTitle = sections[i % sections.length]?.title || cleanTitle;
 
-      const questionPrompt =
-        lvl === 'easy'
-          ? `What key point is established in "${cleanTitle}" (${secTitle})?`
-          : lvl === 'medium'
-          ? `Which statement accurately describes the mechanism or findings in "${cleanTitle}" (${secTitle})?`
-          : `Based on the evidence in "${cleanTitle}" (${secTitle}), which conclusion is supported?`;
+      const questionPrompt = qTemplates[i % qTemplates.length](secTitle);
+      if (baseQuizList.some((q) => q.question === questionPrompt)) continue;
 
       const distractors = [
-        alt1 !== cleanSent
-          ? `${alt1}...`
-          : 'It contradicts the primary evidence presented in this section.',
-        'The source states that this factor has no measurable impact in practice.',
-        'None of these statements are supported by the study material.',
+        alt1 !== cleanSent ? alt1 : `It operates inversely to the primary mechanism of ${secTitle}.`,
+        alt2 !== cleanSent && alt2 !== alt1
+          ? alt2
+          : `It functions only when ${secTitle.toLowerCase()} is completely absent.`,
+        alt3 !== cleanSent && alt3 !== alt1 && alt3 !== alt2
+          ? alt3
+          : `It prevents any energy or information transfer across ${secTitle.toLowerCase()}.`,
       ];
 
       const rawOptions = [cleanSent, ...distractors.slice(0, 3)];
-      const targetCorrect = (idx + (lvl === 'easy' ? 0 : lvl === 'medium' ? 1 : 2)) % 4;
+      const targetCorrect = (baseQuizList.length + (lvl === 'easy' ? 0 : lvl === 'medium' ? 1 : 2)) % 4;
       const rotated = [...rawOptions];
       const tmp = rotated[targetCorrect];
       rotated[targetCorrect] = rotated[0];
       rotated[0] = tmp;
 
-      return {
-        id: `pdf-q-${lvl}-${idx + 1}`,
+      baseQuizList.push({
+        id: `pdf-q-${lvl}-${baseQuizList.length + 1}`,
         question: questionPrompt,
         options: rotated,
         correctIndex: targetCorrect,
         explanation: sent,
         pageRef,
         difficulty: lvl,
-      };
-    });
+      });
+    }
 
-    const genCards: DocumentFlashcardItem[] = selectedSentences.map((sent, idx) => {
-      const pageRef = Math.min(pageCount, Math.max(1, ((idx + offset) % pageCount) + 1));
+    const fcTemplates = [
+      (fw: string) => `How does "${fw}" work in ${cleanTitle}?`,
+      (fw: string) => `What is the key role and mechanism of "${fw}"?`,
+      (fw: string) => `Explain the significance of "${fw}" in ${cleanTitle}.`,
+      (fw: string) => `What principle governs "${fw}" according to ${cleanTitle}?`,
+    ];
+
+    for (let i = 0; baseCardList.length < 28 && i < 45; i++) {
+      const sentIdx = (offset + i) % uniqueSentences.length;
+      const sent = uniqueSentences[sentIdx];
+      const pageRef = Math.min(pageCount, Math.max(1, ((i + offset) % pageCount) + 1));
       const focusWords = sent
         .replace(/\$[^$]+\$/g, '')
         .replace(/[^\w\s]/g, '')
         .split(/\s+/)
-        .filter((w) => w.length >= 5)
+        .filter((w) => w.length >= 4 && !/^(this|that|with|from|into|when|what|where|which|their|there)$/i.test(w))
         .slice(0, 3)
         .join(' ');
 
-      return {
-        id: `pdf-fc-${lvl}-${idx + 1}`,
-        front:
-          lvl === 'easy'
-            ? `Define the core role of "${focusWords || `Concept ${idx + 1}`}" in ${cleanTitle} (Page ${pageRef}).`
-            : lvl === 'medium'
-            ? `Explain the operational mechanism behind "${focusWords || `Mechanism ${idx + 1}`}" on Page ${pageRef}.`
-            : `Analyze the trade-offs, mathematical basis, or edge-case behavior of "${
-                focusWords || `Principle ${idx + 1}`
-              }" (Page ${pageRef}).`,
+      const promptFront = fcTemplates[i % fcTemplates.length](
+        focusWords || sections[i % sections.length]?.title || `${cleanTitle} Concept ${i + 1}`
+      );
+      if (baseCardList.some((c) => c.front === promptFront)) continue;
+
+      baseCardList.push({
+        id: `pdf-fc-${lvl}-${baseCardList.length + 1}`,
+        front: promptFront,
         back: sent,
-        category:
-          lvl === 'easy'
-            ? 'Foundational Recall'
-            : lvl === 'medium'
-            ? 'Core Mechanism'
-            : 'Deep Synthesis',
+        category: sections[i % sections.length]?.title || 'Key Concept',
         pageRef,
         difficulty: lvl,
-      };
-    });
+      });
+    }
 
-    return { quiz: genQuiz, flashcards: genCards };
+    return { quiz: baseQuizList.slice(0, 28), flashcards: baseCardList.slice(0, 30) };
   };
 
   const { quiz, flashcards } = buildDifficultyQuiz(difficulty);
@@ -856,24 +924,24 @@ export function buildDeterministicDocumentStudyBundle(
           meaning:
             'Injects sequence order via geometric wavelengths so relative offsets $PE_{\\text{pos}+k}$ can be represented as linear functions of $PE_{\\text{pos}}$.',
         },
+        {
+          label: 'Sub-Layer Residual & LayerNorm',
+          expression: '$\\text{Output} = \\text{LayerNorm}(x + \\text{Sublayer}(x))$',
+          meaning:
+            'Wraps every attention and feed-forward block with residual skip connections to stabilize deep gradient flow.',
+        },
+        {
+          label: 'Warmup Learning Rate Schedule',
+          expression: '$\\text{lrate} = d_{\\text{model}}^{-0.5} \\cdot \\min(\\text{step}^{-0.5}, \\text{step} \\cdot \\text{warmup}^{-1.5})$',
+          meaning:
+            'Increases learning rate linearly for $4000$ warmup steps then decays proportionally to inverse square root of step number.',
+        },
       ]
-    : [
-        {
-          label: 'Primary Objective',
-          expression: cleanTitle.slice(0, 48),
-          meaning: keyPoints[0] || overview,
-        },
-        {
-          label: 'Core Mechanism',
-          expression: sections[0]?.title || 'System Architecture',
-          meaning: sections[0]?.summary || overview,
-        },
-        {
-          label: 'Key Empirical Takeaway',
-          expression: sections[Math.min(1, sections.length - 1)]?.title || 'Empirical Validation',
-          meaning: keyPoints[1] || keyPoints[0] || overview,
-        },
-      ];
+    : sections.slice(0, 10).map((sec, idx) => ({
+        label: sec.title || `Principle ${idx + 1}`,
+        expression: cleanTitle.slice(0, 48),
+        meaning: sec.summary || keyPoints[idx] || overview,
+      }));
 
   return {
     title: cleanTitle,
@@ -893,7 +961,7 @@ export function buildDeterministicDocumentStudyBundle(
     quiz,
     cheatsheet: {
       formulasOrRules,
-      examTips: keyPoints.slice(0, 5),
+      examTips: keyPoints.slice(0, 15),
     },
   };
 }

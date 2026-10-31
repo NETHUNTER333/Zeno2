@@ -138,9 +138,8 @@ const LANGUAGES = [
 export function extractYouTubeIdFromInput(input?: string | null): string | null {
   const trimmed = (input || '').trim();
   if (!trimmed) return null;
-  if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) return trimmed;
   const match = trimmed.match(
-    /(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/|live\/|v\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/i
+    /(?:youtube\.com\/(?:watch\?.*v=|shorts\/|embed\/|live\/|v\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/i
   );
   return match ? match[1] : null;
 }
@@ -337,21 +336,137 @@ function buildFallbackStudyData(
       },
     ];
 
+    const kimchiExtraDoc = buildDeterministicDocumentStudyBundle(
+      rawTitle || 'Who Is Kimchi',
+      segments.map((s) => s.text).join('\n\n'),
+      20,
+      'medium'
+    );
+
+    const baseKeyPoints = [
+      'Viral Myth vs. Verifiable Claims: The $40 million net-worth story circulated across social media as internet legend, even though Kimchi never claimed that figure himself; third-party creators monetize the attention around his name while Kimchi sells no course or product.',
+      'Personal Profile & Daily Routine: Kimchi is profiled as a USC business student living in a $4,000/month Los Angeles apartment who commits approximately 15 hours per day to active desk trading.',
+      'Nature of Meme Coins: Unlike traditional equities, a meme coin has no company, product, or staff behind it and can be deployed to the market within minutes; its price reflects real-time collective attention.',
+      'Entry via Gaming Networks & Early Drawdowns: He discovered meme-coin trading through competitive Fortnite acquaintances on Twitter in early April, enduring initial drawdowns before pivoting to short-duration attention and volume tracking.',
+      'Scaling Through Fall and December: Following his strategy refinement, he reportedly averaged six figures per month by Fall and recorded his first million-dollar month in December during peak meme-coin volume.',
+      'Insider Wallets: A separate wallet accumulated over $1 million prior to a major public launch and cleared more than $100 million selling into launch demand, showing Kimchi was not the largest beneficiary.',
+      'Reversals & Radio Silence: Because speculative peaks are only identifiable after prices reverse, rapid paper gains often evaporate; after headlines peaked, Kimchi withdrew into radio silence.',
+      ...kimchiExtraDoc.summary.keyPoints,
+    ].slice(0, 24);
+
+    const baseFlashcards = [
+      { id: 'fc-1', front: 'What does a meme coin’s price primarily reflect in the video?', back: 'Current attention.', category: 'Meme Coin Trading', timestamp: 82 },
+      { id: 'fc-2', front: 'What university and major is Kimchi associated with?', back: 'Business student at the University of Southern California (USC).', category: 'Background', timestamp: 49 },
+      { id: 'fc-3', front: 'Roughly how many hours a day does Kimchi spend at his desk trading?', back: 'Roughly 15 hours a day.', category: 'Routine', timestamp: 49 },
+      { id: 'fc-4', front: 'What is Kimchi’s approximate monthly apartment rent in Los Angeles?', back: 'About $4,000 per month.', category: 'Background', timestamp: 49 },
+      { id: 'fc-5', front: 'What does the video say Kimchi does NOT sell?', back: 'A course or a product.', category: 'Online Myth', timestamp: 24 },
+      { id: 'fc-6', front: 'How did Kimchi first hear about meme-coin trading?', back: 'Through Fortnite acquaintances who were making money and posting about it on Twitter.', category: 'Origins', timestamp: 120 },
+      { id: 'fc-7', front: 'What separates a meme coin from traditional stocks or companies?', back: 'It is created without a company, product, or staff behind it and can be put on the market within minutes.', category: 'Mechanics', timestamp: 82 },
+      { id: 'fc-8', front: 'What milestone did Kimchi reportedly reach in Fall?', back: 'Averaging at least six figures a month.', category: 'Timeline', timestamp: 220 },
+      { id: 'fc-9', front: 'When did Kimchi reportedly record his first million-dollar month?', back: 'In December.', category: 'Timeline', timestamp: 220 },
+      { id: 'fc-10', front: 'How much did the separate pre-launch wallet clear after buying $1M before a coin went public?', back: 'More than $100 million.', category: 'Market Structure', timestamp: 426 },
+      { id: 'fc-11', front: 'Why do third-party commentators frequently post videos and threads about Kimchi?', back: 'Because they benefit commercially from the views and attention around his story.', category: 'Online Myth', timestamp: 24 },
+      { id: 'fc-12', front: 'Did Kimchi ever personally claim the viral $40 million net-worth figure?', back: 'No, the $40 million rumor spread online without Kimchi ever claiming that figure himself.', category: 'Online Myth', timestamp: 0 },
+      { id: 'fc-13', front: 'What happened in Kimchi’s early months starting in April?', back: 'He experienced steep drawdowns and losses before refining his risk and volume-tracking strategy.', category: 'Timeline', timestamp: 165 },
+      { id: 'fc-14', front: 'Instead of holding meme coins long term, what metrics did Kimchi monitor?', back: 'Social velocity, liquidity pools, and early holder concentration.', category: 'Strategy', timestamp: 165 },
+      { id: 'fc-15', front: 'How quickly can a creator name, add an image to, and launch a meme coin?', back: 'Within minutes.', category: 'Mechanics', timestamp: 82 },
+      { id: 'fc-16', front: 'Why is a speculative market peak difficult to time in real time?', back: 'Because a market peak is only recognizable as a peak after prices reverse and liquidity dries up.', category: 'Risk', timestamp: 365 },
+      { id: 'fc-17', front: 'Which blockchain ecosystem experienced surging retail meme-coin volume during December?', back: 'Solana.', category: 'Market Structure', timestamp: 220 },
+      { id: 'fc-18', front: 'What did the $100M+ insider wallet do right before a major coin went public?', back: 'It bought more than $1 million worth of tokens pre-launch and sold into launch liquidity.', category: 'Market Structure', timestamp: 426 },
+      { id: 'fc-19', front: 'What did Kimchi do immediately after viral headlines broke about his purported $40M fortune?', back: 'He vanished into radio silence, leaving behind only a few cryptic social posts.', category: 'Timeline', timestamp: 458 },
+      { id: 'fc-20', front: 'What is the structural hazard at the center of speculative meme-coin markets?', back: 'Rapid gains and huge paper valuations are frequently followed by steep reversals when liquidity dries up.', category: 'Risk', timestamp: 365 },
+      ...kimchiExtraDoc.flashcards.map((f, idx) => ({
+        id: `fc-extra-${idx + 21}`,
+        front: f.front,
+        back: f.back,
+        category: f.category || 'Core Analysis',
+        timestamp: (idx % 10) * 45,
+      })),
+    ].slice(0, 28);
+
+    const baseQuiz = [
+      {
+        id: 'q-1',
+        question: 'What does the video say Kimchi does not sell?',
+        options: [
+          'A service or a subscription.',
+          'A course or a product.',
+          'A brand or a business.',
+          'A book or a podcast.',
+        ],
+        correctIndex: 1,
+        explanation: 'The video highlights that Kimchi does not sell a course or a product, unlike commentators who monetize attention around him.',
+        timestamp: 24,
+      },
+      {
+        id: 'q-2',
+        question: 'What does a meme coin’s price primarily reflect according to the video?',
+        options: [
+          'Quarterly corporate revenue and cash flow.',
+          'What people are currently paying attention to.',
+          'Central bank foreign exchange reserves.',
+          'Hardware mining difficulty.',
+        ],
+        correctIndex: 1,
+        explanation: 'Because a meme coin has no company, product, or staff behind it, its value depends largely on what people are paying attention to.',
+        timestamp: 82,
+      },
+      {
+        id: 'q-3',
+        question: 'How is Kimchi’s daily routine and living situation described?',
+        options: [
+          'USC business student paying ~$4,000/month rent and trading ~15 hours a day.',
+          'Wall Street hedge fund analyst working 8 hours a day in New York.',
+          'Full-time YouTuber vlogging from Dubai.',
+          'Software engineer building decentralized exchanges in San Francisco.',
+        ],
+        correctIndex: 0,
+        explanation: 'The source describes him as a USC business student in a $4,000/month Los Angeles apartment who spends roughly 15 hours a day at his desk trading meme coins.',
+        timestamp: 49,
+      },
+      {
+        id: 'q-4',
+        question: 'How did Kimchi initially discover meme-coin trading?',
+        options: [
+          'Through a university finance professor.',
+          'Through Fortnite acquaintances posting about their gains on Twitter.',
+          'From a television commercial.',
+          'While interning at a traditional forex brokerage.',
+        ],
+        correctIndex: 1,
+        explanation: 'He first heard about meme-coin trading through Fortnite acquaintances who were making money and posting about it on Twitter.',
+        timestamp: 120,
+      },
+      {
+        id: 'q-5',
+        question: 'Why does the video mention a separate wallet that bought over $1M before a coin went public?',
+        options: [
+          'To prove that Kimchi owned that wallet.',
+          'To show that the wallet cleared over $100M and Kimchi was not necessarily the biggest winner.',
+          'To explain how traditional stock IPOs work.',
+          'To demonstrate that no one makes money in crypto.',
+        ],
+        correctIndex: 1,
+        explanation: 'The video uses the $100M+ wallet example to show that Kimchi was not necessarily the biggest winner in those launches.',
+        timestamp: 426,
+      },
+      ...kimchiExtraDoc.quiz.map((q, idx) => ({
+        id: `q-extra-${idx + 6}`,
+        question: q.question,
+        options: q.options,
+        correctIndex: q.correctIndex,
+        explanation: q.explanation,
+        timestamp: (idx % 10) * 45,
+      })),
+    ].slice(0, 26);
+
     const bundle: YouTubeStudyBundle = {
       videoId,
       title: rawTitle || 'Who Is Kimchi',
       summary: {
         overview:
           'This study guide examines the rise, trading methodology, and online story surrounding "Kimchi," a University of Southern California (USC) business student who trades meme coins roughly 15 hours a day from a $4,000-per-month Los Angeles apartment. It separates the viral $40 million rumor—which spread online without Kimchi ever claiming that figure himself—from his actual documented statements, explains how attention-driven meme coin markets work, and contrasts retail trading with insider wallets that cleared over $100 million on pre-launch allocations.',
-        keyPoints: [
-          'Viral Myth vs. Verifiable Claims: The $40 million net-worth story circulated across social media as internet legend, even though Kimchi never claimed that figure himself; third-party creators monetize the attention around his name while Kimchi sells no course or product.',
-          'Personal Profile & Daily Routine: Kimchi is profiled as a USC business student living in a $4,000/month Los Angeles apartment who commits approximately 15 hours per day to active desk trading.',
-          'Nature of Meme Coins: Unlike traditional equities, a meme coin has no company, product, or staff behind it and can be deployed to the market within minutes; its price reflects real-time collective attention.',
-          'Entry via Gaming Networks & Early Drawdowns: He discovered meme-coin trading through competitive Fortnite acquaintances on Twitter in early April, enduring initial drawdowns before pivoting to short-duration attention and volume tracking.',
-          'Scaling Through Fall and December: Following his strategy refinement, he reportedly averaged six figures per month by Fall and recorded his first million-dollar month in December during peak meme-coin volume.',
-          'Insider Wallets: A separate wallet accumulated over $1 million prior to a major public launch and cleared more than $100 million selling into launch demand, showing Kimchi was not the largest beneficiary.',
-          'Reversals & Radio Silence: Because speculative peaks are only identifiable after prices reverse, rapid paper gains often evaporate; after headlines peaked, Kimchi withdrew into radio silence.',
-        ],
+        keyPoints: baseKeyPoints,
         chapters: [
           {
             timestamp: 0,
@@ -389,7 +504,12 @@ function buildFallbackStudyData(
             summary:
               'How Kimchi vanished from public view immediately after mainstream crypto headlines broke, cementing his status as internet trading folklore.',
           },
-        ],
+          ...kimchiExtraDoc.summary.sections.map((s, idx) => ({
+            timestamp: (idx + 6) * 40,
+            title: s.title,
+            summary: s.summary,
+          })),
+        ].slice(0, 22),
       },
       explanation: {
         coreThesis:
@@ -419,87 +539,16 @@ function buildFallbackStudyData(
               'Buying $1M+ before public launch allows large wallets to sell into retail buy volume and clear $100M+ on launch.',
             timestamp: 426,
           },
-        ],
+          ...kimchiExtraDoc.explanation.concepts.map((c, idx) => ({
+            term: c.term,
+            definition: c.definition,
+            mechanism: c.mechanism,
+            timestamp: (idx + 3) * 35,
+          })),
+        ].slice(0, 22),
       },
-      flashcards: [
-        { id: 'fc-1', front: 'What does a meme coin’s price primarily reflect in the video?', back: 'Current attention.', category: 'Meme Coin Trading', timestamp: 82 },
-        { id: 'fc-2', front: 'What university and major is Kimchi associated with?', back: 'Business student at the University of Southern California (USC).', category: 'Background', timestamp: 49 },
-        { id: 'fc-3', front: 'Roughly how many hours a day does Kimchi spend at his desk trading?', back: 'Roughly 15 hours a day.', category: 'Routine', timestamp: 49 },
-        { id: 'fc-4', front: 'What is Kimchi’s approximate monthly apartment rent in Los Angeles?', back: 'About $4,000 per month.', category: 'Background', timestamp: 49 },
-        { id: 'fc-5', front: 'What does the video say Kimchi does NOT sell?', back: 'A course or a product.', category: 'Online Myth', timestamp: 24 },
-        { id: 'fc-6', front: 'How did Kimchi first hear about meme-coin trading?', back: 'Through Fortnite acquaintances who were making money and posting about it on Twitter.', category: 'Origins', timestamp: 120 },
-        { id: 'fc-7', front: 'What separates a meme coin from traditional stocks or companies?', back: 'It is created without a company, product, or staff behind it and can be put on the market within minutes.', category: 'Mechanics', timestamp: 82 },
-        { id: 'fc-8', front: 'What milestone did Kimchi reportedly reach in Fall?', back: 'Averaging at least six figures a month.', category: 'Timeline', timestamp: 220 },
-        { id: 'fc-9', front: 'When did Kimchi reportedly record his first million-dollar month?', back: 'In December.', category: 'Timeline', timestamp: 220 },
-        { id: 'fc-10', front: 'How much did the separate pre-launch wallet clear after buying $1M before a coin went public?', back: 'More than $100 million.', category: 'Market Structure', timestamp: 426 },
-      ],
-      quiz: [
-        {
-          id: 'q-1',
-          question: 'What does the video say Kimchi does not sell?',
-          options: [
-            'A service or a subscription.',
-            'A course or a product.',
-            'A brand or a business.',
-            'A book or a podcast.',
-          ],
-          correctIndex: 1,
-          explanation: 'The video highlights that Kimchi does not sell a course or a product, unlike commentators who monetize attention around him.',
-          timestamp: 24,
-        },
-        {
-          id: 'q-2',
-          question: 'What does a meme coin’s price primarily reflect according to the video?',
-          options: [
-            'Quarterly corporate revenue and cash flow.',
-            'What people are currently paying attention to.',
-            'Central bank foreign exchange reserves.',
-            'Hardware mining difficulty.',
-          ],
-          correctIndex: 1,
-          explanation: 'Because a meme coin has no company, product, or staff behind it, its value depends largely on what people are paying attention to.',
-          timestamp: 82,
-        },
-        {
-          id: 'q-3',
-          question: 'How is Kimchi’s daily routine and living situation described?',
-          options: [
-            'USC business student paying ~$4,000/month rent and trading ~15 hours a day.',
-            'Wall Street hedge fund analyst working 8 hours a day in New York.',
-            'Full-time YouTuber vlogging from Dubai.',
-            'Software engineer building decentralized exchanges in San Francisco.',
-          ],
-          correctIndex: 0,
-          explanation: 'The source describes him as a USC business student in a $4,000/month Los Angeles apartment who spends roughly 15 hours a day at his desk trading meme coins.',
-          timestamp: 49,
-        },
-        {
-          id: 'q-4',
-          question: 'How did Kimchi initially discover meme-coin trading?',
-          options: [
-            'Through a university finance professor.',
-            'Through Fortnite acquaintances posting about their gains on Twitter.',
-            'From a television commercial.',
-            'While interning at a traditional forex brokerage.',
-          ],
-          correctIndex: 1,
-          explanation: 'He first heard about meme-coin trading through Fortnite acquaintances who were making money and posting about it on Twitter.',
-          timestamp: 120,
-        },
-        {
-          id: 'q-5',
-          question: 'Why does the video mention a separate wallet that bought over $1M before a coin went public?',
-          options: [
-            'To prove that Kimchi owned that wallet.',
-            'To show that the wallet cleared over $100M and Kimchi was not necessarily the biggest winner.',
-            'To explain how traditional stock IPOs work.',
-            'To demonstrate that no one makes money in crypto.',
-          ],
-          correctIndex: 1,
-          explanation: 'The video uses the $100M+ wallet example to show that Kimchi was not necessarily the biggest winner in those launches.',
-          timestamp: 426,
-        },
-      ],
+      flashcards: baseFlashcards,
+      quiz: baseQuiz,
     };
 
     const statements = buildDetailedStatementBreakdown(segments, rawTitle || 'Who Is Kimchi');
@@ -520,7 +569,7 @@ function buildFallbackStudyData(
   const docBundle = buildDeterministicDocumentStudyBundle(
     rawTitle || 'Study Session',
     fullSourceText,
-    Math.max(4, Math.min(16, consolidatedSegments.length || 4)),
+    Math.max(12, Math.min(24, consolidatedSegments.length || 12)),
     'medium'
   );
 
@@ -545,7 +594,7 @@ function buildFallbackStudyData(
     rawTitle || 'Study Material'
   );
 
-  const groupSize = Math.max(1, Math.ceil(consolidatedSegments.length / 6));
+  const groupSize = Math.max(1, Math.ceil(consolidatedSegments.length / 20));
   const chapters: Array<{ timestamp: number; title: string; summary: string }> = [];
   for (let i = 0; i < consolidatedSegments.length; i += groupSize) {
     const slice = consolidatedSegments.slice(i, i + groupSize);
@@ -577,15 +626,20 @@ function buildFallbackStudyData(
     summary: {
       overview: comprehensiveOverview,
       keyPoints:
-        exhaustiveKeyPoints.length > 0 ? exhaustiveKeyPoints : docBundle.summary.keyPoints,
+        exhaustiveKeyPoints.length >= 20
+          ? exhaustiveKeyPoints.slice(0, 26)
+          : [...exhaustiveKeyPoints, ...docBundle.summary.keyPoints].slice(0, 26),
       chapters:
-        chapters.length > 0
-          ? chapters
-          : docBundle.summary.sections.map((s, idx) => ({
-              timestamp: idx * 60,
-              title: s.title,
-              summary: s.summary,
-            })),
+        chapters.length >= 16
+          ? chapters.slice(0, 24)
+          : [
+              ...chapters,
+              ...docBundle.summary.sections.map((s, idx) => ({
+                timestamp: (chapters.length + idx) * 45,
+                title: s.title,
+                summary: s.summary,
+              })),
+            ].slice(0, 24),
     },
     explanation: {
       coreThesis: docBundle.explanation.coreThesis,
@@ -652,6 +706,8 @@ export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
 
   // Related YouTube Videos fetched when the user asks a question or enters a topic
   const [topicVideos, setTopicVideos] = useState<YouTubeVideoInfo[]>([]);
+  const [ytWebSearchQuery, setYtWebSearchQuery] = useState<string>('');
+  const [ytWebSearching, setYtWebSearching] = useState<boolean>(false);
 
   // Collapsible Video / Source Drawer
   const [showSourceViewer, setShowSourceViewer] = useState<boolean>(false);
@@ -758,9 +814,25 @@ export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          const cleaned = parsed.filter(
-            (s: any) => s && s.name && !/^recorded lecture/i.test(String(s.name))
-          );
+          const cleaned = parsed
+            .filter((s: any) => s && s.name && !/^recorded lecture/i.test(String(s.name)))
+            .map((s: any) => {
+              const rawName = String(s.name || '').trim();
+              const wrappedMatch = rawName.match(/^YouTube Video\s*\((.+?)\)$/i);
+              const isWordId =
+                typeof s.videoId === 'string' &&
+                (/^[a-zA-Z]{11}$/.test(s.videoId) || Boolean(wrappedMatch));
+              if (wrappedMatch || isWordId) {
+                const fixedTopic = (wrappedMatch ? wrappedMatch[1] : rawName).trim();
+                return {
+                  ...s,
+                  name: fixedTopic,
+                  videoId: undefined,
+                  sourceType: 'topic' as const,
+                };
+              }
+              return s;
+            });
           if (cleaned.length > 0) return cleaned;
         }
       }
@@ -885,6 +957,31 @@ export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
     [openTabs, activeTabId]
   );
 
+  const handleSearchYouTubeWeb = async (overrideQuery?: string, switchTab = false) => {
+    const q = (overrideQuery ?? ytWebSearchQuery ?? resolvedTitle).trim();
+    if (!q) return;
+    setYtWebSearching(true);
+    try {
+      const authHeaders = await getAuthHeaders();
+      const res = await fetch('/api/study/youtube-search', {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({ query: q, limit: 12 }),
+        signal: AbortSignal.timeout(10000),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.videos) && data.videos.length > 0) {
+          setTopicVideos(data.videos);
+          if (switchTab) {
+            openOrFocusTab('videos', `Videos (${data.videos.length})`);
+          }
+        }
+      }
+    } catch {}
+    setYtWebSearching(false);
+  };
+
   const synthesizeDeepStatementSummary = async (
     title: string,
     consolidatedSegs: YouTubeTranscriptSegment[]
@@ -904,13 +1001,15 @@ Break down every key concept, explanation, example, and takeaway clearly:
 
 ${fullTranscriptText}`;
 
-      const res = await fetch('/api/chat', {
+      const res = await fetch('/api/study/ai-assistant', {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({
-          messages: [{ role: 'user', content: prompt }],
-          webSearch: false,
-          searchMode: 'off',
+          prompt,
+          topic: title,
+          mode: 'summary',
+          context: fullTranscriptText,
+          webSearch: true,
         }),
       });
       if (res.ok) {
@@ -925,21 +1024,27 @@ ${fullTranscriptText}`;
   };
 
   /**
-   * When the user enters a question or topic in Study Space (e.g., "Calories and growth in humans"),
-   * fetches real YouTube videos matching that topic AND generates a real, accurate educational answer,
-   * key points, flashcards, and quiz via /api/study/topic.
+   * When the user enters a question or topic in Study Space (e.g., "Chloroplast"),
+   * fetches real YouTube videos matching that topic via the Web Search Backend AND generates
+   * a real, accurate educational answer, key points, flashcards, and quiz via /api/study/topic.
    */
   const loadTopicStudySpace = async (topicQuery: string) => {
-    const cleanTopic = topicQuery.trim();
+    const cleanTopic = topicQuery
+      .replace(/^YouTube Video\s*\((.+?)\)(?:\s*by\s*YouTube)?$/i, '$1')
+      .trim();
     if (!cleanTopic) return;
+
+    UserAccountStore.recordDailyInteraction(true);
 
     setViewMode('workspace');
     setSourceType('topic');
     setActiveVideoId('');
+    setShowSourceViewer(false);
     setPdfUrl('');
     setRawSourceText('');
     setResolvedTitle(cleanTopic);
     setResolvedAuthor('Topic Study');
+    setYtWebSearchQuery(cleanTopic);
     setLoadingContent(true);
     setAiExhaustiveSummary('');
     setTopicVideos([]);
@@ -955,6 +1060,7 @@ ${fullTranscriptText}`;
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({ query: cleanTopic }),
+        signal: AbortSignal.timeout(16000),
       });
 
       if (res.ok) {
@@ -962,93 +1068,113 @@ ${fullTranscriptText}`;
         const fetchedVideos: YouTubeVideoInfo[] = Array.isArray(data.videos) ? data.videos : [];
         setTopicVideos(fetchedVideos);
 
-        if (fetchedVideos.length > 0 && fetchedVideos[0].videoId) {
-          setActiveVideoId(fetchedVideos[0].videoId);
+        if (fetchedVideos.length > 0) {
+          setOpenTabs((prev) => {
+            if (prev.some((t) => t.type === 'videos')) return prev;
+            return [
+              prev[0] || { id: 'tab-summary', type: 'summary', title: 'Summary' },
+              { id: 'tab-videos', type: 'videos', title: `Videos (${fetchedVideos.length})` },
+              ...prev.slice(1),
+            ];
+          });
+        } else {
+          // Trigger dedicated YouTube web search backend in background if initial list was empty
+          handleSearchYouTubeWeb(cleanTopic, false);
         }
 
-        const sections: DetailedStatementItem[] = Array.isArray(data.sections)
+        const sections: DetailedStatementItem[] = Array.isArray(data.sections) && data.sections.length > 0
           ? data.sections.map((s: any, idx: number) => ({
               index: idx + 1,
-              heading: String(s.heading || s.title || `Key Point ${idx + 1}`),
+              heading: String(s.heading || s.title || `${cleanTopic} — Part ${idx + 1}`),
               claim: String(s.claim || ''),
               elaboration: String(s.elaboration || s.claim || ''),
             }))
           : [];
 
-        const synthSegments: YouTubeTranscriptSegment[] = sections.map((s, idx) => ({
-          start_s: idx * 30,
-          duration_s: 30,
-          text: `${s.heading}: ${s.elaboration}`,
-        }));
+        if (sections.length > 0) {
+          const synthSegments: YouTubeTranscriptSegment[] = sections.map((s, idx) => ({
+            start_s: idx * 30,
+            duration_s: 30,
+            text: `${s.heading}: ${s.elaboration}`,
+          }));
 
-        const bundle: YouTubeStudyBundle = {
-          videoId: fetchedVideos[0]?.videoId || '',
-          title: cleanTopic,
-          summary: {
-            overview: String(data.overview || ''),
-            keyPoints: sections.map((s) => `${s.heading}: ${s.elaboration}`),
-            chapters: sections.map((s, idx) => ({
-              timestamp: idx * 45,
-              title: s.heading,
-              summary: s.elaboration,
-            })),
-          },
-          explanation: {
-            coreThesis: String(data.overview || ''),
-            concepts: Array.isArray(data.concepts)
-              ? data.concepts.map((c: any, idx: number) => ({
-                  term: String(c.term || `Concept ${idx + 1}`),
-                  definition: String(c.definition || ''),
-                  mechanism: String(c.mechanism || ''),
-                  timestamp: idx * 45,
+          const bundle: YouTubeStudyBundle = {
+            videoId: '',
+            title: cleanTopic,
+            summary: {
+              overview: String(data.overview || sections[0]?.elaboration || ''),
+              keyPoints: sections.map((s) => `${s.heading}: ${s.elaboration}`),
+              chapters: sections.map((s, idx) => ({
+                timestamp: idx * 45,
+                title: s.heading,
+                summary: s.elaboration,
+              })),
+            },
+            explanation: {
+              coreThesis: String(data.overview || sections[0]?.elaboration || ''),
+              concepts: Array.isArray(data.concepts)
+                ? data.concepts.map((c: any, idx: number) => ({
+                    term: String(c.term || `Concept ${idx + 1}`),
+                    definition: String(c.definition || ''),
+                    mechanism: String(c.mechanism || ''),
+                    timestamp: idx * 45,
+                  }))
+                : [],
+            },
+            flashcards: Array.isArray(data.flashcards)
+              ? data.flashcards.map((f: any, idx: number) => ({
+                  id: f.id || `fc-${idx + 1}`,
+                  front: String(f.front || ''),
+                  back: String(f.back || ''),
+                  category: String(f.category || cleanTopic.slice(0, 20)),
+                  timestamp: idx * 30,
                 }))
               : [],
-          },
-          flashcards: Array.isArray(data.flashcards)
-            ? data.flashcards.map((f: any, idx: number) => ({
-                id: f.id || `fc-${idx + 1}`,
-                front: String(f.front || ''),
-                back: String(f.back || ''),
-                category: String(f.category || cleanTopic.slice(0, 20)),
-                timestamp: idx * 30,
-              }))
-            : [],
-          quiz: Array.isArray(data.quiz)
-            ? data.quiz.map((q: any, idx: number) => ({
-                id: q.id || `q-${idx + 1}`,
-                question: String(q.question || ''),
-                options: Array.isArray(q.options) ? q.options.map(String) : [],
-                correctIndex: typeof q.correctIndex === 'number' ? q.correctIndex : 0,
-                explanation: String(q.explanation || ''),
-                timestamp: idx * 30,
-              }))
-            : [],
-        };
+            quiz: Array.isArray(data.quiz)
+              ? data.quiz.map((q: any, idx: number) => ({
+                  id: q.id || `q-${idx + 1}`,
+                  question: String(q.question || ''),
+                  options: Array.isArray(q.options) ? q.options.map(String) : [],
+                  correctIndex: typeof q.correctIndex === 'number' ? q.correctIndex : 0,
+                  explanation: String(q.explanation || ''),
+                  timestamp: idx * 30,
+                }))
+              : [],
+          };
 
-        setSegments(synthSegments);
-        setStatementBreakdown(sections);
-        setStudyBundle(bundle);
-        setLoadingContent(false);
+          setSegments(synthSegments);
+          setStatementBreakdown(sections);
+          setStudyBundle(bundle);
+          setLoadingContent(false);
 
-        setSpaces((prev) => {
-          const exists = prev.some((s) => s.name.toLowerCase() === cleanTopic.toLowerCase());
-          if (exists) return prev;
-          return [
-            {
-              id: `space-${Date.now()}`,
-              name: cleanTopic,
-              createdAt: Date.now(),
-              contentCount: sections.length + fetchedVideos.length,
-              sourceType: 'topic',
-            },
-            ...prev,
-          ];
-        });
-        return;
+          setSpaces((prev) => {
+            const exists = prev.some((s) => s.name.toLowerCase() === cleanTopic.toLowerCase());
+            if (exists) return prev;
+            return [
+              {
+                id: `space-${Date.now()}`,
+                name: cleanTopic,
+                createdAt: Date.now(),
+                contentCount: sections.length + fetchedVideos.length,
+                sourceType: 'topic',
+              },
+              ...prev,
+            ];
+          });
+          return;
+        }
       }
     } catch {}
 
+    // Bulletproof fallback so Study Space NEVER stays blank or stuck on loading
+    const fallbackSeed = `${cleanTopic} is a major educational topic encompassing core structures, primary mechanisms, functional pathways, regulatory variables, and real-world applications. Understanding ${cleanTopic} involves analyzing how its primary components are organized, how energy or signals flow through its pathways, and how external conditions influence its overall efficiency.`;
+    const fb = buildFallbackStudyData('', cleanTopic, 'Topic Study', fallbackSeed);
+    setSegments(fb.segments);
+    setStatementBreakdown(fb.statements);
+    setStudyBundle(fb.bundle);
     setLoadingContent(false);
+    handleSearchYouTubeWeb(cleanTopic, false);
+    synthesizeDeepStatementSummary(cleanTopic, fb.segments);
   };
 
   // Load YouTube Video
@@ -1058,6 +1184,20 @@ ${fullTranscriptText}`;
     hintAuthor?: string,
     cachedTranscript?: YouTubeTranscriptSegment[]
   ) => {
+    const cleanHint = (hintTitle || '')
+      .replace(/^YouTube Video\s*\((.+?)\)(?:\s*by\s*YouTube)?$/i, '$1')
+      .trim();
+
+    // Guard against plain words (like "Chloroplast") being passed as a videoId
+    if (
+      targetVidId !== 'Y9by14g7Cbs' &&
+      (/^[a-zA-Z]{11}$/.test(targetVidId) ||
+        (hintTitle && /^YouTube Video\s*\(/i.test(hintTitle)))
+    ) {
+      await loadTopicStudySpace(cleanHint || targetVidId);
+      return;
+    }
+
     setViewMode('workspace');
     setSourceType('youtube');
     setActiveVideoId(targetVidId);
@@ -1070,21 +1210,30 @@ ${fullTranscriptText}`;
     setRevealedDontKnowMap({});
 
     let title =
-      hintTitle || (targetVidId === 'Y9by14g7Cbs' ? 'Who Is Kimchi' : `YouTube Video (${targetVidId})`);
+      cleanHint || (targetVidId === 'Y9by14g7Cbs' ? 'Who Is Kimchi' : 'YouTube Video');
     let author = hintAuthor || (targetVidId === 'Y9by14g7Cbs' ? 'Rube' : 'YouTube');
+    let oembedValid = targetVidId === 'Y9by14g7Cbs';
 
     try {
       const oembedRes = await fetch(
         `https://www.youtube.com/oembed?url=${encodeURIComponent(
           `https://www.youtube.com/watch?v=${targetVidId}`
-        )}&format=json`
+        )}&format=json`,
+        { signal: AbortSignal.timeout(3500) }
       );
       if (oembedRes.ok) {
+        oembedValid = true;
         const oembed = await oembedRes.json();
         if (oembed.title) title = oembed.title;
         if (oembed.author_name) author = oembed.author_name;
       }
     } catch {}
+
+    // If the YouTube video is invalid/unavailable and we have no cached transcript, fall back to topic study space
+    if (!oembedValid && (!cachedTranscript || cachedTranscript.length === 0)) {
+      await loadTopicStudySpace(cleanHint || targetVidId);
+      return;
+    }
 
     setResolvedTitle(title);
     setResolvedAuthor(author);
@@ -1093,12 +1242,13 @@ ${fullTranscriptText}`;
       let rawLoadedSegments: YouTubeTranscriptSegment[] =
         cachedTranscript && cachedTranscript.length > 0 ? cachedTranscript : [];
 
-      if (rawLoadedSegments.length === 0) {
+      if (rawLoadedSegments.length === 0 && targetVidId !== 'Y9by14g7Cbs') {
         try {
           const res = await fetch('/api/youtube/transcript', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ videoId: targetVidId }),
+            signal: AbortSignal.timeout(7500),
           });
           if (res.ok) {
             const data = await res.json();
@@ -1107,6 +1257,88 @@ ${fullTranscriptText}`;
               if (data.title) title = data.title;
               if (data.author) author = data.author;
             }
+          }
+        } catch {}
+      }
+
+      // If this video has no extractable captions, generate real study notes, flashcards & quiz from the video's title/topic via /api/study/topic!
+      if (rawLoadedSegments.length === 0 && targetVidId !== 'Y9by14g7Cbs') {
+        try {
+          const authHeaders = await getAuthHeaders();
+          const topicRes = await fetch('/api/study/topic', {
+            method: 'POST',
+            headers: authHeaders,
+            body: JSON.stringify({ query: title }),
+            signal: AbortSignal.timeout(15000),
+          });
+          if (topicRes.ok) {
+            const data = await topicRes.json();
+            const sections: DetailedStatementItem[] = Array.isArray(data.sections)
+              ? data.sections.map((s: any, idx: number) => ({
+                  index: idx + 1,
+                  heading: String(s.heading || s.title || `${title} — Part ${idx + 1}`),
+                  claim: String(s.claim || ''),
+                  elaboration: String(s.elaboration || s.claim || ''),
+                }))
+              : [];
+
+            const synthSegments: YouTubeTranscriptSegment[] = sections.map((s, idx) => ({
+              start_s: idx * 30,
+              duration_s: 30,
+              text: `${s.heading}: ${s.elaboration}`,
+            }));
+
+            const bundle: YouTubeStudyBundle = {
+              videoId: targetVidId,
+              title,
+              summary: {
+                overview: String(data.overview || ''),
+                keyPoints: sections.map((s) => `${s.heading}: ${s.elaboration}`),
+                chapters: sections.map((s, idx) => ({
+                  timestamp: idx * 45,
+                  title: s.heading,
+                  summary: s.elaboration,
+                })),
+              },
+              explanation: {
+                coreThesis: String(data.overview || ''),
+                concepts: Array.isArray(data.concepts)
+                  ? data.concepts.map((c: any, idx: number) => ({
+                      term: String(c.term || `Concept ${idx + 1}`),
+                      definition: String(c.definition || ''),
+                      mechanism: String(c.mechanism || ''),
+                      timestamp: idx * 45,
+                    }))
+                  : [],
+              },
+              flashcards: Array.isArray(data.flashcards)
+                ? data.flashcards.map((f: any, idx: number) => ({
+                    id: f.id || `fc-${idx + 1}`,
+                    front: String(f.front || ''),
+                    back: String(f.back || ''),
+                    category: String(f.category || title.slice(0, 20)),
+                    timestamp: idx * 30,
+                  }))
+                : [],
+              quiz: Array.isArray(data.quiz)
+                ? data.quiz.map((q: any, idx: number) => ({
+                    id: q.id || `q-${idx + 1}`,
+                    question: String(q.question || ''),
+                    options: Array.isArray(q.options) ? q.options.map(String) : [],
+                    correctIndex: typeof q.correctIndex === 'number' ? q.correctIndex : 0,
+                    explanation: String(q.explanation || ''),
+                    timestamp: idx * 30,
+                  }))
+                : [],
+            };
+
+            setSegments(synthSegments);
+            setStatementBreakdown(sections);
+            setStudyBundle(bundle);
+            setResolvedTitle(title);
+            setResolvedAuthor(author);
+            setLoadingContent(false);
+            return;
           }
         } catch {}
       }
@@ -1125,6 +1357,30 @@ ${fullTranscriptText}`;
       setResolvedTitle(title);
       setResolvedAuthor(author);
       setLoadingContent(false);
+
+      // Upgrade flashcards, quiz, and concepts via AI /api/youtube/study when real segments are present
+      if (rawLoadedSegments.length > 0 && targetVidId !== 'Y9by14g7Cbs') {
+        try {
+          const authHeaders = await getAuthHeaders();
+          const aiRes = await fetch('/api/youtube/study', {
+            method: 'POST',
+            headers: authHeaders,
+            body: JSON.stringify({
+              videoId: targetVidId,
+              videoTitle: title,
+              videoAuthor: author,
+              segments: synthesized.segments,
+            }),
+            signal: AbortSignal.timeout(14000),
+          });
+          if (aiRes.ok) {
+            const aiData = await aiRes.json();
+            if (aiData?.study?.summary?.overview) {
+              setStudyBundle(aiData.study);
+            }
+          }
+        } catch {}
+      }
 
       synthesizeDeepStatementSummary(title, synthesized.segments);
     } finally {
@@ -1196,14 +1452,61 @@ ${fullTranscriptText}`;
         const data = await res.json();
         const aiStudy = data?.study;
         if (aiStudy?.summary?.overview) {
-          const aiSections: DetailedStatementItem[] = Array.isArray(aiStudy.summary.keyPoints)
-            ? aiStudy.summary.keyPoints.map((kp: string, idx: number) => ({
-                index: idx + 1,
-                heading: aiStudy.summary.sections?.[idx]?.title || `Key Point ${idx + 1}`,
-                claim: kp,
-                elaboration: aiStudy.summary.sections?.[idx]?.summary || kp,
-              }))
-            : fallback.statements;
+          const mergedKeyPoints = Array.isArray(aiStudy.summary.keyPoints)
+            ? [
+                ...aiStudy.summary.keyPoints,
+                ...fallback.bundle.summary.keyPoints.filter(
+                  (kp) => !aiStudy.summary.keyPoints.includes(kp)
+                ),
+              ].slice(0, 26)
+            : fallback.bundle.summary.keyPoints;
+
+          const aiSections: DetailedStatementItem[] = mergedKeyPoints.map(
+            (kp: string, idx: number) => ({
+              index: idx + 1,
+              heading:
+                aiStudy.summary.sections?.[idx]?.title ||
+                fallback.statements[idx]?.heading ||
+                `Key Point ${idx + 1}`,
+              claim: kp,
+              elaboration:
+                aiStudy.summary.sections?.[idx]?.summary ||
+                fallback.statements[idx]?.elaboration ||
+                kp,
+            })
+          );
+
+          const remoteFlashcards = Array.isArray(aiStudy.flashcards) ? aiStudy.flashcards : [];
+          const mergedFlashcards = [
+            ...remoteFlashcards,
+            ...fallback.bundle.flashcards.filter(
+              (fb) =>
+                !remoteFlashcards.some(
+                  (rf: any) => String(rf.front || '').toLowerCase() === fb.front.toLowerCase()
+                )
+            ),
+          ].slice(0, 30);
+
+          const remoteQuiz = Array.isArray(aiStudy.quiz) ? aiStudy.quiz : [];
+          const mergedQuiz = [
+            ...remoteQuiz,
+            ...fallback.bundle.quiz.filter(
+              (fq) =>
+                !remoteQuiz.some(
+                  (rq: any) => String(rq.question || '').toLowerCase() === fq.question.toLowerCase()
+                )
+            ),
+          ].slice(0, 28);
+
+          const remoteConcepts = Array.isArray(aiStudy.explanation?.concepts)
+            ? aiStudy.explanation.concepts
+            : [];
+          const mergedConcepts = [
+            ...remoteConcepts,
+            ...fallback.bundle.explanation.concepts.filter(
+              (fc) => !remoteConcepts.some((rc: any) => rc.term === fc.term)
+            ),
+          ].slice(0, 24);
 
           setSegments(fallback.segments);
           setStatementBreakdown(aiSections);
@@ -1212,25 +1515,19 @@ ${fullTranscriptText}`;
             title,
             summary: {
               overview: aiStudy.summary.overview,
-              keyPoints: aiStudy.summary.keyPoints || fallback.bundle.summary.keyPoints,
-              chapters: Array.isArray(aiStudy.summary.sections)
-                ? aiStudy.summary.sections.map((s: any, idx: number) => ({
-                    timestamp: idx * 60,
-                    title: s.title || `Section ${idx + 1}`,
-                    summary: s.summary || '',
-                  }))
-                : fallback.bundle.summary.chapters,
+              keyPoints: mergedKeyPoints,
+              chapters: aiSections.map((s, idx) => ({
+                timestamp: idx * 45,
+                title: s.heading,
+                summary: s.elaboration,
+              })),
             },
             explanation: {
               coreThesis: aiStudy.explanation?.coreThesis || aiStudy.summary.overview,
-              concepts: Array.isArray(aiStudy.explanation?.concepts)
-                ? aiStudy.explanation.concepts
-                : fallback.bundle.explanation.concepts,
+              concepts: mergedConcepts,
             },
-            flashcards: Array.isArray(aiStudy.flashcards)
-              ? aiStudy.flashcards
-              : fallback.bundle.flashcards,
-            quiz: Array.isArray(aiStudy.quiz) ? aiStudy.quiz : fallback.bundle.quiz,
+            flashcards: mergedFlashcards,
+            quiz: mergedQuiz,
           });
           setLoadingContent(false);
           return;
@@ -1323,8 +1620,9 @@ ${fullTranscriptText}`;
               content: `Translate the following timestamped transcript paragraphs into ${lang.label}. Keep each [MM:SS] prefix intact on its own line:\n\n${sampleText}`,
             },
           ],
-          webSearch: false,
-          searchMode: 'off',
+          webSearch: true,
+          searchMode: 'organic',
+          model: 'zro/deepseek-v4.1-flash',
         }),
       });
       const data = await res.json();
@@ -1448,15 +1746,17 @@ ${fullTranscriptText}`;
 
       const fullPrompt = currentQuoted
         ? `Regarding the quiz question: "${currentQuoted}"\n\nUser request: ${displayPrompt}\n\nProvide a clear, simple, helpful explanation grounded in "${resolvedTitle}".`
-        : `${displayPrompt}\n\nContext from "${resolvedTitle}":\n${contextStr}`;
+        : displayPrompt;
 
-      const res = await fetch('/api/chat', {
+      const res = await fetch('/api/study/ai-assistant', {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({
-          messages: [{ role: 'user', content: fullPrompt }],
-          webSearch: false,
-          searchMode: 'off',
+          prompt: fullPrompt,
+          topic: resolvedTitle,
+          mode: 'chat',
+          context: contextStr,
+          webSearch: true,
         }),
       });
       const data = await res.json();
@@ -2798,24 +3098,64 @@ ${fullTranscriptText}`;
                           </p>
                         </section>
 
-                        {/* Related YouTube Videos (Automatically fetched when user asks a question/topic) */}
-                        {topicVideos.length > 0 && (
-                          <section className="space-y-3">
-                            <div className="flex items-center justify-between">
-                              <h3 className="text-sm font-semibold">
-                                Related YouTube Videos
-                              </h3>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  openOrFocusTab('videos', `Videos (${topicVideos.length})`)
-                                }
-                                className={`text-xs ${textMuted} hover:opacity-100 cursor-pointer`}
-                              >
-                                View all ({topicVideos.length})
-                              </button>
+                        {/* Related YouTube Videos + Live Web Search Backend for YouTube */}
+                        <section className="space-y-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <h3 className="text-sm font-semibold">
+                              YouTube Videos ({topicVideos.length})
+                            </h3>
+                            <div className="flex items-center gap-2">
+                              {topicVideos.length > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    openOrFocusTab('videos', `Videos (${topicVideos.length})`)
+                                  }
+                                  className={`text-xs ${textMuted} hover:opacity-100 cursor-pointer`}
+                                >
+                                  View all ({topicVideos.length})
+                                </button>
+                              )}
                             </div>
+                          </div>
 
+                          {/* YouTube Web Search Bar */}
+                          <form
+                            onSubmit={(e) => {
+                              e.preventDefault();
+                              handleSearchYouTubeWeb(ytWebSearchQuery || resolvedTitle, false);
+                            }}
+                            className={`flex items-center gap-2 p-2 rounded-2xl border ${bgCard}`}
+                          >
+                            <Search className={`w-4 h-4 ml-2 shrink-0 ${textMuted}`} />
+                            <input
+                              type="text"
+                              value={ytWebSearchQuery}
+                              onChange={(e) => setYtWebSearchQuery(e.target.value)}
+                              placeholder={`Search YouTube videos via Web Search (e.g., ${resolvedTitle} lecture)...`}
+                              className="flex-1 bg-transparent border-0 text-xs sm:text-sm outline-none"
+                            />
+                            <button
+                              type="submit"
+                              disabled={ytWebSearching}
+                              className={`px-3 py-1.5 rounded-xl text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer shrink-0 ${
+                                isDark
+                                  ? 'bg-white text-black hover:bg-neutral-200'
+                                  : 'bg-black text-white hover:bg-neutral-800'
+                              }`}
+                            >
+                              {ytWebSearching ? (
+                                <>
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  <span>Searching...</span>
+                                </>
+                              ) : (
+                                <span>Search YouTube</span>
+                              )}
+                            </button>
+                          </form>
+
+                          {topicVideos.length > 0 ? (
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                               {topicVideos.slice(0, 4).map((vid) => (
                                 <div
@@ -2892,8 +3232,14 @@ ${fullTranscriptText}`;
                                 </div>
                               ))}
                             </div>
-                          </section>
-                        )}
+                          ) : (
+                            <div className={`p-4 rounded-2xl border text-xs ${bgCard} ${textMuted}`}>
+                              {ytWebSearching
+                                ? `Searching YouTube & Web for "${ytWebSearchQuery || resolvedTitle}"...`
+                                : `Click "Search YouTube" above to fetch educational videos for "${resolvedTitle}".`}
+                            </div>
+                          )}
+                        </section>
 
                         {/* Detailed Notes (When expanded) */}
                         {aiExhaustiveSummary && (
@@ -3027,15 +3373,50 @@ ${fullTranscriptText}`;
                 {/* =========================================================== */}
                 {activeTabObj?.type === 'videos' && (
                   <div className="max-w-3xl mx-auto px-4 sm:px-6 py-5 space-y-5 pb-20">
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-col gap-3">
                       <div>
                         <h2 className="text-base sm:text-lg font-semibold">
-                          YouTube Videos for "{resolvedTitle}"
+                          YouTube Video Search — "{resolvedTitle}"
                         </h2>
                         <p className={`text-xs ${textMuted}`}>
-                          Watch inline or click "Study Video" to generate flashcards and quizzes from any video's transcript.
+                          Powered by Web Search + YouTube Backend. Watch inline or click "Study Video" to generate flashcards and quizzes from any video.
                         </p>
                       </div>
+
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          handleSearchYouTubeWeb(ytWebSearchQuery || resolvedTitle, false);
+                        }}
+                        className={`flex items-center gap-2 p-2 rounded-2xl border ${bgCard}`}
+                      >
+                        <Search className={`w-4 h-4 ml-2 shrink-0 ${textMuted}`} />
+                        <input
+                          type="text"
+                          value={ytWebSearchQuery}
+                          onChange={(e) => setYtWebSearchQuery(e.target.value)}
+                          placeholder="Search any topic or lecture on YouTube..."
+                          className="flex-1 bg-transparent border-0 text-xs sm:text-sm outline-none"
+                        />
+                        <button
+                          type="submit"
+                          disabled={ytWebSearching}
+                          className={`px-3.5 py-1.5 rounded-xl text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer shrink-0 ${
+                            isDark
+                              ? 'bg-white text-black hover:bg-neutral-200'
+                              : 'bg-black text-white hover:bg-neutral-800'
+                          }`}
+                        >
+                          {ytWebSearching ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              <span>Searching...</span>
+                            </>
+                          ) : (
+                            <span>Search YouTube</span>
+                          )}
+                        </button>
+                      </form>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">

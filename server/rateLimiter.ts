@@ -143,7 +143,12 @@ export class InMemorySlidingWindowStore implements RateLimitStore {
 }
 
 export function classifyRouteTier(routePath: string): RateLimitTier {
-  if (routePath === '/chat' || routePath === '/summarize' || routePath === '/pdf/study') {
+  if (
+    routePath === '/chat' ||
+    routePath === '/summarize' ||
+    routePath === '/pdf/study' ||
+    routePath.startsWith('/study/')
+  ) {
     return 'ai_generation';
   }
   if (routePath === '/tts' || routePath.startsWith('/smallest/')) {
@@ -463,7 +468,7 @@ export const SERVER_PLAN_LIMITS: Record<SubscriptionPlanTier, ServerPlanLimits> 
   },
   spark: {
     name: 'Spark',
-    priceMonthly: 1,
+    priceMonthly: 3,
     fileUploadLimit: 250, // 10x limit boost
     maxFilesPerMessage: 25,
     messageLimit: 1500, // 10x limit boost
@@ -474,7 +479,7 @@ export const SERVER_PLAN_LIMITS: Record<SubscriptionPlanTier, ServerPlanLimits> 
   },
   fire: {
     name: 'Fire',
-    priceMonthly: 5,
+    priceMonthly: 7,
     fileUploadLimit: 999_999,
     maxFilesPerMessage: 50,
     messageLimit: 999_999,
@@ -559,8 +564,6 @@ const SERVER_FIRE_MODELS = new Set<string>([
   'larp/gpt-6',
   'radox-claude-opus-5.5',
   'radox/claude-opus-5.5',
-  'radox-claude-mythos-preview',
-  'radox/claude-mythos-preview',
   'radox-claude-fable-5.1',
   'radox/claude-fable-5.1',
   'radox-gpt-5.6-sol',
@@ -913,10 +916,10 @@ export function verifyChatQuotaBeforeExecution(
   const { limits, plan } = snapshot;
   const enforceInTest = req.headers['x-zeno-enforce-quota'] === 'true';
 
-  // 1. Model Tier Enforcement (Spark $1 / Fire $5 lock)
+  // 1. Model Tier Enforcement (Spark $3 / Fire $7 lock)
   const requiredModelTier = classifyServerModelTier(options.model);
   if (!canPlanUseModelTier(plan, requiredModelTier)) {
-    const tierLabel = requiredModelTier === 'fire' ? 'Fire ($5/mo)' : 'Spark ($1/mo)';
+    const tierLabel = requiredModelTier === 'fire' ? 'Fire ($7/mo)' : 'Spark ($3/mo)';
     return {
       allowed: false,
       statusCode: 403,
@@ -940,7 +943,7 @@ export function verifyChatQuotaBeforeExecution(
       statusCode: 429,
       code: 'quota/messages_exceeded',
       requiredTier: upgradeTarget,
-      message: `Daily message limit reached (${snapshot.messagesUsed}/${limits.messageLimit} prompts used on ${limits.name}). Upgrade to Fire ($5/mo) for unlimited messages.`,
+      message: `Daily message limit reached (${snapshot.messagesUsed}/${limits.messageLimit} prompts used on ${limits.name}). Upgrade to Fire ($7/mo) for unlimited messages.`,
       snapshot,
     };
   }
@@ -955,7 +958,7 @@ export function verifyChatQuotaBeforeExecution(
         statusCode: 429,
         code: 'quota/uploads_exceeded',
         requiredTier: upgradeTarget,
-        message: `Your ${limits.name} plan allows up to ${limits.maxFilesPerMessage} files per message. Upgrade to Fire ($5/mo) for unlimited files.`,
+        message: `Your ${limits.name} plan allows up to ${limits.maxFilesPerMessage} files per message. Upgrade to Fire ($7/mo) for unlimited files.`,
         snapshot,
       };
     }
@@ -966,7 +969,7 @@ export function verifyChatQuotaBeforeExecution(
         statusCode: 429,
         code: 'quota/uploads_exceeded',
         requiredTier: upgradeTarget,
-        message: `Daily file upload limit reached (${snapshot.filesUploaded}/${limits.fileUploadLimit} files used on ${limits.name}). Upgrade to Fire ($5/mo) for unlimited uploads.`,
+        message: `Daily file upload limit reached (${snapshot.filesUploaded}/${limits.fileUploadLimit} files used on ${limits.name}). Upgrade to Fire ($7/mo) for unlimited uploads.`,
         snapshot,
       };
     }
@@ -980,7 +983,7 @@ export function verifyChatQuotaBeforeExecution(
       statusCode: 429,
       code: 'quota/deep_research_exceeded',
       requiredTier: upgradeTarget,
-      message: `Daily Deep Research limit reached (${snapshot.deepResearchUsed}/${limits.deepResearchLimit} runs used on ${limits.name}). Upgrade to Fire ($5/mo) for unlimited autonomous research runs.`,
+      message: `Daily Deep Research limit reached (${snapshot.deepResearchUsed}/${limits.deepResearchLimit} runs used on ${limits.name}). Upgrade to Fire ($7/mo) for unlimited autonomous research runs.`,
       snapshot,
     };
   }

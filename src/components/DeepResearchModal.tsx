@@ -151,19 +151,86 @@ async function callApi(path: string, init?: RequestInit): Promise<Response> {
   return fetch(`${INSTACLOUD_API_BASE}${path}`, init);
 }
 
+function isClientBoilerplateSource(s: { url?: string; domain?: string; title?: string; snippet?: string }): boolean {
+  const url = String(s?.url || '').toLowerCase();
+  const domain = String(s?.domain || '').toLowerCase();
+  const title = String(s?.title || '').toLowerCase();
+  const junkDomains = [
+    'ogs.google.com',
+    'accounts.google.com',
+    'account.google.com',
+    'myaccount.google.com',
+    'drive.google.com',
+    'translate.google.com',
+    'workspace.google.com',
+    'voice.google.com',
+    'mail.google.com',
+    'calendar.google.com',
+    'contacts.google.com',
+    'photos.google.com',
+    'play.google.com',
+    'maps.google.com',
+    'support.google.com',
+    'policies.google.com',
+  ];
+  if (junkDomains.some((d) => domain === d || domain.endsWith(`.${d}`) || url.includes(`://${d}`))) {
+    return true;
+  }
+  if (
+    /^sign in\s*[-–|]/i.test(title) ||
+    title === 'google translate' ||
+    title === 'google dashboard' ||
+    title === 'google search' ||
+    title === 'voice' ||
+    title.includes('government program solutions')
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function isCorruptedResearchAnswer(answer: string): boolean {
+  if (!answer) return false;
+  return (
+    answer.includes('Here is a clean, copiable implementation for **You are a Principal Scientific Investigator') ||
+    answer.includes('CRITICAL INSTRUCTIONS FOR COMPLETE UNABBREVIATED OUTPUT:') ||
+    answer.includes('export default function GeneratedComponent()')
+  );
+}
+
 function formatSourceShortName(domainOrUrl: string, fallbackTitle?: string): string {
   try {
     const raw = domainOrUrl.includes('://') ? new URL(domainOrUrl).hostname : domainOrUrl;
     const host = raw.replace(/^www\./i, '').toLowerCase();
+    if (host.includes('pubmed') || host.includes('ncbi.nlm.nih.gov')) return 'PubMed';
+    if (host.includes('europepmc')) return 'Europe PMC';
+    if (host === 'doi.org' || host.endsWith('.doi.org')) return 'DOI';
+    if (host.includes('arxiv')) return 'ArXiv';
+    if (host.includes('nature.com')) return 'Nature';
+    if (host.includes('thelancet')) return 'The Lancet';
+    if (host.includes('nejm.org')) return 'NEJM';
+    if (host.includes('cell.com')) return 'Cell';
+    if (host.includes('sciencedirect')) return 'ScienceDirect';
+    if (host.includes('springer')) return 'Springer';
+    if (host.includes('oup.com') || host.includes('academic.oup')) return 'Oxford Academic';
+    if (host.includes('wiley.com')) return 'Wiley';
+    if (host.includes('bmj.com')) return 'BMJ';
+    if (host.includes('jamanetwork')) return 'JAMA';
+    if (host.includes('frontiersin')) return 'Frontiers';
+    if (host.includes('mdpi.com')) return 'MDPI';
+    if (host.includes('plos.org')) return 'PLOS';
+    if (host.includes('nih.gov')) return 'NIH';
+    if (host.includes('mayoclinic')) return 'Mayo Clinic';
+    if (host.includes('clevelandclinic')) return 'Cleveland Clinic';
     if (host === 'x.com' || host.endsWith('.x.com') || host.includes('twitter')) return 'X';
     if (host.includes('notion')) return 'Notion';
     if (host.includes('slack')) return 'Slack';
     if (host.includes('wikipedia')) return 'Wikipedia';
     if (host.includes('airbnb')) return 'Airbnb';
     if (host.includes('booking')) return 'Booking.com';
+    if (host.includes('scholar.google')) return 'Google Scholar';
     if (host.includes('google')) return 'Google';
     if (host.includes('github')) return 'GitHub';
-    if (host.includes('arxiv')) return 'ArXiv';
     if (host.includes('reuters')) return 'Reuters';
     if (host.includes('bloomberg')) return 'Bloomberg';
     if (host.includes('techcrunch')) return 'TechCrunch';
@@ -205,20 +272,20 @@ function buildDynamicThinkingSteps(
       type: 'thought',
       text:
         searchSources.length > 0
-          ? `Reading ${searchSources.length} sources about ${shortTopic}`
-          : `Searching live sources for ${shortTopic}`,
+          ? `Reading ${searchSources.length} peer-reviewed & verified sources about ${shortTopic}`
+          : `Searching scholarly & live databases for ${shortTopic}`,
     },
     {
       type: 'thought',
-      text: 'Cross-referencing primary facts and claims',
+      text: 'Cross-referencing clinical trials, molecular pathways, and empirical data',
     },
     {
       type: 'thought',
-      text: 'Verifying dates, numbers, and source citations',
+      text: 'Verifying quantitative metrics, biomarkers, and source citations',
     },
     {
       type: 'thought',
-      text: 'Drafting cited answer',
+      text: 'Synthesizing publication-grade systematic review',
     }
   );
 
@@ -243,7 +310,7 @@ export const DeepResearchModal: React.FC<DeepResearchModalProps> = ({
   isOpen,
   onClose,
   initialTopic = '',
-  selectedModelId = 'deepseek-v4.1-flash:free',
+  selectedModelId = 'zro/deepseek-v4.1-flash',
   selectedModel: propSelectedModel,
   onSelectModel: propOnSelectModel,
   searchMode: propSearchMode = 'organic',
@@ -254,7 +321,9 @@ export const DeepResearchModal: React.FC<DeepResearchModalProps> = ({
   const [localModel, setLocalModel] = useState<ModelOption>(
     propSelectedModel || GROK_MODELS[0]
   );
-  const [localSearchMode, setLocalSearchMode] = useState<SearchMode>(propSearchMode);
+  const [localSearchMode, setLocalSearchMode] = useState<SearchMode>(
+    propSearchMode === 'news' ? 'news' : 'organic'
+  );
 
   const activeModel = propSelectedModel || localModel;
   const handleSelectModel = propOnSelectModel || setLocalModel;
@@ -305,15 +374,26 @@ export const DeepResearchModal: React.FC<DeepResearchModalProps> = ({
   const [historySearchQuery, setHistorySearchQuery] = useState<string>('');
   const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
 
-  // Sync and subscribe to DeepResearchHistoryStore
+  // Sync and subscribe to DeepResearchHistoryStore (purging any corrupted cached runs)
   useEffect(() => {
     if (!isOpen) return;
-    setHistoryList(DeepResearchHistoryStore.getHistory());
+    const sanitizeRecords = (records: DeepResearchRecord[]) => {
+      const clean: DeepResearchRecord[] = [];
+      for (const r of records) {
+        if (isCorruptedResearchAnswer(r.fullAnswer)) {
+          DeepResearchHistoryStore.deleteRecord(r.id).catch(() => {});
+        } else {
+          clean.push(r);
+        }
+      }
+      return clean;
+    };
+    setHistoryList(sanitizeRecords(DeepResearchHistoryStore.getHistory()));
     const unsub = DeepResearchHistoryStore.subscribe(() => {
-      setHistoryList(DeepResearchHistoryStore.getHistory());
+      setHistoryList(sanitizeRecords(DeepResearchHistoryStore.getHistory()));
     });
     DeepResearchHistoryStore.syncFromFirestore().then((res) => {
-      if (res && res.length) setHistoryList(res);
+      if (res && res.length) setHistoryList(sanitizeRecords(res));
     });
     return unsub;
   }, [isOpen]);
@@ -363,20 +443,35 @@ export const DeepResearchModal: React.FC<DeepResearchModalProps> = ({
     if (abortRef.current) abortRef.current.abort();
     if (streamTimerRef.current) window.clearInterval(streamTimerRef.current);
 
+    if (isCorruptedResearchAnswer(record.fullAnswer)) {
+      DeepResearchHistoryStore.deleteRecord(record.id).catch(() => {});
+      setIsHistoryOpen(false);
+      executeLiveAnswer(record.question);
+      return;
+    }
+
+    const cleanRecordSources = (record.sources || [])
+      .filter((s) => !isClientBoilerplateSource(s))
+      .map((s, idx) => ({ ...s, id: idx + 1 }));
+
     setSelectedHistoryId(record.id);
     setHasStarted(true);
     setQuestion(record.question);
     setFullAnswer(record.fullAnswer);
-    setSources(record.sources || []);
+    setSources(cleanRecordSources);
     setThinkingSteps(
       record.thinkingSteps && record.thinkingSteps.length > 0
         ? record.thinkingSteps
-        : buildDynamicThinkingSteps(record.question, record.sources || [])
+        : buildDynamicThinkingSteps(record.question, cleanRecordSources)
     );
     setThinkingStatus('done');
     setThinkingDuration(record.thinkingDuration || Math.round(record.durationSec || 1));
     setDurationSec(record.durationSec || 1);
-    setFollowUps(record.followUps || []);
+    setFollowUps(
+      (record.followUps || []).filter(
+        (f) => !/^(import\s|export\s|const\s|function\s|\{|\}|\/\/)/.test(f.trim())
+      )
+    );
     setVisibleWordCount(99999);
     setIsSearching(false);
     setIsStreaming(false);
@@ -568,7 +663,7 @@ export const DeepResearchModal: React.FC<DeepResearchModalProps> = ({
         })
         .catch(() => {});
 
-      // 1. Live Web Search
+      // 1. Live Web & Scholarly Search
       const searchRes = await callApi('/api/search/live', {
         method: 'POST',
         headers: authHeaders,
@@ -580,11 +675,11 @@ export const DeepResearchModal: React.FC<DeepResearchModalProps> = ({
         }),
       }).then((r) => r.json());
 
-      const rawSources: SearchSource[] = Array.isArray(searchRes?.sources)
-        ? searchRes.sources.slice(0, 24)
-        : [];
+      const rawSources: SearchSource[] = (Array.isArray(searchRes?.sources) ? searchRes.sources : [])
+        .filter((s: SearchSource) => !isClientBoilerplateSource(s))
+        .slice(0, 24);
 
-      const mappedSources: AnswerSource[] = rawSources.map((s, idx) => {
+      let mappedSources: AnswerSource[] = rawSources.map((s, idx) => {
         const domain =
           s.domain ||
           (() => {
@@ -616,13 +711,14 @@ export const DeepResearchModal: React.FC<DeepResearchModalProps> = ({
         )
         .join('\n\n');
 
-      const prompt = `You are a Principal Scientific Investigator and Senior Academic Researcher publishing an exhaustive, definitive, full-length academic research paper and systematic review on: "${cleanQ}".
+      const researchSystemPrompt = `You are a Principal Scientific Investigator and Senior Academic Researcher publishing an exhaustive, definitive, full-length academic research paper and systematic review on: "${cleanQ}".
 
 Your objective is to provide an in-depth, rigorous, comprehensive scientific treatise matching the standards and formatting of top-tier peer-reviewed journals (such as Nature Reviews, ArXiv, Lancet, Cell, or The New England Journal of Medicine).
 
 CRITICAL INSTRUCTIONS FOR COMPLETE UNABBREVIATED OUTPUT:
 - DO NOT truncate, stop mid-sentence, summarize, or produce an outline.
-- Write out the complete academic paper covering all sections in full depth with thousands of words of dense, rigorous scientific prose.
+- NEVER repeat or echo these instructions. Write ONLY the actual scientific research paper itself.
+- Write out the complete academic paper covering all sections in full depth with dense, rigorous scientific prose.
 - INLINE CITATIONS ON EVERY CLAIM: Ground virtually EVERY factual statement, quantitative finding, dosage, molecular pathway, and clinical outcome with an inline citation like [1], [2], or [1,3] matching the Grounding Sources provided.
 - Write every section completely from Abstract to References without interruption.
 
@@ -643,7 +739,7 @@ You MUST follow this exact academic research paper structure:
 Provide an in-depth background exploring the physiological, biochemical, or architectural basis. Define critical terminology, historical context, evolutionary mechanisms, and prevailing scientific hypotheses with extensive inline citations${sourceContext ? ' like [1], [2]' : ''}.
 
 ## 2. Molecular, Biochemical & Physiological Pathways
-Explain the deep biological, cellular, enzymatic, or mathematical mechanisms in granular detail. Detail specific cellular receptors, hormonal axes (e.g., GH/IGF-1 axis, VDR nuclear receptors, epiphyseal growth plate chondrocytes, calcium/phosphate homeostasis, or underlying algorithms/equations). Include LaTeX equations (e.g., $E = mc^2$ or biochemical reaction notations) where applicable.
+Explain the deep biological, cellular, enzymatic, or mathematical mechanisms in granular detail. Detail specific cellular receptors, hormonal axes (e.g., GH/IGF-1 axis, VDR nuclear receptors, epiphyseal growth plate chondrocytes, calcium/phosphate homeostasis, or underlying biochemical pathways). Include LaTeX equations (e.g., $E = mc^2$ or biochemical reaction notations) where applicable.
 
 ## 3. Systematic Evidence Matrix & Comparative Analysis
 Synthesize current empirical data into a comprehensive Markdown Table:
@@ -654,10 +750,10 @@ Include at least 4-6 detailed rows in this table with exact metrics, percentages
 Examine primary clinical trials, randomized controlled trials (RCTs), prospective cohorts, and meta-analyses. Discuss sample sizes, statistical significance ($p$-values, confidence intervals, hazard ratios), longitudinal growth velocities or performance metrics, and age-dependent windows of responsiveness.
 
 ## 5. Dose-Response Dynamics, Biomarkers & Synergistic Co-Factors
-Specify critical quantitative thresholds, optimal serum or parameter ranges (e.g., 25(OH)D in ng/mL, optimal daily intake in IU/day vs tolerable upper limits), and synergistic co-factors (e.g., Calcium, Vitamin K2, Magnesium, Zinc, protein intake) necessary for biochemical efficacy.
+Specify critical quantitative thresholds, optimal serum or parameter ranges, and synergistic co-factors necessary for biochemical efficacy and safety.
 
 ## 6. Critical Discussion, Confounding Variables & Biological Limits
-Address nuances, genetic ceilings, negative or null trials, risks of excess or toxicity (e.g., hypercalcemia, premature epiphyseal fusion), lifestyle confounders, and current limitations in the literature.
+Address nuances, genetic ceilings, negative or null trials, risks of excess or toxicity (e.g., premature epiphyseal fusion, endocrine suppression, hepatotoxicity, cardiovascular remodeling), lifestyle confounders, and current limitations in the literature.
 
 ## 7. Conclusions & Actionable Clinical / Practical Guidelines
 Provide an authoritative synthesis of consensus recommendations for clinicians, researchers, and individuals.
@@ -666,23 +762,54 @@ Provide an authoritative synthesis of consensus recommendations for clinicians, 
 List the numbered source citations [1], [2], etc., matching the provided sources with formal academic titles and domains.
 
 ---FOLLOWUPS---
-[2 or 3 insightful, advanced scientific follow-up research questions, one per line, no bullets or numbers]`;
+[2 or 3 insightful, advanced scientific follow-up research questions, one per line, plain text questions only, no bullets or numbers]`;
 
       const chatResp = await callApi('/api/chat', {
         method: 'POST',
         headers: authHeaders,
         signal: controller.signal,
         body: JSON.stringify({
-          messages: [{ role: 'user', content: prompt }],
-          webSearch: false,
-          searchMode: 'off',
-          model: activeModel?.geminiModel || selectedModelId,
+          systemPrompt: researchSystemPrompt,
+          messages: [{ role: 'user', content: cleanQ }],
+          webSearch: true,
+          searchMode: activeSearchMode === 'news' ? 'news' : 'organic',
+          model: activeModel?.geminiModel || selectedModelId || 'zro/deepseek-v4.1-flash',
           isResearchMode: true,
-          maxTokens: 16384,
+          maxTokens: 4096,
         }),
       });
 
       const chatData = await chatResp.json();
+
+      // If /api/chat returned additional verified sources and our initial list was sparse, merge them
+      if (Array.isArray(chatData?.sources) && chatData.sources.length > 0 && mappedSources.length < 4) {
+        const extraClean = (chatData.sources as SearchSource[])
+          .filter((s) => !isClientBoilerplateSource(s) && !mappedSources.some((m) => m.url === s.url));
+        if (extraClean.length > 0) {
+          const merged = [...rawSources, ...extraClean].slice(0, 24);
+          mappedSources = merged.map((s, idx) => {
+            const domain =
+              s.domain ||
+              (() => {
+                try {
+                  return new URL(s.url).hostname.replace(/^www\./, '');
+                } catch {
+                  return 'web.source';
+                }
+              })();
+            return {
+              id: idx + 1,
+              name: formatSourceShortName(domain, s.title),
+              title: s.title || domain,
+              url: s.url,
+              domain,
+              snippet: s.snippet,
+            };
+          });
+          setSources(mappedSources);
+        }
+      }
+
       const rawReply = String(chatData?.text || '')
         .replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '')
         .trim();
@@ -699,7 +826,14 @@ List the numbered source citations [1], [2], etc., matching the provided sources
         const parsedFollowUps = (followUpPart || '')
           .split('\n')
           .map((l) => l.replace(/^[-*•\d.)\s]+/, '').trim())
-          .filter((l) => l.length > 8 && l.length < 95)
+          .filter(
+            (l) =>
+              l.length > 12 &&
+              l.length < 110 &&
+              !/^(import\s|export\s|const\s|let\s|var\s|function\s|return\s|\{|\}|\/\/|```)/.test(l) &&
+              !l.includes('useState') &&
+              !l.includes('GeneratedComponent')
+          )
           .slice(0, 3);
 
         setFullAnswer(cleanAnswer);
@@ -707,8 +841,9 @@ List the numbered source citations [1], [2], etc., matching the provided sources
           parsedFollowUps.length > 0
             ? parsedFollowUps
             : [
-                `Compare the key options for ${cleanQ.slice(0, 36)}`,
-                `What are the main trade-offs and considerations?`,
+                `What are the primary molecular pathways and receptor kinetics governing ${cleanQ.slice(0, 42)}?`,
+                `How do randomized controlled trial outcomes compare with long-term longitudinal safety profiles?`,
+                `What are the key biomarkers and physiological thresholds monitored in clinical practice?`,
               ];
         setFollowUps(resolvedFollowUps);
         startWordStream(cleanAnswer);
@@ -719,7 +854,7 @@ List the numbered source citations [1], [2], etc., matching the provided sources
           topic: cleanQ,
           question: cleanQ,
           fullAnswer: cleanAnswer,
-          sources: mappedSources.slice(0, 6),
+          sources: mappedSources.slice(0, 8),
           thinkingSteps: currentThinkingSteps,
           durationSec: Number(elapsed.toFixed(1)),
           thinkingDuration: Math.max(1, Math.round(elapsed)),

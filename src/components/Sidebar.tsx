@@ -28,11 +28,21 @@ import {
   Flame,
   Trophy,
   MessageSquarePlus,
+  Calendar as CalendarIcon,
+  Shield,
+  Gift,
+  Award,
 } from 'lucide-react';
 import { GrokLogo } from './GrokLogo';
 import { ChatMessage, SavedBookmark } from '../types';
 import { BounceSidebar, BounceSidebarItem } from './ui/bounce-sidebar';
-import { UserAccountStore } from '../lib/userAccountStore';
+import {
+  UserAccountStore,
+  DailyStreakData,
+  STREAK_MILESTONES,
+  EvaluatedBadge,
+} from '../lib/userAccountStore';
+import { StreakModal } from './StreakModal';
 
 
 export interface ChatThread {
@@ -296,7 +306,36 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [pinnedMessages, setPinnedMessages] = useState<SavedBookmark[]>(() =>
     UserAccountStore.getBookmarks()
   );
+  const [dailyStreak, setDailyStreak] = useState<DailyStreakData>(() =>
+    UserAccountStore.getDailyStreak(threads)
+  );
+  const [evaluatedBadges, setEvaluatedBadges] = useState<EvaluatedBadge[]>(() =>
+    UserAccountStore.getEvaluatedBadges(threads)
+  );
+  const [showStreakPanel, setShowStreakPanel] = useState(false);
+  const [showStreakModal, setShowStreakModal] = useState(false);
+  const [streakModalTab, setStreakModalTab] = useState<
+    'calendar' | 'badges' | 'milestones' | 'protection'
+  >('calendar');
   const isDark = theme === 'dark';
+
+  const openStreakCenter = (
+    tab: 'calendar' | 'badges' | 'milestones' | 'protection' = 'calendar'
+  ) => {
+    setStreakModalTab(tab);
+    setShowStreakModal(true);
+  };
+
+  useEffect(() => {
+    const handleOpenStreakEvent = (e: Event) => {
+      const custom = e as CustomEvent<{
+        tab?: 'calendar' | 'badges' | 'milestones' | 'protection';
+      }>;
+      openStreakCenter(custom.detail?.tab || 'calendar');
+    };
+    window.addEventListener('zeno-open-streak-modal', handleOpenStreakEvent);
+    return () => window.removeEventListener('zeno-open-streak-modal', handleOpenStreakEvent);
+  }, []);
 
   const toggleWorkspaceCollapsed = () => {
     setIsWorkspaceCollapsed((prev) => {
@@ -309,15 +348,82 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   useEffect(() => {
+    UserAccountStore.recordDailyInteraction(false);
+    setDailyStreak(UserAccountStore.getDailyStreak(threads));
+    setEvaluatedBadges(UserAccountStore.getEvaluatedBadges(threads));
+  }, [threads]);
+
+  useEffect(() => {
     const syncProfile = () => {
       setUserProfile(UserAccountStore.getProfile());
       setUserSub(UserAccountStore.getSubscription());
       setUsageQuota(UserAccountStore.getUsage());
       setPinnedMessages(UserAccountStore.getBookmarks());
+      setDailyStreak(UserAccountStore.getDailyStreak(threads));
+      setEvaluatedBadges(UserAccountStore.getEvaluatedBadges(threads));
     };
     window.addEventListener('zeno-account-updated', syncProfile);
     return () => window.removeEventListener('zeno-account-updated', syncProfile);
-  }, []);
+  }, [threads]);
+
+  const unlockedBadgesCount = useMemo(
+    () => evaluatedBadges.filter((b) => b.isUnlocked).length,
+    [evaluatedBadges]
+  );
+
+  const featuredBadge = useMemo(
+    () =>
+      evaluatedBadges.find((b) => b.isFeatured && b.isUnlocked) ||
+      evaluatedBadges.find((b) => b.isUnlocked) ||
+      evaluatedBadges[0],
+    [evaluatedBadges]
+  );
+
+  const last7DaysStrip = useMemo(() => {
+    const activeSet = new Set(dailyStreak.activeDates || []);
+    const frozenSet = new Set(dailyStreak.frozenDates || []);
+    const days: Array<{
+      key: string;
+      label: string;
+      isActive: boolean;
+      isFrozen: boolean;
+      goalMet: boolean;
+      isToday: boolean;
+    }> = [];
+    const now = new Date();
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const dayNum = String(d.getDate()).padStart(2, '0');
+      const key = `${y}-${m}-${dayNum}`;
+      const label = d.toLocaleDateString('en-US', { weekday: 'narrow' });
+      const isActive = activeSet.has(key);
+      const count = Number(dailyStreak.dailyCounts?.[key] || (isActive ? 1 : 0));
+      days.push({
+        key,
+        label,
+        isActive,
+        isFrozen: frozenSet.has(key),
+        goalMet: isActive && count >= (dailyStreak.dailyGoal || 3),
+        isToday: i === 0,
+      });
+    }
+    return days;
+  }, [dailyStreak]);
+
+  const nextStreakMilestone = useMemo(() => {
+    const claimedSet = new Set(dailyStreak.claimedMilestones || []);
+    const maxReached = Math.max(dailyStreak.currentStreak, dailyStreak.longestStreak);
+    const unclaimedReady = STREAK_MILESTONES.find(
+      (m) => maxReached >= m.days && !claimedSet.has(m.days)
+    );
+    if (unclaimedReady) return { milestone: unclaimedReady, canClaim: true };
+    const upcoming =
+      STREAK_MILESTONES.find((m) => m.days > dailyStreak.currentStreak) ||
+      STREAK_MILESTONES[STREAK_MILESTONES.length - 1];
+    return { milestone: upcoming, canClaim: false };
+  }, [dailyStreak]);
 
 
   const normalizedQuery = searchTerm.trim().toLowerCase();
@@ -407,6 +513,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       items.push({
         id: 'action-new-chat',
         label: 'New Conversation',
+        icon: <Plus className="w-3.5 h-3.5 text-current" />,
         onClick: () => {
           onNewChat();
           if (window.innerWidth < 768) onClose();
@@ -414,9 +521,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
       });
 
       items.push({
+        id: 'action-streaks-badges',
+        label: 'Streaks & Badges',
+        sublabel: `${dailyStreak.currentStreak}d streak · ${unlockedBadgesCount}/${evaluatedBadges.length} badges`,
+        icon: <Award className="w-3.5 h-3.5 text-current" />,
+        onClick: () => {
+          openStreakCenter('badges');
+        },
+      });
+
+      items.push({
         id: 'action-pricing',
         label: 'Plans & Pricing',
-        sublabel: 'Spark ($1/mo) · Fire ($5/mo)',
+        sublabel: 'Spark ($3/mo) · Fire ($7/mo)',
+        icon: <Zap className="w-3.5 h-3.5 text-current" />,
         onClick: () => {
           if (onOpenPricing) {
             onOpenPricing('spark');
@@ -434,7 +552,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           id: 'action-discover',
           label: 'Zeno Discover',
           sublabel: 'Public research & study guides',
-          icon: <Compass className="w-3.5 h-3.5 text-sky-400" />,
+          icon: <Compass className="w-3.5 h-3.5 text-current" />,
           onClick: () => {
             onOpenGrowthHub('discover');
             if (window.innerWidth < 768) onClose();
@@ -444,7 +562,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           id: 'action-vault',
           label: 'Knowledge Vault',
           sublabel: 'Saved insights & collections',
-          icon: <Bookmark className="w-3.5 h-3.5 text-emerald-400" />,
+          icon: <Bookmark className="w-3.5 h-3.5 text-current" />,
           onClick: () => {
             onOpenGrowthHub('vault');
             if (window.innerWidth < 768) onClose();
@@ -454,7 +572,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           id: 'action-weekly',
           label: 'Weekly Intelligence Brief',
           sublabel: 'Progress & optional missions',
-          icon: <BarChart2 className="w-3.5 h-3.5 text-amber-400" />,
+          icon: <BarChart2 className="w-3.5 h-3.5 text-current" />,
           onClick: () => {
             onOpenGrowthHub('weekly');
             if (window.innerWidth < 768) onClose();
@@ -464,7 +582,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           id: 'action-passes',
           label: 'Zeno Passes & Leaderboard',
           sublabel: 'Elite Referrer ranks & Top Contributors',
-          icon: <Trophy className="w-3.5 h-3.5 text-amber-400" />,
+          icon: <Trophy className="w-3.5 h-3.5 text-current" />,
           onClick: () => {
             onOpenGrowthHub('passes');
             if (window.innerWidth < 768) onClose();
@@ -474,7 +592,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           id: 'action-feedback',
           label: 'Send Feedback',
           sublabel: 'Feature requests & bug reports',
-          icon: <MessageSquarePlus className="w-3.5 h-3.5 text-pink-400" />,
+          icon: <MessageSquarePlus className="w-3.5 h-3.5 text-current" />,
           onClick: () => {
             onOpenGrowthHub('feedback');
             if (window.innerWidth < 768) onClose();
@@ -613,6 +731,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
     onDeleteThread,
     onUpdateThreadTitle,
     onExportThread,
+    dailyStreak.currentStreak,
+    unlockedBadgesCount,
+    evaluatedBadges.length,
   ]);
 
   return (
@@ -636,17 +757,41 @@ export const Sidebar: React.FC<SidebarProps> = ({
             isDark ? 'border-[#1a1a1a]' : 'border-[#e5e5e5]'
           }`}
         >
-          <button
-            onClick={() => {
-              onNewChat();
-              if (window.innerWidth < 768) onClose();
-            }}
-            className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
-          >
-            <GrokLogo size="sm" isDark={isDark} />
-          </button>
+          <div className="flex items-center gap-2.5 min-w-0">
+            <button
+              onClick={() => {
+                onNewChat();
+                if (window.innerWidth < 768) onClose();
+              }}
+              className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity shrink-0"
+            >
+              <GrokLogo size="sm" isDark={isDark} />
+            </button>
 
-          <div className="flex items-center gap-1">
+            {/* Daily Streak & Badges Counter in Sidebar Header */}
+            <button
+              type="button"
+              onClick={() => setShowStreakPanel((prev) => !prev)}
+              className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[11px] font-semibold font-mono tabular-nums transition-colors cursor-pointer ${
+                isDark
+                  ? showStreakPanel
+                    ? 'bg-white/[0.08] border-white/20 text-white'
+                    : 'bg-white/[0.03] hover:bg-white/[0.07] border-white/10 text-neutral-200'
+                  : showStreakPanel
+                  ? 'bg-neutral-100 border-black/20 text-black'
+                  : 'bg-neutral-50 hover:bg-neutral-100 border-black/10 text-neutral-800'
+              }`}
+              title={`Daily Streak: ${dailyStreak.currentStreak}d · ${unlockedBadgesCount}/${evaluatedBadges.length} Badges Unlocked`}
+            >
+              <Flame className="w-3.5 h-3.5 text-[#FC4C01] fill-[#FC4C01]/20 shrink-0" />
+              <span>{dailyStreak.currentStreak}d</span>
+              <span className="opacity-40">·</span>
+              <Award className="w-3 h-3 text-[#FC4C01] shrink-0" />
+              <span>{unlockedBadgesCount}</span>
+            </button>
+          </div>
+
+          <div className="flex items-center gap-1 shrink-0">
             <button
               onClick={() => {
                 onNewChat();
@@ -654,26 +799,281 @@ export const Sidebar: React.FC<SidebarProps> = ({
               }}
               className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
                 isDark
-                  ? 'text-[#8a8a8a] hover:text-white hover:bg-[#141414]'
-                  : 'text-[#666666] hover:text-[#000000] hover:bg-[#f2f2f2]'
+                  ? 'text-[#a1a1aa] hover:text-white hover:bg-white/[0.06]'
+                  : 'text-[#52525b] hover:text-[#000000] hover:bg-black/[0.05]'
               }`}
               title="New conversation"
+              aria-label="New conversation"
             >
-              <Plus className="w-4 h-4" />
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.85"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="w-4 h-4"
+              >
+                <path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                <path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z" />
+              </svg>
             </button>
             <button
               onClick={onClose}
               className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
                 isDark
-                  ? 'text-[#8a8a8a] hover:text-white hover:bg-[#141414]'
-                  : 'text-[#666666] hover:text-[#000000] hover:bg-[#f2f2f2]'
+                  ? 'text-[#a1a1aa] hover:text-white hover:bg-white/[0.06]'
+                  : 'text-[#52525b] hover:text-[#000000] hover:bg-black/[0.05]'
               }`}
               title="Close sidebar"
+              aria-label="Close sidebar"
             >
-              <ChevronLeft className="w-4 h-4" />
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.85"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="w-4 h-4"
+              >
+                <rect x="3" y="3" width="18" height="18" rx="4.5" />
+                <path d="M9.5 3v18" />
+                <path d="M6 8h1.5" />
+                <path d="M6 11.5h1.5" />
+                <path d="M15.5 9.5 13 12l2.5 2.5" />
+              </svg>
             </button>
           </div>
         </div>
+
+        {/* Expandable Daily Streak Breakdown Panel */}
+        {showStreakPanel && (
+          <div
+            className={`mx-3 mt-2.5 p-3 rounded-xl border text-xs transition-all ${
+              isDark
+                ? 'bg-[#0d0d0d] border-white/10 text-neutral-200'
+                : 'bg-neutral-50 border-black/10 text-neutral-800'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-1.5">
+                <Flame className="w-3.5 h-3.5 text-[#FC4C01] fill-[#FC4C01]/20" />
+                <span className="font-semibold tracking-tight">Daily Streak</span>
+              </div>
+              <div className="flex items-center gap-2 font-mono tabular-nums text-[10px]">
+                <span className={isDark ? 'text-neutral-400' : 'text-neutral-500'}>
+                  Best: {dailyStreak.longestStreak}d
+                </span>
+                <span className={isDark ? 'text-neutral-400' : 'text-neutral-500'}>·</span>
+                <span className="inline-flex items-center gap-0.5 text-[#FC4C01]">
+                  <Shield className="w-3 h-3" />
+                  <span>
+                    {dailyStreak.streakFreezes}/{dailyStreak.maxStreakFreezes || 3}
+                  </span>
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 mb-2.5">
+              <div
+                className={`p-2 rounded-lg border ${
+                  isDark ? 'bg-white/[0.02] border-white/[0.06]' : 'bg-white border-black/[0.06]'
+                }`}
+              >
+                <div
+                  className={`text-[10px] ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}
+                >
+                  Current Streak
+                </div>
+                <div className="text-sm font-semibold font-mono tabular-nums mt-0.5">
+                  {dailyStreak.currentStreak} {dailyStreak.currentStreak === 1 ? 'Day' : 'Days'}
+                </div>
+              </div>
+              <div
+                className={`p-2 rounded-lg border ${
+                  isDark ? 'bg-white/[0.02] border-white/[0.06]' : 'bg-white border-black/[0.06]'
+                }`}
+              >
+                <div
+                  className={`text-[10px] ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}
+                >
+                  Daily Goal
+                </div>
+                <div className="text-sm font-semibold font-mono tabular-nums mt-0.5">
+                  {dailyStreak.todayInteractions} / {dailyStreak.dailyGoal || 3}x
+                </div>
+              </div>
+            </div>
+
+            {/* 7-Day Activity Strip */}
+            <div className="flex items-center justify-between gap-1 pt-0.5 mb-2.5">
+              {last7DaysStrip.map((day) => (
+                <button
+                  key={day.key}
+                  type="button"
+                  onClick={() => openStreakCenter('calendar')}
+                  className="flex flex-col items-center gap-1 flex-1 cursor-pointer group"
+                  title={`${day.key} — Click to view full Streak Calendar`}
+                >
+                  <span
+                    className={`text-[9px] font-mono ${
+                      day.isToday
+                        ? 'text-[#FC4C01] font-semibold'
+                        : isDark
+                        ? 'text-neutral-500'
+                        : 'text-neutral-400'
+                    }`}
+                  >
+                    {day.label}
+                  </span>
+                  <span
+                    className={`w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-mono tabular-nums border transition-colors ${
+                      day.goalMet
+                        ? 'bg-[#FC4C01] border-[#FC4C01] text-white font-semibold'
+                        : day.isActive
+                        ? 'bg-[#FC4C01]/15 border-[#FC4C01]/50 text-[#FC4C01]'
+                        : day.isFrozen
+                        ? isDark
+                          ? 'bg-white/[0.06] border-white/25 text-neutral-300'
+                          : 'bg-neutral-200 border-black/25 text-neutral-700'
+                        : isDark
+                        ? 'bg-white/[0.02] border-white/[0.06] text-neutral-600 group-hover:border-white/20'
+                        : 'bg-white border-black/[0.06] text-neutral-300 group-hover:border-black/20'
+                    }`}
+                  >
+                    {day.goalMet ? '★' : day.isActive ? '✓' : day.isFrozen ? '🛡' : '·'}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            {/* Milestone Progress / Claim Strip */}
+            <div
+              className={`p-2 rounded-lg border mb-2.5 ${
+                nextStreakMilestone.canClaim
+                  ? 'bg-[#FC4C01]/10 border-[#FC4C01]/40'
+                  : isDark
+                  ? 'bg-white/[0.02] border-white/[0.06]'
+                  : 'bg-white border-black/[0.06]'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-[10.5px] font-semibold truncate">
+                    {nextStreakMilestone.milestone.title} ({nextStreakMilestone.milestone.days}d)
+                  </div>
+                  <div
+                    className={`text-[9.5px] font-mono tabular-nums ${
+                      isDark ? 'text-neutral-400' : 'text-neutral-500'
+                    }`}
+                  >
+                    +{nextStreakMilestone.milestone.bonusMessages} msgs · +
+                    {nextStreakMilestone.milestone.bonusUploads} uploads
+                  </div>
+                </div>
+                {nextStreakMilestone.canClaim ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      UserAccountStore.claimStreakMilestone(nextStreakMilestone.milestone.days)
+                    }
+                    className="px-2 py-1 rounded-md bg-[#FC4C01] hover:bg-[#e04300] text-white text-[10px] font-semibold inline-flex items-center gap-1 shrink-0 cursor-pointer"
+                  >
+                    <Gift className="w-3 h-3" />
+                    <span>Claim</span>
+                  </button>
+                ) : (
+                  <span className="text-[10px] font-mono tabular-nums text-[#FC4C01] font-semibold shrink-0">
+                    {dailyStreak.currentStreak}/{nextStreakMilestone.milestone.days}d
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Equipped Badge Row */}
+            {featuredBadge && (
+              <button
+                type="button"
+                onClick={() => openStreakCenter('badges')}
+                className={`w-full p-2 rounded-lg border mb-2 flex items-center justify-between gap-2 text-left transition-colors cursor-pointer ${
+                  isDark
+                    ? 'bg-white/[0.02] hover:bg-white/[0.05] border-white/[0.08]'
+                    : 'bg-white hover:bg-neutral-100 border-black/[0.08]'
+                }`}
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <Award className="w-3.5 h-3.5 text-[#FC4C01] shrink-0" />
+                  <div className="min-w-0">
+                    <div className="text-[10.5px] font-semibold truncate">
+                      Badge: {featuredBadge.title}
+                    </div>
+                    <div
+                      className={`text-[9.5px] font-mono tabular-nums ${
+                        isDark ? 'text-neutral-400' : 'text-neutral-500'
+                      }`}
+                    >
+                      {unlockedBadgesCount}/{evaluatedBadges.length} unlocked · Click to view vault
+                    </div>
+                  </div>
+                </div>
+                <ChevronRight className="w-3.5 h-3.5 opacity-50 shrink-0" />
+              </button>
+            )}
+
+            {/* Quick Open Tabs for Calendar, Badges, Milestones, Shield */}
+            <div className="grid grid-cols-4 gap-1">
+              <button
+                type="button"
+                onClick={() => openStreakCenter('calendar')}
+                className={`py-1.5 px-1.5 rounded-lg border text-[10px] font-medium flex items-center justify-center gap-1 transition-colors cursor-pointer ${
+                  isDark
+                    ? 'border-white/10 hover:bg-white/[0.06] text-neutral-200'
+                    : 'border-black/10 hover:bg-black/[0.04] text-neutral-800'
+                }`}
+              >
+                <CalendarIcon className="w-3 h-3 text-[#FC4C01] shrink-0" />
+                <span className="truncate">Cal</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => openStreakCenter('badges')}
+                className={`py-1.5 px-1.5 rounded-lg border text-[10px] font-medium flex items-center justify-center gap-1 transition-colors cursor-pointer ${
+                  isDark
+                    ? 'border-white/10 hover:bg-white/[0.06] text-neutral-200'
+                    : 'border-black/10 hover:bg-black/[0.04] text-neutral-800'
+                }`}
+              >
+                <Award className="w-3 h-3 text-[#FC4C01] shrink-0" />
+                <span className="truncate">Badges</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => openStreakCenter('milestones')}
+                className={`py-1.5 px-1.5 rounded-lg border text-[10px] font-medium flex items-center justify-center gap-1 transition-colors cursor-pointer ${
+                  isDark
+                    ? 'border-white/10 hover:bg-white/[0.06] text-neutral-200'
+                    : 'border-black/10 hover:bg-black/[0.04] text-neutral-800'
+                }`}
+              >
+                <Trophy className="w-3 h-3 text-[#FC4C01] shrink-0" />
+                <span className="truncate">Goals</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => openStreakCenter('protection')}
+                className={`py-1.5 px-1.5 rounded-lg border text-[10px] font-medium flex items-center justify-center gap-1 transition-colors cursor-pointer ${
+                  isDark
+                    ? 'border-white/10 hover:bg-white/[0.06] text-neutral-200'
+                    : 'border-black/10 hover:bg-black/[0.04] text-neutral-800'
+                }`}
+              >
+                <Shield className="w-3 h-3 text-[#FC4C01] shrink-0" />
+                <span className="truncate">Shield</span>
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Always-visible Search Bar filtering threads by title & full message content */}
         <div className="px-3 pt-3 pb-2">
@@ -760,10 +1160,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <div className="flex items-center justify-between gap-2 mb-1.5">
                   <span className="font-semibold text-xs tracking-tight">
                     {normPlan === 'fire'
-                      ? 'Fire Plan ($5)'
+                      ? 'Fire Plan ($7)'
                       : normPlan === 'spark'
-                      ? 'Spark Plan ($1 · 10x)'
-                      : 'Choose Plan ($1 / $5)'}
+                      ? 'Spark Plan ($3 · 10x)'
+                      : 'Choose Plan ($3 / $7)'}
                   </span>
                   <span
                     className={`text-[10px] px-2.5 py-0.5 rounded-full font-semibold ${
@@ -772,7 +1172,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         : 'bg-[#18181b] text-white'
                     }`}
                   >
-                    {normPlan === 'fire' ? 'Active' : normPlan === 'spark' ? 'Upgrade $5' : 'Start $1'}
+                    {normPlan === 'fire' ? 'Active' : normPlan === 'spark' ? 'Upgrade $7' : 'Start $3'}
                   </span>
                 </div>
                 <div className={`flex items-center justify-between text-[10.5px] font-mono ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
@@ -790,36 +1190,83 @@ export const Sidebar: React.FC<SidebarProps> = ({
           })()}
         </div>
 
-        {/* User Account & Settings Profile Row */}
+        {/* User Account, Streak Status & Unified Profile Backend Row */}
         <div
-          className={`p-3 border-t flex items-center justify-between text-xs ${
+          className={`p-3 border-t flex items-center justify-between gap-2 text-xs ${
             isDark ? 'border-[#242424] text-[#8a8a8a]' : 'border-[#e5e5e5] text-[#6b6b6b]'
           }`}
         >
-          <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => {
+              if (onOpenAccountModal) {
+                onOpenAccountModal('profile');
+              } else {
+                onOpenSettings();
+              }
+              if (window.innerWidth < 768) onClose();
+            }}
+            className={`flex items-center gap-2.5 min-w-0 flex-1 px-2 py-1.5 rounded-lg transition-colors cursor-pointer text-left ${
+              isDark ? 'hover:text-white hover:bg-[#181818]' : 'hover:text-[#0d0d0d] hover:bg-[#f2f2f2]'
+            }`}
+            title="Open Profile, AI Model Backend & Settings"
+          >
+            <div
+              className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-semibold shrink-0 border ${
+                isDark
+                  ? 'bg-white/[0.06] border-white/15 text-white'
+                  : 'bg-neutral-100 border-black/15 text-neutral-900'
+              }`}
+            >
+              {(userProfile.displayName || 'U').slice(0, 1).toUpperCase()}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div
+                className={`truncate font-medium text-xs ${
+                  isDark ? 'text-neutral-200' : 'text-neutral-900'
+                }`}
+              >
+                {userProfile.displayName || 'User'}
+              </div>
+              <div
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openStreakCenter('badges');
+                }}
+                className="flex items-center gap-1 text-[10px] font-mono tabular-nums opacity-85 hover:opacity-100 hover:text-[#FC4C01] transition-colors"
+                title="Open Streak Calendar, Achievement Badges & Reminder Settings"
+              >
+                <Flame className="w-2.5 h-2.5 text-[#FC4C01] fill-[#FC4C01]/20 shrink-0" />
+                <span>
+                  {dailyStreak.currentStreak}d · {unlockedBadgesCount} badges
+                  {featuredBadge ? ` · ${featuredBadge.title}` : ''}
+                </span>
+              </div>
+            </div>
+          </button>
+
+          <div className="flex items-center gap-1 shrink-0">
             <button
-              onClick={onOpenSettings}
-              className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer ${
+              onClick={onToggleTheme}
+              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
                 isDark ? 'hover:text-white hover:bg-[#222222]' : 'hover:text-[#0d0d0d] hover:bg-[#eaeaea]'
               }`}
-              title="Open settings"
+              title={`Switch to ${isDark ? 'Light' : 'Dark'} mode`}
+              aria-label="Toggle theme"
             >
-              <SettingsIcon className="w-4 h-4" />
-              <span className="font-medium text-xs">Settings</span>
+              {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
           </div>
-
-          <button
-            onClick={onToggleTheme}
-            className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-              isDark ? 'hover:text-white hover:bg-[#222222]' : 'hover:text-[#0d0d0d] hover:bg-[#eaeaea]'
-            }`}
-            title={`Switch to ${isDark ? 'Light' : 'Dark'} mode`}
-          >
-            {isDark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-[#333333]" />}
-          </button>
         </div>
       </aside>
+
+      <StreakModal
+        isOpen={showStreakModal}
+        onClose={() => setShowStreakModal(false)}
+        streak={dailyStreak}
+        isDark={isDark}
+        initialTab={streakModalTab}
+      />
     </>
   );
 };

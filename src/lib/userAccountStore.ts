@@ -109,7 +109,417 @@ const STORAGE_KEYS = {
   USAGE: 'zeno_usage_quota_v2',
   PRIVACY: 'zeno_privacy_settings',
   ONBOARDING_DONE: 'zeno_onboarding_completed',
+  DAILY_STREAK: 'zeno_daily_streak_v1',
 };
+
+export interface StreakMilestone {
+  days: number;
+  title: string;
+  subtitle: string;
+  bonusMessages: number;
+  bonusUploads: number;
+  bonusShields: number;
+}
+
+export const STREAK_MILESTONES: StreakMilestone[] = [
+  {
+    days: 1,
+    title: 'First Spark',
+    subtitle: 'Initiate your daily research & study habit',
+    bonusMessages: 25,
+    bonusUploads: 5,
+    bonusShields: 0,
+  },
+  {
+    days: 3,
+    title: '3-Day Momentum',
+    subtitle: 'Three consecutive days of active inquiry',
+    bonusMessages: 75,
+    bonusUploads: 15,
+    bonusShields: 1,
+  },
+  {
+    days: 7,
+    title: '7-Day Weekly Habit',
+    subtitle: 'Full week of unbroken intellectual momentum',
+    bonusMessages: 200,
+    bonusUploads: 40,
+    bonusShields: 1,
+  },
+  {
+    days: 14,
+    title: '14-Day Deep Thinker',
+    subtitle: 'Two weeks of sustained synthesis & analysis',
+    bonusMessages: 450,
+    bonusUploads: 80,
+    bonusShields: 1,
+  },
+  {
+    days: 30,
+    title: '30-Day Sovereign',
+    subtitle: 'Monthly mastery across research & study workflows',
+    bonusMessages: 1000,
+    bonusUploads: 200,
+    bonusShields: 1,
+  },
+  {
+    days: 60,
+    title: '60-Day Vanguard',
+    subtitle: 'Two months of relentless daily execution',
+    bonusMessages: 2500,
+    bonusUploads: 500,
+    bonusShields: 1,
+  },
+  {
+    days: 100,
+    title: '100-Day Apex',
+    subtitle: 'Centurion status in the Zeno workspace',
+    bonusMessages: 5000,
+    bonusUploads: 1000,
+    bonusShields: 1,
+  },
+];
+
+export interface AchievementBadge {
+  id: string;
+  title: string;
+  subtitle: string;
+  category: 'streak' | 'mastery' | 'exploration' | 'curation';
+  tier: 'bronze' | 'silver' | 'gold' | 'obsidian';
+  iconName: 'flame' | 'trophy' | 'zap' | 'compass' | 'book' | 'shield' | 'layers' | 'award' | 'bookmark';
+  targetValue: number;
+  unitLabel: string;
+  bonusMessages: number;
+  bonusUploads: number;
+  bonusShields: number;
+}
+
+export interface EvaluatedBadge extends AchievementBadge {
+  currentValue: number;
+  progressPct: number;
+  isUnlocked: boolean;
+  isClaimed: boolean;
+  isFeatured: boolean;
+}
+
+export const ACHIEVEMENT_BADGES: AchievementBadge[] = [
+  {
+    id: 'first-spark',
+    title: 'First Spark',
+    subtitle: 'Complete your first daily interaction on Zeno',
+    category: 'streak',
+    tier: 'bronze',
+    iconName: 'flame',
+    targetValue: 1,
+    unitLabel: 'day',
+    bonusMessages: 25,
+    bonusUploads: 5,
+    bonusShields: 0,
+  },
+  {
+    id: 'streak-3',
+    title: 'Momentum Builder',
+    subtitle: 'Maintain a 3-day consecutive interaction streak',
+    category: 'streak',
+    tier: 'silver',
+    iconName: 'flame',
+    targetValue: 3,
+    unitLabel: 'days',
+    bonusMessages: 75,
+    bonusUploads: 15,
+    bonusShields: 1,
+  },
+  {
+    id: 'streak-7',
+    title: '7-Day Vanguard',
+    subtitle: 'Reach a full 7-day unbroken weekly habit',
+    category: 'streak',
+    tier: 'gold',
+    iconName: 'flame',
+    targetValue: 7,
+    unitLabel: 'days',
+    bonusMessages: 200,
+    bonusUploads: 40,
+    bonusShields: 1,
+  },
+  {
+    id: 'streak-14',
+    title: 'Fortnight Scholar',
+    subtitle: 'Sustain 14 consecutive days of active inquiry',
+    category: 'streak',
+    tier: 'gold',
+    iconName: 'trophy',
+    targetValue: 14,
+    unitLabel: 'days',
+    bonusMessages: 450,
+    bonusUploads: 80,
+    bonusShields: 1,
+  },
+  {
+    id: 'streak-30',
+    title: 'Sovereign Mind',
+    subtitle: 'Achieve a 30-day master streak across Zeno',
+    category: 'streak',
+    tier: 'obsidian',
+    iconName: 'award',
+    targetValue: 30,
+    unitLabel: 'days',
+    bonusMessages: 1000,
+    bonusUploads: 200,
+    bonusShields: 2,
+  },
+  {
+    id: 'streak-100',
+    title: 'Centurion Apex',
+    subtitle: 'Reach an unbroken 100-day legendary streak on Zeno',
+    category: 'streak',
+    tier: 'obsidian',
+    iconName: 'trophy',
+    targetValue: 100,
+    unitLabel: 'days',
+    bonusMessages: 5000,
+    bonusUploads: 1000,
+    bonusShields: 2,
+  },
+  {
+    id: 'daily-goal-crusher',
+    title: 'Daily Goal Crusher',
+    subtitle: 'Complete 3+ interactions in a single day',
+    category: 'streak',
+    tier: 'silver',
+    iconName: 'zap',
+    targetValue: 3,
+    unitLabel: 'actions/day',
+    bonusMessages: 60,
+    bonusUploads: 10,
+    bonusShields: 0,
+  },
+  {
+    id: 'prompt-initiate',
+    title: 'Prompt Initiate',
+    subtitle: 'Complete 5 total interactions across conversations',
+    category: 'mastery',
+    tier: 'bronze',
+    iconName: 'zap',
+    targetValue: 5,
+    unitLabel: 'interactions',
+    bonusMessages: 50,
+    bonusUploads: 10,
+    bonusShields: 0,
+  },
+  {
+    id: 'prompt-centurion',
+    title: 'Prompt Centurion',
+    subtitle: 'Complete 25+ total interactions across Zeno',
+    category: 'mastery',
+    tier: 'gold',
+    iconName: 'trophy',
+    targetValue: 25,
+    unitLabel: 'interactions',
+    bonusMessages: 150,
+    bonusUploads: 30,
+    bonusShields: 1,
+  },
+  {
+    id: 'model-polymath',
+    title: 'Model Polymath',
+    subtitle: 'Explore 3+ different AI models in the Model Selector',
+    category: 'exploration',
+    tier: 'silver',
+    iconName: 'layers',
+    targetValue: 3,
+    unitLabel: 'models',
+    bonusMessages: 100,
+    bonusUploads: 20,
+    bonusShields: 0,
+  },
+  {
+    id: 'deep-investigator',
+    title: 'Deep Investigator',
+    subtitle: 'Run 3+ web searches or Deep Research sessions',
+    category: 'exploration',
+    tier: 'gold',
+    iconName: 'compass',
+    targetValue: 3,
+    unitLabel: 'researches',
+    bonusMessages: 120,
+    bonusUploads: 25,
+    bonusShields: 0,
+  },
+  {
+    id: 'study-architect',
+    title: 'Study Architect',
+    subtitle: 'Complete 2+ Study Space or PDF Studio sessions',
+    category: 'exploration',
+    tier: 'silver',
+    iconName: 'book',
+    targetValue: 2,
+    unitLabel: 'sessions',
+    bonusMessages: 100,
+    bonusUploads: 20,
+    bonusShields: 0,
+  },
+  {
+    id: 'shield-guardian',
+    title: 'Shield Guardian',
+    subtitle: 'Equip 2+ Streak Shields or pin 2+ saved bookmarks',
+    category: 'curation',
+    tier: 'gold',
+    iconName: 'shield',
+    targetValue: 2,
+    unitLabel: 'shields/pins',
+    bonusMessages: 100,
+    bonusUploads: 20,
+    bonusShields: 1,
+  },
+];
+
+export interface DailyStreakData {
+  currentStreak: number;
+  longestStreak: number;
+  lastActiveDate: string; // YYYY-MM-DD in local time
+  activeDates: string[]; // Sorted unique YYYY-MM-DD local dates
+  todayInteractions: number;
+  todayRealInteractions: number; // Explicit user-triggered interactions today
+  dailyCounts: Record<string, number>; // YYYY-MM-DD -> interaction count
+  dailyGoal: number; // Target interactions per day (1, 3, 5, 10)
+  streakFreezes: number; // Available Streak Shields (0 - 3)
+  maxStreakFreezes: number; // Max capacity (3)
+  frozenDates: string[]; // Dates protected by a Streak Shield
+  claimedMilestones: number[]; // Milestone day counts already claimed
+  claimedBadges?: string[]; // Achievement Badge IDs already claimed
+  notifiedMilestones?: number[]; // Milestone day counts already shown in Achievement Unlocked toast
+  notifiedBadges?: string[]; // Badge IDs already shown in Achievement Unlocked toast
+  exploredModels?: string[]; // Unique model IDs explored by the user
+  featuredBadgeId?: string; // Currently equipped badge ID
+  totalActiveDays: number;
+  lastFreezeEarnedDate?: string;
+  reminderEnabled: boolean; // Daily streak reminder toast enabled
+  reminderTime: string; // HH:MM in 24h format (e.g., "18:00")
+  browserNotificationsEnabled?: boolean;
+  lastReminderDismissedDate?: string; // YYYY-MM-DD
+}
+
+export interface AchievementUnlockPayload {
+  id: string;
+  kind: 'milestone' | 'badge';
+  days?: number;
+  badgeId?: string;
+  title: string;
+  subtitle: string;
+  kickerLabel: string;
+  tier: 'bronze' | 'silver' | 'gold' | 'obsidian';
+  iconName: AchievementBadge['iconName'];
+  bonusMessages: number;
+  bonusUploads: number;
+  bonusShields: number;
+  isClaimed: boolean;
+  isUnlocked: boolean;
+  isPreview?: boolean;
+  unlockedAt: number;
+}
+
+export function toLocalDateKey(ts = Date.now()): string {
+  const d = new Date(ts);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+export function getPreviousDateKey(dateKey: string): string {
+  const [y, m, d] = dateKey.split('-').map(Number);
+  const dt = new Date(y, (m || 1) - 1, d || 1);
+  dt.setDate(dt.getDate() - 1);
+  return toLocalDateKey(dt.getTime());
+}
+
+function computeStreakFromDates(
+  activeDates: string[],
+  previousLongest = 1,
+  availableFreezes = 1,
+  existingFrozenDates: string[] = []
+): {
+  currentStreak: number;
+  longestStreak: number;
+  lastActiveDate: string;
+  streakFreezes: number;
+  frozenDates: string[];
+} {
+  const uniqueSorted = Array.from(new Set(activeDates.filter(Boolean))).sort();
+  const todayKey = toLocalDateKey();
+  const frozenSet = new Set<string>(existingFrozenDates.filter(Boolean));
+  let freezesLeft = Math.max(0, Math.min(3, availableFreezes));
+
+  if (uniqueSorted.length === 0) {
+    return {
+      currentStreak: 1,
+      longestStreak: Math.max(1, previousLongest),
+      lastActiveDate: todayKey,
+      streakFreezes: freezesLeft,
+      frozenDates: Array.from(frozenSet).sort(),
+    };
+  }
+
+  const dateSet = new Set(uniqueSorted);
+  const yesterdayKey = getPreviousDateKey(todayKey);
+
+  // Determine anchor date for current streak
+  let cursor = dateSet.has(todayKey)
+    ? todayKey
+    : dateSet.has(yesterdayKey)
+    ? yesterdayKey
+    : uniqueSorted[uniqueSorted.length - 1];
+
+  let currentStreak = 0;
+  if (cursor === todayKey || cursor === yesterdayKey) {
+    while (true) {
+      if (dateSet.has(cursor)) {
+        currentStreak += 1;
+        cursor = getPreviousDateKey(cursor);
+      } else if (frozenSet.has(cursor)) {
+        // Already protected by a freeze on this date
+        cursor = getPreviousDateKey(cursor);
+      } else {
+        // Check if there is an active day immediately before this single missed day
+        const prevBeforeGap = getPreviousDateKey(cursor);
+        if (dateSet.has(prevBeforeGap) && freezesLeft > 0) {
+          frozenSet.add(cursor);
+          freezesLeft -= 1;
+          cursor = prevBeforeGap;
+        } else {
+          break;
+        }
+      }
+    }
+  } else {
+    currentStreak = 1;
+  }
+
+  // Compute longest streak across all recorded dates (accounting for frozen bridge dates)
+  let longest = Math.max(currentStreak, previousLongest, 1);
+  const combinedDates = Array.from(new Set([...uniqueSorted, ...Array.from(frozenSet)])).sort();
+  let run = 0;
+  let prevKey: string | null = null;
+  for (const key of combinedDates) {
+    const isCounted = dateSet.has(key);
+    if (prevKey && getPreviousDateKey(key) === prevKey) {
+      if (isCounted) run += 1;
+    } else {
+      run = isCounted ? 1 : 0;
+    }
+    if (run > longest) longest = run;
+    prevKey = key;
+  }
+
+  return {
+    currentStreak: Math.max(1, currentStreak),
+    longestStreak: longest,
+    lastActiveDate: uniqueSorted[uniqueSorted.length - 1] || todayKey,
+    streakFreezes: freezesLeft,
+    frozenDates: Array.from(frozenSet).sort().slice(-90),
+  };
+}
 
 export const DEFAULT_PROFILE: UserProfile = {
   id: 'zeno_usr_98124',
@@ -306,8 +716,8 @@ export const PLAN_LIMITS: Record<
   },
   spark: {
     name: 'Spark',
-    priceMonthlyUsd: 1,
-    priceYearlyUsd: 10,
+    priceMonthlyUsd: 3,
+    priceYearlyUsd: 29,
     fileUploadLimit: 250, // 10x limit boost
     maxFilesPerMessage: 25,
     messageLimit: 1500, // 10x limit boost
@@ -320,8 +730,8 @@ export const PLAN_LIMITS: Record<
   },
   fire: {
     name: 'Fire',
-    priceMonthlyUsd: 5,
-    priceYearlyUsd: 48,
+    priceMonthlyUsd: 7,
+    priceYearlyUsd: 67,
     fileUploadLimit: 999999,
     maxFilesPerMessage: 50,
     messageLimit: 999999,
@@ -339,7 +749,7 @@ export const DEFAULT_SUBSCRIPTION: UserSubscription = {
   status: 'active',
   renewalDate: 'Nov 27, 2026',
   billingCycle: 'monthly',
-  paymentMethod: 'Spark ($1 USD)',
+  paymentMethod: 'Spark ($3 USD)',
 };
 
 export const DEFAULT_USAGE: UsageQuota = {
@@ -735,8 +1145,8 @@ export const UserAccountStore = {
         plan === 'free'
           ? 'Free Tier'
           : plan === 'spark'
-          ? 'Spark ($1 USD)'
-          : 'Fire ($5 USD)',
+          ? 'Spark ($3 USD)'
+          : 'Fire ($7 USD)',
     };
     this.saveSubscription(sub);
 
@@ -950,6 +1360,7 @@ export const UserAccountStore = {
     usage.messagesUsed += messages;
     usage.filesUploaded += files;
     saveToStorage(STORAGE_KEYS.USAGE, usage);
+    this.recordDailyInteraction(false);
     this.emitChange();
     this.pushUsageToServerAndFirestore(usage);
   },
@@ -958,6 +1369,7 @@ export const UserAccountStore = {
     usage.filesUploaded += count;
     usage.storageBytesUsed += bytes;
     saveToStorage(STORAGE_KEYS.USAGE, usage);
+    this.recordDailyInteraction(false);
     this.emitChange();
     this.pushUsageToServerAndFirestore(usage);
   },
@@ -965,6 +1377,7 @@ export const UserAccountStore = {
     const usage = this.getUsage();
     usage.deepResearchUsed += 1;
     saveToStorage(STORAGE_KEYS.USAGE, usage);
+    this.recordDailyInteraction(false);
     this.emitChange();
     this.pushUsageToServerAndFirestore(usage);
   },
@@ -972,6 +1385,7 @@ export const UserAccountStore = {
     const usage = this.getUsage();
     usage.pdfStudyUsed += 1;
     saveToStorage(STORAGE_KEYS.USAGE, usage);
+    this.recordDailyInteraction(false);
     this.emitChange();
     this.pushUsageToServerAndFirestore(usage);
   },
@@ -988,6 +1402,733 @@ export const UserAccountStore = {
     };
     saveToStorage(STORAGE_KEYS.USAGE, updated);
     this.emitChange();
+  },
+
+  getDailyStreak(
+    threads?: Array<{ createdAt?: number; messages?: Array<{ timestamp?: number }> }>
+  ): DailyStreakData {
+    const todayKey = toLocalDateKey();
+    const raw = loadFromStorage<Partial<DailyStreakData>>(STORAGE_KEYS.DAILY_STREAK, {});
+    const dateSet = new Set<string>(Array.isArray(raw.activeDates) ? raw.activeDates : []);
+    const dailyCounts: Record<string, number> =
+      raw.dailyCounts && typeof raw.dailyCounts === 'object' ? { ...raw.dailyCounts } : {};
+
+    if (raw.lastActiveDate) {
+      dateSet.add(raw.lastActiveDate);
+    }
+
+    // Backfill active dates & interaction counts from conversation threads
+    if (Array.isArray(threads)) {
+      const threadCounts: Record<string, number> = {};
+      for (const t of threads) {
+        if (typeof t.createdAt === 'number' && t.createdAt > 0) {
+          const k = toLocalDateKey(t.createdAt);
+          dateSet.add(k);
+          threadCounts[k] = (threadCounts[k] || 0) + 1;
+        }
+        if (Array.isArray(t.messages)) {
+          for (const m of t.messages) {
+            if (typeof m?.timestamp === 'number' && m.timestamp > 0) {
+              const k = toLocalDateKey(m.timestamp);
+              dateSet.add(k);
+              threadCounts[k] = (threadCounts[k] || 0) + 1;
+            }
+          }
+        }
+      }
+      for (const [k, count] of Object.entries(threadCounts)) {
+        dailyCounts[k] = Math.max(dailyCounts[k] || 0, count);
+      }
+    }
+
+    // Mark today active since the user is actively in a session
+    dateSet.add(todayKey);
+    for (const d of dateSet) {
+      if (!dailyCounts[d] || dailyCounts[d] < 1) {
+        dailyCounts[d] = 1;
+      }
+    }
+
+    const sortedDates = Array.from(dateSet).sort().slice(-120);
+    const availableFreezes =
+      typeof raw.streakFreezes === 'number' ? Math.max(0, Math.min(3, raw.streakFreezes)) : 1;
+    const existingFrozen = Array.isArray(raw.frozenDates) ? raw.frozenDates : [];
+
+    const computed = computeStreakFromDates(
+      sortedDates,
+      Number(raw.longestStreak || 1),
+      availableFreezes,
+      existingFrozen
+    );
+
+    const todayInteractions = Math.max(
+      1,
+      raw.lastActiveDate === todayKey ? Number(raw.todayInteractions || 1) : 1,
+      Number(dailyCounts[todayKey] || 1)
+    );
+    dailyCounts[todayKey] = todayInteractions;
+
+    const dailyGoal =
+      typeof raw.dailyGoal === 'number' && [1, 3, 5, 10].includes(raw.dailyGoal)
+        ? raw.dailyGoal
+        : 3;
+
+    const claimedMilestones = Array.isArray(raw.claimedMilestones)
+      ? Array.from(new Set(raw.claimedMilestones.map(Number).filter((n) => n > 0))).sort(
+          (a, b) => a - b
+        )
+      : [];
+
+    const todayRealInteractions =
+      raw.lastActiveDate === todayKey ? Math.max(0, Number(raw.todayRealInteractions || 0)) : 0;
+
+    const reminderEnabled = typeof raw.reminderEnabled === 'boolean' ? raw.reminderEnabled : true;
+    const reminderTime =
+      typeof raw.reminderTime === 'string' && /^\d{2}:\d{2}$/.test(raw.reminderTime)
+        ? raw.reminderTime
+        : '18:00';
+    const claimedBadges = Array.isArray(raw.claimedBadges)
+      ? Array.from(new Set(raw.claimedBadges.map(String).filter(Boolean)))
+      : [];
+    const notifiedMilestones = Array.isArray(raw.notifiedMilestones)
+      ? Array.from(new Set(raw.notifiedMilestones.map(Number).filter((n) => n > 0))).sort(
+          (a, b) => a - b
+        )
+      : [];
+    const notifiedBadges = Array.isArray(raw.notifiedBadges)
+      ? Array.from(new Set(raw.notifiedBadges.map(String).filter(Boolean)))
+      : [];
+    const exploredModels = Array.isArray(raw.exploredModels)
+      ? Array.from(new Set(raw.exploredModels.map(String).filter(Boolean)))
+      : ['zro-deepseek-v4.1-flash', 'deepseek-v4.1-flash-free'];
+    const featuredBadgeId =
+      typeof raw.featuredBadgeId === 'string' && raw.featuredBadgeId
+        ? raw.featuredBadgeId
+        : 'first-spark';
+
+    const result: DailyStreakData = {
+      currentStreak: computed.currentStreak,
+      longestStreak: computed.longestStreak,
+      lastActiveDate: computed.lastActiveDate,
+      activeDates: sortedDates,
+      todayInteractions,
+      todayRealInteractions,
+      dailyCounts,
+      dailyGoal,
+      streakFreezes: computed.streakFreezes,
+      maxStreakFreezes: 3,
+      frozenDates: computed.frozenDates,
+      claimedMilestones,
+      claimedBadges,
+      notifiedMilestones,
+      notifiedBadges,
+      exploredModels,
+      featuredBadgeId,
+      totalActiveDays: sortedDates.length,
+      lastFreezeEarnedDate: raw.lastFreezeEarnedDate,
+      reminderEnabled,
+      reminderTime,
+      browserNotificationsEnabled: Boolean(raw.browserNotificationsEnabled),
+      lastReminderDismissedDate: raw.lastReminderDismissedDate,
+    };
+
+    if (
+      raw.currentStreak !== result.currentStreak ||
+      raw.longestStreak !== result.longestStreak ||
+      raw.lastActiveDate !== result.lastActiveDate ||
+      (raw.activeDates?.length || 0) !== result.activeDates.length ||
+      raw.streakFreezes !== result.streakFreezes ||
+      raw.reminderTime !== result.reminderTime
+    ) {
+      saveToStorage(STORAGE_KEYS.DAILY_STREAK, result);
+    }
+
+    return result;
+  },
+
+  recordDailyInteraction(emit = true): DailyStreakData {
+    const todayKey = toLocalDateKey();
+    const raw = loadFromStorage<Partial<DailyStreakData>>(STORAGE_KEYS.DAILY_STREAK, {});
+    const dateSet = new Set<string>(Array.isArray(raw.activeDates) ? raw.activeDates : []);
+    const dailyCounts: Record<string, number> =
+      raw.dailyCounts && typeof raw.dailyCounts === 'object' ? { ...raw.dailyCounts } : {};
+
+    if (raw.lastActiveDate) {
+      dateSet.add(raw.lastActiveDate);
+    }
+    dateSet.add(todayKey);
+
+    const sortedDates = Array.from(dateSet).sort().slice(-120);
+    const availableFreezes =
+      typeof raw.streakFreezes === 'number' ? Math.max(0, Math.min(3, raw.streakFreezes)) : 1;
+    const existingFrozen = Array.isArray(raw.frozenDates) ? raw.frozenDates : [];
+
+    const computed = computeStreakFromDates(
+      sortedDates,
+      Number(raw.longestStreak || 1),
+      availableFreezes,
+      existingFrozen
+    );
+
+    const prevTodayCount =
+      raw.lastActiveDate === todayKey
+        ? Math.max(Number(raw.todayInteractions || 0), Number(dailyCounts[todayKey] || 0))
+        : 0;
+    const todayInteractions = Math.max(1, prevTodayCount + 1);
+    dailyCounts[todayKey] = todayInteractions;
+
+    const prevRealCount =
+      raw.lastActiveDate === todayKey ? Math.max(0, Number(raw.todayRealInteractions || 0)) : 0;
+    const todayRealInteractions = prevRealCount + 1;
+
+    const dailyGoal =
+      typeof raw.dailyGoal === 'number' && [1, 3, 5, 10].includes(raw.dailyGoal)
+        ? raw.dailyGoal
+        : 3;
+
+    const claimedMilestones = Array.isArray(raw.claimedMilestones)
+      ? Array.from(new Set(raw.claimedMilestones.map(Number).filter((n) => n > 0))).sort(
+          (a, b) => a - b
+        )
+      : [];
+    const claimedBadges = Array.isArray(raw.claimedBadges)
+      ? Array.from(new Set(raw.claimedBadges.map(String).filter(Boolean)))
+      : [];
+    const notifiedMilestonesSet = new Set<number>(
+      Array.isArray(raw.notifiedMilestones)
+        ? raw.notifiedMilestones.map(Number).filter((n) => n > 0)
+        : []
+    );
+    const notifiedBadgesSet = new Set<string>(
+      Array.isArray(raw.notifiedBadges) ? raw.notifiedBadges.map(String).filter(Boolean) : []
+    );
+    const exploredModels = Array.isArray(raw.exploredModels)
+      ? Array.from(new Set(raw.exploredModels.map(String).filter(Boolean)))
+      : ['zro-deepseek-v4.1-flash', 'deepseek-v4.1-flash-free'];
+    const featuredBadgeId =
+      typeof raw.featuredBadgeId === 'string' && raw.featuredBadgeId
+        ? raw.featuredBadgeId
+        : 'first-spark';
+
+    const reminderEnabled = typeof raw.reminderEnabled === 'boolean' ? raw.reminderEnabled : true;
+    const reminderTime =
+      typeof raw.reminderTime === 'string' && /^\d{2}:\d{2}$/.test(raw.reminderTime)
+        ? raw.reminderTime
+        : '18:00';
+
+    const updated: DailyStreakData = {
+      currentStreak: computed.currentStreak,
+      longestStreak: computed.longestStreak,
+      lastActiveDate: todayKey,
+      activeDates: sortedDates,
+      todayInteractions,
+      todayRealInteractions,
+      dailyCounts,
+      dailyGoal,
+      streakFreezes: computed.streakFreezes,
+      maxStreakFreezes: 3,
+      frozenDates: computed.frozenDates,
+      claimedMilestones,
+      claimedBadges,
+      notifiedMilestones: Array.from(notifiedMilestonesSet).sort((a, b) => a - b),
+      notifiedBadges: Array.from(notifiedBadgesSet),
+      exploredModels,
+      featuredBadgeId,
+      totalActiveDays: sortedDates.length,
+      lastFreezeEarnedDate: raw.lastFreezeEarnedDate,
+      reminderEnabled,
+      reminderTime,
+      browserNotificationsEnabled: Boolean(raw.browserNotificationsEnabled),
+      lastReminderDismissedDate: raw.lastReminderDismissedDate,
+    };
+
+    saveToStorage(STORAGE_KEYS.DAILY_STREAK, updated);
+
+    // Check if any streak milestones or badges were newly unlocked during this interaction
+    this.checkAndDispatchNewAchievements(updated);
+
+    if (emit) {
+      this.emitChange();
+    }
+    return updated;
+  },
+
+  recordModelExplored(modelId: string): DailyStreakData {
+    if (!modelId) return this.getDailyStreak();
+    const current = this.getDailyStreak();
+    const existing = Array.isArray(current.exploredModels) ? current.exploredModels : [];
+    if (existing.includes(modelId)) return current;
+    const updated: DailyStreakData = {
+      ...current,
+      exploredModels: [...existing, modelId],
+    };
+    saveToStorage(STORAGE_KEYS.DAILY_STREAK, updated);
+    this.checkAndDispatchNewAchievements(updated);
+    this.emitChange();
+    return updated;
+  },
+
+  getEvaluatedBadges(
+    threads?: Array<{ createdAt?: number; messages?: Array<{ timestamp?: number; modelUsed?: string }> }>
+  ): EvaluatedBadge[] {
+    const streak = this.getDailyStreak(threads);
+    const usage = this.getUsage();
+    const bookmarks = this.getBookmarks();
+    const citations = this.getCitations();
+    const maxStreakReached = Math.max(streak.currentStreak, streak.longestStreak, 1);
+
+    const totalDailyInteractions = Object.values(streak.dailyCounts || {}).reduce(
+      (sum, c) => sum + Math.max(0, Number(c || 0)),
+      0
+    );
+    const maxSingleDayInteractions = Math.max(
+      streak.todayInteractions || 1,
+      ...Object.values(streak.dailyCounts || {}).map((c) => Number(c || 0)),
+      1
+    );
+    const totalInteractions = Math.max(
+      totalDailyInteractions,
+      Number(usage.messagesUsed || 0),
+      streak.todayInteractions || 1
+    );
+
+    const modelSet = new Set<string>(streak.exploredModels || ['zro-deepseek-v4.1-flash']);
+    if (Array.isArray(threads)) {
+      for (const t of threads) {
+        if (Array.isArray(t.messages)) {
+          for (const m of t.messages) {
+            if (m?.modelUsed) modelSet.add(String(m.modelUsed));
+          }
+        }
+      }
+    }
+    const uniqueModelsCount = Math.max(1, modelSet.size);
+    const researchRunsCount =
+      Math.max(0, Number(usage.searchesUsed || 0)) +
+      Math.max(0, Number(usage.deepResearchUsed || 0));
+    const studySessionsCount = Math.max(0, Number(usage.pdfStudyUsed || 0));
+    const curationAndShieldScore = Math.max(
+      Number(streak.streakFreezes || 0),
+      bookmarks.length + citations.length
+    );
+
+    const claimedSet = new Set<string>(streak.claimedBadges || []);
+    const featuredId = streak.featuredBadgeId || 'first-spark';
+
+    return ACHIEVEMENT_BADGES.map((b) => {
+      let currentValue = 0;
+      switch (b.id) {
+        case 'first-spark':
+          currentValue = Math.max(1, streak.totalActiveDays);
+          break;
+        case 'streak-3':
+        case 'streak-7':
+        case 'streak-14':
+        case 'streak-30':
+        case 'streak-100':
+          currentValue = maxStreakReached;
+          break;
+        case 'daily-goal-crusher':
+          currentValue = maxSingleDayInteractions;
+          break;
+        case 'prompt-initiate':
+        case 'prompt-centurion':
+          currentValue = totalInteractions;
+          break;
+        case 'model-polymath':
+          currentValue = uniqueModelsCount;
+          break;
+        case 'deep-investigator':
+          currentValue = researchRunsCount;
+          break;
+        case 'study-architect':
+          currentValue = studySessionsCount;
+          break;
+        case 'shield-guardian':
+          currentValue = curationAndShieldScore;
+          break;
+        default:
+          currentValue = 1;
+      }
+
+      const isUnlocked = currentValue >= b.targetValue;
+      const progressPct = Math.min(100, Math.round((currentValue / b.targetValue) * 100));
+
+      return {
+        ...b,
+        currentValue: Math.min(currentValue, b.targetValue * 10),
+        progressPct,
+        isUnlocked,
+        isClaimed: claimedSet.has(b.id),
+        isFeatured: featuredId === b.id,
+      };
+    });
+  },
+
+  claimBadgeReward(
+    badgeId: string,
+    allowPreviewGrant = false
+  ): {
+    streak: DailyStreakData;
+    rewarded: boolean;
+    badge?: AchievementBadge;
+  } {
+    const current = this.getDailyStreak();
+    const evaluated = this.getEvaluatedBadges();
+    const target = evaluated.find((b) => b.id === badgeId);
+    if (!target || (!allowPreviewGrant && !target.isUnlocked) || target.isClaimed) {
+      return { streak: current, rewarded: false };
+    }
+
+    const updatedClaimed = Array.from(
+      new Set([...(current.claimedBadges || []), badgeId])
+    );
+    const updatedFreezes = Math.min(
+      current.maxStreakFreezes,
+      current.streakFreezes + (target.bonusShields || 0)
+    );
+    const updated: DailyStreakData = {
+      ...current,
+      claimedBadges: updatedClaimed,
+      streakFreezes: updatedFreezes,
+      featuredBadgeId: current.featuredBadgeId || badgeId,
+    };
+
+    saveToStorage(STORAGE_KEYS.DAILY_STREAK, updated);
+    this.grantReferrerBonusQuota(target.bonusUploads, target.bonusMessages);
+    this.emitChange();
+    this.syncProfileAndSettingsWithBackend({ streak: updated }).catch(() => {});
+    return { streak: updated, rewarded: true, badge: target };
+  },
+
+  setFeaturedBadge(badgeId: string): DailyStreakData {
+    const current = this.getDailyStreak();
+    const updated: DailyStreakData = {
+      ...current,
+      featuredBadgeId: badgeId,
+    };
+    saveToStorage(STORAGE_KEYS.DAILY_STREAK, updated);
+    this.emitChange();
+    this.syncProfileAndSettingsWithBackend({ streak: updated }).catch(() => {});
+    return updated;
+  },
+
+  setDailyStreakGoal(goal: number): DailyStreakData {
+    const validGoal = [1, 3, 5, 10].includes(goal) ? goal : 3;
+    const current = this.getDailyStreak();
+    const updated: DailyStreakData = {
+      ...current,
+      dailyGoal: validGoal,
+    };
+    saveToStorage(STORAGE_KEYS.DAILY_STREAK, updated);
+    this.emitChange();
+    return updated;
+  },
+
+  updateStreakReminderSettings(settings: {
+    reminderEnabled?: boolean;
+    reminderTime?: string;
+    browserNotificationsEnabled?: boolean;
+  }): DailyStreakData {
+    const current = this.getDailyStreak();
+    const updated: DailyStreakData = {
+      ...current,
+      reminderEnabled:
+        typeof settings.reminderEnabled === 'boolean'
+          ? settings.reminderEnabled
+          : current.reminderEnabled,
+      reminderTime:
+        typeof settings.reminderTime === 'string' && /^\d{2}:\d{2}$/.test(settings.reminderTime)
+          ? settings.reminderTime
+          : current.reminderTime || '18:00',
+      browserNotificationsEnabled:
+        typeof settings.browserNotificationsEnabled === 'boolean'
+          ? settings.browserNotificationsEnabled
+          : Boolean(current.browserNotificationsEnabled),
+    };
+    saveToStorage(STORAGE_KEYS.DAILY_STREAK, updated);
+    this.emitChange();
+    this.syncProfileAndSettingsWithBackend({ streakReminder: updated }).catch(() => {});
+    return updated;
+  },
+
+  dismissStreakReminderForToday(): DailyStreakData {
+    const todayKey = toLocalDateKey();
+    const current = this.getDailyStreak();
+    const updated: DailyStreakData = {
+      ...current,
+      lastReminderDismissedDate: todayKey,
+    };
+    saveToStorage(STORAGE_KEYS.DAILY_STREAK, updated);
+    this.emitChange();
+    return updated;
+  },
+
+  shouldShowStreakReminder(now = new Date()): boolean {
+    const streak = this.getDailyStreak();
+    if (!streak.reminderEnabled) return false;
+    const todayKey = toLocalDateKey(now.getTime());
+    if (streak.lastReminderDismissedDate === todayKey) return false;
+
+    // If user has already completed their daily interaction today (either explicit interaction or met daily goal), no reminder needed
+    if ((streak.todayRealInteractions || 0) >= 1 && streak.todayInteractions >= streak.dailyGoal) {
+      return false;
+    }
+
+    const [targetHour, targetMin] = (streak.reminderTime || '18:00')
+      .split(':')
+      .map((n) => parseInt(n, 10) || 0);
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    const targetMinutes = targetHour * 60 + targetMin;
+
+    return currentMinutes >= targetMinutes;
+  },
+
+  async syncProfileAndSettingsWithBackend(extraPayload?: Record<string, any>): Promise<any> {
+    try {
+      const headers = await getAuthHeaders();
+      const profile = this.getProfile();
+      const streak = this.getDailyStreak();
+      const personalization = this.getPersonalization();
+      const privacy = this.getPrivacy();
+      const res = await fetch('/api/user/profile-backend', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          profile,
+          streak: {
+            currentStreak: streak.currentStreak,
+            longestStreak: streak.longestStreak,
+            dailyGoal: streak.dailyGoal,
+            reminderEnabled: streak.reminderEnabled,
+            reminderTime: streak.reminderTime,
+            browserNotificationsEnabled: streak.browserNotificationsEnabled,
+          },
+          personalization,
+          privacy,
+          ...(extraPayload || {}),
+        }),
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch {}
+    return null;
+  },
+
+  buildMilestoneAchievementPayload(
+    days: number,
+    isPreview = false
+  ): AchievementUnlockPayload | null {
+    const milestone = STREAK_MILESTONES.find((m) => m.days === days);
+    if (!milestone) return null;
+    const streak = this.getDailyStreak();
+    const maxReached = Math.max(streak.currentStreak, streak.longestStreak, 1);
+    const isClaimed = streak.claimedMilestones.includes(milestone.days);
+    const isUnlocked = maxReached >= milestone.days;
+
+    const tier: AchievementUnlockPayload['tier'] =
+      milestone.days >= 30
+        ? 'obsidian'
+        : milestone.days >= 7
+        ? 'gold'
+        : milestone.days >= 3
+        ? 'silver'
+        : 'bronze';
+
+    const iconName: AchievementBadge['iconName'] =
+      milestone.days >= 30 ? 'trophy' : milestone.days >= 7 ? 'flame' : 'zap';
+
+    const correspondingBadge = ACHIEVEMENT_BADGES.find(
+      (b) => b.category === 'streak' && b.targetValue === milestone.days && b.unitLabel === 'days'
+    );
+
+    return {
+      id: `milestone-${milestone.days}`,
+      kind: 'milestone',
+      days: milestone.days,
+      badgeId: correspondingBadge?.id,
+      title: milestone.title,
+      subtitle: milestone.subtitle,
+      kickerLabel: `${milestone.days}-DAY STREAK MILESTONE`,
+      tier,
+      iconName,
+      bonusMessages: milestone.bonusMessages,
+      bonusUploads: milestone.bonusUploads,
+      bonusShields: milestone.bonusShields,
+      isClaimed,
+      isUnlocked,
+      isPreview,
+      unlockedAt: Date.now(),
+    };
+  },
+
+  buildBadgeAchievementPayload(
+    badgeId: string,
+    isPreview = false
+  ): AchievementUnlockPayload | null {
+    const evaluated = this.getEvaluatedBadges();
+    const badge = evaluated.find((b) => b.id === badgeId);
+    if (!badge) return null;
+    return {
+      id: `badge-${badge.id}`,
+      kind: 'badge',
+      badgeId: badge.id,
+      days: badge.category === 'streak' && badge.unitLabel === 'days' ? badge.targetValue : undefined,
+      title: badge.title,
+      subtitle: badge.subtitle,
+      kickerLabel:
+        badge.category === 'streak' && badge.unitLabel === 'days'
+          ? `${badge.targetValue}-DAY STREAK BADGE`
+          : `${badge.tier.toUpperCase()} BADGE UNLOCKED`,
+      tier: badge.tier,
+      iconName: badge.iconName,
+      bonusMessages: badge.bonusMessages,
+      bonusUploads: badge.bonusUploads,
+      bonusShields: badge.bonusShields,
+      isClaimed: badge.isClaimed,
+      isUnlocked: badge.isUnlocked,
+      isPreview,
+      unlockedAt: Date.now(),
+    };
+  },
+
+  triggerMilestoneToastPreview(days: number): AchievementUnlockPayload | null {
+    const payload = this.buildMilestoneAchievementPayload(days, true);
+    if (payload && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('zeno-achievement-unlocked', { detail: payload }));
+    }
+    return payload;
+  },
+
+  triggerBadgeToastPreview(badgeId: string): AchievementUnlockPayload | null {
+    const payload = this.buildBadgeAchievementPayload(badgeId, true);
+    if (payload && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('zeno-achievement-unlocked', { detail: payload }));
+    }
+    return payload;
+  },
+
+  checkAndDispatchNewAchievements(streakSnapshot?: DailyStreakData): void {
+    if (typeof window === 'undefined') return;
+    const current = streakSnapshot || this.getDailyStreak();
+    const maxReached = Math.max(current.currentStreak, current.longestStreak, 1);
+    const notifiedMilestones = new Set<number>(current.notifiedMilestones || []);
+    const notifiedBadges = new Set<string>(current.notifiedBadges || []);
+    let mutated = false;
+    const payloadsToEmit: AchievementUnlockPayload[] = [];
+
+    // 1. Check Streak Milestones (1d, 3d, 7d, 14d, 30d, 60d, 100d)
+    for (const m of STREAK_MILESTONES) {
+      if (maxReached >= m.days && !notifiedMilestones.has(m.days)) {
+        notifiedMilestones.add(m.days);
+        mutated = true;
+        // Also mark corresponding streak day badge as notified so we don't double-toast the exact same day milestone
+        const matchingStreakBadge = ACHIEVEMENT_BADGES.find(
+          (b) => b.category === 'streak' && b.targetValue === m.days && b.unitLabel === 'days'
+        );
+        if (matchingStreakBadge) {
+          notifiedBadges.add(matchingStreakBadge.id);
+        }
+        const p = this.buildMilestoneAchievementPayload(m.days, false);
+        if (p) payloadsToEmit.push(p);
+      }
+    }
+
+    // 2. Check non-day-duplicate Achievement Badges (Daily Goal Crusher, Mastery, Exploration, Curation)
+    const evaluated = this.getEvaluatedBadges();
+    for (const b of evaluated) {
+      if (b.isUnlocked && !notifiedBadges.has(b.id)) {
+        notifiedBadges.add(b.id);
+        mutated = true;
+        const p = this.buildBadgeAchievementPayload(b.id, false);
+        if (p) payloadsToEmit.push(p);
+      }
+    }
+
+    if (mutated) {
+      const nextState: DailyStreakData = {
+        ...current,
+        notifiedMilestones: Array.from(notifiedMilestones).sort((a, b) => a - b),
+        notifiedBadges: Array.from(notifiedBadges),
+      };
+      saveToStorage(STORAGE_KEYS.DAILY_STREAK, nextState);
+    }
+
+    for (const payload of payloadsToEmit) {
+      window.dispatchEvent(new CustomEvent('zeno-achievement-unlocked', { detail: payload }));
+    }
+  },
+
+  claimStreakMilestone(
+    milestoneDays: number,
+    allowPreviewGrant = false
+  ): {
+    streak: DailyStreakData;
+    rewarded: boolean;
+    milestone?: StreakMilestone;
+  } {
+    const current = this.getDailyStreak();
+    const milestone = STREAK_MILESTONES.find((m) => m.days === milestoneDays);
+    const maxReached = Math.max(current.currentStreak, current.longestStreak);
+
+    if (
+      !milestone ||
+      (!allowPreviewGrant && maxReached < milestone.days) ||
+      current.claimedMilestones.includes(milestone.days)
+    ) {
+      return { streak: current, rewarded: false };
+    }
+
+    const updatedClaimed = Array.from(
+      new Set([...current.claimedMilestones, milestone.days])
+    ).sort((a, b) => a - b);
+
+    const updatedFreezes = Math.min(
+      current.maxStreakFreezes,
+      current.streakFreezes + (milestone.bonusShields || 0)
+    );
+
+    const matchingBadge = ACHIEVEMENT_BADGES.find(
+      (b) => b.category === 'streak' && b.targetValue === milestone.days && b.unitLabel === 'days'
+    );
+    const updatedClaimedBadges = matchingBadge
+      ? Array.from(new Set([...(current.claimedBadges || []), matchingBadge.id]))
+      : current.claimedBadges || [];
+
+    const updated: DailyStreakData = {
+      ...current,
+      claimedMilestones: updatedClaimed,
+      claimedBadges: updatedClaimedBadges,
+      streakFreezes: updatedFreezes,
+      featuredBadgeId: matchingBadge ? matchingBadge.id : current.featuredBadgeId,
+    };
+
+    saveToStorage(STORAGE_KEYS.DAILY_STREAK, updated);
+    this.grantReferrerBonusQuota(milestone.bonusUploads, milestone.bonusMessages);
+    this.emitChange();
+    return { streak: updated, rewarded: true, milestone };
+  },
+
+  refillStreakFreeze(): { streak: DailyStreakData; refilled: boolean } {
+    const todayKey = toLocalDateKey();
+    const current = this.getDailyStreak();
+    if (
+      current.streakFreezes >= current.maxStreakFreezes ||
+      current.todayInteractions < current.dailyGoal ||
+      current.lastFreezeEarnedDate === todayKey
+    ) {
+      return { streak: current, refilled: false };
+    }
+
+    const updated: DailyStreakData = {
+      ...current,
+      streakFreezes: Math.min(current.maxStreakFreezes, current.streakFreezes + 1),
+      lastFreezeEarnedDate: todayKey,
+    };
+    saveToStorage(STORAGE_KEYS.DAILY_STREAK, updated);
+    this.emitChange();
+    return { streak: updated, refilled: true };
   },
 
   getPrivacy(): PrivacySettings {
@@ -1025,6 +2166,7 @@ export const UserAccountStore = {
       savedBookmarks: this.getBookmarks(),
       subscription: this.getSubscription(),
       usage: this.getUsage(),
+      dailyStreak: this.getDailyStreak(),
       privacy: this.getPrivacy(),
       sessions: this.getSessions(),
     };

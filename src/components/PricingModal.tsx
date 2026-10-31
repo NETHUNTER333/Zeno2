@@ -72,7 +72,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
     );
     setCurrentPlan(targetPlan);
     setUsage(UserAccountStore.getUsage());
-    const label = targetPlan === 'spark' ? 'Spark ($1/mo)' : 'Fire ($5/mo)';
+    const label = targetPlan === 'spark' ? 'Spark ($3/mo)' : 'Fire ($7/mo)';
     setUpgradeBanner(`Switched active plan to ${label}. Your 10x limits and models are now updated.`);
     setTimeout(() => setUpgradeBanner(null), 4000);
   };
@@ -184,7 +184,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
             </span>
           </div>
           <p className={`text-xs sm:text-sm ${isDark ? 'text-neutral-400' : 'text-neutral-600'}`}>
-            Choose between our 2 plans: Spark ($1/mo) with 10x increased daily limits or Fire ($5/mo) for unlimited frontier power.
+            Choose between our 2 plans: Spark ($3/mo) with 10x increased daily limits or Fire ($7/mo) for unlimited frontier power.
           </p>
         </div>
 
@@ -224,7 +224,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
               {limitReason}
             </div>
             <div className={`text-xs ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
-              Select Spark ($1) or Fire ($5) below to unlock immediately.
+              Select Spark ($3) or Fire ($7) below to unlock immediately.
             </div>
           </div>
         </div>
@@ -276,10 +276,10 @@ export const PricingModal: React.FC<PricingModalProps> = ({
               }`}
             >
               {currentPlan === 'fire'
-                ? 'Fire ($5/mo)'
+                ? 'Fire ($7/mo)'
                 : currentPlan === 'spark'
-                ? 'Spark ($1/mo · 10x limits)'
-                : 'Select a Plan ($1 or $5)'}
+                ? 'Spark ($3/mo · 10x limits)'
+                : 'Select a Plan ($3 or $7)'}
             </span>
           </div>
 
@@ -363,7 +363,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
 
       {/* Strictly 2 Clean Padded Pricing Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 max-w-4xl mx-auto gap-6 items-stretch">
-        {/* ==================== CARD 1: SPARK PLAN ($1 USD) ==================== */}
+        {/* ==================== CARD 1: SPARK PLAN ($3 USD) ==================== */}
         <div
           onClick={() => setActiveCardIndex(0)}
           className={`relative rounded-[28px] p-6 sm:p-7 flex flex-col justify-between transition-all border-[2px] bg-[#18181b] text-white shadow-2xl ${
@@ -392,14 +392,14 @@ export const PricingModal: React.FC<PricingModalProps> = ({
             {/* Price Block */}
             <div className="flex items-baseline gap-2.5 mt-1 mb-3">
               <span className="text-3xl sm:text-4xl font-semibold text-neutral-500 line-through decoration-2 tabular-nums">
-                $5
+                $7
               </span>
               <span className="text-4xl sm:text-5xl font-bold tracking-tight text-white tabular-nums">
-                {billingCycle === 'annual' ? '$0.80' : '$1'}
+                {billingCycle === 'annual' ? '$2.40' : '$3'}
               </span>
               <div className="text-[11px] leading-tight text-neutral-300">
                 <div>/ month (USD)</div>
-                <div>{billingCycle === 'annual' ? '$10 billed yearly' : '$12 billed monthly'}</div>
+                <div>{billingCycle === 'annual' ? '$29 billed yearly' : '$36 billed monthly'}</div>
               </div>
             </div>
 
@@ -452,12 +452,12 @@ export const PricingModal: React.FC<PricingModalProps> = ({
                   : 'bg-white hover:bg-neutral-200 text-[#18181b] active:scale-95'
               }`}
             >
-              {currentPlan === 'spark' ? 'Active Spark Plan' : 'Start Spark — $1/mo (10x Limits)'}
+              {currentPlan === 'spark' ? 'Active Spark Plan' : 'Start Spark — $3/mo (10x Limits)'}
             </button>
           </div>
         </div>
 
-        {/* ==================== CARD 2: FIRE PLAN ($5 USD) ==================== */}
+        {/* ==================== CARD 2: FIRE PLAN ($7 USD) ==================== */}
         <div
           onClick={() => setActiveCardIndex(1)}
           className={`relative rounded-[28px] p-6 sm:p-7 flex flex-col justify-between transition-all border bg-white text-[#18181b] shadow-2xl ${
@@ -485,12 +485,15 @@ export const PricingModal: React.FC<PricingModalProps> = ({
           <div>
             {/* Price Block */}
             <div className="flex items-baseline gap-2.5 mt-1 mb-3">
+              <span className="text-3xl sm:text-4xl font-semibold text-neutral-400 line-through decoration-2 tabular-nums">
+                $12
+              </span>
               <span className="text-4xl sm:text-5xl font-bold tracking-tight tabular-nums text-[#18181b]">
-                {billingCycle === 'annual' ? '$4' : '$5'}
+                {billingCycle === 'annual' ? '$5.60' : '$7'}
               </span>
               <div className="text-[11px] leading-tight text-[#52525b]">
                 <div>/ month (USD)</div>
-                <div>{billingCycle === 'annual' ? '$48 billed yearly' : '$60 billed monthly'}</div>
+                <div>{billingCycle === 'annual' ? '$67 billed yearly' : '$84 billed monthly'}</div>
               </div>
             </div>
 
@@ -529,7 +532,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
                   : 'bg-[#18181b] hover:bg-neutral-800 text-white active:scale-95'
               }`}
             >
-              {currentPlan === 'fire' ? 'Active Fire Plan' : 'Start Fire — $5/mo (Unlimited)'}
+              {currentPlan === 'fire' ? 'Active Fire Plan' : 'Start Fire — $7/mo (Unlimited)'}
             </button>
           </div>
         </div>

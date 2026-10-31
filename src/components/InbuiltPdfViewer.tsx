@@ -260,6 +260,75 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
       if (reqSeq !== studyRequestSeqRef.current) return;
       const remote = data?.study;
       if (res.ok && data?.success && remote) {
+        const remoteFlashcards = Array.isArray(remote?.flashcards)
+          ? remote.flashcards.map((fc: any, idx: number) => ({
+              id: fc.id || `pdf-fc-${targetDifficulty}-${idx + 1}`,
+              front: String(fc.front || ''),
+              back: String(fc.back || ''),
+              category: String(fc.category || 'Core Concept'),
+              pageRef: Number(fc.pageRef) || 1,
+              difficulty: targetDifficulty,
+            }))
+          : [];
+        const mergedFlashcards = [
+          ...remoteFlashcards,
+          ...fallbackBundle.flashcards.filter(
+            (fb) => !remoteFlashcards.some((rf: any) => rf.front.toLowerCase() === fb.front.toLowerCase())
+          ),
+        ].slice(0, 30);
+
+        const remoteQuiz = Array.isArray(remote?.quiz)
+          ? remote.quiz.map((q: any, idx: number) => ({
+              id: q.id || `pdf-q-${targetDifficulty}-${idx + 1}`,
+              question: String(q.question || ''),
+              options:
+                Array.isArray(q.options) && q.options.length >= 2
+                  ? q.options.map(String)
+                  : fallbackBundle.quiz[0].options,
+              correctIndex:
+                typeof q.correctIndex === 'number' && q.correctIndex >= 0 && q.correctIndex < 4
+                  ? q.correctIndex
+                  : 0,
+              explanation: String(q.explanation || ''),
+              pageRef: Number(q.pageRef) || 1,
+              difficulty: targetDifficulty,
+            }))
+          : [];
+        const mergedQuiz = [
+          ...remoteQuiz,
+          ...fallbackBundle.quiz.filter(
+            (fq) => !remoteQuiz.some((rq: any) => rq.question.toLowerCase() === fq.question.toLowerCase())
+          ),
+        ].slice(0, 28);
+
+        const remoteKeyPoints = Array.isArray(remote?.summary?.keyPoints)
+          ? remote.summary.keyPoints
+          : [];
+        const mergedKeyPoints = [
+          ...remoteKeyPoints,
+          ...fallbackBundle.summary.keyPoints.filter((kp) => !remoteKeyPoints.includes(kp)),
+        ].slice(0, 24);
+
+        const remoteSections = Array.isArray(remote?.summary?.sections)
+          ? remote.summary.sections
+          : [];
+        const mergedSections = [
+          ...remoteSections,
+          ...fallbackBundle.summary.sections.filter(
+            (fs) => !remoteSections.some((rs: any) => rs.title === fs.title)
+          ),
+        ].slice(0, 24);
+
+        const remoteConcepts = Array.isArray(remote?.explanation?.concepts)
+          ? remote.explanation.concepts
+          : [];
+        const mergedConcepts = [
+          ...remoteConcepts,
+          ...fallbackBundle.explanation.concepts.filter(
+            (fc) => !remoteConcepts.some((rc: any) => rc.term === fc.term)
+          ),
+        ].slice(0, 24);
+
         setStudyBundle({
           title: docTitle.replace(/\.pdf$/i, ''),
           pageCount: pages,
@@ -267,61 +336,31 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
           readTimeMin: fallbackBundle.readTimeMin,
           summary: {
             overview: remote?.summary?.overview || fallbackBundle.summary.overview,
-            keyPoints:
-              Array.isArray(remote?.summary?.keyPoints) && remote.summary.keyPoints.length > 0
-                ? remote.summary.keyPoints
-                : fallbackBundle.summary.keyPoints,
-            sections:
-              Array.isArray(remote?.summary?.sections) && remote.summary.sections.length > 0
-                ? remote.summary.sections
-                : fallbackBundle.summary.sections,
+            keyPoints: mergedKeyPoints.length > 0 ? mergedKeyPoints : fallbackBundle.summary.keyPoints,
+            sections: mergedSections.length > 0 ? mergedSections : fallbackBundle.summary.sections,
           },
           explanation: {
             coreThesis: remote?.explanation?.coreThesis || fallbackBundle.explanation.coreThesis,
-            concepts:
-              Array.isArray(remote?.explanation?.concepts) && remote.explanation.concepts.length > 0
-                ? remote.explanation.concepts
-                : fallbackBundle.explanation.concepts,
+            concepts: mergedConcepts.length > 0 ? mergedConcepts : fallbackBundle.explanation.concepts,
           },
-          flashcards:
-            Array.isArray(remote?.flashcards) && remote.flashcards.length >= 4
-              ? remote.flashcards.map((fc: any, idx: number) => ({
-                  id: fc.id || `pdf-fc-${targetDifficulty}-${idx + 1}`,
-                  front: String(fc.front || ''),
-                  back: String(fc.back || ''),
-                  category: String(fc.category || 'Core Concept'),
-                  pageRef: Number(fc.pageRef) || 1,
-                  difficulty: targetDifficulty,
-                }))
-              : fallbackBundle.flashcards,
-          quiz:
-            Array.isArray(remote?.quiz) && remote.quiz.length >= 4
-              ? remote.quiz.map((q: any, idx: number) => ({
-                  id: q.id || `pdf-q-${targetDifficulty}-${idx + 1}`,
-                  question: String(q.question || ''),
-                  options:
-                    Array.isArray(q.options) && q.options.length >= 2
-                      ? q.options.map(String)
-                      : fallbackBundle.quiz[0].options,
-                  correctIndex:
-                    typeof q.correctIndex === 'number' && q.correctIndex >= 0 && q.correctIndex < 4
-                      ? q.correctIndex
-                      : 0,
-                  explanation: String(q.explanation || ''),
-                  pageRef: Number(q.pageRef) || 1,
-                  difficulty: targetDifficulty,
-                }))
-              : fallbackBundle.quiz,
+          flashcards: mergedFlashcards.length > 0 ? mergedFlashcards : fallbackBundle.flashcards,
+          quiz: mergedQuiz.length > 0 ? mergedQuiz : fallbackBundle.quiz,
           cheatsheet: {
             formulasOrRules:
               Array.isArray(remote?.cheatsheet?.formulasOrRules) &&
               remote.cheatsheet.formulasOrRules.length > 0
-                ? remote.cheatsheet.formulasOrRules
+                ? [
+                    ...remote.cheatsheet.formulasOrRules,
+                    ...fallbackBundle.cheatsheet.formulasOrRules,
+                  ].slice(0, 15)
                 : fallbackBundle.cheatsheet.formulasOrRules,
             examTips:
               Array.isArray(remote?.cheatsheet?.examTips) &&
               remote.cheatsheet.examTips.length > 0
-                ? remote.cheatsheet.examTips
+                ? [...remote.cheatsheet.examTips, ...fallbackBundle.cheatsheet.examTips].slice(
+                    0,
+                    15
+                  )
                 : fallbackBundle.cheatsheet.examTips,
           },
         });

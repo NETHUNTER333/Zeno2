@@ -367,7 +367,11 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       return;
     }
     if (isEmpty) return;
-    onSend(value.trim(), searchMode, attachments.length > 0 ? attachments : undefined);
+    onSend(
+      value.trim(),
+      searchMode === 'news' ? 'news' : 'organic',
+      attachments.length > 0 ? attachments : undefined
+    );
     setValue('');
     setAttachments([]);
     if (textareaRef.current) {
@@ -397,8 +401,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     if (allowedSlots <= 0) {
       const msg =
         currentPlan === 'spark'
-          ? `Daily file upload limit reached (${latestUsage.fileUploadLimit}/250 files used on Spark). Upgrade to Fire ($5/mo) for unlimited file uploads.`
-          : `Please choose a plan to upload files — Spark ($1/mo for 250 uploads/day) or Fire ($5/mo for unlimited uploads).`;
+          ? `Daily file upload limit reached (${latestUsage.fileUploadLimit}/250 files used on Spark). Upgrade to Fire ($7/mo) for unlimited file uploads.`
+          : `Please choose a plan to upload files — Spark ($3/mo for 250 uploads/day) or Fire ($7/mo for unlimited uploads).`;
       setUploadLimitWarning(msg);
       openPricingModal(currentPlan === 'spark' ? 'fire' : 'spark', msg);
       return;
@@ -409,8 +413,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       filesToProcess = fileList.slice(0, allowedSlots);
       const msg =
         currentPlan === 'spark'
-          ? `Attached ${allowedSlots} file(s) up to your Spark plan limit (250 uploads/day). Upgrade to Fire ($5/mo) for unlimited uploads.`
-          : `Select Spark ($1/mo) or Fire ($5/mo) to upload more files.`;
+          ? `Attached ${allowedSlots} file(s) up to your Spark plan limit (250 uploads/day). Upgrade to Fire ($7/mo) for unlimited uploads.`
+          : `Select Spark ($3/mo) or Fire ($7/mo) to upload more files.`;
       setUploadLimitWarning(msg);
     } else {
       setUploadLimitWarning(null);
@@ -568,7 +572,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                     : 'bg-[#18181b] text-white hover:bg-neutral-800'
                 }`}
               >
-                Upgrade ($1 Spark / $5 Fire)
+                Upgrade ($3 Spark / $7 Fire)
               </button>
               <button
                 type="button"
@@ -861,7 +865,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                         : 'bg-[#18181b] text-white hover:bg-neutral-800'
                     }`}
                   >
-                    {currentPlan === 'free' ? 'Spark $1' : 'Fire $5'}
+                    {currentPlan === 'free' ? 'Spark $3' : 'Fire $7'}
                   </button>
                 )}
               </div>
@@ -936,7 +940,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                   type="button"
                   onClick={() => {
                     setIsPlusMenuOpen(false);
-                    onToggleSearchMode(searchMode === 'off' ? 'organic' : 'off');
+                    onToggleSearchMode(searchMode === 'news' ? 'organic' : 'news');
                   }}
                   className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-full text-left text-[11px] font-normal transition-colors cursor-pointer ${
                     isDark ? 'hover:bg-white/[0.07]' : 'hover:bg-[#f4f4f5]'
@@ -945,16 +949,12 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                   <span className="truncate">Web Search</span>
                   <span
                     className={`text-[9.5px] px-2 py-0.5 rounded-full font-normal border ${
-                      searchMode !== 'off'
-                        ? isDark
-                          ? 'bg-white text-black border-white'
-                          : 'bg-[#18181b] text-white border-[#18181b]'
-                        : isDark
-                        ? 'bg-white/[0.04] border-white/10 text-white/50'
-                        : 'bg-[#f4f4f5] border-black/10 text-black/50'
+                      isDark
+                        ? 'bg-white text-black border-white'
+                        : 'bg-[#18181b] text-white border-[#18181b]'
                     }`}
                   >
-                    {searchMode === 'off' ? 'Off' : 'On'}
+                    {searchMode === 'news' ? 'On · News' : 'Always On'}
                   </span>
                 </button>
 
