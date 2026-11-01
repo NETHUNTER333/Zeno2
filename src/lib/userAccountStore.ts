@@ -701,18 +701,18 @@ export const PLAN_LIMITS: Record<
   }
 > = {
   free: {
-    name: 'Unsubscribed',
+    name: 'Free',
     priceMonthlyUsd: 0,
     priceYearlyUsd: 0,
-    fileUploadLimit: 0,
-    maxFilesPerMessage: 0,
-    messageLimit: 0,
-    searchLimit: 0,
-    deepResearchLimit: 0,
-    pdfStudyLimit: 0,
-    tokenLimit: 0,
-    toolLimit: 0,
-    storageBytesLimit: 0,
+    fileUploadLimit: 5, // 5 daily free file uploads
+    maxFilesPerMessage: 2,
+    messageLimit: 5, // 5 daily free AI messages
+    searchLimit: 5, // 5 daily free web searches
+    deepResearchLimit: 3, // 3 daily free autonomous deep research runs
+    pdfStudyLimit: 5, // 5 daily free study sessions
+    tokenLimit: 250000,
+    toolLimit: 15,
+    storageBytesLimit: 104857600, // 100 MB
   },
   spark: {
     name: 'Spark',
@@ -1097,7 +1097,8 @@ export const UserAccountStore = {
     const norm = this.getNormalizedPlan(plan);
     return PLAN_LIMITS[norm];
   },
-  canUseModel(requiredTier: 'spark' | 'fire' = 'spark'): boolean {
+  canUseModel(requiredTier: 'free' | 'spark' | 'fire' = 'spark'): boolean {
+    if (requiredTier === 'free') return true;
     const current = this.getNormalizedPlan();
     if (current === 'fire') return true;
     if (current === 'spark' && requiredTier === 'spark') return true;

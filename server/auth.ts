@@ -66,6 +66,10 @@ export const OPTIONAL_AUTH_API_ROUTES = [
   '/quota/status',
   '/quota/sync',
   '/quota/upgrade',
+  '/referral/me',
+  '/referral/claim',
+  '/growth/referrals/me',
+  '/growth/referrals/claim',
 ] as const;
 
 export const PUBLIC_API_ROUTES = [
@@ -80,6 +84,9 @@ export const PUBLIC_API_ROUTES = [
   '/media/embed-proxy',
   '/media/download',
   '/finance/quote',
+  '/referral/validate',
+  '/growth/referrals/visit',
+  '/growth/referrals/leaderboard',
 ] as const;
 
 let cachedAdminApp: FirebaseAdminApp | null = null;

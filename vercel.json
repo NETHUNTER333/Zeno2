@@ -1,0 +1,28 @@
+{
+  "cleanUrls": true,
+  "rewrites": [
+    {
+      "source": "/r/:code",
+      "destination": "/?ref=:code"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "SAMEORIGIN"
+        }
+      ]
+    }
+  ]
+}

@@ -54,6 +54,7 @@ import {
 import { ChatThread } from './Sidebar';
 import { auth } from '../lib/firebase';
 import { UserAccountStore } from '../lib/userAccountStore';
+import { fetchUserReferralDashboard, ReferralDashboardResponse } from '../lib/referralClient';
 
 export type GrowthHubTab = 'discover' | 'vault' | 'weekly' | 'passes' | 'feedback';
 
@@ -129,6 +130,7 @@ export const ZenoGrowthHubModal: React.FC<ZenoGrowthHubModalProps> = ({
 
   // --- TAB 4: ZENO PASSES (REFERRALS) & CREATOR PROFILE ---
   const [referralStatus, setReferralStatus] = useState<ZenoReferralStatus | null>(null);
+  const [dashboardData, setDashboardData] = useState<ReferralDashboardResponse | null>(null);
   const [copiedRefLink, setCopiedRefLink] = useState<boolean>(false);
   const [creatorProfile, setCreatorProfile] = useState<CreatorPublicProfile>(() => {
     const p = UserAccountStore.getProfile();
@@ -235,6 +237,11 @@ export const ZenoGrowthHubModal: React.FC<ZenoGrowthHubModalProps> = ({
         setEightRefState(getEightReferralTrackerState());
       }
     });
+    fetchUserReferralDashboard().then((dash) => {
+      if (dash && dash.success) {
+        setDashboardData(dash);
+      }
+    }).catch(() => {});
   }, [isOpen, activeTab]);
 
   const handleClaimReferrerBonus = (entry: EliteReferrerLeaderboardEntry) => {
@@ -1373,7 +1380,7 @@ export const ZenoGrowthHubModal: React.FC<ZenoGrowthHubModalProps> = ({
                   </div>
                 </div>
 
-                {/* Invite Link Copy Row + Record Referral */}
+                {/* Invite Link Copy & Share Row */}
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                   <div
                     className={`flex-1 p-2.5 rounded-xl border flex items-center gap-2 ${subCardSurface}`}
@@ -1381,13 +1388,13 @@ export const ZenoGrowthHubModal: React.FC<ZenoGrowthHubModalProps> = ({
                     <input
                       type="text"
                       readOnly
-                      value={referralStatus?.referralUrl || eightRefState.inviteUrl}
+                      value={dashboardData?.link || referralStatus?.referralUrl || eightRefState.inviteUrl}
                       className="flex-1 bg-transparent font-mono text-xs outline-none truncate px-1"
                     />
                     <button
                       type="button"
                       onClick={() => {
-                        const url = referralStatus?.referralUrl || eightRefState.inviteUrl;
+                        const url = dashboardData?.link || referralStatus?.referralUrl || eightRefState.inviteUrl;
                         navigator.clipboard.writeText(url);
                         setCopiedRefLink(true);
                         trackGrowthEvent('share_action_initiated', { surface: 'referral_link' });
@@ -1397,8 +1404,84 @@ export const ZenoGrowthHubModal: React.FC<ZenoGrowthHubModalProps> = ({
                     >
                       {copiedRefLink ? 'Copied ✓' : 'Copy Invite Link'}
                     </button>
+                    {typeof navigator !== 'undefined' && 'share' in navigator && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const url = dashboardData?.link || referralStatus?.referralUrl || eightRefState.inviteUrl;
+                          const code = dashboardData?.code || referralStatus?.code || eightRefState.code;
+                          navigator.share({
+                            title: 'Join me on Zeno',
+                            text: `Explore research, AI models, and YouTube study tools on Zeno with my invite code: ${code}`,
+                            url,
+                          }).catch(() => {});
+                        }}
+                        className="px-3.5 py-1.5 rounded-lg text-xs font-semibold cursor-pointer shrink-0 bg-neutral-500/10 hover:bg-neutral-500/20 text-neutral-300 transition-colors"
+                      >
+                        Share ↗
+                      </button>
+                    )}
                   </div>
                 </div>
+
+                {/* Live Real Referral Stats */}
+                <div className="grid grid-cols-3 gap-2">
+                  <div className={`p-3 rounded-xl border text-center ${subCardSurface}`}>
+                    <div className="text-lg font-bold font-mono text-[#FC4C01] tabular-nums">
+                      {dashboardData?.stats?.invited ?? referralStatus?.validatedSignupsCount ?? 0}
+                    </div>
+                    <div className="text-[10px] text-neutral-500 uppercase tracking-wider font-medium mt-0.5">
+                      Invited
+                    </div>
+                  </div>
+                  <div className={`p-3 rounded-xl border text-center ${subCardSurface}`}>
+                    <div className="text-lg font-bold font-mono text-emerald-400 tabular-nums">
+                      {dashboardData?.stats?.qualified ?? referralStatus?.qualifiedActionsCount ?? 0}
+                    </div>
+                    <div className="text-[10px] text-neutral-500 uppercase tracking-wider font-medium mt-0.5">
+                      Qualified
+                    </div>
+                  </div>
+                  <div className={`p-3 rounded-xl border text-center ${subCardSurface}`}>
+                    <div className="text-lg font-bold font-mono text-cyan-400 tabular-nums">
+                      {dashboardData?.stats?.rewarded ?? (dashboardData?.rewards?.length || 0)}
+                    </div>
+                    <div className="text-[10px] text-neutral-500 uppercase tracking-wider font-medium mt-0.5">
+                      Rewards
+                    </div>
+                  </div>
+                </div>
+
+                {/* Rewards Ledger History (if any recorded in DB) */}
+                {dashboardData?.rewards && dashboardData.rewards.length > 0 && (
+                  <div className={`p-3 rounded-xl border space-y-2 ${subCardSurface}`}>
+                    <div className="text-xs font-semibold text-neutral-400 uppercase tracking-wider text-[10px]">
+                      Earned Rewards Ledger
+                    </div>
+                    <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                      {dashboardData.rewards.map((rw) => (
+                        <div
+                          key={rw.id}
+                          className="flex items-center justify-between p-2 rounded-lg bg-neutral-500/5 border border-neutral-500/10 text-xs"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="text-emerald-400 font-semibold font-mono">
+                              +{rw.amount} Searches
+                            </span>
+                            {rw.days > 0 && (
+                              <span className="text-cyan-400 font-mono text-[11px]">
+                                · +{rw.days}d Pro
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-[10px] font-mono text-neutral-500">
+                            {new Date(rw.createdAt).toLocaleDateString()}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Redeem Friend Pass Code */}
                 <div className={`p-3.5 rounded-xl border space-y-2 ${subCardSurface}`}>

@@ -271,109 +271,6 @@ async function fetchSubclipTranscript(videoId, preferredLang = 'en') {
   };
 }
 
-function buildGroundedStudyBundle(videoId, title, author, segments = []) {
-  const safeTitle = title || `YouTube Video (${videoId})`;
-  const totalSegs = segments.length;
-  const fullText = segments.map((s) => s.text).join(' ');
-  const sentences = fullText
-    .split(/(?<=[.!?])\s+/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 25);
-
-  const overview =
-    sentences.slice(0, 4).join(' ') ||
-    segments
-      .slice(0, 6)
-      .map((s) => s.text)
-      .join(' ') ||
-    `Analysis of "${safeTitle}" by ${author || 'Creator'}.`;
-
-  const keyPoints = (
-    sentences.length >= 5
-      ? sentences.filter((_, i) => i % Math.max(1, Math.floor(sentences.length / 6)) === 0).slice(0, 6)
-      : segments
-          .filter((_, i) => i % Math.max(1, Math.floor(totalSegs / 6)) === 0)
-          .slice(0, 6)
-          .map((s) => s.text)
-  ).map((p) => (p.length > 220 ? `${p.slice(0, 217)}...` : p));
-
-  const chapterCount = Math.min(6, Math.max(3, Math.ceil(totalSegs / 12)));
-  const chunkSize = Math.max(1, Math.floor(totalSegs / chapterCount));
-  const chapters = [];
-  for (let i = 0; i < chapterCount; i++) {
-    const slice = segments.slice(i * chunkSize, (i + 1) * chunkSize);
-    if (slice.length === 0) continue;
-    const firstSeg = slice[0];
-    const combinedText = slice.map((s) => s.text).join(' ');
-    const leadWords = firstSeg.text
-      .replace(/[^\w\s]/g, '')
-      .split(/\s+/)
-      .filter((w) => w.length > 3)
-      .slice(0, 5)
-      .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-      .join(' ');
-    chapters.push({
-      timestamp: Math.floor(firstSeg.start_s),
-      title: leadWords || `Section ${i + 1}`,
-      summary: combinedText.slice(0, 260) + (combinedText.length > 260 ? '...' : ''),
-    });
-  }
-
-  const concepts = chapters.map((ch, idx) => ({
-    term: ch.title || `Concept ${idx + 1}`,
-    definition: ch.summary,
-    mechanism:
-      sentences[idx * 2 + 1] ||
-      `Discussed at ${Math.floor(ch.timestamp / 60)}:${String(ch.timestamp % 60).padStart(2, '0')} in "${safeTitle}".`,
-    timestamp: ch.timestamp,
-  }));
-
-  const flashcards = chapters.map((ch, idx) => ({
-    id: `fc-${idx + 1}`,
-    front: `What key topic is discussed at ${Math.floor(ch.timestamp / 60)}:${String(ch.timestamp % 60).padStart(2, '0')} (${ch.title})?`,
-    back: ch.summary,
-    category: idx === 0 ? 'Introduction' : idx === chapters.length - 1 ? 'Takeaway' : 'Key Segment',
-    timestamp: ch.timestamp,
-  }));
-
-  const quiz = chapters.slice(0, 5).map((ch, idx) => {
-    const correctOption = ch.summary.slice(0, 120) + (ch.summary.length > 120 ? '...' : '');
-    const otherSummaries = chapters
-      .filter((_, j) => j !== idx)
-      .map((c) => c.summary.slice(0, 120) + (c.summary.length > 120 ? '...' : ''));
-    const distractors = [
-      otherSummaries[0] || 'A point not mentioned in this segment of the transcript.',
-      otherSummaries[1] || 'An alternative claim not supported by the speaker at this timestamp.',
-      'None of the statements above reflect the spoken transcript.',
-    ];
-    const options = [correctOption, ...distractors.slice(0, 3)];
-    const targetIdx = idx % 4;
-    const rotated = [...options];
-    const tmp = rotated[targetIdx];
-    rotated[targetIdx] = rotated[0];
-    rotated[0] = tmp;
-
-    return {
-      id: `q-${idx + 1}`,
-      question: `At ${Math.floor(ch.timestamp / 60)}:${String(ch.timestamp % 60).padStart(2, '0')} (${ch.title}), what is stated in the transcript?`,
-      options: rotated,
-      correctIndex: targetIdx,
-      explanation: `At [${Math.floor(ch.timestamp / 60)}:${String(ch.timestamp % 60).padStart(2, '0')}], the transcript states: "${ch.summary}"`,
-      timestamp: ch.timestamp,
-    };
-  });
-
-  return {
-    videoId,
-    title: safeTitle,
-    author: author || 'YouTube Creator',
-    summary: { overview, keyPoints, chapters },
-    explanation: { coreThesis: overview, concepts },
-    flashcards,
-    quiz,
-  };
-}
-
 const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -395,7 +292,7 @@ const server = http.createServer(async (req, res) => {
         status: 'ok',
         service: 'subclip-instacloud-backend',
         projectId: PROJECT_ID,
-        endpoints: ['/api/transcript', '/api/study', '/api/chat', '/health'],
+        endpoints: ['/api/transcript', '/api/chat', '/health'],
       })
     );
   }
@@ -423,32 +320,6 @@ const server = http.createServer(async (req, res) => {
       const data = await fetchSubclipTranscript(vidId, payload.lang || 'en');
       res.writeHead(200);
       return res.end(JSON.stringify({ success: true, ...data }));
-    } catch (err) {
-      res.writeHead(500);
-      return res.end(JSON.stringify({ success: false, error: err.message }));
-    }
-  }
-
-  if (pathname.startsWith('/api/study') && req.method === 'POST') {
-    try {
-      let body = '';
-      for await (const chunk of req) body += chunk;
-      const payload = JSON.parse(body || '{}');
-      const vidId = extractYouTubeId(payload.videoId || payload.url || '') || 'video';
-      let segments = Array.isArray(payload.segments) ? payload.segments : [];
-      let title = payload.title || '';
-      let author = payload.author || '';
-
-      if (segments.length === 0 && vidId !== 'video') {
-        const tr = await fetchSubclipTranscript(vidId, payload.lang || 'en');
-        segments = tr.segments || [];
-        title = title || tr.title;
-        author = author || tr.author;
-      }
-
-      const bundle = buildGroundedStudyBundle(vidId, title, author, segments);
-      res.writeHead(200);
-      return res.end(JSON.stringify({ success: true, bundle, project: PROJECT_ID }));
     } catch (err) {
       res.writeHead(500);
       return res.end(JSON.stringify({ success: false, error: err.message }));

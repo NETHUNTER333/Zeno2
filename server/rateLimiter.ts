@@ -456,15 +456,15 @@ export interface ServerPlanLimits {
 
 export const SERVER_PLAN_LIMITS: Record<SubscriptionPlanTier, ServerPlanLimits> = {
   free: {
-    name: 'Unsubscribed',
+    name: 'Free',
     priceMonthly: 0,
-    fileUploadLimit: 0,
-    maxFilesPerMessage: 0,
-    messageLimit: 0,
-    searchLimit: 0,
-    deepResearchLimit: 0,
-    pdfStudyLimit: 0,
-    tokenLimit: 0,
+    fileUploadLimit: 5, // 5 daily free file uploads
+    maxFilesPerMessage: 2,
+    messageLimit: 5, // 5 daily free AI messages
+    searchLimit: 5, // 5 daily free web searches
+    deepResearchLimit: 3, // 3 daily free autonomous deep research runs
+    pdfStudyLimit: 5, // 5 daily free study sessions
+    tokenLimit: 250_000,
   },
   spark: {
     name: 'Spark',
@@ -497,9 +497,18 @@ const TIER_RANK: Record<SubscriptionPlanTier, number> = {
 };
 
 const SERVER_FREE_MODELS = new Set<string>([
+  // Default Chat Model (Free for all users)
+  'zro/deepseek-v4.1-flash',
+  'zro-deepseek-v4.1-flash',
+  'deepseek-v4.1-flash',
   'deepseek-v4.1-flash-free',
   'thk/deepseek-v4.1-flash:free',
   'deepseek-v4.1-flash:free',
+  // Multimodal Vision Model (Free for all users)
+  'zro/glm-5.3-flash',
+  'zro-glm-5.3-flash',
+  'glm-5.3-flash',
+  'glm-5.3-flash-free',
   'itera-qwen3.8-27b-free',
   'itera/qwen/qwen3.8-27b',
   'qwen/qwen3.8-27b',
@@ -614,6 +623,9 @@ export function classifyServerModelTier(rawModel: string | undefined): Subscript
   const model = String(rawModel || '').trim();
   if (SERVER_FIRE_MODELS.has(model)) {
     return 'fire';
+  }
+  if (SERVER_FREE_MODELS.has(model)) {
+    return 'free';
   }
   return 'spark';
 }

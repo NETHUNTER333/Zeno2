@@ -1,21 +1,19 @@
 import React, { useState } from 'react';
 import {
-  User,
   Globe,
   Ruler,
   Calendar,
   Briefcase,
-  Award,
   ExternalLink,
   Download,
   ChevronLeft,
   ChevronRight,
   X,
-  Sparkles,
   MapPin,
   Shield,
   TrendingUp,
   GraduationCap,
+  Sparkles,
 } from 'lucide-react';
 import { PersonaWiki } from '../types';
 
@@ -54,7 +52,7 @@ export const PersonaWikiCard: React.FC<PersonaWikiCardProps> = ({
 
   const activePhoto = galleryImages[selectedImageIdx] || galleryImages[0] || null;
 
-  // Build top highlight specs (always prioritizing Age, Height, Nationality, Occupation/Role, Team/Org, Status/Scale)
+  // Build top highlight specs (Age, Height, Nationality, Role, Birthplace, Team, etc.)
   const primarySpecs = React.useMemo(() => {
     const items: Array<{ label: string; value: string; icon: React.ReactNode }> = [];
     if (persona.age || persona.birthDate) {
@@ -89,16 +87,9 @@ export const PersonaWikiCard: React.FC<PersonaWikiCardProps> = ({
     }
     if (persona.positionOrRole || persona.occupation) {
       items.push({
-        label: 'Role / Position',
+        label: 'Role / Craft',
         value: persona.positionOrRole || persona.occupation || '—',
         icon: <Briefcase className="w-3.5 h-3.5" />,
-      });
-    }
-    if (persona.organizationOrTeam) {
-      items.push({
-        label: 'Team / Affiliation',
-        value: persona.organizationOrTeam,
-        icon: <Shield className="w-3.5 h-3.5" />,
       });
     }
     if (persona.birthPlace) {
@@ -106,6 +97,13 @@ export const PersonaWikiCard: React.FC<PersonaWikiCardProps> = ({
         label: 'Birthplace',
         value: persona.birthPlace,
         icon: <MapPin className="w-3.5 h-3.5" />,
+      });
+    }
+    if (persona.organizationOrTeam) {
+      items.push({
+        label: 'Team / Affiliation',
+        value: persona.organizationOrTeam,
+        icon: <Shield className="w-3.5 h-3.5" />,
       });
     }
     if (persona.netWorthOrValue) {
@@ -117,7 +115,7 @@ export const PersonaWikiCard: React.FC<PersonaWikiCardProps> = ({
     }
     if (persona.education) {
       items.push({
-        label: 'Education / Alma Mater',
+        label: 'Education',
         value: persona.education,
         icon: <GraduationCap className="w-3.5 h-3.5" />,
       });
@@ -144,19 +142,18 @@ export const PersonaWikiCard: React.FC<PersonaWikiCardProps> = ({
     if (persona.fullName && persona.fullName.toLowerCase() !== persona.name.toLowerCase()) {
       addSpec('Full Name', persona.fullName);
     }
-    if (persona.moniker) addSpec('Nickname / Moniker', persona.moniker);
+    if (persona.moniker) addSpec('Moniker', persona.moniker);
     addSpec('Age', persona.age);
     addSpec('Born', persona.birthDate);
     addSpec('Birthplace', persona.birthPlace);
     addSpec('Nationality', persona.nationality);
     addSpec('Height', persona.height);
     addSpec('Weight', persona.weight);
-    addSpec('Occupation / Craft', persona.occupation);
+    addSpec('Occupation', persona.occupation);
     addSpec('Position / Role', persona.positionOrRole);
-    addSpec('Team / Organization', persona.organizationOrTeam);
-    addSpec('Scale / Career Tier', persona.scaleTier);
-    addSpec('Status / Ranking', persona.statusOrRank);
-    addSpec('Net Worth / Market Value', persona.netWorthOrValue);
+    addSpec('Team / Org', persona.organizationOrTeam);
+    addSpec('Scale / Status', persona.scaleTier || persona.statusOrRank);
+    addSpec('Net Worth', persona.netWorthOrValue);
     addSpec('Education', persona.education);
 
     if (Array.isArray(persona.specs)) {
@@ -183,68 +180,41 @@ export const PersonaWikiCard: React.FC<PersonaWikiCardProps> = ({
 
   return (
     <div
-      className={`my-4 rounded-2xl border overflow-hidden transition-all duration-300 ease-out hover:scale-[1.01] hover:-translate-y-0.5 ${
+      className={`my-3 rounded-2xl border overflow-hidden transition-all ${
         isDark
-          ? 'bg-[#0b0b0c] border-[#1f1f22] hover:border-[#323238] text-[#ededed] shadow-lg shadow-black/40 hover:shadow-2xl hover:shadow-black/70'
-          : 'bg-[#ffffff] border-[#e4e4e7] hover:border-[#d1d1d6] text-[#111111] shadow-sm hover:shadow-xl hover:shadow-black/10'
+          ? 'bg-[#0f0f12] border-[#222227] text-[#ededed] shadow-lg shadow-black/40'
+          : 'bg-[#ffffff] border-[#e4e4e7] text-[#111111] shadow-xs'
       }`}
     >
-      {/* Top Persona Wiki Identity Header Bar */}
+      {/* Sleek Understated Header Bar */}
       <div
-        className={`flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 border-b text-xs ${
-          isDark ? 'bg-[#111113] border-[#1f1f22]' : 'bg-[#f8f8fa] border-[#e4e4e7]'
+        className={`flex items-center justify-between gap-2 px-3.5 sm:px-4 py-2 border-b text-xs ${
+          isDark ? 'bg-[#141418] border-[#222227]' : 'bg-[#fafafa] border-[#e4e4e7]'
         }`}
       >
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2 min-w-0">
           <span
-            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-mono text-[10px] font-bold tracking-wider uppercase border ${
-              isDark
-                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25'
-                : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+            className={`font-mono text-[10px] tracking-wider uppercase font-semibold ${
+              isDark ? 'text-neutral-400' : 'text-neutral-500'
             }`}
           >
-            <User className="w-3 h-3" />
-            PERSONA WIKI
+            Persona Profile
           </span>
-
           {persona.category && (
             <span
-              className={`px-2 py-0.5 rounded-md text-[11px] font-medium border ${
+              className={`px-2 py-0.5 rounded-md text-[11px] font-medium border truncate max-w-[140px] sm:max-w-[200px] ${
                 isDark
-                  ? 'bg-[#18181b] border-[#27272a] text-[#d4d4d8]'
-                  : 'bg-white border-[#e4e4e7] text-[#3f3f46]'
+                  ? 'bg-[#1a1a20] border-[#2c2c34] text-[#a1a1aa]'
+                  : 'bg-white border-[#e4e4e7] text-[#52525b]'
               }`}
             >
               {persona.category}
             </span>
           )}
-
-          {persona.scaleTier && (
-            <span
-              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono uppercase tracking-wide border ${
-                persona.scaleTier.toLowerCase().includes('elite') ||
-                persona.scaleTier.toLowerCase().includes('icon')
-                  ? isDark
-                    ? 'bg-amber-500/10 text-amber-300 border-amber-500/25'
-                    : 'bg-amber-50 text-amber-800 border-amber-200'
-                  : persona.scaleTier.toLowerCase().includes('upcoming') ||
-                    persona.scaleTier.toLowerCase().includes('rising')
-                  ? isDark
-                    ? 'bg-sky-500/10 text-sky-300 border-sky-500/25'
-                    : 'bg-sky-50 text-sky-800 border-sky-200'
-                  : isDark
-                  ? 'bg-white/5 text-[#a1a1aa] border-white/10'
-                  : 'bg-black/5 text-[#52525b] border-black/10'
-              }`}
-            >
-              <Award className="w-2.5 h-2.5" />
-              {persona.scaleTier}
-            </span>
-          )}
         </div>
 
-        <div className="flex items-center gap-1.5">
-          {/* Tab Switcher */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {/* Minimal Tab Switcher */}
           <div
             className={`inline-flex items-center rounded-lg p-0.5 border ${
               isDark ? 'bg-[#09090b] border-[#27272a]' : 'bg-[#f1f1f4] border-[#e4e4e7]'
@@ -255,7 +225,7 @@ export const PersonaWikiCard: React.FC<PersonaWikiCardProps> = ({
                 key={tab}
                 type="button"
                 onClick={() => setActiveTab(tab)}
-                className={`px-2.5 py-1 rounded-md text-[11px] font-medium capitalize transition-colors cursor-pointer ${
+                className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors cursor-pointer ${
                   activeTab === tab
                     ? isDark
                       ? 'bg-[#27272a] text-white'
@@ -284,7 +254,7 @@ export const PersonaWikiCard: React.FC<PersonaWikiCardProps> = ({
                   ? 'border-[#27272a] text-[#a1a1aa] hover:text-white hover:bg-[#18181b]'
                   : 'border-[#e4e4e7] text-[#52525b] hover:text-black hover:bg-[#f4f4f5]'
               }`}
-              title="Open Source / Wiki Page"
+              title="Open Source / Wiki"
             >
               <ExternalLink className="w-3.5 h-3.5" />
             </a>
@@ -293,94 +263,43 @@ export const PersonaWikiCard: React.FC<PersonaWikiCardProps> = ({
       </div>
 
       {/* Main Content Area */}
-      <div className="p-4 sm:p-5">
+      <div className="p-3.5 sm:p-4">
         {activeTab === 'overview' && (
-          <div className="flex flex-col md:flex-row gap-4 sm:gap-5">
-            {/* Left Column: Portrait + Fetched Images Strip */}
-            {galleryImages.length > 0 && (
-              <div className="w-full md:w-44 lg:w-48 flex-shrink-0 flex flex-col gap-2">
+          <div className="space-y-3.5">
+            {/* Top Identity Block: Compact side-by-side Portrait + Info */}
+            <div className="flex items-start gap-3.5 sm:gap-4">
+              {/* Compact, non-stretched Portrait */}
+              {activePhoto && (
                 <div
                   onClick={() => setLightboxOpen(true)}
-                  className={`group/portrait relative aspect-[4/5] w-full rounded-xl overflow-hidden border cursor-pointer ${
-                    isDark ? 'bg-[#141417] border-[#27272a]' : 'bg-[#f4f4f5] border-[#e4e4e7]'
+                  className={`group/portrait relative w-24 h-28 sm:w-28 sm:h-32 rounded-xl overflow-hidden border shrink-0 cursor-pointer shadow-sm ${
+                    isDark ? 'bg-[#18181c] border-[#2c2c34]' : 'bg-[#f4f4f5] border-[#e4e4e7]'
                   }`}
+                  title="Click to expand photo"
                 >
-                  {activePhoto && (
-                    <img
-                      src={activePhoto.imageUrl || activePhoto.thumbnailUrl}
-                      alt={persona.name}
-                      onError={(e) => {
-                        const target = e.currentTarget;
-                        if (activePhoto.thumbnailUrl && target.src !== activePhoto.thumbnailUrl) {
-                          target.src = activePhoto.thumbnailUrl;
-                        }
-                      }}
-                      className="w-full h-full object-cover object-top group-hover/portrait:scale-105 transition-transform duration-300"
-                    />
-                  )}
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (activePhoto) {
-                        handleDownloadImage(
-                          activePhoto.imageUrl || activePhoto.thumbnailUrl,
-                          persona.name
-                        );
+                  <img
+                    src={activePhoto.imageUrl || activePhoto.thumbnailUrl}
+                    alt={persona.name}
+                    onError={(e) => {
+                      const target = e.currentTarget;
+                      if (activePhoto.thumbnailUrl && target.src !== activePhoto.thumbnailUrl) {
+                        target.src = activePhoto.thumbnailUrl;
                       }
                     }}
-                    className="absolute top-2 right-2 p-1.5 rounded-full bg-black/75 hover:bg-black text-white border border-white/15 opacity-90 sm:opacity-0 sm:group-hover/portrait:opacity-100 transition-opacity cursor-pointer"
-                    title="Download portrait"
-                  >
-                    <Download className="w-3 h-3" />
-                  </button>
-                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent px-2.5 py-2">
-                    <div className="text-[10px] font-mono text-white/85 flex items-center justify-between">
-                      <span>
-                        Photo {selectedImageIdx + 1}/{galleryImages.length}
-                      </span>
-                      <span className="underline">Expand</span>
-                    </div>
+                    className="w-full h-full object-cover object-top group-hover/portrait:scale-105 transition-transform duration-200"
+                  />
+                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent py-1 px-1.5 flex items-center justify-between text-[9px] text-white/90 font-mono">
+                    <span>{selectedImageIdx + 1}/{galleryImages.length}</span>
+                    <span className="opacity-80">Zoom</span>
                   </div>
                 </div>
+              )}
 
-                {/* Mini Thumbnail Strip to switch portrait */}
-                {galleryImages.length > 1 && (
-                  <div className="grid grid-cols-4 gap-1.5">
-                    {galleryImages.slice(0, 4).map((img, idx) => (
-                      <button
-                        key={idx}
-                        type="button"
-                        onClick={() => setSelectedImageIdx(idx)}
-                        className={`relative aspect-square rounded-lg overflow-hidden border transition-all cursor-pointer ${
-                          selectedImageIdx === idx
-                            ? isDark
-                              ? 'border-emerald-400 ring-1 ring-emerald-400/40'
-                              : 'border-emerald-600 ring-1 ring-emerald-600/40'
-                            : isDark
-                            ? 'border-[#27272a] opacity-70 hover:opacity-100'
-                            : 'border-[#e4e4e7] opacity-75 hover:opacity-100'
-                        }`}
-                        title={img.title}
-                      >
-                        <img
-                          src={img.thumbnailUrl || img.imageUrl}
-                          alt={img.title}
-                          className="w-full h-full object-cover"
-                        />
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Right Column: Name, Bio, and Key Specs Grid */}
-            <div className="flex-1 min-w-0 flex flex-col justify-between gap-3.5">
-              <div>
-                <div className="flex flex-wrap items-baseline gap-2">
+              {/* Title & Quick Vitals beside photo */}
+              <div className="flex-1 min-w-0">
+                <div className="flex flex-wrap items-baseline gap-1.5 sm:gap-2">
                   <h3
-                    className={`text-lg sm:text-xl font-bold tracking-tight ${
+                    className={`text-base sm:text-lg font-bold tracking-tight truncate ${
                       isDark ? 'text-white' : 'text-black'
                     }`}
                   >
@@ -388,10 +307,8 @@ export const PersonaWikiCard: React.FC<PersonaWikiCardProps> = ({
                   </h3>
                   {persona.moniker && (
                     <span
-                      className={`text-xs font-mono px-2 py-0.5 rounded border ${
-                        isDark
-                          ? 'bg-[#141417] border-[#27272a] text-[#a1a1aa]'
-                          : 'bg-[#f4f4f5] border-[#e4e4e7] text-[#52525b]'
+                      className={`text-xs italic truncate ${
+                        isDark ? 'text-[#a1a1aa]' : 'text-[#71717a]'
                       }`}
                     >
                       “{persona.moniker}”
@@ -399,163 +316,119 @@ export const PersonaWikiCard: React.FC<PersonaWikiCardProps> = ({
                   )}
                 </div>
 
-                {(persona.occupation || persona.organizationOrTeam || persona.statusOrRank) && (
+                {(persona.occupation || persona.organizationOrTeam) && (
                   <div
-                    className={`text-xs mt-0.5 flex flex-wrap items-center gap-1.5 ${
+                    className={`text-xs mt-0.5 truncate ${
                       isDark ? 'text-[#a1a1aa]' : 'text-[#52525b]'
                     }`}
                   >
-                    {persona.occupation && <span className="font-medium">{persona.occupation}</span>}
-                    {persona.organizationOrTeam && (
-                      <>
-                        <span>·</span>
-                        <span>{persona.organizationOrTeam}</span>
-                      </>
-                    )}
-                    {persona.statusOrRank && (
-                      <>
-                        <span>·</span>
-                        <span className={isDark ? 'text-emerald-400' : 'text-emerald-700'}>
-                          {persona.statusOrRank}
-                        </span>
-                      </>
-                    )}
+                    {[persona.occupation, persona.organizationOrTeam].filter(Boolean).join(' · ')}
                   </div>
                 )}
 
                 {persona.summary && (
                   <p
-                    className={`mt-2.5 text-xs sm:text-[13px] leading-relaxed ${
-                      isDark ? 'text-[#d4d4d8]' : 'text-[#27272a]'
+                    className={`mt-1.5 text-xs sm:text-[13px] leading-relaxed line-clamp-3 sm:line-clamp-4 ${
+                      isDark ? 'text-[#d4d4d8]' : 'text-[#3f3f46]'
                     }`}
                   >
                     {persona.summary}
                   </p>
                 )}
               </div>
+            </div>
 
-              {/* Key Vitals & Specs Bento Grid (Age, Height, Nationality, Role, Team, etc.) */}
-              {primarySpecs.length > 0 && (
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {primarySpecs.slice(0, 6).map((item, idx) => (
-                    <div
-                      key={idx}
-                      className={`p-2.5 rounded-xl border flex flex-col justify-between ${
-                        isDark
-                          ? 'bg-[#111114] border-[#1f1f24]'
-                          : 'bg-[#f9f9fb] border-[#e4e4e7]'
-                      }`}
-                    >
-                      <div
-                        className={`flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-mono ${
-                          isDark ? 'text-[#71717a]' : 'text-[#71717a]'
-                        }`}
-                      >
-                        {item.icon}
-                        <span className="truncate">{item.label}</span>
-                      </div>
-                      <div
-                        className={`mt-1 text-xs sm:text-[13px] font-semibold font-mono leading-snug break-words ${
-                          isDark ? 'text-[#f4f4f5]' : 'text-[#111111]'
-                        }`}
-                      >
-                        {item.value}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Extra Specs Pills if more than 6 exist */}
-              {allDetailedSpecs.length > primarySpecs.length && (
-                <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                  {allDetailedSpecs
-                    .filter(
-                      (s) =>
-                        !primarySpecs.some(
-                          (p) =>
-                            p.label.toLowerCase().includes(s.label.toLowerCase()) ||
-                            s.label.toLowerCase().includes(p.label.toLowerCase())
-                        )
-                    )
-                    .slice(0, 5)
-                    .map((spec, i) => (
-                      <span
-                        key={i}
-                        className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] border ${
-                          isDark
-                            ? 'bg-[#121215] border-[#232329] text-[#d4d4d8]'
-                            : 'bg-[#f4f4f6] border-[#e4e4e7] text-[#3f3f46]'
-                        }`}
-                      >
-                        <span className={isDark ? 'text-[#71717a]' : 'text-[#71717a]'}>
-                          {spec.label}:
-                        </span>
-                        <span className="font-mono font-medium">{spec.value}</span>
-                      </span>
-                    ))}
-                  {allDetailedSpecs.length > 6 && (
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab('specs')}
-                      className={`px-2 py-1 rounded-lg text-[11px] font-medium border transition-colors cursor-pointer ${
-                        isDark
-                          ? 'border-[#27272a] text-emerald-400 hover:bg-[#18181b]'
-                          : 'border-[#e4e4e7] text-emerald-700 hover:bg-[#f4f4f5]'
-                      }`}
-                    >
-                      View all {allDetailedSpecs.length} specs →
-                    </button>
-                  )}
-                </div>
-              )}
-
-              {/* Career Highlights & Milestones */}
-              {persona.careerHighlights && persona.careerHighlights.length > 0 && (
-                <div
-                  className={`pt-2.5 border-t ${
-                    isDark ? 'border-[#1f1f24]' : 'border-[#e4e4e7]'
-                  }`}
-                >
-                  <div
-                    className={`text-[10px] font-mono uppercase tracking-wider mb-1.5 ${
-                      isDark ? 'text-[#71717a]' : 'text-[#71717a]'
+            {/* Photo selector thumbnails (if multiple photos available) */}
+            {galleryImages.length > 1 && (
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+                {galleryImages.slice(0, 6).map((img, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => setSelectedImageIdx(idx)}
+                    className={`relative w-11 h-11 rounded-lg overflow-hidden border shrink-0 cursor-pointer transition-all ${
+                      selectedImageIdx === idx
+                        ? isDark
+                          ? 'border-emerald-400 ring-1 ring-emerald-400/40'
+                          : 'border-emerald-600 ring-1 ring-emerald-600/40'
+                        : isDark
+                        ? 'border-[#27272a] opacity-60 hover:opacity-100'
+                        : 'border-[#e4e4e7] opacity-70 hover:opacity-100'
                     }`}
                   >
-                    Key Career Highlights & Records
+                    <img
+                      src={img.thumbnailUrl || img.imageUrl}
+                      alt={img.title}
+                      className="w-full h-full object-cover"
+                    />
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Compact Key Vitals Grid (Age, Height, Nationality, Role, etc.) */}
+            {primarySpecs.length > 0 && (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1">
+                {primarySpecs.slice(0, 6).map((item, idx) => (
+                  <div
+                    key={idx}
+                    className={`p-2 rounded-xl border flex flex-col justify-between ${
+                      isDark
+                        ? 'bg-[#131317] border-[#222228]'
+                        : 'bg-[#fafafa] border-[#e8e8ed]'
+                    }`}
+                  >
+                    <div
+                      className={`flex items-center gap-1.5 text-[10px] uppercase font-mono tracking-wider ${
+                        isDark ? 'text-[#71717a]' : 'text-[#71717a]'
+                      }`}
+                    >
+                      {item.icon}
+                      <span className="truncate">{item.label}</span>
+                    </div>
+                    <div
+                      className={`mt-0.5 text-xs sm:text-[13px] font-semibold font-mono truncate ${
+                        isDark ? 'text-[#f4f4f5]' : 'text-[#111111]'
+                      }`}
+                      title={item.value}
+                    >
+                      {item.value}
+                    </div>
                   </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {persona.careerHighlights.slice(0, 5).map((hl, idx) => (
-                      <span
-                        key={idx}
-                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] border ${
-                          isDark
-                            ? 'bg-white/[0.03] border-[#27272a] text-[#e4e4e7]'
-                            : 'bg-black/[0.02] border-[#e4e4e7] text-[#27272a]'
-                        }`}
-                      >
-                        <Award className="w-3 h-3 text-amber-400 flex-shrink-0" />
-                        <span>{hl}</span>
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
+                ))}
+              </div>
+            )}
+
+            {/* Quick link to see more specs if present */}
+            {allDetailedSpecs.length > 6 && (
+              <div className="flex items-center justify-between pt-1">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('specs')}
+                  className={`text-xs font-medium cursor-pointer transition-colors ${
+                    isDark
+                      ? 'text-neutral-400 hover:text-white'
+                      : 'text-neutral-600 hover:text-neutral-950'
+                  }`}
+                >
+                  View full specifications ({allDetailedSpecs.length} items) →
+                </button>
+              </div>
+            )}
           </div>
         )}
 
-        {/* Full Specs Table Tab */}
+        {/* Full Specifications Tab */}
         {activeTab === 'specs' && (
-          <div className="space-y-3">
+          <div className="space-y-2">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {allDetailedSpecs.map((spec, idx) => (
                 <div
                   key={idx}
                   className={`flex items-baseline justify-between gap-3 px-3 py-2 rounded-xl border ${
                     isDark
-                      ? 'bg-[#111114] border-[#1f1f24]'
-                      : 'bg-[#f9f9fb] border-[#e4e4e7]'
+                      ? 'bg-[#131317] border-[#222228]'
+                      : 'bg-[#fafafa] border-[#e8e8ed]'
                   }`}
                 >
                   <span
@@ -566,9 +439,10 @@ export const PersonaWikiCard: React.FC<PersonaWikiCardProps> = ({
                     {spec.label}
                   </span>
                   <span
-                    className={`text-xs font-mono font-semibold text-right ${
+                    className={`text-xs font-mono font-semibold text-right truncate max-w-[60%] ${
                       isDark ? 'text-white' : 'text-black'
                     }`}
+                    title={spec.value}
                   >
                     {spec.value}
                   </span>
@@ -584,7 +458,7 @@ export const PersonaWikiCard: React.FC<PersonaWikiCardProps> = ({
             {galleryImages.length === 0 ? (
               <div className="text-xs text-center py-6 opacity-60">No photos available.</div>
             ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
                 {galleryImages.map((img, idx) => (
                   <div
                     key={idx}
@@ -615,7 +489,7 @@ export const PersonaWikiCard: React.FC<PersonaWikiCardProps> = ({
                         e.stopPropagation();
                         handleDownloadImage(img.imageUrl || img.thumbnailUrl, img.title);
                       }}
-                      className="absolute top-1.5 right-1.5 p-1.5 rounded-full bg-black/75 hover:bg-black text-white border border-white/15 opacity-90 sm:opacity-0 sm:group-hover/gimg:opacity-100 transition-opacity cursor-pointer"
+                      className="absolute top-1.5 right-1.5 p-1 rounded-full bg-black/75 hover:bg-black text-white border border-white/15 opacity-0 group-hover/gimg:opacity-100 transition-opacity cursor-pointer"
                       title="Download image"
                     >
                       <Download className="w-3 h-3" />
@@ -627,44 +501,42 @@ export const PersonaWikiCard: React.FC<PersonaWikiCardProps> = ({
           </div>
         )}
 
-        {/* Quick Persona Wiki Follow-up Action Bar */}
-        {onAskZeno && (
+        {/* Subtle career follow-up suggestions */}
+        {onAskZeno && activeTab === 'overview' && (
           <div
-            className={`mt-4 pt-3 border-t flex flex-wrap items-center justify-between gap-2 ${
-              isDark ? 'border-[#1f1f24]' : 'border-[#e4e4e7]'
+            className={`mt-3 pt-2.5 border-t flex flex-wrap items-center gap-1.5 ${
+              isDark ? 'border-[#222227]' : 'border-[#e4e4e7]'
             }`}
           >
-            <div className="flex flex-wrap items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() =>
-                  onAskZeno(
-                    `Give me a complete career timeline, records, and statistical breakdown for ${persona.name}.`
-                  )
-                }
-                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-colors cursor-pointer ${
-                  isDark
-                    ? 'bg-[#141417] border-[#27272a] text-[#d4d4d8] hover:text-white hover:border-[#3f3f46]'
-                    : 'bg-[#f4f4f5] border-[#e4e4e7] text-[#27272a] hover:text-black hover:border-[#d4d4d8]'
-                }`}
-              >
-                <Sparkles className="w-3 h-3 text-emerald-400" />
-                <span>Career Stats & Records</span>
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  onAskZeno(`What is the latest 2026 news, form, and updates on ${persona.name}?`)
-                }
-                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-colors cursor-pointer ${
-                  isDark
-                    ? 'bg-[#141417] border-[#27272a] text-[#d4d4d8] hover:text-white hover:border-[#3f3f46]'
-                    : 'bg-[#f4f4f5] border-[#e4e4e7] text-[#27272a] hover:text-black hover:border-[#d4d4d8]'
-                }`}
-              >
-                <span>Latest 2026 Updates</span>
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() =>
+                onAskZeno(
+                  `Give me a complete career timeline, records, and filmography/highlights for ${persona.name}.`
+                )
+              }
+              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-colors cursor-pointer ${
+                isDark
+                  ? 'bg-[#141418] border-[#27272a] text-[#a1a1aa] hover:text-white'
+                  : 'bg-[#f8f8fa] border-[#e4e4e7] text-[#52525b] hover:text-black'
+              }`}
+            >
+              <Sparkles className="w-3 h-3 text-emerald-400" />
+              <span>Career Highlights</span>
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                onAskZeno(`What are the latest verified 2026 updates and projects for ${persona.name}?`)
+              }
+              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-colors cursor-pointer ${
+                isDark
+                  ? 'bg-[#141418] border-[#27272a] text-[#a1a1aa] hover:text-white'
+                  : 'bg-[#f8f8fa] border-[#e4e4e7] text-[#52525b] hover:text-black'
+              }`}
+            >
+              <span>Recent Updates</span>
+            </button>
           </div>
         )}
       </div>
@@ -685,8 +557,7 @@ export const PersonaWikiCard: React.FC<PersonaWikiCardProps> = ({
                   {activePhoto.title || persona.name}
                 </div>
                 <div className="text-xs text-[#a1a1aa]">
-                  {persona.name} · Persona Wiki Gallery ({selectedImageIdx + 1} of{' '}
-                  {galleryImages.length})
+                  {persona.name} ({selectedImageIdx + 1} of {galleryImages.length})
                 </div>
               </div>
               <div className="flex items-center gap-2">

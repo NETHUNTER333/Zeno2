@@ -1,9 +1,16 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { FcGoogle } from "react-icons/fc";
+import { Gift, CheckCircle2, Sparkles, ShieldCheck } from "lucide-react";
 
 import { Button } from "./button";
 import { Input } from "./input";
 import { UserAccountStore } from "../../lib/userAccountStore";
+import {
+  getPendingReferral,
+  captureInboundReferral,
+  PendingReferralInfo,
+} from "../../lib/referralClient";
+import { apiFetch } from "../../lib/apiBase";
 
 interface Signup1Props {
   heading?: string;
@@ -41,6 +48,71 @@ const Signup1 = ({
   const [resetLoading, setResetLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resetSuccess, setResetSuccess] = useState<string | null>(null);
+
+  // Stored referral detection and validation upon landing
+  const [pendingReferral, setPendingReferral] = useState<PendingReferralInfo | null>(() => getPendingReferral());
+  const [isValidatingReferral, setIsValidatingReferral] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function detectAndVerifyReferral() {
+      try {
+        setIsValidatingReferral(true);
+
+        // 1. Check for 'ref' query parameter from URL search params or localStorage upon mount
+        let targetCode = "";
+        if (typeof window !== "undefined") {
+          const urlParams = new URLSearchParams(window.location.search);
+          const qRef = urlParams.get("ref");
+          if (qRef && qRef.trim()) {
+            targetCode = qRef.trim();
+          } else {
+            const rawRef = localStorage.getItem("ref") || localStorage.getItem("zeno_pending_ref_code");
+            if (rawRef) {
+              try {
+                const parsed = JSON.parse(rawRef);
+                targetCode = parsed?.code || rawRef;
+              } catch {
+                targetCode = rawRef;
+              }
+            }
+          }
+        }
+
+        // Also run captureInboundReferral() to ensure cookie and sync
+        const captured = await captureInboundReferral();
+        const codeToValidate = targetCode || captured?.code;
+
+        if (cancelled) return;
+
+        if (codeToValidate) {
+          setIsLoginMode(false);
+          // 2. Fetch GET /api/referral/validate/:code from backend
+          const res = await apiFetch(`/api/referral/validate/${encodeURIComponent(codeToValidate)}`);
+          if (res.ok && !cancelled) {
+            const data = await res.json();
+            if (data.valid) {
+              setPendingReferral({
+                code: data.code || codeToValidate,
+                referrerName: data.referrerName,
+                capturedAt: Date.now(),
+              });
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("[Referral] Failed to verify stored referral code on landing:", err);
+      } finally {
+        if (!cancelled) setIsValidatingReferral(false);
+      }
+    }
+
+    detectAndVerifyReferral();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -158,6 +230,103 @@ const Signup1 = ({
             </p>
           </div>
 
+          {/* Promotional Referral Banner */}
+          {pendingReferral?.code && (
+            <div className="w-full rounded-2xl border border-emerald-500/30 bg-gradient-to-br from-emerald-500/[0.14] via-emerald-500/[0.06] to-teal-500/[0.10] p-4 text-left shadow-lg backdrop-blur-sm animate-in fade-in slide-in-from-top-2 duration-300">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shadow-sm shrink-0">
+                    <Gift className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">
+                        Promotional Pass Active
+                      </span>
+                      {isValidatingReferral && (
+                        <span className="text-[10px] text-emerald-400/70 animate-pulse">
+                          (verifying...)
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-xs sm:text-sm font-semibold text-emerald-200 leading-tight mt-0.5">
+                      {pendingReferral.referrerName ? (
+                        <>
+                          Invited by <span className="text-white font-bold">{pendingReferral.referrerName}</span>, you both get <span className="text-white font-bold">10 Pro searches + 7 days Pro access</span>!
+                        </>
+                      ) : (
+                        <>
+                          Invited via <span className="font-mono text-white font-bold">{pendingReferral.code}</span>, you both get <span className="text-white font-bold">10 Pro searches + 7 days Pro access</span>!
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-col items-end gap-1 shrink-0">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-300 border border-emerald-500/40">
+                    <CheckCircle2 className="h-3 w-3" />
+                    Verified
+                  </span>
+                  <span className="font-mono text-[10px] text-emerald-400/80">
+                    {pendingReferral.code}
+                  </span>
+                </div>
+              </div>
+
+              {/* Potential Rewards Breakdown */}
+              <div className="mt-3.5 pt-3 border-t border-emerald-500/20 space-y-2">
+                <div className="text-[11px] font-semibold text-neutral-300 flex items-center gap-1.5">
+                  <Sparkles className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                  <span>Rewards Unlocked Upon Registration:</span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="flex flex-col justify-center rounded-xl bg-black/30 border border-emerald-500/20 p-2.5">
+                    <div className="text-xs font-bold text-emerald-300">
+                      +10 Pro Searches
+                    </div>
+                    <div className="text-[10px] text-neutral-400 leading-snug mt-0.5">
+                      Multi-source synthesis, PubMed & arXiv
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col justify-center rounded-xl bg-black/30 border border-emerald-500/20 p-2.5">
+                    <div className="text-xs font-bold text-emerald-300">
+                      +7 Days Pro Access
+                    </div>
+                    <div className="text-[10px] text-neutral-400 leading-snug mt-0.5">
+                      Full study workspace, quizzes & cards
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Status Note / Mode Switch Hint */}
+              {isLoginMode ? (
+                <div className="mt-3 pt-2.5 border-t border-emerald-500/20 flex items-center justify-between gap-2 text-[11px] text-emerald-300/90">
+                  <span>New to Zeno? Switch to Create Account to claim.</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setError(null);
+                      setResetSuccess(null);
+                      setIsLoginMode(false);
+                    }}
+                    className="font-bold underline text-white hover:text-emerald-200 cursor-pointer shrink-0"
+                  >
+                    Switch to Create Account →
+                  </button>
+                </div>
+              ) : (
+                <div className="mt-2.5 flex items-center gap-1.5 text-[10.5px] text-emerald-300/80">
+                  <ShieldCheck className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                  <span>Both you and your referrer receive the full reward package upon signing up!</span>
+                </div>
+              )}
+            </div>
+          )}
+
           <form onSubmit={handleEmailAuth} className="flex w-full flex-col gap-4">
             {error && (
               <div className="text-xs text-red-500 font-medium text-center bg-red-500/10 p-3 rounded-xl border border-red-500/20">
@@ -212,6 +381,8 @@ const Signup1 = ({
                     : "Creating account..."
                   : isLoginMode
                   ? "Sign In"
+                  : pendingReferral?.code
+                  ? "Claim Rewards & Create Account"
                   : signupText}
               </Button>
               <Button
@@ -223,7 +394,11 @@ const Signup1 = ({
               >
                 <FcGoogle className="mr-2 size-5 shrink-0" />
                 <span className="text-xs sm:text-sm truncate">
-                  {isLoginMode ? "Continue with Google" : googleText}
+                  {isLoginMode
+                    ? "Continue with Google"
+                    : pendingReferral?.code
+                    ? "Claim Rewards with Google"
+                    : googleText}
                 </span>
               </Button>
               <Button

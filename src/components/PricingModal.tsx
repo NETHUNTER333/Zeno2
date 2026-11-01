@@ -279,7 +279,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
                 ? 'Fire ($7/mo)'
                 : currentPlan === 'spark'
                 ? 'Spark ($3/mo · 10x limits)'
-                : 'Select a Plan ($3 or $7)'}
+                : 'Free Tier (5 daily chances · Default & Vision models free)'}
             </span>
           </div>
 

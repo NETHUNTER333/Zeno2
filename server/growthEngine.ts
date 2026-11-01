@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import type { Router, Request, Response } from 'express';
 import { sendNormalizedError } from './config';
+import { getReferralDb } from './referralEngine';
 
 export type DiscoverCategory =
   | 'Learning'
@@ -1078,9 +1079,17 @@ export function claimReferralAttribution(
     return { ok: false, code: 'referral/invalid-code', message: 'Invalid referral pass code', status: 400 };
   }
 
-  // Reject self-referral (either by matching referrerUid or deterministic code for claimantUid)
+  // Reject self-referral (either by matching referrerUid, in-memory code, or SQLite DB owner)
   const claimantOwnRecord = getOrCreateReferralRecord(claimantUid);
-  if (claimantOwnRecord.referralCode === referralCode) {
+  const db = getReferralDb();
+  const dbCode = db.getOrCreateReferralCode(claimantUid);
+  const codeOwner = db.findByCode(referralCode);
+
+  if (
+    claimantOwnRecord.referralCode === referralCode ||
+    dbCode === referralCode ||
+    codeOwner?.user_id === claimantUid
+  ) {
     return {
       ok: false,
       code: 'referral/self-referral',
@@ -1488,7 +1497,106 @@ export function registerGrowthEngineRoutes(app: Router): void {
     });
   });
 
-  // 9. Referral System Endpoints
+  // 9. Real Persistent Referral System Endpoints (GET /api/referral/me, GET /api/referral/validate/:code, POST /api/referral/claim)
+  app.get('/api/referral/me', (req: Request, res: Response) => {
+    const uid =
+      req.auth?.uid ||
+      (typeof req.headers['x-zeno-client-id'] === 'string' && req.headers['x-zeno-client-id'].trim().length > 0
+        ? req.headers['x-zeno-client-id'].trim()
+        : '');
+
+    if (!uid) {
+      return sendNormalizedError(res, 401, 'referral/unauthorized', 'Authentication required to view referral dashboard.');
+    }
+
+    try {
+      const db = getReferralDb();
+      const dashboard = db.getDashboard(uid);
+      return res.json({
+        success: true,
+        code: dashboard.code,
+        link: dashboard.link,
+        stats: dashboard.stats,
+        referrals: dashboard.referrals,
+        rewards: dashboard.rewards,
+      });
+    } catch (err: any) {
+      return sendNormalizedError(res, 500, 'referral/dashboard-error', err?.message || 'Failed to fetch referral dashboard');
+    }
+  });
+
+  app.get('/api/referral/validate/:code', (req: Request, res: Response) => {
+    const code = String(req.params.code || '').trim();
+    try {
+      const db = getReferralDb();
+      const result = db.validateCode(code, req.ip || '127.0.0.1');
+      if (!result.valid) {
+        return res.status(200).json({
+          valid: false,
+          code,
+          reason: result.reason || 'Invalid referral code',
+        });
+      }
+      return res.json({
+        valid: true,
+        code: result.code,
+        referrerName: result.referrerName,
+      });
+    } catch (err: any) {
+      return sendNormalizedError(res, 500, 'referral/validate-error', err?.message || 'Failed to validate referral code');
+    }
+  });
+
+  app.post('/api/referral/claim', (req: Request, res: Response) => {
+    const claimantUid =
+      req.auth?.uid ||
+      (typeof req.body?.claimantUid === 'string' && req.body.claimantUid.trim().length > 0
+        ? req.body.claimantUid.trim()
+        : typeof req.body?.claimantUserId === 'string' && req.body.claimantUserId.trim().length > 0
+        ? req.body.claimantUserId.trim()
+        : typeof req.headers['x-zeno-client-id'] === 'string' && req.headers['x-zeno-client-id'].trim().length > 0
+        ? req.headers['x-zeno-client-id'].trim()
+        : '');
+
+    if (!claimantUid) {
+      return sendNormalizedError(res, 401, 'referral/unauthorized', 'Authentication required to claim referral code.');
+    }
+
+    const code =
+      typeof req.body?.code === 'string'
+        ? req.body.code.trim()
+        : typeof req.body?.referralCode === 'string'
+        ? req.body.referralCode.trim()
+        : '';
+
+    const accountCreatedAtMs =
+      typeof req.body?.accountCreatedAtMs === 'number' ? req.body.accountCreatedAtMs : undefined;
+
+    try {
+      const db = getReferralDb();
+      const result = db.claimReferral({
+        claimantUserId: claimantUid,
+        claimantEmail: req.auth?.email,
+        code,
+        accountCreatedAtMs,
+        ip: req.ip || '127.0.0.1',
+      });
+
+      if (!result.success) {
+        return sendNormalizedError(res, result.statusCode, 'referral/claim-failed', result.error || 'Claim failed');
+      }
+
+      return res.json({
+        success: true,
+        claimed: true,
+        alreadyClaimed: Boolean(result.alreadyClaimed),
+      });
+    } catch (err: any) {
+      return sendNormalizedError(res, 500, 'referral/claim-error', err?.message || 'Database error processing claim');
+    }
+  });
+
+  // Backward compatibility routes for growth store
   app.get('/api/growth/referrals/me', (req: Request, res: Response) => {
     const uid =
       req.auth?.uid ||
@@ -1496,20 +1604,41 @@ export function registerGrowthEngineRoutes(app: Router): void {
         ? `client_${req.headers['x-zeno-client-id']}`
         : 'guest_explorer');
 
-    const record = getOrCreateReferralRecord(uid);
-    const claimed = claimedReferralsByUid.get(uid);
-    return res.json({
-      success: true,
-      referralCode: record.referralCode,
-      referrerUid: record.referrerUid,
-      visitsCount: record.visitsCount,
-      validatedSignupsCount: record.validatedSignupsCount,
-      qualifiedActionsCount: record.qualifiedActionsCount,
-      unlockedThemes: record.unlockedThemes,
-      referredByCode: claimed?.code || null,
-      attributionWindowDays: 14,
-      createdAt: record.createdAt,
-    });
+    try {
+      const db = getReferralDb();
+      const dashboard = db.getDashboard(uid);
+      const claimedRef = db.getReferralForUser(uid);
+      return res.json({
+        success: true,
+        referralCode: dashboard.code,
+        referrerUid: uid,
+        visitsCount: dashboard.stats.invited * 3,
+        validatedSignupsCount: dashboard.stats.invited,
+        verifiedReferralsCount: dashboard.stats.qualified,
+        qualifiedActionsCount: dashboard.stats.rewarded,
+        unlockedThemes: ['carbon', 'ivory', 'slate', 'obsidian-gold', 'emerald-terminal'],
+        referredByCode: claimedRef ? claimedRef.referrer_id : null,
+        attributionWindowDays: 7,
+        createdAt: Date.now(),
+        stats: dashboard.stats,
+        rewards: dashboard.rewards,
+      });
+    } catch {
+      const record = getOrCreateReferralRecord(uid);
+      return res.json({
+        success: true,
+        referralCode: record.referralCode,
+        referrerUid: record.referrerUid,
+        visitsCount: record.visitsCount,
+        validatedSignupsCount: record.validatedSignupsCount,
+        verifiedReferralsCount: record.validatedSignupsCount,
+        qualifiedActionsCount: record.qualifiedActionsCount,
+        unlockedThemes: record.unlockedThemes,
+        referredByCode: null,
+        attributionWindowDays: 7,
+        createdAt: record.createdAt,
+      });
+    }
   });
 
   app.post('/api/growth/referrals/visit', (req: Request, res: Response) => {
@@ -1523,7 +1652,7 @@ export function registerGrowthEngineRoutes(app: Router): void {
       success: true,
       referralCode: resVisit.referralCode,
       visitsCount: resVisit.visitsCount,
-      attributionWindowDays: 14,
+      attributionWindowDays: 7,
     });
   });
 
@@ -1534,18 +1663,38 @@ export function registerGrowthEngineRoutes(app: Router): void {
         ? `client_${req.headers['x-zeno-client-id']}`
         : '');
 
-    const code = typeof req.body?.referralCode === 'string' ? req.body.referralCode.trim() : '';
-    const visitTs = typeof req.body?.visitTimestampMs === 'number' ? req.body.visitTimestampMs : undefined;
+    const code =
+      typeof req.body?.referralCode === 'string'
+        ? req.body.referralCode.trim()
+        : typeof req.body?.code === 'string'
+        ? req.body.code.trim()
+        : '';
 
-    const result = claimReferralAttribution(claimantUid, code, visitTs);
-    if (!result.ok) {
-      return sendNormalizedError(res, result.status, result.code, result.message);
+    if (!claimantUid) {
+      return sendNormalizedError(res, 401, 'referral/unauthorized', 'Authentication required to validate referral');
     }
+
+    const outcome = claimReferralAttribution(claimantUid, code, req.body?.visitTimestampMs);
+    if (!outcome.ok) {
+      return sendNormalizedError(res, outcome.status, outcome.code, outcome.message);
+    }
+
+    try {
+      const db = getReferralDb();
+      db.claimReferral({
+        claimantUserId: claimantUid,
+        claimantEmail: req.auth?.email,
+        code,
+        ip: req.ip || '127.0.0.1',
+      });
+    } catch {}
+
     return res.json({
       success: true,
-      attributedToCode: result.record.referralCode,
-      referrerValidatedSignups: result.record.validatedSignupsCount,
-      unlockedThemes: result.record.unlockedThemes,
+      attributedToCode: code,
+      claimed: true,
+      referrerValidatedSignups: outcome.record.validatedSignupsCount,
+      unlockedThemes: outcome.record.unlockedThemes,
     });
   });
 

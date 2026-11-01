@@ -45,7 +45,6 @@ import { ArxivPaper } from '../types';
 import {
   DocumentStudyBundle,
   extractTextFromPdfFile,
-  buildDeterministicDocumentStudyBundle,
 } from '../lib/pdfStudyEngine';
 
 export type PdfStudioTab =
@@ -210,7 +209,7 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showFeatureDropdown]);
 
-  // Synthesize study bundle (Quiz, Flashcards, Summary, Concepts, Cheatsheet) from document text
+  // Synthesize study bundle (Quiz, Flashcards, Summary, Concepts, Cheatsheet) from document text via LLM
   const generateStudyBundleForDoc = async (
     docTitle: string,
     docText: string,
@@ -218,13 +217,6 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
     targetDifficulty: 'easy' | 'medium' | 'hard' = difficulty
   ) => {
     const reqSeq = ++studyRequestSeqRef.current;
-    const fallbackBundle = buildDeterministicDocumentStudyBundle(
-      docTitle,
-      docText,
-      pages,
-      targetDifficulty
-    );
-    setStudyBundle(fallbackBundle);
     setCardIndex(0);
     setIsCardFlipped(false);
     setShuffledCardIds(null);
@@ -232,12 +224,6 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
     setRetryIncorrectOnly(false);
 
     if (!docText || docText.trim().length < 25) {
-      setIsSynthesizingBundle(false);
-      return;
-    }
-
-    // If this document matched our handcrafted Easy/Medium/Hard Transformer mastery bank, preserve it immediately
-    if (fallbackBundle.quiz[0]?.id?.startsWith('tf-')) {
       setIsSynthesizingBundle(false);
       return;
     }
@@ -260,6 +246,8 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
       if (reqSeq !== studyRequestSeqRef.current) return;
       const remote = data?.study;
       if (res.ok && data?.success && remote) {
+        const wordCount = Math.max(100, docText.trim().split(/\s+/).length);
+        const readTimeMin = Math.max(1, Math.ceil(wordCount / 220));
         const remoteFlashcards = Array.isArray(remote?.flashcards)
           ? remote.flashcards.map((fc: any, idx: number) => ({
               id: fc.id || `pdf-fc-${targetDifficulty}-${idx + 1}`,
@@ -270,12 +258,6 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
               difficulty: targetDifficulty,
             }))
           : [];
-        const mergedFlashcards = [
-          ...remoteFlashcards,
-          ...fallbackBundle.flashcards.filter(
-            (fb) => !remoteFlashcards.some((rf: any) => rf.front.toLowerCase() === fb.front.toLowerCase())
-          ),
-        ].slice(0, 30);
 
         const remoteQuiz = Array.isArray(remote?.quiz)
           ? remote.quiz.map((q: any, idx: number) => ({
@@ -284,7 +266,7 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
               options:
                 Array.isArray(q.options) && q.options.length >= 2
                   ? q.options.map(String)
-                  : fallbackBundle.quiz[0].options,
+                  : [],
               correctIndex:
                 typeof q.correctIndex === 'number' && q.correctIndex >= 0 && q.correctIndex < 4
                   ? q.correctIndex
@@ -294,74 +276,30 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
               difficulty: targetDifficulty,
             }))
           : [];
-        const mergedQuiz = [
-          ...remoteQuiz,
-          ...fallbackBundle.quiz.filter(
-            (fq) => !remoteQuiz.some((rq: any) => rq.question.toLowerCase() === fq.question.toLowerCase())
-          ),
-        ].slice(0, 28);
-
-        const remoteKeyPoints = Array.isArray(remote?.summary?.keyPoints)
-          ? remote.summary.keyPoints
-          : [];
-        const mergedKeyPoints = [
-          ...remoteKeyPoints,
-          ...fallbackBundle.summary.keyPoints.filter((kp) => !remoteKeyPoints.includes(kp)),
-        ].slice(0, 24);
-
-        const remoteSections = Array.isArray(remote?.summary?.sections)
-          ? remote.summary.sections
-          : [];
-        const mergedSections = [
-          ...remoteSections,
-          ...fallbackBundle.summary.sections.filter(
-            (fs) => !remoteSections.some((rs: any) => rs.title === fs.title)
-          ),
-        ].slice(0, 24);
-
-        const remoteConcepts = Array.isArray(remote?.explanation?.concepts)
-          ? remote.explanation.concepts
-          : [];
-        const mergedConcepts = [
-          ...remoteConcepts,
-          ...fallbackBundle.explanation.concepts.filter(
-            (fc) => !remoteConcepts.some((rc: any) => rc.term === fc.term)
-          ),
-        ].slice(0, 24);
 
         setStudyBundle({
           title: docTitle.replace(/\.pdf$/i, ''),
           pageCount: pages,
-          wordCount: fallbackBundle.wordCount,
-          readTimeMin: fallbackBundle.readTimeMin,
+          wordCount,
+          readTimeMin,
           summary: {
-            overview: remote?.summary?.overview || fallbackBundle.summary.overview,
-            keyPoints: mergedKeyPoints.length > 0 ? mergedKeyPoints : fallbackBundle.summary.keyPoints,
-            sections: mergedSections.length > 0 ? mergedSections : fallbackBundle.summary.sections,
+            overview: String(remote?.summary?.overview || ''),
+            keyPoints: Array.isArray(remote?.summary?.keyPoints) ? remote.summary.keyPoints : [],
+            sections: Array.isArray(remote?.summary?.sections) ? remote.summary.sections : [],
           },
           explanation: {
-            coreThesis: remote?.explanation?.coreThesis || fallbackBundle.explanation.coreThesis,
-            concepts: mergedConcepts.length > 0 ? mergedConcepts : fallbackBundle.explanation.concepts,
+            coreThesis: String(remote?.explanation?.coreThesis || remote?.summary?.overview || ''),
+            concepts: Array.isArray(remote?.explanation?.concepts) ? remote.explanation.concepts : [],
           },
-          flashcards: mergedFlashcards.length > 0 ? mergedFlashcards : fallbackBundle.flashcards,
-          quiz: mergedQuiz.length > 0 ? mergedQuiz : fallbackBundle.quiz,
+          flashcards: remoteFlashcards,
+          quiz: remoteQuiz,
           cheatsheet: {
-            formulasOrRules:
-              Array.isArray(remote?.cheatsheet?.formulasOrRules) &&
-              remote.cheatsheet.formulasOrRules.length > 0
-                ? [
-                    ...remote.cheatsheet.formulasOrRules,
-                    ...fallbackBundle.cheatsheet.formulasOrRules,
-                  ].slice(0, 15)
-                : fallbackBundle.cheatsheet.formulasOrRules,
-            examTips:
-              Array.isArray(remote?.cheatsheet?.examTips) &&
-              remote.cheatsheet.examTips.length > 0
-                ? [...remote.cheatsheet.examTips, ...fallbackBundle.cheatsheet.examTips].slice(
-                    0,
-                    15
-                  )
-                : fallbackBundle.cheatsheet.examTips,
+            formulasOrRules: Array.isArray(remote?.cheatsheet?.formulasOrRules)
+              ? remote.cheatsheet.formulasOrRules
+              : [],
+            examTips: Array.isArray(remote?.cheatsheet?.examTips)
+              ? remote.cheatsheet.examTips
+              : [],
           },
         });
       }

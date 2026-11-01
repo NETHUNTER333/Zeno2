@@ -116,6 +116,8 @@ export interface YouTubeVideoInfo {
 }
 
 export interface YouTubeStudyChapter {
+  start_s?: number;
+  end_s?: number;
   timestamp: number;
   title: string;
   summary: string;
@@ -145,8 +147,10 @@ export interface YouTubeStudyFlashcard {
   id: string;
   front: string;
   back: string;
-  category: string;
+  category?: string;
+  timestamp_s?: number;
   timestamp?: number;
+  sourceQuote?: string;
 }
 
 export interface YouTubeStudyQuizItem {
@@ -155,7 +159,19 @@ export interface YouTubeStudyQuizItem {
   options: string[];
   correctIndex: number;
   explanation: string;
+  timestamp_s?: number;
   timestamp?: number;
+  sourceQuote?: string;
+}
+
+export interface YouTubeStudyMetrics {
+  durationMs: number;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  estimatedCostUsd: number;
+  modelUsed: string;
+  cached?: boolean;
 }
 
 export interface YouTubeStudyBundle {
@@ -166,6 +182,7 @@ export interface YouTubeStudyBundle {
   explanation: YouTubeStudyExplanation;
   flashcards: YouTubeStudyFlashcard[];
   quiz: YouTubeStudyQuizItem[];
+  metrics?: YouTubeStudyMetrics;
 }
 
 export interface GithubRepo {

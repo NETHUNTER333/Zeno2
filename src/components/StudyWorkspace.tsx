@@ -40,8 +40,6 @@ import {
   Clock,
   Filter,
   ArrowUp,
-  AlertTriangle,
-  RotateCcw,
 } from 'lucide-react';
 import {
   YouTubeTranscriptSegment,
@@ -53,7 +51,6 @@ import {
 } from '../lib/firebase';
 import {
   extractTextFromPdfFile,
-  buildDeterministicDocumentStudyBundle,
 } from '../lib/pdfStudyEngine';
 import { speakTextWithSmallestAi, stopSmallestSpeech } from '../lib/smallestAi';
 import { UserAccountStore } from '../lib/userAccountStore';
@@ -230,180 +227,15 @@ export function consolidateTranscriptSegments(
   return consolidated.length > 0 ? consolidated : rawSegments;
 }
 
-function deriveStatementHeading(text: string, index: number, fallbackTitle: string): string {
-  const cleaned = cleanCaptionText(text)
-    .replace(/^(so|and|but|because|well|now|okay|ok|like|yeah|right|actually|basically|literally)[,\s]+/i, '')
-    .trim();
-
-  const firstSentence = cleaned.split(/(?<=[.!?])\s+/)[0] || cleaned;
-  const words = firstSentence
-    .replace(/[^a-zA-Z0-9\s'-]/g, ' ')
-    .split(/\s+/)
-    .filter((w) => w.length > 2 && !/^(the|and|for|that|this|with|from|have|are|was|were|what|when|where|how|why|you|your|they|their|into|about|just|like|very|really)$/i.test(w));
-
-  if (words.length >= 3) {
-    return words
-      .slice(0, 5)
-      .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-      .join(' ');
-  }
-
-  return `${fallbackTitle} — Part ${index + 1}`;
-}
-
 export function buildDetailedStatementBreakdown(
-  consolidatedSegments: YouTubeTranscriptSegment[],
-  title: string
+  chapters: Array<{ title: string; summary: string }>
 ): DetailedStatementItem[] {
-  if (!consolidatedSegments || consolidatedSegments.length === 0) return [];
-
-  return consolidatedSegments.map((seg, idx) => {
-    const fullText = cleanCaptionText(seg.text);
-    const sentences = fullText
-      .split(/(?<=[.!?])\s+/)
-      .map((s) => s.trim())
-      .filter(Boolean);
-
-    const primaryClaim =
-      sentences[0] && sentences[0].length > 25
-        ? sentences[0]
-        : fullText.slice(0, 180) + (fullText.length > 180 ? '.' : '');
-
-    const heading = deriveStatementHeading(fullText, idx, title);
-
-    return {
-      index: idx + 1,
-      heading,
-      claim: primaryClaim,
-      elaboration: fullText,
-    };
-  });
-}
-
-function buildFallbackStudyData(
-  videoId: string,
-  rawTitle: string,
-  rawAuthor: string,
-  customText?: string,
-  rawSegmentsInput?: YouTubeTranscriptSegment[]
-): {
-  segments: YouTubeTranscriptSegment[];
-  bundle: YouTubeStudyBundle;
-  statements: DetailedStatementItem[];
-} {
-  let consolidatedSegments: YouTubeTranscriptSegment[] = [];
-  if (rawSegmentsInput && rawSegmentsInput.length > 0) {
-    consolidatedSegments = consolidateTranscriptSegments(rawSegmentsInput);
-  }
-
-  const fullSourceText =
-    customText ||
-    (consolidatedSegments.length > 0
-      ? consolidatedSegments.map((s) => s.text).join('\n\n')
-      : `${rawTitle} by ${rawAuthor || 'Creator'}.`);
-
-  const docBundle = buildDeterministicDocumentStudyBundle(
-    rawTitle || 'Study Session',
-    fullSourceText,
-    Math.max(12, Math.min(24, consolidatedSegments.length || 12)),
-    'medium'
-  );
-
-  if (consolidatedSegments.length === 0) {
-    const rawParagraphs = fullSourceText
-      .split(/\n+/)
-      .map((p) => p.trim())
-      .filter((p) => p.length > 20);
-
-    consolidatedSegments = (rawParagraphs.length > 0
-      ? rawParagraphs
-      : docBundle.summary.keyPoints
-    ).map((text, idx) => ({
-      start_s: idx * 35,
-      duration_s: 35,
-      text,
-    }));
-  }
-
-  const statements = buildDetailedStatementBreakdown(
-    consolidatedSegments,
-    rawTitle || 'Study Material'
-  );
-
-  const groupSize = Math.max(1, Math.ceil(consolidatedSegments.length / 20));
-  const chapters: Array<{ timestamp: number; title: string; summary: string }> = [];
-  for (let i = 0; i < consolidatedSegments.length; i += groupSize) {
-    const slice = consolidatedSegments.slice(i, i + groupSize);
-    const combinedText = slice.map((s) => s.text).join(' ');
-    const sectionNum = Math.floor(i / groupSize) + 1;
-    const heading = deriveStatementHeading(combinedText, sectionNum - 1, rawTitle || 'Section');
-    chapters.push({
-      timestamp: slice[0]?.start_s || i * 35,
-      title: heading,
-      summary: combinedText,
-    });
-  }
-
-  const comprehensiveOverview =
-    consolidatedSegments.length > 1
-      ? consolidatedSegments
-          .slice(0, Math.min(3, consolidatedSegments.length))
-          .map((s) => s.text)
-          .join(' ')
-      : docBundle.summary.overview;
-
-  const exhaustiveKeyPoints = statements.map(
-    (st) => `${st.heading}: ${st.elaboration}`
-  );
-
-  const bundle: YouTubeStudyBundle = {
-    videoId,
-    title: rawTitle || 'Study Material',
-    summary: {
-      overview: comprehensiveOverview,
-      keyPoints:
-        exhaustiveKeyPoints.length >= 20
-          ? exhaustiveKeyPoints.slice(0, 26)
-          : [...exhaustiveKeyPoints, ...docBundle.summary.keyPoints].slice(0, 26),
-      chapters:
-        chapters.length >= 16
-          ? chapters.slice(0, 24)
-          : [
-              ...chapters,
-              ...docBundle.summary.sections.map((s, idx) => ({
-                timestamp: (chapters.length + idx) * 45,
-                title: s.title,
-                summary: s.summary,
-              })),
-            ].slice(0, 24),
-    },
-    explanation: {
-      coreThesis: docBundle.explanation.coreThesis,
-      concepts: docBundle.explanation.concepts.map((c, idx) => ({
-        term: c.term,
-        definition: c.definition,
-        mechanism: c.mechanism,
-        timestamp: idx * 60,
-      })),
-    },
-    flashcards: docBundle.flashcards.map((f, idx) => ({
-      id: f.id || `fc-${idx}`,
-      front: f.front,
-      back: f.back,
-      category: f.category || 'Key Concept',
-      timestamp: idx * 45,
-    })),
-    quiz: docBundle.quiz.map((q, idx) => ({
-      id: q.id || `q-${idx}`,
-      question: q.question,
-      options: q.options,
-      correctIndex: q.correctIndex,
-      explanation: q.explanation,
-      timestamp: idx * 45,
-    })),
-  };
-
-  return { segments: consolidatedSegments, bundle, statements };
+  return (chapters || []).map((ch, idx) => ({
+    index: idx + 1,
+    heading: ch.title,
+    claim: ch.summary,
+    elaboration: ch.summary,
+  }));
 }
 
 export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
@@ -464,18 +296,11 @@ export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
     initialVideo?.transcript ? consolidateTranscriptSegments(initialVideo.transcript) : []
   );
   const [studyBundle, setStudyBundle] = useState<YouTubeStudyBundle | null>(null);
+  const [studyError, setStudyError] = useState<string | null>(null);
   const [statementBreakdown, setStatementBreakdown] = useState<DetailedStatementItem[]>([]);
   const [aiExhaustiveSummary, setAiExhaustiveSummary] = useState<string>('');
   const [synthesizingDeepSummary, setSynthesizingDeepSummary] = useState<boolean>(false);
   const [loadingContent, setLoadingContent] = useState<boolean>(false);
-  const [transcriptState, setTranscriptState] = useState<'idle' | 'loading' | 'ready' | 'error'>(
-    initialVideo?.transcript && initialVideo.transcript.length > 0 ? 'ready' : 'idle'
-  );
-  const [transcriptError, setTranscriptError] = useState<string>('');
-  const [transcriptProvider, setTranscriptProvider] = useState<string>(
-    initialVideo?.transcript && initialVideo.transcript.length > 0 ? 'provided' : ''
-  );
-  const [pasteTranscriptVal, setPasteTranscriptVal] = useState<string>('');
 
   // My Sets Filter & Menu
   const [mySetsFilter, setMySetsFilter] = useState<'all' | 'summary' | 'flashcards' | 'quiz' | 'podcast'>('all');
@@ -511,7 +336,16 @@ export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
   // Flashcards State
   const [flashcardMode, setFlashcardMode] = useState<'spaced' | 'fast'>('fast');
   const [customFlashcards, setCustomFlashcards] = useState<
-    Array<{ id: string; front: string; back: string; category?: string; starred?: boolean }>
+    Array<{
+      id: string;
+      front: string;
+      back: string;
+      category?: string;
+      starred?: boolean;
+      timestamp_s?: number;
+      timestamp?: number;
+      sourceQuote?: string;
+    }>
   >([]);
   const [cardIndex, setCardIndex] = useState<number>(0);
   const [isCardFlipped, setIsCardFlipped] = useState<boolean>(false);
@@ -525,6 +359,7 @@ export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
   const [translatedSegments, setTranslatedSegments] = useState<Record<string, YouTubeTranscriptSegment[]>>({});
   const [translatingLang, setTranslatingLang] = useState<boolean>(false);
   const [copiedTranscript, setCopiedTranscript] = useState<boolean>(false);
+  const [pastedTranscriptText, setPastedTranscriptText] = useState<string>('');
 
   // Notes State
   const [userNotes, setUserNotes] = useState<string>('');
@@ -625,6 +460,9 @@ export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
           back: c.back,
           category: c.category || resolvedTitle.slice(0, 22),
           starred: false,
+          timestamp_s: c.timestamp_s,
+          timestamp: c.timestamp,
+          sourceQuote: c.sourceQuote,
         }))
       );
       setEditableSummaryText(
@@ -787,6 +625,7 @@ ${fullTranscriptText}`;
     setResolvedAuthor('Topic Study');
     setYtWebSearchQuery(cleanTopic);
     setLoadingContent(true);
+    setStudyError(null);
     setAiExhaustiveSummary('');
     setTopicVideos([]);
     setFocusedModuleView(null);
@@ -801,121 +640,113 @@ ${fullTranscriptText}`;
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({ query: cleanTopic }),
-        signal: AbortSignal.timeout(16000),
+        signal: AbortSignal.timeout(25000),
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        const fetchedVideos: YouTubeVideoInfo[] = Array.isArray(data.videos) ? data.videos : [];
-        setTopicVideos(fetchedVideos);
-
-        if (fetchedVideos.length > 0) {
-          setOpenTabs((prev) => {
-            if (prev.some((t) => t.type === 'videos')) return prev;
-            return [
-              prev[0] || { id: 'tab-summary', type: 'summary', title: 'Summary' },
-              { id: 'tab-videos', type: 'videos', title: `Videos (${fetchedVideos.length})` },
-              ...prev.slice(1),
-            ];
-          });
-        } else {
-          // Trigger dedicated YouTube web search backend in background if initial list was empty
-          handleSearchYouTubeWeb(cleanTopic, false);
-        }
-
-        const sections: DetailedStatementItem[] = Array.isArray(data.sections) && data.sections.length > 0
-          ? data.sections.map((s: any, idx: number) => ({
-              index: idx + 1,
-              heading: String(s.heading || s.title || `${cleanTopic} — Part ${idx + 1}`),
-              claim: String(s.claim || ''),
-              elaboration: String(s.elaboration || s.claim || ''),
-            }))
-          : [];
-
-        if (sections.length > 0) {
-          const synthSegments: YouTubeTranscriptSegment[] = sections.map((s, idx) => ({
-            start_s: idx * 30,
-            duration_s: 30,
-            text: `${s.heading}: ${s.elaboration}`,
-          }));
-
-          const bundle: YouTubeStudyBundle = {
-            videoId: '',
-            title: cleanTopic,
-            summary: {
-              overview: String(data.overview || sections[0]?.elaboration || ''),
-              keyPoints: sections.map((s) => `${s.heading}: ${s.elaboration}`),
-              chapters: sections.map((s, idx) => ({
-                timestamp: idx * 45,
-                title: s.heading,
-                summary: s.elaboration,
-              })),
-            },
-            explanation: {
-              coreThesis: String(data.overview || sections[0]?.elaboration || ''),
-              concepts: Array.isArray(data.concepts)
-                ? data.concepts.map((c: any, idx: number) => ({
-                    term: String(c.term || `Concept ${idx + 1}`),
-                    definition: String(c.definition || ''),
-                    mechanism: String(c.mechanism || ''),
-                    timestamp: idx * 45,
-                  }))
-                : [],
-            },
-            flashcards: Array.isArray(data.flashcards)
-              ? data.flashcards.map((f: any, idx: number) => ({
-                  id: f.id || `fc-${idx + 1}`,
-                  front: String(f.front || ''),
-                  back: String(f.back || ''),
-                  category: String(f.category || cleanTopic.slice(0, 20)),
-                  timestamp: idx * 30,
-                }))
-              : [],
-            quiz: Array.isArray(data.quiz)
-              ? data.quiz.map((q: any, idx: number) => ({
-                  id: q.id || `q-${idx + 1}`,
-                  question: String(q.question || ''),
-                  options: Array.isArray(q.options) ? q.options.map(String) : [],
-                  correctIndex: typeof q.correctIndex === 'number' ? q.correctIndex : 0,
-                  explanation: String(q.explanation || ''),
-                  timestamp: idx * 30,
-                }))
-              : [],
-          };
-
-          setSegments(synthSegments);
-          setStatementBreakdown(sections);
-          setStudyBundle(bundle);
-          setLoadingContent(false);
-
-          setSpaces((prev) => {
-            const exists = prev.some((s) => s.name.toLowerCase() === cleanTopic.toLowerCase());
-            if (exists) return prev;
-            return [
-              {
-                id: `space-${Date.now()}`,
-                name: cleanTopic,
-                createdAt: Date.now(),
-                contentCount: sections.length + fetchedVideos.length,
-                sourceType: 'topic',
-              },
-              ...prev,
-            ];
-          });
-          return;
-        }
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData?.error || `Server responded with HTTP ${res.status}`);
       }
-    } catch {}
 
-    // Bulletproof fallback so Study Space NEVER stays blank or stuck on loading
-    const fallbackSeed = `${cleanTopic} is a major educational topic encompassing core structures, primary mechanisms, functional pathways, regulatory variables, and real-world applications. Understanding ${cleanTopic} involves analyzing how its primary components are organized, how energy or signals flow through its pathways, and how external conditions influence its overall efficiency.`;
-    const fb = buildFallbackStudyData('', cleanTopic, 'Topic Study', fallbackSeed);
-    setSegments(fb.segments);
-    setStatementBreakdown(fb.statements);
-    setStudyBundle(fb.bundle);
-    setLoadingContent(false);
-    handleSearchYouTubeWeb(cleanTopic, false);
-    synthesizeDeepStatementSummary(cleanTopic, fb.segments);
+      const data = await res.json();
+      const fetchedVideos: YouTubeVideoInfo[] = Array.isArray(data.videos) ? data.videos : [];
+      setTopicVideos(fetchedVideos);
+
+      if (fetchedVideos.length > 0) {
+        setOpenTabs((prev) => {
+          if (prev.some((t) => t.type === 'videos')) return prev;
+          return [
+            prev[0] || { id: 'tab-summary', type: 'summary', title: 'Summary' },
+            { id: 'tab-videos', type: 'videos', title: `Videos (${fetchedVideos.length})` },
+            ...prev.slice(1),
+          ];
+        });
+      }
+
+      const sections: DetailedStatementItem[] = Array.isArray(data.sections) && data.sections.length > 0
+        ? data.sections.map((s: any, idx: number) => ({
+            index: idx + 1,
+            heading: String(s.heading || s.title || `Concept ${idx + 1}`),
+            claim: String(s.claim || ''),
+            elaboration: String(s.elaboration || s.claim || ''),
+          }))
+        : [];
+
+      const synthSegments: YouTubeTranscriptSegment[] = sections.map((s, idx) => ({
+        start_s: idx * 30,
+        duration_s: 30,
+        text: `${s.heading}: ${s.elaboration}`,
+      }));
+
+      const bundle: YouTubeStudyBundle = {
+        videoId: '',
+        title: cleanTopic,
+        summary: {
+          overview: String(data.overview || sections[0]?.elaboration || ''),
+          keyPoints: sections.map((s) => `${s.heading}: ${s.elaboration}`),
+          chapters: sections.map((s, idx) => ({
+            timestamp: idx * 45,
+            title: s.heading,
+            summary: s.elaboration,
+          })),
+        },
+        explanation: {
+          coreThesis: String(data.overview || sections[0]?.elaboration || ''),
+          concepts: Array.isArray(data.concepts)
+            ? data.concepts.map((c: any, idx: number) => ({
+                term: String(c.term || `Concept ${idx + 1}`),
+                definition: String(c.definition || ''),
+                mechanism: String(c.mechanism || ''),
+                timestamp: idx * 45,
+              }))
+            : [],
+        },
+        flashcards: Array.isArray(data.flashcards)
+          ? data.flashcards.map((f: any, idx: number) => ({
+              id: f.id || `fc-${idx + 1}`,
+              front: String(f.front || ''),
+              back: String(f.back || ''),
+              category: String(f.category || cleanTopic.slice(0, 20)),
+              timestamp: idx * 30,
+            }))
+          : [],
+        quiz: Array.isArray(data.quiz)
+          ? data.quiz.map((q: any, idx: number) => ({
+              id: q.id || `q-${idx + 1}`,
+              question: String(q.question || ''),
+              options: Array.isArray(q.options) ? q.options.map(String) : [],
+              correctIndex: typeof q.correctIndex === 'number' ? q.correctIndex : 0,
+              explanation: String(q.explanation || ''),
+              timestamp: idx * 30,
+            }))
+          : [],
+      };
+
+      setSegments(synthSegments);
+      setStatementBreakdown(sections);
+      setStudyBundle(bundle);
+      setStudyError(null);
+
+      setSpaces((prev) => {
+        const exists = prev.some((s) => s.name.toLowerCase() === cleanTopic.toLowerCase());
+        if (exists) return prev;
+        return [
+          {
+            id: `space-${Date.now()}`,
+            name: cleanTopic,
+            createdAt: Date.now(),
+            contentCount: sections.length + fetchedVideos.length,
+            sourceType: 'topic',
+          },
+          ...prev,
+        ];
+      });
+    } catch (err: any) {
+      setStudyError(err?.message || 'Failed to generate topic study materials. Please retry.');
+      setStudyBundle(null);
+    } finally {
+      setLoadingContent(false);
+    }
   };
 
   // Load YouTube Video (Direct Link or Video ID: loads ONLY this exact video, autoplays, no related videos)
@@ -934,21 +765,21 @@ ${fullTranscriptText}`;
     setActiveVideoId(targetVidId);
     setShowSourceViewer(true);
     setAutoPlayVideo(true);
-    setTopicVideos([]); // STRICT REQUIREMENT: Only give this video, no multiple/related videos!
-    setOpenTabs((prev) => prev.filter((t) => t.type !== 'videos')); // Suppress videos tab
+    setTopicVideos([]);
+    setOpenTabs((prev) => prev.filter((t) => t.type !== 'videos'));
     setLoadingContent(true);
+    setStudyError(null);
     setAiExhaustiveSummary('');
     setFocusedModuleView(null);
     setCurrentQuizIdx(0);
     setSelectedQuizOption(null);
     setCheckedQuizMap({});
     setRevealedDontKnowMap({});
-    setTranscriptState('loading');
-    setTranscriptError('');
-    setTranscriptProvider(cachedTranscript && cachedTranscript.length > 0 ? 'provided' : '');
 
     let title =
-      cleanHint && cleanHint !== targetVidId ? cleanHint : 'YouTube Video';
+      cleanHint && cleanHint !== targetVidId
+        ? cleanHint
+        : 'YouTube Video';
     let author = hintAuthor || 'YouTube';
 
     try {
@@ -962,16 +793,6 @@ ${fullTranscriptText}`;
         const oembed = await oembedRes.json();
         if (oembed.title) title = oembed.title;
         if (oembed.author_name) author = oembed.author_name;
-      } else {
-        const noembedRes = await fetch(
-          `https://noembed.com/embed?url=https://www.youtube.com/watch?v=${targetVidId}`,
-          { signal: AbortSignal.timeout(2000) }
-        );
-        if (noembedRes.ok) {
-          const noembed = await noembedRes.json();
-          if (noembed.title) title = noembed.title;
-          if (noembed.author_name) author = noembed.author_name;
-        }
       }
     } catch {}
 
@@ -982,107 +803,75 @@ ${fullTranscriptText}`;
       let rawLoadedSegments: YouTubeTranscriptSegment[] =
         cachedTranscript && cachedTranscript.length > 0 ? cachedTranscript : [];
 
-      let transcriptFetchError = '';
       if (rawLoadedSegments.length === 0) {
         try {
           const res = await fetch('/api/youtube/transcript', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ videoId: targetVidId }),
-            signal: AbortSignal.timeout(20000),
+            signal: AbortSignal.timeout(10000),
           });
-          let data: any = null;
-          try {
-            data = await res.json();
-          } catch {}
-          if (data?.title && (title === 'YouTube Video' || !cleanHint || cleanHint === targetVidId)) {
-            title = data.title;
-            setResolvedTitle(title);
-          }
-          if (data?.author && (author === 'YouTube' || !hintAuthor)) {
-            author = data.author;
-            setResolvedAuthor(author);
-          }
-          if (res.ok && data?.success && Array.isArray(data.segments) && data.segments.length > 0) {
-            rawLoadedSegments = data.segments;
-            setTranscriptProvider(String(data.provider || 'youtube'));
-          } else {
-            transcriptFetchError =
-              String(data?.error || '').trim() || `Transcript request failed (HTTP ${res.status}).`;
-          }
-        } catch (e: any) {
-          transcriptFetchError =
-            e?.name === 'TimeoutError' || e?.name === 'AbortError'
-              ? 'Transcript request timed out.'
-              : `Transcript request failed: ${String(e?.message || e)}`;
-        }
-      }
-
-      if (rawLoadedSegments.length === 0) {
-        setSegments([]);
-        setStudyBundle(null);
-        setStatementBreakdown([]);
-        setAiExhaustiveSummary('');
-        setTranscriptState('error');
-        setTranscriptError(
-          transcriptFetchError || "Couldn't fetch captions right now (transcript server offline)."
-        );
-        setResolvedTitle(title);
-        setResolvedAuthor(author);
-        setLoadingContent(false);
-        setShowSourceViewer(true);
-        setAutoPlayVideo(false);
-        return;
-      }
-
-      setTranscriptState('ready');
-      setTranscriptError('');
-
-      const synthesized = buildFallbackStudyData(
-        targetVidId,
-        title,
-        author,
-        undefined,
-        rawLoadedSegments
-      );
-
-      setSegments(synthesized.segments);
-      setStudyBundle(synthesized.bundle);
-      setStatementBreakdown(synthesized.statements);
-      setResolvedTitle(title);
-      setResolvedAuthor(author);
-      setLoadingContent(false);
-      setShowSourceViewer(true);
-      setAutoPlayVideo(true);
-
-      // Upgrade flashcards, quiz, and concepts via AI /api/youtube/study when real segments are present
-      if (rawLoadedSegments.length > 0) {
-        try {
-          const authHeaders = await getAuthHeaders();
-          const aiRes = await fetch('/api/youtube/study', {
-            method: 'POST',
-            headers: authHeaders,
-            body: JSON.stringify({
-              videoId: targetVidId,
-              videoTitle: title,
-              videoAuthor: author,
-              segments: synthesized.segments,
-            }),
-            signal: AbortSignal.timeout(14000),
-          });
-          if (aiRes.ok) {
-            const aiData = await aiRes.json();
-            if (aiData?.study?.summary?.overview) {
-              setStudyBundle(aiData.study);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.title && (title === 'YouTube Video' || !cleanHint || cleanHint === targetVidId)) {
+              title = data.title;
+              setResolvedTitle(title);
+            }
+            if (data.author && (author === 'YouTube' || !hintAuthor)) {
+              author = data.author;
+              setResolvedAuthor(author);
+            }
+            if (data.success && Array.isArray(data.segments) && data.segments.length > 0) {
+              rawLoadedSegments = data.segments;
             }
           }
         } catch {}
       }
 
-      synthesizeDeepStatementSummary(title, synthesized.segments);
-    } finally {
-      setLoadingContent(false);
-      setTopicVideos([]); // Guarantee no related videos appear
+      if (rawLoadedSegments.length === 0) {
+        throw new Error('Could not extract captions or transcript for this YouTube video. Please ensure the video has closed captions or verify the URL.');
+      }
+
+      const consolidated = consolidateTranscriptSegments(rawLoadedSegments);
+      setSegments(consolidated);
+
+      const authHeaders = await getAuthHeaders();
+      const aiRes = await fetch('/api/youtube/study', {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({
+          videoId: targetVidId,
+          videoTitle: title,
+          videoAuthor: author,
+          segments: consolidated,
+        }),
+        signal: AbortSignal.timeout(45000),
+      });
+
+      if (!aiRes.ok) {
+        const errJson = await aiRes.json().catch(() => ({}));
+        throw new Error(errJson?.error || `Study generation failed with HTTP ${aiRes.status}`);
+      }
+
+      const aiData = await aiRes.json();
+      if (!aiData?.study?.summary?.overview) {
+        throw new Error('Study synthesis failed to return valid curriculum. Please retry.');
+      }
+
+      const finalStudy: YouTubeStudyBundle = aiData.study;
+      setStudyBundle(finalStudy);
+      setStatementBreakdown(
+        finalStudy.summary.chapters.map((ch, idx) => ({
+          index: idx + 1,
+          heading: ch.title,
+          claim: ch.summary,
+          elaboration: ch.summary,
+        }))
+      );
+      setStudyError(null);
+      setShowSourceViewer(true);
+      setAutoPlayVideo(true);
+
       setSpaces((prev) => {
         const exists = prev.some((s) => s.videoId === targetVidId || s.name === title);
         if (exists) return prev;
@@ -1098,42 +887,13 @@ ${fullTranscriptText}`;
           ...prev,
         ];
       });
+    } catch (err: any) {
+      setStudyError(err?.message || 'Failed to generate study materials from video transcript. Please retry.');
+      setStudyBundle(null);
+    } finally {
+      setLoadingContent(false);
+      setTopicVideos([]);
     }
-  };
-
-  const applyPastedTranscript = () => {
-    const text = pasteTranscriptVal.trim();
-    if (!text || !activeVideoId) return;
-    const data = buildFallbackStudyData(activeVideoId, resolvedTitle, resolvedAuthor, text);
-    setSegments(data.segments);
-    setStudyBundle(data.bundle);
-    setStatementBreakdown(data.statements);
-    setTranscriptState('ready');
-    setTranscriptError('');
-    setTranscriptProvider('pasted');
-    setPasteTranscriptVal('');
-    setLoadingContent(false);
-    synthesizeDeepStatementSummary(resolvedTitle, data.segments);
-    void (async () => {
-      try {
-        const authHeaders = await getAuthHeaders();
-        const aiRes = await fetch('/api/youtube/study', {
-          method: 'POST',
-          headers: authHeaders,
-          body: JSON.stringify({
-            videoId: activeVideoId,
-            videoTitle: resolvedTitle,
-            videoAuthor: resolvedAuthor,
-            segments: data.segments,
-          }),
-          signal: AbortSignal.timeout(14000),
-        });
-        if (aiRes.ok) {
-          const aiData = await aiRes.json();
-          if (aiData?.study?.summary?.overview) setStudyBundle(aiData.study);
-        }
-      } catch {}
-    })();
   };
 
   // Load PDF or Pasted Notes (or route short topic queries to loadTopicStudySpace)
@@ -1144,13 +904,11 @@ ${fullTranscriptText}`;
     url = ''
   ) => {
     const cleanText = (text || '').trim();
-    // If it's a YouTube link or video ID, load directly as YouTube video
     const ytId = extractYouTubeIdFromInput(title || cleanText);
     if (ytId) {
       await loadYouTubeSource(ytId);
       return;
     }
-    // If it's a short topic/question rather than a full pasted document/PDF, fetch real YouTube videos + topic study guide!
     if (type !== 'pdf' && cleanText.length < 240) {
       await loadTopicStudySpace(title || cleanText);
       return;
@@ -1164,6 +922,7 @@ ${fullTranscriptText}`;
     setResolvedTitle(title);
     setResolvedAuthor(type === 'pdf' ? 'Document' : 'Study Notes');
     setLoadingContent(true);
+    setStudyError(null);
     setAiExhaustiveSummary('');
     setTopicVideos([]);
     setFocusedModuleView(null);
@@ -1173,7 +932,6 @@ ${fullTranscriptText}`;
     setRevealedDontKnowMap({});
 
     try {
-      // Also fetch real AI study synthesis from /api/pdf/study if available
       const authHeaders = await getAuthHeaders();
       const res = await fetch('/api/pdf/study', {
         method: 'POST',
@@ -1183,108 +941,34 @@ ${fullTranscriptText}`;
           textContent: cleanText,
           difficulty: 'medium',
         }),
+        signal: AbortSignal.timeout(35000),
       });
 
-      const fallback = buildFallbackStudyData('', title, 'Document', cleanText);
-
-      if (res.ok) {
-        const data = await res.json();
-        const aiStudy = data?.study;
-        if (aiStudy?.summary?.overview) {
-          const mergedKeyPoints = Array.isArray(aiStudy.summary.keyPoints)
-            ? [
-                ...aiStudy.summary.keyPoints,
-                ...fallback.bundle.summary.keyPoints.filter(
-                  (kp) => !aiStudy.summary.keyPoints.includes(kp)
-                ),
-              ].slice(0, 26)
-            : fallback.bundle.summary.keyPoints;
-
-          const aiSections: DetailedStatementItem[] = mergedKeyPoints.map(
-            (kp: string, idx: number) => ({
-              index: idx + 1,
-              heading:
-                aiStudy.summary.sections?.[idx]?.title ||
-                fallback.statements[idx]?.heading ||
-                `Key Point ${idx + 1}`,
-              claim: kp,
-              elaboration:
-                aiStudy.summary.sections?.[idx]?.summary ||
-                fallback.statements[idx]?.elaboration ||
-                kp,
-            })
-          );
-
-          const remoteFlashcards = Array.isArray(aiStudy.flashcards) ? aiStudy.flashcards : [];
-          const mergedFlashcards = [
-            ...remoteFlashcards,
-            ...fallback.bundle.flashcards.filter(
-              (fb) =>
-                !remoteFlashcards.some(
-                  (rf: any) => String(rf.front || '').toLowerCase() === fb.front.toLowerCase()
-                )
-            ),
-          ].slice(0, 30);
-
-          const remoteQuiz = Array.isArray(aiStudy.quiz) ? aiStudy.quiz : [];
-          const mergedQuiz = [
-            ...remoteQuiz,
-            ...fallback.bundle.quiz.filter(
-              (fq) =>
-                !remoteQuiz.some(
-                  (rq: any) => String(rq.question || '').toLowerCase() === fq.question.toLowerCase()
-                )
-            ),
-          ].slice(0, 28);
-
-          const remoteConcepts = Array.isArray(aiStudy.explanation?.concepts)
-            ? aiStudy.explanation.concepts
-            : [];
-          const mergedConcepts = [
-            ...remoteConcepts,
-            ...fallback.bundle.explanation.concepts.filter(
-              (fc) => !remoteConcepts.some((rc: any) => rc.term === fc.term)
-            ),
-          ].slice(0, 24);
-
-          setSegments(fallback.segments);
-          setStatementBreakdown(aiSections);
-          setStudyBundle({
-            videoId: '',
-            title,
-            summary: {
-              overview: aiStudy.summary.overview,
-              keyPoints: mergedKeyPoints,
-              chapters: aiSections.map((s, idx) => ({
-                timestamp: idx * 45,
-                title: s.heading,
-                summary: s.elaboration,
-              })),
-            },
-            explanation: {
-              coreThesis: aiStudy.explanation?.coreThesis || aiStudy.summary.overview,
-              concepts: mergedConcepts,
-            },
-            flashcards: mergedFlashcards,
-            quiz: mergedQuiz,
-          });
-          setLoadingContent(false);
-          return;
-        }
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson?.error || `Document synthesis failed with HTTP ${res.status}`);
       }
 
-      setSegments(fallback.segments);
-      setStudyBundle(fallback.bundle);
-      setStatementBreakdown(fallback.statements);
-      setLoadingContent(false);
-      synthesizeDeepStatementSummary(title, fallback.segments);
-    } catch {
-      const fallback = buildFallbackStudyData('', title, 'Document', cleanText);
-      setSegments(fallback.segments);
-      setStudyBundle(fallback.bundle);
-      setStatementBreakdown(fallback.statements);
-      setLoadingContent(false);
-    } finally {
+      const data = await res.json();
+      const aiStudy: YouTubeStudyBundle = data?.study;
+      if (!aiStudy?.summary?.overview) {
+        throw new Error('LLM failed to return structured document study guide. Please retry.');
+      }
+
+      const aiSections: DetailedStatementItem[] = (aiStudy.summary.chapters || []).map(
+        (ch, idx: number) => ({
+          index: idx + 1,
+          heading: ch.title,
+          claim: ch.summary,
+          elaboration: ch.summary,
+        })
+      );
+
+      setSegments([]);
+      setStatementBreakdown(aiSections);
+      setStudyBundle(aiStudy);
+      setStudyError(null);
+
       setSpaces((prev) => {
         const exists = prev.some((s) => s.name === title);
         if (exists) return prev;
@@ -1300,6 +984,11 @@ ${fullTranscriptText}`;
           ...prev,
         ];
       });
+    } catch (err: any) {
+      setStudyError(err?.message || 'Failed to synthesize document study materials. Please retry.');
+      setStudyBundle(null);
+    } finally {
+      setLoadingContent(false);
     }
   };
 
@@ -1484,7 +1173,7 @@ ${fullTranscriptText}`;
           : segments.map((s) => s.text).join('\n');
 
       const fullPrompt = currentQuoted
-        ? `Regarding the quiz question: "${currentQuoted}"\n\nUser request: ${displayPrompt}\n\nProvide a clear, simple, helpful explanation grounded in "${resolvedTitle}".`
+        ? `For the quiz question: "${currentQuoted}"\n\nUser request: ${displayPrompt}\n\nProvide a clear, simple, helpful explanation grounded in "${resolvedTitle}".`
         : displayPrompt;
 
       const res = await fetch('/api/study/ai-assistant', {
@@ -1580,19 +1269,6 @@ ${fullTranscriptText}`;
     selectedLang.code !== 'en' && translatedSegments[selectedLang.code]
       ? translatedSegments[selectedLang.code]
       : segments;
-
-  const transcriptRequiredTabs = ['summary', 'quiz', 'flashcards', 'lesson_plan', 'transcripts', 'podcast'];
-  const transcriptProviderLabel = (() => {
-    const p = transcriptProvider;
-    if (!p) return '';
-    if (p === 'youtube-transcript-npm') return 'phone';
-    if (p === 'provided') return 'provided';
-    if (p === 'pasted') return 'pasted';
-    if (p.startsWith('whisper')) return 'whisper';
-    if (p.includes('caption')) return 'direct';
-    if (p.toLowerCase().includes('yt-dlp')) return 'yt-dlp';
-    return p;
-  })();
 
   const filteredLanguages = LANGUAGES.filter((l) =>
     l.label.toLowerCase().includes(langSearch.trim().toLowerCase())
@@ -2342,75 +2018,36 @@ ${fullTranscriptText}`;
           {/* Main Tab Content Viewport */}
           <div className="flex-1 overflow-y-auto">
             {loadingContent ? (
-              <div className="h-72 flex flex-col items-center justify-center gap-3 text-center px-4">
-                <Loader2 className="w-6 h-6 animate-spin opacity-60" />
-                <p className={`text-sm font-medium ${textMuted}`}>
-                  Preparing study notes, YouTube videos, flashcards, and quiz...
-                </p>
-              </div>
-            ) : transcriptState === 'error' &&
-              activeVideoId &&
-              transcriptRequiredTabs.includes(activeTabObj?.type || '') ? (
-              <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
-                <div className={`p-5 rounded-2xl border space-y-4 ${bgCard}`}>
-                  <div className="flex items-start gap-3">
-                    <div
-                      className={`size-9 rounded-xl flex items-center justify-center shrink-0 ${iconBoxClass}`}
-                    >
-                      <AlertTriangle className="w-4 h-4" />
-                    </div>
-                    <div className="min-w-0 space-y-1">
-                      <h2 className="text-sm sm:text-base font-semibold">
-                        Couldn't fetch captions right now (transcript server offline).
-                      </h2>
-                      <p className={`text-xs sm:text-sm leading-relaxed ${textMuted}`}>
-                        Study tools only use real captions — nothing here was generated. Retry, or
-                        paste a transcript below.
-                      </p>
-                      {transcriptError && (
-                        <p className={`text-[11px] font-mono break-words ${textMuted}`}>
-                          {transcriptError}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => loadYouTubeSource(activeVideoId, resolvedTitle, resolvedAuthor)}
-                      className={`px-3.5 py-2 rounded-xl border text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer ${borderSubtle}`}
-                    >
-                      <RotateCcw className="w-3.5 h-3.5" />
-                      <span>Retry</span>
-                    </button>
-                  </div>
-
-                  <div className={`pt-4 border-t space-y-2 ${borderSubtle}`}>
-                    <label className="text-xs font-medium">Or paste the video transcript</label>
-                    <textarea
-                      rows={6}
-                      value={pasteTranscriptVal}
-                      onChange={(e) => setPasteTranscriptVal(e.target.value)}
-                      placeholder="Paste the transcript here (timestamps optional)..."
-                      className={`w-full p-3.5 rounded-xl border text-xs outline-none resize-y ${
-                        isDark
-                          ? 'bg-[#09090b] border-white/[0.12] text-white'
-                          : 'bg-[#f8f8f9] border-black/[0.12] text-black'
-                      }`}
-                    />
-                    <button
-                      type="button"
-                      onClick={applyPastedTranscript}
-                      disabled={!pasteTranscriptVal.trim()}
-                      className={`px-4 py-2 rounded-xl text-xs font-semibold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
-                        isDark ? 'bg-white text-black' : 'bg-black text-white'
-                      }`}
-                    >
-                      Use pasted transcript
-                    </button>
-                  </div>
+              <div className="max-w-2xl mx-auto px-4 py-8 space-y-4">
+                <div className="flex items-center justify-center gap-2 text-sm font-medium animate-pulse text-neutral-400">
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <span>Analyzing transcript and generating chapters, quiz & flashcards with AI...</span>
                 </div>
+                <div className="space-y-3 pt-4">
+                  <div className={`h-28 rounded-2xl animate-pulse ${isDark ? 'bg-white/[0.04]' : 'bg-black/[0.04]'}`} />
+                  <div className={`h-44 rounded-2xl animate-pulse ${isDark ? 'bg-white/[0.04]' : 'bg-black/[0.04]'}`} />
+                  <div className={`h-32 rounded-2xl animate-pulse ${isDark ? 'bg-white/[0.04]' : 'bg-black/[0.04]'}`} />
+                </div>
+              </div>
+            ) : studyError ? (
+              <div className="max-w-md mx-auto my-12 p-6 rounded-2xl border border-red-500/20 bg-red-500/5 text-center space-y-3">
+                <div className="text-red-400 font-semibold text-sm">Failed to Generate Study Materials</div>
+                <p className="text-xs text-neutral-400 leading-relaxed">{studyError}</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (sourceType === 'youtube' && activeVideoId) {
+                      loadYouTubeSource(activeVideoId, resolvedTitle, resolvedAuthor);
+                    } else if (sourceType === 'topic') {
+                      loadTopicStudySpace(resolvedTitle);
+                    } else if (sourceType === 'pdf') {
+                      loadTextOrPdfSource(resolvedTitle, rawSourceText, 'pdf', pdfUrl);
+                    }
+                  }}
+                  className="px-4 py-2 rounded-xl bg-white text-black text-xs font-semibold hover:bg-neutral-200 transition cursor-pointer"
+                >
+                  Retry Generation
+                </button>
               </div>
             ) : focusedModuleView ? (
               <div className="max-w-3xl mx-auto px-4 sm:px-6 py-5 space-y-5">
@@ -2547,17 +2184,13 @@ ${fullTranscriptText}`;
                             icon: GitBranch,
                             onClick: () => openOrFocusTab('lesson_plan', 'Lesson Plan'),
                           },
-                          ...(sourceType !== 'topic'
-                            ? [
-                                {
-                                  id: 'transcripts',
-                                  label: 'Transcript',
-                                  sub: `${segments.length} paragraphs`,
-                                  icon: ListTree,
-                                  onClick: () => openOrFocusTab('transcripts', 'Transcript'),
-                                },
-                              ]
-                            : []),
+                          {
+                            id: 'transcripts',
+                            label: 'Transcript',
+                            sub: `${segments.length} paragraphs`,
+                            icon: ListTree,
+                            onClick: () => openOrFocusTab('transcripts', 'Transcript'),
+                          },
                           {
                             id: 'podcast',
                             label: 'Audio Summary',
@@ -3473,10 +3106,33 @@ ${fullTranscriptText}`;
                       </div>
                     </div>
 
-                    <div className="pt-1">
-                      <h2 className="text-sm sm:text-base font-medium leading-relaxed">
+                    <div className="pt-1 flex items-start justify-between gap-3">
+                      <h2 className="text-sm sm:text-base font-medium leading-relaxed flex-1">
                         {currentQuizItem.question}
                       </h2>
+                      {(currentQuizItem.timestamp_s !== undefined || currentQuizItem.timestamp !== undefined) && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleJumpToTimestamp(
+                              currentQuizItem.timestamp_s ?? currentQuizItem.timestamp ?? 0
+                            )
+                          }
+                          className={`shrink-0 px-2.5 py-1 rounded-lg border text-xs font-mono font-medium inline-flex items-center gap-1 cursor-pointer transition-colors ${
+                            isDark
+                              ? 'bg-white/5 hover:bg-white/10 border-white/10 text-neutral-300'
+                              : 'bg-black/5 hover:bg-black/10 border-black/10 text-neutral-700'
+                          }`}
+                          title="Jump to video timestamp"
+                        >
+                          <Play className="w-2.5 h-2.5 fill-current" />
+                          <span>
+                            {formatTime(
+                              currentQuizItem.timestamp_s ?? currentQuizItem.timestamp ?? 0
+                            )}
+                          </span>
+                        </button>
+                      )}
                     </div>
 
                     <div className="space-y-2.5">
@@ -3534,9 +3190,9 @@ ${fullTranscriptText}`;
                     {(checkedQuizMap[currentQuizItem.id] !== undefined ||
                       revealedDontKnowMap[currentQuizItem.id]) && (
                       <div
-                        className={`p-4 rounded-2xl border text-xs sm:text-sm leading-relaxed ${bgCard}`}
+                        className={`p-4 rounded-2xl border text-xs sm:text-sm leading-relaxed space-y-2 ${bgCard}`}
                       >
-                        <div className="font-semibold mb-1">
+                        <div className="font-semibold">
                           {revealedDontKnowMap[currentQuizItem.id]
                             ? `Correct Answer: ${String.fromCharCode(
                                 65 + currentQuizItem.correctIndex
@@ -3549,6 +3205,16 @@ ${fullTranscriptText}`;
                               )}`}
                         </div>
                         <p className={textMuted}>{currentQuizItem.explanation}</p>
+                        {currentQuizItem.sourceQuote && (
+                          <div
+                            className={`pt-2 border-t text-xs italic ${borderSubtle} ${textMuted}`}
+                          >
+                            <span className="font-semibold not-italic block mb-0.5 opacity-75">
+                              Transcript Quote:
+                            </span>
+                            &ldquo;{currentQuizItem.sourceQuote}&rdquo;
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -3691,14 +3357,44 @@ ${fullTranscriptText}`;
                                 className="flex items-center justify-between"
                                 onClick={(e) => e.stopPropagation()}
                               >
-                                <button
-                                  type="button"
-                                  onClick={() => setShowCardHint((h) => !h)}
-                                  className="p-2 rounded-lg opacity-65 hover:opacity-100 cursor-pointer"
-                                  title="Show hint"
-                                >
-                                  <Lightbulb className="w-4 h-4" />
-                                </button>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => setShowCardHint((h) => !h)}
+                                    className="p-2 rounded-lg opacity-65 hover:opacity-100 cursor-pointer"
+                                    title="Show hint"
+                                  >
+                                    <Lightbulb className="w-4 h-4" />
+                                  </button>
+                                  {(customFlashcards[cardIndex].timestamp_s !== undefined ||
+                                    customFlashcards[cardIndex].timestamp !== undefined) && (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleJumpToTimestamp(
+                                          customFlashcards[cardIndex].timestamp_s ??
+                                            customFlashcards[cardIndex].timestamp ??
+                                            0
+                                        )
+                                      }
+                                      className={`px-2 py-0.5 rounded-lg border text-[11px] font-mono font-medium inline-flex items-center gap-1 cursor-pointer transition-colors ${
+                                        isDark
+                                          ? 'bg-white/5 hover:bg-white/10 border-white/10 text-neutral-300'
+                                          : 'bg-black/5 hover:bg-black/10 border-black/10 text-neutral-700'
+                                      }`}
+                                      title="Jump to video timestamp"
+                                    >
+                                      <Play className="w-2.5 h-2.5 fill-current" />
+                                      <span>
+                                        {formatTime(
+                                          customFlashcards[cardIndex].timestamp_s ??
+                                            customFlashcards[cardIndex].timestamp ??
+                                            0
+                                        )}
+                                      </span>
+                                    </button>
+                                  )}
+                                </div>
 
                                 <div className="flex items-center gap-1">
                                   <button
@@ -3848,9 +3544,34 @@ ${fullTranscriptText}`;
                                 className={`p-4 rounded-2xl border space-y-3 ${bgCard}`}
                               >
                                 <div className="flex items-center justify-between">
-                                  <span className={`text-xs ${textMuted}`}>
-                                    Card {idx + 1}
-                                  </span>
+                                  <div className="flex items-center gap-2">
+                                    <span className={`text-xs ${textMuted}`}>
+                                      Card {idx + 1}
+                                    </span>
+                                    {(fc.timestamp_s !== undefined || fc.timestamp !== undefined) && (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          handleJumpToTimestamp(
+                                            fc.timestamp_s ?? fc.timestamp ?? 0
+                                          )
+                                        }
+                                        className={`px-2 py-0.5 rounded-md border text-[11px] font-mono font-medium inline-flex items-center gap-1 cursor-pointer transition-colors ${
+                                          isDark
+                                            ? 'bg-white/5 hover:bg-white/10 border-white/10 text-neutral-300'
+                                            : 'bg-black/5 hover:bg-black/10 border-black/10 text-neutral-700'
+                                        }`}
+                                        title="Jump to video timestamp"
+                                      >
+                                        <Play className="w-2 h-2 fill-current" />
+                                        <span>
+                                          {formatTime(
+                                            fc.timestamp_s ?? fc.timestamp ?? 0
+                                          )}
+                                        </span>
+                                      </button>
+                                    )}
+                                  </div>
                                   <button
                                     type="button"
                                     onClick={() =>
@@ -3955,17 +3676,7 @@ ${fullTranscriptText}`;
                 {activeTabObj?.type === 'transcripts' && (
                   <div className="max-w-3xl mx-auto px-4 sm:px-6 py-5 space-y-5 pb-20">
                     <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <h2 className="text-base sm:text-lg font-semibold">Transcript</h2>
-                        {import.meta.env.DEV && transcriptProvider && (
-                          <span
-                            className={`px-2 py-0.5 rounded-lg text-[10px] font-mono ${bgSubtle}`}
-                            title="Transcript provider"
-                          >
-                            {transcriptProviderLabel}
-                          </span>
-                        )}
-                      </div>
+                      <h2 className="text-base sm:text-lg font-semibold">Transcript</h2>
 
                       <div className="flex items-center gap-2">
                         <div className="relative">
@@ -4042,12 +3753,7 @@ ${fullTranscriptText}`;
                       </div>
                     </div>
 
-                    {activeTranscriptList.length === 0 && !translatingLang ? (
-                      <div className={`p-5 rounded-2xl border text-xs sm:text-sm ${bgCard} ${textMuted}`}>
-                        No transcript is attached to this source. Transcripts are only shown when they
-                        come from the video's real captions, a pasted transcript, or uploaded text.
-                      </div>
-                    ) : translatingLang ? (
+                    {translatingLang ? (
                       <div className="space-y-3">
                         {[1, 2, 3].map((n) => (
                           <div
@@ -4055,6 +3761,60 @@ ${fullTranscriptText}`;
                             className={`h-24 rounded-2xl animate-pulse ${bgSubtle}`}
                           />
                         ))}
+                      </div>
+                    ) : activeTranscriptList.length === 0 ? (
+                      <div className={`p-6 sm:p-8 rounded-2xl border text-center space-y-4 ${bgCard}`}>
+                        <div className="w-12 h-12 mx-auto rounded-full bg-neutral-500/10 text-neutral-400 flex items-center justify-center">
+                          <FileText className="w-5 h-5" />
+                        </div>
+                        <div className="space-y-1">
+                          <h3 className="text-sm sm:text-base font-semibold">No Official Captions Available</h3>
+                          <p className="text-xs text-neutral-400 max-w-md mx-auto">
+                            YouTube has no public closed-caption tracks for this video. We do not invent synthetic timestamps or fake spoken words.
+                          </p>
+                        </div>
+                        <div className="max-w-lg mx-auto pt-2 space-y-2">
+                          <textarea
+                            rows={4}
+                            value={pastedTranscriptText}
+                            onChange={(e) => setPastedTranscriptText(e.target.value)}
+                            placeholder="Paste real transcript or lecture notes here to view with timecodes..."
+                            className={`w-full p-3 rounded-xl border text-xs sm:text-sm outline-none resize-y ${bgSubtle}`}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (!pastedTranscriptText.trim()) return;
+                              const lines = pastedTranscriptText
+                                .split(/\n+/)
+                                .map((l) => l.trim())
+                                .filter(Boolean);
+                              const parsed: YouTubeTranscriptSegment[] = lines.map((line, idx) => {
+                                const timeMatch = line.match(/^\[?(\d{1,2}):(\d{2})\]?\s*(.*)$/);
+                                if (timeMatch) {
+                                  const mins = parseInt(timeMatch[1], 10);
+                                  const secs = parseInt(timeMatch[2], 10);
+                                  return {
+                                    start_s: mins * 60 + secs,
+                                    duration_s: 15,
+                                    text: timeMatch[3] || line,
+                                  };
+                                }
+                                return {
+                                  start_s: idx * 25,
+                                  duration_s: 25,
+                                  text: line,
+                                };
+                              });
+                              setSegments(parsed);
+                              setPastedTranscriptText('');
+                            }}
+                            disabled={!pastedTranscriptText.trim()}
+                            className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-medium cursor-pointer transition-colors"
+                          >
+                            Load Transcript
+                          </button>
+                        </div>
                       </div>
                     ) : (
                       <div className="space-y-3">

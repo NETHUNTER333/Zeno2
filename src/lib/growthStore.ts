@@ -28,6 +28,8 @@ import {
 } from './firebase';
 import { UserAccountStore } from './userAccountStore';
 import { ShareCardTheme } from './exportChat';
+import { apiFetch } from './apiBase';
+import { captureInboundReferral, claimPendingReferralAfterAuth } from './referralClient';
 
 const GROWTH_KEYS = {
   CLIENT_ID: 'zeno_growth_client_id',
@@ -856,32 +858,37 @@ export async function getMyReferralStatus(): Promise<ZenoReferralStatus> {
     typeof window !== 'undefined' ? window.location.origin : 'https://zeno0x.vercel.app';
   try {
     const headers = await getGrowthHeaders();
-    const res = await fetch('/api/growth/referrals/me', { headers });
-    if (res.ok) {
+    // Try primary new /api/referral/me first, fallback to /api/growth/referrals/me
+    let res = await apiFetch('/api/referral/me', { headers }).catch(() => null);
+    if (!res || !res.ok) {
+      res = await apiFetch('/api/growth/referrals/me', { headers }).catch(() => null);
+    }
+
+    if (res && res.ok) {
       const data = await res.json();
-      const raw = data?.status || data;
-      const code = raw?.referralCode || raw?.code;
+      const code = data?.code || data?.referralCode;
       if (code) {
-        const inviteUrl = `${origin}/?ref=${encodeURIComponent(code)}`;
-        const validated = Number(
-          raw.validatedSignupsCount ?? raw.verifiedReferralsCount ?? 0
-        );
+        const inviteUrl = data.link || `${origin}/r/${encodeURIComponent(code)}`;
+        const invited = Number(data.stats?.invited ?? data.validatedSignupsCount ?? 0);
+        const qualified = Number(data.stats?.qualified ?? data.verifiedReferralsCount ?? 0);
+        const rewarded = Number(data.stats?.rewarded ?? data.qualifiedActionsCount ?? 0);
+
         const status: ZenoReferralStatus = {
           referralCode: code,
           code,
-          referrerUid: raw.referrerUid || getOrCreateClientId(),
+          referrerUid: auth.currentUser?.uid || data.referrerUid || getOrCreateClientId(),
           inviteUrl,
           referralUrl: inviteUrl,
-          visitsCount: Number(raw.visitsCount || 0),
-          validatedSignupsCount: validated,
-          verifiedReferralsCount: validated,
-          qualifiedActionsCount: Number(raw.qualifiedActionsCount || validated),
-          unlockedThemes: Array.isArray(raw.unlockedThemes)
-            ? raw.unlockedThemes
-            : ['carbon', 'ivory', 'slate'],
-          referredByCode: raw.referredByCode || null,
-          attributionWindowDays: Number(raw.attributionWindowDays || 14),
-          createdAt: Number(raw.createdAt || Date.now()),
+          visitsCount: Number(data.visitsCount || invited * 2),
+          validatedSignupsCount: invited,
+          verifiedReferralsCount: qualified,
+          qualifiedActionsCount: rewarded,
+          unlockedThemes: Array.isArray(data.unlockedThemes)
+            ? data.unlockedThemes
+            : ['carbon', 'ivory', 'slate', 'obsidian-gold', 'emerald-terminal'],
+          referredByCode: data.referredByCode || null,
+          attributionWindowDays: 7,
+          createdAt: Number(data.createdAt || Date.now()),
         };
         safeSave(GROWTH_KEYS.REFERRAL_STATUS, status);
         return status;
@@ -893,7 +900,7 @@ export async function getMyReferralStatus(): Promise<ZenoReferralStatus> {
   if (cached) return cached;
 
   const fallbackCode = `zp_${getOrCreateClientId().replace(/[^a-zA-Z0-9]/g, '').slice(-8)}`;
-  const inviteUrl = `${origin}/?ref=${fallbackCode}`;
+  const inviteUrl = `${origin}/r/${fallbackCode}`;
   return {
     referralCode: fallbackCode,
     code: fallbackCode,
@@ -906,7 +913,7 @@ export async function getMyReferralStatus(): Promise<ZenoReferralStatus> {
     qualifiedActionsCount: 0,
     unlockedThemes: ['carbon', 'ivory', 'slate'],
     referredByCode: null,
-    attributionWindowDays: 14,
+    attributionWindowDays: 7,
     createdAt: Date.now(),
   };
 }
@@ -933,32 +940,8 @@ export function getUnlockedCosmeticThemes(): ShareCardTheme[] {
 }
 
 export async function captureInboundReferralFromUrl(): Promise<string | null> {
-  if (typeof window === 'undefined') return null;
-  try {
-    const params = new URLSearchParams(window.location.search);
-    const refCode = params.get('ref')?.trim();
-    if (!refCode || !/^zp_[a-zA-Z0-9_-]{3,28}$/.test(refCode)) return null;
-
-    safeSave(GROWTH_KEYS.PENDING_REF_CODE, {
-      code: refCode,
-      capturedAt: Date.now(),
-    });
-
-    const headers = await getGrowthHeaders();
-    await fetch('/api/growth/referrals/visit', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        referralCode: refCode,
-        code: refCode,
-        visitorId: getOrCreateClientId(),
-      }),
-    }).catch(() => {});
-
-    return refCode;
-  } catch {
-    return null;
-  }
+  const res = await captureInboundReferral();
+  return res ? res.code : null;
 }
 
 export const captureReferralFromUrlIfPresent = captureInboundReferralFromUrl;
@@ -966,32 +949,12 @@ export const captureReferralFromUrlIfPresent = captureInboundReferralFromUrl;
 export async function validatePendingReferralIfEligible(
   _qualifyingAction = 'first_core_action'
 ): Promise<boolean> {
-  const pending = safeLoad<{ code: string; capturedAt: number } | null>(
-    GROWTH_KEYS.PENDING_REF_CODE,
-    null
-  );
-  if (!pending || !pending.code) return false;
-
-  try {
-    const headers = await getGrowthHeaders();
-    const res = await fetch('/api/growth/referrals/claim', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        referralCode: pending.code,
-        code: pending.code,
-        visitTimestampMs: pending.capturedAt,
-      }),
-    });
-    if (res.ok) {
-      localStorage.removeItem(GROWTH_KEYS.PENDING_REF_CODE);
-      emitGrowthUpdate();
-      return true;
-    }
-    if (res.status === 400 || res.status === 409) {
-      localStorage.removeItem(GROWTH_KEYS.PENDING_REF_CODE);
-    }
-  } catch {}
+  const uid = auth.currentUser?.uid || getOrCreateClientId();
+  const res = await claimPendingReferralAfterAuth(uid, auth.currentUser?.email || '');
+  if (res.success) {
+    emitGrowthUpdate();
+    return true;
+  }
   return false;
 }
 
@@ -1835,37 +1798,45 @@ export async function claimReferralCodeManual(
 
   try {
     const headers = await getGrowthHeaders();
-    const res = await fetch('/api/growth/referrals/claim', {
+    let res = await apiFetch('/api/referral/claim', {
       method: 'POST',
       headers,
-      body: JSON.stringify({
-        referralCode: code,
-        code,
-        visitTimestampMs: Date.now(),
-      }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (res.ok && data?.success) {
+      body: JSON.stringify({ code }),
+    }).catch(() => null);
+
+    if (!res || !res.ok) {
+      res = await apiFetch('/api/growth/referrals/claim', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ referralCode: code, code }),
+      }).catch(() => null);
+    }
+
+    const data = await res?.json().catch(() => ({}));
+    if (res && res.ok && data?.success) {
       localStorage.removeItem(GROWTH_KEYS.PENDING_REF_CODE);
       incrementLocalReferralCountForUser({ referralCode: code, delta: 1 });
       emitGrowthUpdate();
       return {
         ok: true,
-        message: `Referral pass ${code} verified! Local & leaderboard referral counter updated.`,
+        message: data.alreadyClaimed
+          ? `Referral code ${code} is already attributed to your account!`
+          : `Referral pass ${code} verified! You'll receive rewards once qualified.`,
       };
     }
+
     return {
       ok: false,
       message:
         data?.error?.message ||
+        data?.error ||
         data?.message ||
         'Could not claim this referral code (self-referrals and duplicate claims are blocked).',
     };
-  } catch {
-    incrementLocalReferralCountForUser({ referralCode: code, delta: 1 });
+  } catch (err: any) {
     return {
-      ok: true,
-      message: `Referral pass ${code} recorded in local referral tracker.`,
+      ok: false,
+      message: err?.message || 'Network error claiming referral code.',
     };
   }
 }

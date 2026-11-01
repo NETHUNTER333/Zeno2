@@ -9,25 +9,27 @@ export interface ModelOption {
   geminiModel: string;
   supportsVision: boolean;
   contextLength?: string;
-  requiredTier?: 'spark' | 'fire';
+  requiredTier?: 'free' | 'spark' | 'fire';
 }
 
 export const GROK_MODELS: ModelOption[] = [
   {
     id: 'zro-deepseek-v4.1-flash',
     name: 'DeepSeek V4.1 Flash',
-    description: '1M zero-latency',
+    description: '1M zero-latency (Default · Free)',
     geminiModel: 'zro/deepseek-v4.1-flash',
     supportsVision: false,
     contextLength: '1M',
+    requiredTier: 'free',
   },
   {
     id: 'zro-glm-5.3-flash',
     name: 'GLM 5.3 Flash (1M)',
-    description: 'Fast reasoning & vision',
+    description: 'Fast reasoning & vision (Free Vision)',
     geminiModel: 'zro/glm-5.3-flash',
     supportsVision: true,
     contextLength: '1M',
+    requiredTier: 'free',
   },
   {
     id: 'zro-deepseek-v4-flash-0731',
@@ -40,18 +42,20 @@ export const GROK_MODELS: ModelOption[] = [
   {
     id: 'deepseek-v4.1-flash-free',
     name: 'DeepSeek V4.1',
-    description: 'Instant reasoning',
+    description: 'Instant reasoning (Free)',
     geminiModel: 'zro/deepseek-v4.1-flash',
     supportsVision: false,
     contextLength: '1M',
+    requiredTier: 'free',
   },
   {
     id: 'itera-qwen3.8-27b-free',
     name: 'Qwen 3.8 27B',
-    description: 'Fast reply & vision',
+    description: 'Fast reply & vision (Free)',
     geminiModel: 'itera/qwen/qwen3.8-27b',
     supportsVision: true,
     contextLength: '256K',
+    requiredTier: 'free',
   },
   {
     id: 'deepseek-v4-flash-0731-free',
@@ -60,14 +64,16 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'zro/deepseek-v4-flash-0731',
     supportsVision: false,
     contextLength: '1M',
+    requiredTier: 'free',
   },
   {
     id: 'glm-5.3-flash-free',
     name: 'GLM 5.3 Flash',
-    description: 'Low-latency vision',
+    description: 'Low-latency vision (Free)',
     geminiModel: 'zro/glm-5.3-flash',
     supportsVision: true,
     contextLength: '1M',
+    requiredTier: 'free',
   },
   {
     id: 'mimo-v2.6-flash-free',
@@ -815,8 +821,18 @@ const FIRE_MODEL_IDS = new Set([
   'ar-pareto-code-router',
 ]);
 
-export function getModelRequiredTier(model: ModelOption): 'spark' | 'fire' {
-  if (model.requiredTier === 'fire') return 'fire';
+export const FREE_MODEL_IDS = new Set<string>([
+  'zro-deepseek-v4.1-flash',
+  'deepseek-v4.1-flash-free',
+  'zro-glm-5.3-flash',
+  'glm-5.3-flash-free',
+  'itera-qwen3.8-27b-free',
+  'flm-auto',
+]);
+
+export function getModelRequiredTier(model: ModelOption): 'free' | 'spark' | 'fire' {
+  if (model.requiredTier) return model.requiredTier;
+  if (FREE_MODEL_IDS.has(model.id)) return 'free';
   if (FIRE_MODEL_IDS.has(model.id)) return 'fire';
   return 'spark';
 }
@@ -848,7 +864,7 @@ export const GrokModelPicker: React.FC<GrokModelPickerProps> = ({
   variant = 'header',
 }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [tierFilter, setTierFilter] = useState<'all' | 'spark' | 'fire'>('all');
+  const [tierFilter, setTierFilter] = useState<'all' | 'free' | 'spark' | 'fire'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [, setCurrentPlan] = useState<'free' | 'spark' | 'fire'>(() =>
     UserAccountStore.getNormalizedPlan()
@@ -885,7 +901,8 @@ export const GrokModelPicker: React.FC<GrokModelPickerProps> = ({
     return true;
   });
 
-  const triggerPricingPopup = (tier: 'spark' | 'fire', modelName: string) => {
+  const triggerPricingPopup = (tier: 'free' | 'spark' | 'fire', modelName: string) => {
+    if (tier === 'free') return;
     const planLabel = tier === 'spark' ? 'Spark ($3/mo)' : 'Fire ($7/mo)';
     const reason = `${modelName} requires the ${planLabel} plan. Upgrade now to unlock it.`;
     if (onOpenPricing) {
@@ -956,6 +973,7 @@ export const GrokModelPicker: React.FC<GrokModelPickerProps> = ({
               {(
                 [
                   { id: 'all', label: 'All' },
+                  { id: 'free', label: 'Free' },
                   { id: 'spark', label: 'Spark ($3)' },
                   { id: 'fire', label: 'Fire ($7)' },
                 ] as const
@@ -1054,12 +1072,14 @@ export const GrokModelPicker: React.FC<GrokModelPickerProps> = ({
                       ) : (
                         <span
                           className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${
-                            reqTier === 'fire'
+                            reqTier === 'free'
+                              ? 'text-emerald-400 bg-emerald-500/10 border border-emerald-500/20'
+                              : reqTier === 'fire'
                               ? 'text-orange-400 bg-orange-500/10 border border-orange-500/20'
                               : 'text-sky-400 bg-sky-500/10 border border-sky-500/20'
                           }`}
                         >
-                          {reqTier === 'fire' ? '$7' : '$3'}
+                          {reqTier === 'free' ? 'Free' : reqTier === 'fire' ? '$7' : '$3'}
                         </span>
                       )}
                     </div>

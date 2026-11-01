@@ -260,6 +260,34 @@ export function isBoilerplateOrJunkSearchResult(
     return true;
   }
 
+  // Reject Gambling / Casino / Betting / SEO malware / Adult spam unless the user query explicitly searches for it
+  const isGamblingOrAdultQuery = /\b(casino|gambling|bet|betting|slot\s*machine|poker|roulette|blackjack|porn|adult|escort)\b/i.test(q);
+  if (!isGamblingOrAdultQuery) {
+    const textToCheck = `${title} ${snippet} ${dom} ${url}`.toLowerCase();
+    const spamPatterns = [
+      /\b(casino|siteleri|yat[ıi]r[ıi]m\s*bonusu|bonus\s*veren|deneme\s*bonusu|g[uü]venilir\s*casino|canl[ıi]\s*bahis|ka[cç]ak\s*bahis|kumar|bahis\s*siteleri)\b/i,
+      /\b(slot\s*gacor|judi\s*online|slot88|pragmatic\s*play|poker88|togel|bocoran\s*slot|situs\s*slot)\b/i,
+      /\b(poker\s*online|roulette\s*online|free\s*spins\s*no\s*deposit|real\s*money\s*casino|online\s*casinos?)\b/i,
+      /\b(dedoco|1xbet|bet365|stake\.com|roobet|mostbet|parimatch|betway|draftkings)\b/i,
+      /\b(escort\s*service|adult\s*dating|cam\s*girls|porn\s*video|xxx|sex\s*chat)\b/i,
+      /\b(warez|keygen|cracked\s*software|torrent\s*download|free\s*download\s*full\s*version)\b/i,
+    ];
+
+    for (const pat of spamPatterns) {
+      if (pat.test(textToCheck)) {
+        return true;
+      }
+    }
+  }
+
+  // Also reject low-quality SEO directory / aggregator domains for non-navigational queries
+  if (
+    /^(dedoco\.com|co[m]?\.tr\b|xyz\b|top\b|click\b|bid\b|stream\b)\b/i.test(dom) &&
+    !q.includes(dom.split('.')[0])
+  ) {
+    return true;
+  }
+
   return false;
 }
 

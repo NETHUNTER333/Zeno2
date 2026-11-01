@@ -53,6 +53,10 @@ import {
   trackGrowthEvent,
   KnowledgeVaultStore,
 } from './lib/growthStore';
+import {
+  captureInboundReferral,
+  claimPendingReferralAfterAuth,
+} from './lib/referralClient';
 
 import { Signup1 } from './components/ui/signup-1';
 import {
@@ -595,6 +599,7 @@ export default function App() {
   useEffect(() => {
     try {
       captureReferralFromUrlIfPresent();
+      captureInboundReferral();
       trackGrowthEvent('returning_session_started');
       const params = new URLSearchParams(window.location.search);
 
@@ -640,6 +645,10 @@ export default function App() {
           localStorage.setItem('zeno_auth_session', 'true');
           localStorage.removeItem('zeno_explicit_signout');
         } catch {}
+        // Automatically claim any captured pending referral code (cookie or localStorage) for this authenticated user
+        claimPendingReferralAfterAuth(user.uid, user.email || '').catch((e) => {
+          console.warn('[Referral] Auto-claim on auth state change failed:', e);
+        });
         try {
           const remoteThreads = await loadUserChatThreadsFromFirestore();
           if (Array.isArray(remoteThreads) && remoteThreads.length > 0) {
