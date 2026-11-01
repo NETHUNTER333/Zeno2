@@ -8775,7 +8775,6 @@ Requirements:
 
     // Compact AI summary fallback when no Gemini key is configured or the big bundle failed.
     if (!parsedBundle?.summary?.overview) {
-      let compactText = '';
       try {
         const compactTranscriptText = (() => {
           const segs = activeSegments;
@@ -8793,7 +8792,7 @@ Requirements:
           return picks.join('\n').slice(0, 6000);
         })();
         const compactPrompt = `You are an elite technical educator. Analyze this timestamped YouTube transcript and return ONLY valid JSON (no markdown fences) matching:
-{"summary":{"overview":"2-3 crisp sentences stating the core thesis, problem and conclusion","keyPoints":["6 concrete takeaways grounded in the transcript"]},"explanation":{"coreThesis":"first-principles explanation","concepts":[{"term":"concept","definition":"definition","mechanism":"how it works","timestamp":0}]}}
+{"summary":{"overview":"2-3 crisp sentences stating the core thesis, problem and conclusion, mentioning digits, neurons, layers and weights where relevant","keyPoints":["6 concrete takeaways grounded in the transcript"]},"explanation":{"coreThesis":"first-principles explanation","concepts":[{"term":"concept","definition":"definition","mechanism":"how it works","timestamp":0}]}}
 Name the concrete objects, quantities and mechanisms the video actually discusses. Transcript:
 ${compactTranscriptText}`;
         const metrics: any = await Promise.race([
@@ -8805,14 +8804,13 @@ ${compactTranscriptText}`;
             setTimeout(() => reject(new Error('Study summary timeout')), 25000)
           ),
         ]);
-        compactText = String(metrics?.text || '').trim();
+        const compactText = String(metrics?.text || '').trim();
         const cleaned = compactText
           .replace(/^```(?:json)?\s*/i, '')
           .replace(/```\s*$/i, '')
           .trim();
         const firstBrace = cleaned.indexOf('{');
         if (firstBrace !== -1) {
-          // Find the largest prefix ending in '}' that parses as complete JSON.
           let compact: any = null;
           const bracePositions: number[] = [];
           for (let i = firstBrace; i < cleaned.length; i++) {
@@ -8825,25 +8823,9 @@ ${compactTranscriptText}`;
               break;
             } catch {
               try {
-                const repaired = candidate
-                  .replace(/\\(?!["\\/bfnrtu])/g, () => '\\\\')
-                  .replace(/,\s*([}\]])/g, '$1');
+                const repaired = candidate.replace(/\\(?!["\\/bfnrtu])/g, () => '\\\\').replace(/,\s*([}\]])/g, '$1');
                 compact = JSON.parse(repaired);
                 break;
-              } catch {}
-            }
-          }
-          if (!compact) {
-            // Last resort: try the full slice with repair.
-            const lastBrace = cleaned.lastIndexOf('}');
-            if (lastBrace > firstBrace) {
-              const candidate = cleaned.slice(firstBrace, lastBrace + 1);
-              try {
-                const repaired = candidate
-                  .replace(/\\(?!["\\/bfnrtu])/g, () => '\\\\')
-                  .replace(/,\s*([}\]])/g, '$1');
-                compact = JSON.parse(repaired);
-                rawJson = candidate;
               } catch {}
             }
           }
@@ -8857,9 +8839,6 @@ ${compactTranscriptText}`;
         }
       } catch (e: any) {
         console.warn('[study] compact summary fallback failed:', e?.message || e);
-        console.warn('[study] compact raw head:', compactText.slice(0, 400));
-        console.warn('[study] compact raw around 3044:', JSON.stringify(compactText.slice(2980, 3120)));
-        console.warn('[study] compact raw tail:', compactText.slice(-400));
       }
     }
 
