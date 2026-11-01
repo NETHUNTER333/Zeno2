@@ -8775,6 +8775,7 @@ Requirements:
 
     // Compact AI summary fallback when no Gemini key is configured or the big bundle failed.
     if (!parsedBundle?.summary?.overview) {
+      let compactText = '';
       try {
         const compactTranscriptText = (() => {
           const segs = activeSegments;
@@ -8804,7 +8805,7 @@ ${compactTranscriptText}`;
             setTimeout(() => reject(new Error('Study summary timeout')), 25000)
           ),
         ]);
-        const compactText = String(metrics?.text || '').trim();
+        compactText = String(metrics?.text || '').trim();
         const cleaned = compactText
           .replace(/^```(?:json)?\s*/i, '')
           .replace(/```\s*$/i, '')
@@ -8839,10 +8840,8 @@ ${compactTranscriptText}`;
         }
       } catch (e: any) {
         console.warn('[study] compact summary fallback failed:', e?.message || e);
-        try {
-          console.warn('[study] compact raw head:', String(compactText || '').slice(0, 300));
-          console.warn('[study] compact raw around err:', String(compactText || '').slice(2980, 3120));
-        } catch {}
+        console.warn('[study] compact raw head:', compactText.slice(0, 400));
+        console.warn('[study] compact raw tail:', compactText.slice(-400));
       }
     }
 
