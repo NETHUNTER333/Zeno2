@@ -8839,6 +8839,10 @@ ${compactTranscriptText}`;
         }
       } catch (e: any) {
         console.warn('[study] compact summary fallback failed:', e?.message || e);
+        try {
+          console.warn('[study] compact raw head:', String(compactText || '').slice(0, 300));
+          console.warn('[study] compact raw around err:', String(compactText || '').slice(2980, 3120));
+        } catch {}
       }
     }
 
