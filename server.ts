@@ -8794,16 +8794,27 @@ Requirements:
 {"summary":{"overview":"2-3 crisp sentences stating the core thesis, problem and conclusion","keyPoints":["6 concrete takeaways grounded in the transcript"]},"explanation":{"coreThesis":"first-principles explanation","concepts":[{"term":"concept","definition":"definition","mechanism":"how it works","timestamp":0}]}}
 Name the concrete objects, quantities and mechanisms the video actually discusses. Transcript:
 ${compactTranscriptText}`;
-        const metrics: any = await Promise.race([
-          generateChatCompletion(
-            [{ role: 'user', content: compactPrompt }],
-            'zro/deepseek-v4.1-flash'
-          ),
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error('Study summary timeout')), 20000)
-          ),
-        ]);
-        const compactText = String(metrics?.text || '').trim();
+        if (!ZRO_MOONMATH_API_KEY) throw new Error('No summary model key configured');
+        const zroResp = await fetch(`${ZRO_MOONMATH_BASE_URL}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${ZRO_MOONMATH_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          signal: AbortSignal.timeout(18000),
+          body: JSON.stringify({
+            model: 'zro/deepseek-v4.1-flash',
+            messages: [{ role: 'user', content: compactPrompt }],
+            max_tokens: 3000,
+            temperature: 0.3,
+            chat_template_kwargs: { enable_thinking: false },
+          }),
+        });
+        const zroData: any = await zroResp.json();
+        if (!zroResp.ok || zroData?.error) {
+          throw new Error(zroData?.error?.message || `Summary model HTTP ${zroResp.status}`);
+        }
+        const compactText = String(zroData?.choices?.[0]?.message?.content || '').trim();
         const cleaned = compactText
           .replace(/^```(?:json)?\s*/i, '')
           .replace(/```\s*$/i, '')
@@ -8820,7 +8831,9 @@ ${compactTranscriptText}`;
             };
           }
         }
-      } catch {}
+      } catch (e: any) {
+        console.warn('[study] compact summary fallback failed:', e?.message || e);
+      }
     }
 
     const aiFlashcards = Array.isArray(parsedBundle?.flashcards)
