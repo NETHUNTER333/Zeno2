@@ -40,6 +40,8 @@ import {
   Clock,
   Filter,
   ArrowUp,
+  AlertTriangle,
+  RotateCcw,
 } from 'lucide-react';
 import {
   YouTubeTranscriptSegment,
@@ -289,281 +291,6 @@ function buildFallbackStudyData(
   bundle: YouTubeStudyBundle;
   statements: DetailedStatementItem[];
 } {
-  const isKimchi = videoId === 'Y9by14g7Cbs' || /kimchi/i.test(rawTitle);
-
-  if (isKimchi && (!rawSegmentsInput || rawSegmentsInput.length === 0)) {
-    const segments: YouTubeTranscriptSegment[] = [
-      {
-        start_s: 0,
-        duration_s: 24,
-        text: 'Around the internet, stories circulate about a mysterious college trader known online as Kimchi—rumored to have made tens of millions trading meme coins from his dorm and apartment. The investigation focuses on separating Kimchi’s verifiable statements and wallet activity from the viral internet legend attached to his name.',
-      },
-      {
-        start_s: 24,
-        duration_s: 25,
-        text: 'A critical distinction established early in the analysis is commercial motivation: third-party commentators who post about Kimchi often benefit commercially from the attention and views, even though Kimchi himself does not sell a course, mentorship, or product.',
-      },
-      {
-        start_s: 49,
-        duration_s: 33,
-        text: 'Kimchi is described as a business student at the University of Southern California (USC) who lives in a Los Angeles apartment with rent of about $4,000 per month and spends roughly 15 hours a day at a desk trading meme coins.',
-      },
-      {
-        start_s: 82,
-        duration_s: 38,
-        text: 'A meme coin is a token created without a company, product, or staff behind it; its creator can give it a name and image and put it on the market within minutes. Because there are no underlying cash flows, its value depends strictly on what people are paying attention to at any given moment.',
-      },
-      {
-        start_s: 120,
-        duration_s: 45,
-        text: 'Kimchi explains that he first heard about meme-coin trading through Fortnite acquaintances who were making money and posting about it on Twitter, prompting him to transition toward a short-term attention-driven trading strategy.',
-      },
-      {
-        start_s: 165,
-        duration_s: 55,
-        text: 'In his early months starting in April, he experienced steep drawdowns and losses before refining a disciplined risk and volume-tracking framework—monitoring social velocity, liquidity pools, and early holder concentration rather than holding long term.',
-      },
-      {
-        start_s: 220,
-        duration_s: 65,
-        text: 'By Fall, the narrative notes a reported six-figure monthly average, followed in December by his first reported million-dollar month as Solana meme coin volume surged across retail trading venues.',
-      },
-      {
-        start_s: 365,
-        duration_s: 61,
-        text: 'The progression highlights the structural hazard at the center of speculative markets: rapid gains and huge valuations are frequently followed by steep losses, meaning a market peak is only recognizable as a peak after prices reverse and liquidity dries up.',
-      },
-      {
-        start_s: 426,
-        duration_s: 52,
-        text: 'On-chain records also reveal a separate wallet that bought more than $1 million shortly before a major coin went public, sold into the launch liquidity, and cleared over $100 million—demonstrating that pre-launch insiders, not retail traders or even Kimchi, captured the largest asymmetric payouts.',
-      },
-      {
-        start_s: 458,
-        duration_s: 49,
-        text: 'Immediately after viral headlines broke about his purported $40 million fortune, Kimchi vanished into radio silence, leaving behind only a few cryptic social posts while the internet turned his story into lasting trading folklore.',
-      },
-    ];
-
-    const kimchiExtraDoc = buildDeterministicDocumentStudyBundle(
-      rawTitle || 'Who Is Kimchi',
-      segments.map((s) => s.text).join('\n\n'),
-      20,
-      'medium'
-    );
-
-    const baseKeyPoints = [
-      'Viral Myth vs. Verifiable Claims: The $40 million net-worth story circulated across social media as internet legend, even though Kimchi never claimed that figure himself; third-party creators monetize the attention around his name while Kimchi sells no course or product.',
-      'Personal Profile & Daily Routine: Kimchi is profiled as a USC business student living in a $4,000/month Los Angeles apartment who commits approximately 15 hours per day to active desk trading.',
-      'Nature of Meme Coins: Unlike traditional equities, a meme coin has no company, product, or staff behind it and can be deployed to the market within minutes; its price reflects real-time collective attention.',
-      'Entry via Gaming Networks & Early Drawdowns: He discovered meme-coin trading through competitive Fortnite acquaintances on Twitter in early April, enduring initial drawdowns before pivoting to short-duration attention and volume tracking.',
-      'Scaling Through Fall and December: Following his strategy refinement, he reportedly averaged six figures per month by Fall and recorded his first million-dollar month in December during peak meme-coin volume.',
-      'Insider Wallets: A separate wallet accumulated over $1 million prior to a major public launch and cleared more than $100 million selling into launch demand, showing Kimchi was not the largest beneficiary.',
-      'Reversals & Radio Silence: Because speculative peaks are only identifiable after prices reverse, rapid paper gains often evaporate; after headlines peaked, Kimchi withdrew into radio silence.',
-      ...kimchiExtraDoc.summary.keyPoints,
-    ].slice(0, 24);
-
-    const baseFlashcards = [
-      { id: 'fc-1', front: 'What does a meme coin’s price primarily reflect in the video?', back: 'Current attention.', category: 'Meme Coin Trading', timestamp: 82 },
-      { id: 'fc-2', front: 'What university and major is Kimchi associated with?', back: 'Business student at the University of Southern California (USC).', category: 'Background', timestamp: 49 },
-      { id: 'fc-3', front: 'Roughly how many hours a day does Kimchi spend at his desk trading?', back: 'Roughly 15 hours a day.', category: 'Routine', timestamp: 49 },
-      { id: 'fc-4', front: 'What is Kimchi’s approximate monthly apartment rent in Los Angeles?', back: 'About $4,000 per month.', category: 'Background', timestamp: 49 },
-      { id: 'fc-5', front: 'What does the video say Kimchi does NOT sell?', back: 'A course or a product.', category: 'Online Myth', timestamp: 24 },
-      { id: 'fc-6', front: 'How did Kimchi first hear about meme-coin trading?', back: 'Through Fortnite acquaintances who were making money and posting about it on Twitter.', category: 'Origins', timestamp: 120 },
-      { id: 'fc-7', front: 'What separates a meme coin from traditional stocks or companies?', back: 'It is created without a company, product, or staff behind it and can be put on the market within minutes.', category: 'Mechanics', timestamp: 82 },
-      { id: 'fc-8', front: 'What milestone did Kimchi reportedly reach in Fall?', back: 'Averaging at least six figures a month.', category: 'Timeline', timestamp: 220 },
-      { id: 'fc-9', front: 'When did Kimchi reportedly record his first million-dollar month?', back: 'In December.', category: 'Timeline', timestamp: 220 },
-      { id: 'fc-10', front: 'How much did the separate pre-launch wallet clear after buying $1M before a coin went public?', back: 'More than $100 million.', category: 'Market Structure', timestamp: 426 },
-      { id: 'fc-11', front: 'Why do third-party commentators frequently post videos and threads about Kimchi?', back: 'Because they benefit commercially from the views and attention around his story.', category: 'Online Myth', timestamp: 24 },
-      { id: 'fc-12', front: 'Did Kimchi ever personally claim the viral $40 million net-worth figure?', back: 'No, the $40 million rumor spread online without Kimchi ever claiming that figure himself.', category: 'Online Myth', timestamp: 0 },
-      { id: 'fc-13', front: 'What happened in Kimchi’s early months starting in April?', back: 'He experienced steep drawdowns and losses before refining his risk and volume-tracking strategy.', category: 'Timeline', timestamp: 165 },
-      { id: 'fc-14', front: 'Instead of holding meme coins long term, what metrics did Kimchi monitor?', back: 'Social velocity, liquidity pools, and early holder concentration.', category: 'Strategy', timestamp: 165 },
-      { id: 'fc-15', front: 'How quickly can a creator name, add an image to, and launch a meme coin?', back: 'Within minutes.', category: 'Mechanics', timestamp: 82 },
-      { id: 'fc-16', front: 'Why is a speculative market peak difficult to time in real time?', back: 'Because a market peak is only recognizable as a peak after prices reverse and liquidity dries up.', category: 'Risk', timestamp: 365 },
-      { id: 'fc-17', front: 'Which blockchain ecosystem experienced surging retail meme-coin volume during December?', back: 'Solana.', category: 'Market Structure', timestamp: 220 },
-      { id: 'fc-18', front: 'What did the $100M+ insider wallet do right before a major coin went public?', back: 'It bought more than $1 million worth of tokens pre-launch and sold into launch liquidity.', category: 'Market Structure', timestamp: 426 },
-      { id: 'fc-19', front: 'What did Kimchi do immediately after viral headlines broke about his purported $40M fortune?', back: 'He vanished into radio silence, leaving behind only a few cryptic social posts.', category: 'Timeline', timestamp: 458 },
-      { id: 'fc-20', front: 'What is the structural hazard at the center of speculative meme-coin markets?', back: 'Rapid gains and huge paper valuations are frequently followed by steep reversals when liquidity dries up.', category: 'Risk', timestamp: 365 },
-      ...kimchiExtraDoc.flashcards.map((f, idx) => ({
-        id: `fc-extra-${idx + 21}`,
-        front: f.front,
-        back: f.back,
-        category: f.category || 'Core Analysis',
-        timestamp: (idx % 10) * 45,
-      })),
-    ].slice(0, 28);
-
-    const baseQuiz = [
-      {
-        id: 'q-1',
-        question: 'What does the video say Kimchi does not sell?',
-        options: [
-          'A service or a subscription.',
-          'A course or a product.',
-          'A brand or a business.',
-          'A book or a podcast.',
-        ],
-        correctIndex: 1,
-        explanation: 'The video highlights that Kimchi does not sell a course or a product, unlike commentators who monetize attention around him.',
-        timestamp: 24,
-      },
-      {
-        id: 'q-2',
-        question: 'What does a meme coin’s price primarily reflect according to the video?',
-        options: [
-          'Quarterly corporate revenue and cash flow.',
-          'What people are currently paying attention to.',
-          'Central bank foreign exchange reserves.',
-          'Hardware mining difficulty.',
-        ],
-        correctIndex: 1,
-        explanation: 'Because a meme coin has no company, product, or staff behind it, its value depends largely on what people are paying attention to.',
-        timestamp: 82,
-      },
-      {
-        id: 'q-3',
-        question: 'How is Kimchi’s daily routine and living situation described?',
-        options: [
-          'USC business student paying ~$4,000/month rent and trading ~15 hours a day.',
-          'Wall Street hedge fund analyst working 8 hours a day in New York.',
-          'Full-time YouTuber vlogging from Dubai.',
-          'Software engineer building decentralized exchanges in San Francisco.',
-        ],
-        correctIndex: 0,
-        explanation: 'The source describes him as a USC business student in a $4,000/month Los Angeles apartment who spends roughly 15 hours a day at his desk trading meme coins.',
-        timestamp: 49,
-      },
-      {
-        id: 'q-4',
-        question: 'How did Kimchi initially discover meme-coin trading?',
-        options: [
-          'Through a university finance professor.',
-          'Through Fortnite acquaintances posting about their gains on Twitter.',
-          'From a television commercial.',
-          'While interning at a traditional forex brokerage.',
-        ],
-        correctIndex: 1,
-        explanation: 'He first heard about meme-coin trading through Fortnite acquaintances who were making money and posting about it on Twitter.',
-        timestamp: 120,
-      },
-      {
-        id: 'q-5',
-        question: 'Why does the video mention a separate wallet that bought over $1M before a coin went public?',
-        options: [
-          'To prove that Kimchi owned that wallet.',
-          'To show that the wallet cleared over $100M and Kimchi was not necessarily the biggest winner.',
-          'To explain how traditional stock IPOs work.',
-          'To demonstrate that no one makes money in crypto.',
-        ],
-        correctIndex: 1,
-        explanation: 'The video uses the $100M+ wallet example to show that Kimchi was not necessarily the biggest winner in those launches.',
-        timestamp: 426,
-      },
-      ...kimchiExtraDoc.quiz.map((q, idx) => ({
-        id: `q-extra-${idx + 6}`,
-        question: q.question,
-        options: q.options,
-        correctIndex: q.correctIndex,
-        explanation: q.explanation,
-        timestamp: (idx % 10) * 45,
-      })),
-    ].slice(0, 26);
-
-    const bundle: YouTubeStudyBundle = {
-      videoId,
-      title: rawTitle || 'Who Is Kimchi',
-      summary: {
-        overview:
-          'This study guide examines the rise, trading methodology, and online story surrounding "Kimchi," a University of Southern California (USC) business student who trades meme coins roughly 15 hours a day from a $4,000-per-month Los Angeles apartment. It separates the viral $40 million rumor—which spread online without Kimchi ever claiming that figure himself—from his actual documented statements, explains how attention-driven meme coin markets work, and contrasts retail trading with insider wallets that cleared over $100 million on pre-launch allocations.',
-        keyPoints: baseKeyPoints,
-        chapters: [
-          {
-            timestamp: 0,
-            title: 'The Viral Myth vs. Verifiable Reality',
-            summary:
-              'Separating Kimchi’s actual recorded statements from the viral $40 million online rumor and examining how third-party commentators monetize the attention while Kimchi sells no course or product.',
-          },
-          {
-            timestamp: 49,
-            title: 'USC Student Routine & Meme Coin Mechanics',
-            summary:
-              'Inside Kimchi’s 15-hour daily trading routine in his $4,000/month Los Angeles apartment, alongside an explanation of how meme coins launch in minutes with no company, product, or staff.',
-          },
-          {
-            timestamp: 120,
-            title: 'From Fortnite Networks to Strategy Pivot',
-            summary:
-              'How Fortnite acquaintances on Twitter introduced him to crypto trading in early April, the steep initial losses he faced, and his shift toward tracking real-time social attention.',
-          },
-          {
-            timestamp: 220,
-            title: 'Fall Consistency & December Million-Dollar Month',
-            summary:
-              'Scaling execution through Fall to average six figures monthly before reaching his first reported million-dollar month in December.',
-          },
-          {
-            timestamp: 365,
-            title: 'Market Reversals & The $100M Pre-Launch Wallet',
-            summary:
-              'Why speculative peaks are only recognizable after prices reverse, contrasted with an on-chain wallet that invested $1M pre-launch and cleared over $100M.',
-          },
-          {
-            timestamp: 458,
-            title: 'Radio Silence & Internet Folklore',
-            summary:
-              'How Kimchi vanished from public view immediately after mainstream crypto headlines broke, cementing his status as internet trading folklore.',
-          },
-          ...kimchiExtraDoc.summary.sections.map((s, idx) => ({
-            timestamp: (idx + 6) * 40,
-            title: s.title,
-            summary: s.summary,
-          })),
-        ].slice(0, 22),
-      },
-      explanation: {
-        coreThesis:
-          'Meme coin markets function as real-time attention auctions rather than traditional cash-flow equities. Because tokens can be minted in minutes with zero fundamental backing, price action is governed by social attention, liquidity depth, and holder concentration.',
-        concepts: [
-          {
-            term: 'Attention-Driven Valuation',
-            definition:
-              'A pricing regime where an asset’s market value is determined by real-time social attention and buyer inflows rather than revenue or utility.',
-            mechanism:
-              'Surges in social mentions trigger buying pressure; once attention slows down, liquidity dries up and prices reverse sharply.',
-            timestamp: 82,
-          },
-          {
-            term: 'Commercialized Lore vs. Principal Trading',
-            definition:
-              'The distinction between traders who profit from market execution versus content creators who monetize stories about traders.',
-            mechanism:
-              'Third-party accounts amplify exaggerated net-worth claims ($40M+) to capture views and sell products, even when the trader sells nothing.',
-            timestamp: 24,
-          },
-          {
-            term: 'Pre-Launch Liquidity Asymmetry',
-            definition:
-              'Advantage held by early or insider wallets that accumulate large positions prior to public listing.',
-            mechanism:
-              'Buying $1M+ before public launch allows large wallets to sell into retail buy volume and clear $100M+ on launch.',
-            timestamp: 426,
-          },
-          ...kimchiExtraDoc.explanation.concepts.map((c, idx) => ({
-            term: c.term,
-            definition: c.definition,
-            mechanism: c.mechanism,
-            timestamp: (idx + 3) * 35,
-          })),
-        ].slice(0, 22),
-      },
-      flashcards: baseFlashcards,
-      quiz: baseQuiz,
-    };
-
-    const statements = buildDetailedStatementBreakdown(segments, rawTitle || 'Who Is Kimchi');
-    return { segments, bundle, statements };
-  }
-
   let consolidatedSegments: YouTubeTranscriptSegment[] = [];
   if (rawSegmentsInput && rawSegmentsInput.length > 0) {
     consolidatedSegments = consolidateTranscriptSegments(rawSegmentsInput);
@@ -741,6 +468,14 @@ export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
   const [aiExhaustiveSummary, setAiExhaustiveSummary] = useState<string>('');
   const [synthesizingDeepSummary, setSynthesizingDeepSummary] = useState<boolean>(false);
   const [loadingContent, setLoadingContent] = useState<boolean>(false);
+  const [transcriptState, setTranscriptState] = useState<'idle' | 'loading' | 'ready' | 'error'>(
+    initialVideo?.transcript && initialVideo.transcript.length > 0 ? 'ready' : 'idle'
+  );
+  const [transcriptError, setTranscriptError] = useState<string>('');
+  const [transcriptProvider, setTranscriptProvider] = useState<string>(
+    initialVideo?.transcript && initialVideo.transcript.length > 0 ? 'provided' : ''
+  );
+  const [pasteTranscriptVal, setPasteTranscriptVal] = useState<string>('');
 
   // My Sets Filter & Menu
   const [mySetsFilter, setMySetsFilter] = useState<'all' | 'summary' | 'flashcards' | 'quiz' | 'podcast'>('all');
@@ -1208,14 +943,13 @@ ${fullTranscriptText}`;
     setSelectedQuizOption(null);
     setCheckedQuizMap({});
     setRevealedDontKnowMap({});
+    setTranscriptState('loading');
+    setTranscriptError('');
+    setTranscriptProvider(cachedTranscript && cachedTranscript.length > 0 ? 'provided' : '');
 
     let title =
-      cleanHint && cleanHint !== targetVidId
-        ? cleanHint
-        : targetVidId === 'Y9by14g7Cbs'
-        ? 'Who Is Kimchi'
-        : 'YouTube Video';
-    let author = hintAuthor || (targetVidId === 'Y9by14g7Cbs' ? 'Rube' : 'YouTube');
+      cleanHint && cleanHint !== targetVidId ? cleanHint : 'YouTube Video';
+    let author = hintAuthor || 'YouTube';
 
     try {
       const oembedRes = await fetch(
@@ -1248,7 +982,8 @@ ${fullTranscriptText}`;
       let rawLoadedSegments: YouTubeTranscriptSegment[] =
         cachedTranscript && cachedTranscript.length > 0 ? cachedTranscript : [];
 
-      if (rawLoadedSegments.length === 0 && targetVidId !== 'Y9by14g7Cbs') {
+      let transcriptFetchError = '';
+      if (rawLoadedSegments.length === 0) {
         try {
           const res = await fetch('/api/youtube/transcript', {
             method: 'POST',
@@ -1256,109 +991,52 @@ ${fullTranscriptText}`;
             body: JSON.stringify({ videoId: targetVidId }),
             signal: AbortSignal.timeout(20000),
           });
-          if (res.ok) {
-            const data = await res.json();
-            if (data.title && (title === 'YouTube Video' || !cleanHint || cleanHint === targetVidId)) {
-              title = data.title;
-              setResolvedTitle(title);
-            }
-            if (data.author && (author === 'YouTube' || !hintAuthor)) {
-              author = data.author;
-              setResolvedAuthor(author);
-            }
-            if (data.success && Array.isArray(data.segments) && data.segments.length > 0) {
-              rawLoadedSegments = data.segments;
-            }
-          }
-        } catch {}
-      }
-
-      // If this video has no extractable captions, generate real study notes, flashcards & quiz from the video's title via /api/study/topic!
-      if (rawLoadedSegments.length === 0 && targetVidId !== 'Y9by14g7Cbs') {
-        try {
-          const studyQuery = title && title !== 'YouTube Video' ? title : `YouTube Video ${targetVidId}`;
-          const authHeaders = await getAuthHeaders();
-          const topicRes = await fetch('/api/study/topic', {
-            method: 'POST',
-            headers: authHeaders,
-            body: JSON.stringify({ query: studyQuery }),
-            signal: AbortSignal.timeout(15000),
-          });
-          if (topicRes.ok) {
-            const data = await topicRes.json();
-            // Strictly enforce no extra related videos for direct video links
-            setTopicVideos([]);
-            const sections: DetailedStatementItem[] = Array.isArray(data.sections)
-              ? data.sections.map((s: any, idx: number) => ({
-                  index: idx + 1,
-                  heading: String(s.heading || s.title || `${title} — Part ${idx + 1}`),
-                  claim: String(s.claim || ''),
-                  elaboration: String(s.elaboration || s.claim || ''),
-                }))
-              : [];
-
-            const synthSegments: YouTubeTranscriptSegment[] = sections.map((s, idx) => ({
-              start_s: idx * 30,
-              duration_s: 30,
-              text: `${s.heading}: ${s.elaboration}`,
-            }));
-
-            const bundle: YouTubeStudyBundle = {
-              videoId: targetVidId,
-              title,
-              summary: {
-                overview: String(data.overview || ''),
-                keyPoints: sections.map((s) => `${s.heading}: ${s.elaboration}`),
-                chapters: sections.map((s, idx) => ({
-                  timestamp: idx * 45,
-                  title: s.heading,
-                  summary: s.elaboration,
-                })),
-              },
-              explanation: {
-                coreThesis: String(data.overview || ''),
-                concepts: Array.isArray(data.concepts)
-                  ? data.concepts.map((c: any, idx: number) => ({
-                      term: String(c.term || `Concept ${idx + 1}`),
-                      definition: String(c.definition || ''),
-                      mechanism: String(c.mechanism || ''),
-                      timestamp: idx * 45,
-                    }))
-                  : [],
-              },
-              flashcards: Array.isArray(data.flashcards)
-                ? data.flashcards.map((f: any, idx: number) => ({
-                    id: f.id || `fc-${idx + 1}`,
-                    front: String(f.front || ''),
-                    back: String(f.back || ''),
-                    category: String(f.category || title.slice(0, 20)),
-                    timestamp: idx * 30,
-                  }))
-                : [],
-              quiz: Array.isArray(data.quiz)
-                ? data.quiz.map((q: any, idx: number) => ({
-                    id: q.id || `q-${idx + 1}`,
-                    question: String(q.question || ''),
-                    options: Array.isArray(q.options) ? q.options.map(String) : [],
-                    correctIndex: typeof q.correctIndex === 'number' ? q.correctIndex : 0,
-                    explanation: String(q.explanation || ''),
-                    timestamp: idx * 30,
-                  }))
-                : [],
-            };
-
-            setSegments(synthSegments);
-            setStatementBreakdown(sections);
-            setStudyBundle(bundle);
+          let data: any = null;
+          try {
+            data = await res.json();
+          } catch {}
+          if (data?.title && (title === 'YouTube Video' || !cleanHint || cleanHint === targetVidId)) {
+            title = data.title;
             setResolvedTitle(title);
-            setResolvedAuthor(author);
-            setLoadingContent(false);
-            setShowSourceViewer(true);
-            setAutoPlayVideo(true);
-            return;
           }
-        } catch {}
+          if (data?.author && (author === 'YouTube' || !hintAuthor)) {
+            author = data.author;
+            setResolvedAuthor(author);
+          }
+          if (res.ok && data?.success && Array.isArray(data.segments) && data.segments.length > 0) {
+            rawLoadedSegments = data.segments;
+            setTranscriptProvider(String(data.provider || 'youtube'));
+          } else {
+            transcriptFetchError =
+              String(data?.error || '').trim() || `Transcript request failed (HTTP ${res.status}).`;
+          }
+        } catch (e: any) {
+          transcriptFetchError =
+            e?.name === 'TimeoutError' || e?.name === 'AbortError'
+              ? 'Transcript request timed out.'
+              : `Transcript request failed: ${String(e?.message || e)}`;
+        }
       }
+
+      if (rawLoadedSegments.length === 0) {
+        setSegments([]);
+        setStudyBundle(null);
+        setStatementBreakdown([]);
+        setAiExhaustiveSummary('');
+        setTranscriptState('error');
+        setTranscriptError(
+          transcriptFetchError || "Couldn't fetch captions right now (transcript server offline)."
+        );
+        setResolvedTitle(title);
+        setResolvedAuthor(author);
+        setLoadingContent(false);
+        setShowSourceViewer(true);
+        setAutoPlayVideo(false);
+        return;
+      }
+
+      setTranscriptState('ready');
+      setTranscriptError('');
 
       const synthesized = buildFallbackStudyData(
         targetVidId,
@@ -1378,7 +1056,7 @@ ${fullTranscriptText}`;
       setAutoPlayVideo(true);
 
       // Upgrade flashcards, quiz, and concepts via AI /api/youtube/study when real segments are present
-      if (rawLoadedSegments.length > 0 && targetVidId !== 'Y9by14g7Cbs') {
+      if (rawLoadedSegments.length > 0) {
         try {
           const authHeaders = await getAuthHeaders();
           const aiRes = await fetch('/api/youtube/study', {
@@ -1421,6 +1099,41 @@ ${fullTranscriptText}`;
         ];
       });
     }
+  };
+
+  const applyPastedTranscript = () => {
+    const text = pasteTranscriptVal.trim();
+    if (!text || !activeVideoId) return;
+    const data = buildFallbackStudyData(activeVideoId, resolvedTitle, resolvedAuthor, text);
+    setSegments(data.segments);
+    setStudyBundle(data.bundle);
+    setStatementBreakdown(data.statements);
+    setTranscriptState('ready');
+    setTranscriptError('');
+    setTranscriptProvider('pasted');
+    setPasteTranscriptVal('');
+    setLoadingContent(false);
+    synthesizeDeepStatementSummary(resolvedTitle, data.segments);
+    void (async () => {
+      try {
+        const authHeaders = await getAuthHeaders();
+        const aiRes = await fetch('/api/youtube/study', {
+          method: 'POST',
+          headers: authHeaders,
+          body: JSON.stringify({
+            videoId: activeVideoId,
+            videoTitle: resolvedTitle,
+            videoAuthor: resolvedAuthor,
+            segments: data.segments,
+          }),
+          signal: AbortSignal.timeout(14000),
+        });
+        if (aiRes.ok) {
+          const aiData = await aiRes.json();
+          if (aiData?.study?.summary?.overview) setStudyBundle(aiData.study);
+        }
+      } catch {}
+    })();
   };
 
   // Load PDF or Pasted Notes (or route short topic queries to loadTopicStudySpace)
@@ -1867,6 +1580,8 @@ ${fullTranscriptText}`;
     selectedLang.code !== 'en' && translatedSegments[selectedLang.code]
       ? translatedSegments[selectedLang.code]
       : segments;
+
+  const transcriptRequiredTabs = ['summary', 'quiz', 'flashcards', 'lesson_plan', 'transcripts', 'podcast'];
 
   const filteredLanguages = LANGUAGES.filter((l) =>
     l.label.toLowerCase().includes(langSearch.trim().toLowerCase())
@@ -2622,6 +2337,70 @@ ${fullTranscriptText}`;
                   Preparing study notes, YouTube videos, flashcards, and quiz...
                 </p>
               </div>
+            ) : transcriptState === 'error' &&
+              activeVideoId &&
+              transcriptRequiredTabs.includes(activeTabObj?.type || '') ? (
+              <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
+                <div className={`p-5 rounded-2xl border space-y-4 ${bgCard}`}>
+                  <div className="flex items-start gap-3">
+                    <div
+                      className={`size-9 rounded-xl flex items-center justify-center shrink-0 ${iconBoxClass}`}
+                    >
+                      <AlertTriangle className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0 space-y-1">
+                      <h2 className="text-sm sm:text-base font-semibold">
+                        Couldn't fetch captions right now (transcript server offline).
+                      </h2>
+                      <p className={`text-xs sm:text-sm leading-relaxed ${textMuted}`}>
+                        Study tools only use real captions — nothing here was generated. Retry, or
+                        paste a transcript below.
+                      </p>
+                      {transcriptError && (
+                        <p className={`text-[11px] font-mono break-words ${textMuted}`}>
+                          {transcriptError}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => loadYouTubeSource(activeVideoId, resolvedTitle, resolvedAuthor)}
+                      className={`px-3.5 py-2 rounded-xl border text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer ${borderSubtle}`}
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>Retry</span>
+                    </button>
+                  </div>
+
+                  <div className={`pt-4 border-t space-y-2 ${borderSubtle}`}>
+                    <label className="text-xs font-medium">Or paste the video transcript</label>
+                    <textarea
+                      rows={6}
+                      value={pasteTranscriptVal}
+                      onChange={(e) => setPasteTranscriptVal(e.target.value)}
+                      placeholder="Paste the transcript here (timestamps optional)..."
+                      className={`w-full p-3.5 rounded-xl border text-xs outline-none resize-y ${
+                        isDark
+                          ? 'bg-[#09090b] border-white/[0.12] text-white'
+                          : 'bg-[#f8f8f9] border-black/[0.12] text-black'
+                      }`}
+                    />
+                    <button
+                      type="button"
+                      onClick={applyPastedTranscript}
+                      disabled={!pasteTranscriptVal.trim()}
+                      className={`px-4 py-2 rounded-xl text-xs font-semibold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                        isDark ? 'bg-white text-black' : 'bg-black text-white'
+                      }`}
+                    >
+                      Use pasted transcript
+                    </button>
+                  </div>
+                </div>
+              </div>
             ) : focusedModuleView ? (
               <div className="max-w-3xl mx-auto px-4 sm:px-6 py-5 space-y-5">
                 <div
@@ -2757,13 +2536,17 @@ ${fullTranscriptText}`;
                             icon: GitBranch,
                             onClick: () => openOrFocusTab('lesson_plan', 'Lesson Plan'),
                           },
-                          {
-                            id: 'transcripts',
-                            label: 'Transcript',
-                            sub: `${segments.length} paragraphs`,
-                            icon: ListTree,
-                            onClick: () => openOrFocusTab('transcripts', 'Transcript'),
-                          },
+                          ...(sourceType !== 'topic'
+                            ? [
+                                {
+                                  id: 'transcripts',
+                                  label: 'Transcript',
+                                  sub: `${segments.length} paragraphs`,
+                                  icon: ListTree,
+                                  onClick: () => openOrFocusTab('transcripts', 'Transcript'),
+                                },
+                              ]
+                            : []),
                           {
                             id: 'podcast',
                             label: 'Audio Summary',
@@ -4161,7 +3944,17 @@ ${fullTranscriptText}`;
                 {activeTabObj?.type === 'transcripts' && (
                   <div className="max-w-3xl mx-auto px-4 sm:px-6 py-5 space-y-5 pb-20">
                     <div className="flex items-center justify-between gap-2">
-                      <h2 className="text-base sm:text-lg font-semibold">Transcript</h2>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <h2 className="text-base sm:text-lg font-semibold">Transcript</h2>
+                        {import.meta.env.DEV && transcriptProvider && (
+                          <span
+                            className={`px-2 py-0.5 rounded-lg text-[10px] font-mono ${bgSubtle}`}
+                            title="Transcript provider"
+                          >
+                            {transcriptProvider}
+                          </span>
+                        )}
+                      </div>
 
                       <div className="flex items-center gap-2">
                         <div className="relative">
@@ -4238,7 +4031,12 @@ ${fullTranscriptText}`;
                       </div>
                     </div>
 
-                    {translatingLang ? (
+                    {activeTranscriptList.length === 0 && !translatingLang ? (
+                      <div className={`p-5 rounded-2xl border text-xs sm:text-sm ${bgCard} ${textMuted}`}>
+                        No transcript is attached to this source. Transcripts are only shown when they
+                        come from the video's real captions, a pasted transcript, or uploaded text.
+                      </div>
+                    ) : translatingLang ? (
                       <div className="space-y-3">
                         {[1, 2, 3].map((n) => (
                           <div

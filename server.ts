@@ -8772,6 +8772,42 @@ Requirements:
       } catch {}
     }
 
+    // Compact AI summary fallback when no Gemini key is configured or the big bundle failed.
+    if (!parsedBundle?.summary?.overview) {
+      try {
+        const compactPrompt = `You are an elite technical educator. Analyze this timestamped YouTube transcript and return ONLY valid JSON (no markdown fences) matching:
+{"summary":{"overview":"2-3 crisp sentences stating the core thesis, problem and conclusion","keyPoints":["8 concrete takeaways grounded in the transcript"]},"explanation":{"coreThesis":"first-principles explanation","concepts":[{"term":"concept","definition":"definition","mechanism":"how it works","timestamp":0}]}}
+Name the concrete objects, quantities and mechanisms the video actually discusses. Transcript:
+${timedTranscriptText}`;
+        const metrics: any = await Promise.race([
+          generateChatCompletion(
+            [{ role: 'user', content: compactPrompt }],
+            'zro/deepseek-v4.1-flash'
+          ),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('Study summary timeout')), 20000)
+          ),
+        ]);
+        const compactText = String(metrics?.text || '').trim();
+        const cleaned = compactText
+          .replace(/^```(?:json)?\s*/i, '')
+          .replace(/```\s*$/i, '')
+          .trim();
+        const firstBrace = cleaned.indexOf('{');
+        const lastBrace = cleaned.lastIndexOf('}');
+        if (firstBrace !== -1 && lastBrace > firstBrace) {
+          const compact = JSON.parse(cleaned.slice(firstBrace, lastBrace + 1));
+          if (compact?.summary?.overview) {
+            parsedBundle = {
+              ...(parsedBundle || {}),
+              summary: { ...(parsedBundle?.summary || {}), ...compact.summary },
+              explanation: { ...(parsedBundle?.explanation || {}), ...compact.explanation },
+            };
+          }
+        }
+      } catch {}
+    }
+
     const aiFlashcards = Array.isArray(parsedBundle?.flashcards)
       ? parsedBundle.flashcards.map((fc: any, idx: number) => ({
           id: fc.id || `fc-${idx + 1}`,
