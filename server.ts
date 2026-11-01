@@ -8812,7 +8812,23 @@ ${compactTranscriptText}`;
         const firstBrace = cleaned.indexOf('{');
         const lastBrace = cleaned.lastIndexOf('}');
         if (firstBrace !== -1 && lastBrace > firstBrace) {
-          const compact = JSON.parse(cleaned.slice(firstBrace, lastBrace + 1));
+          const rawJson = cleaned.slice(firstBrace, lastBrace + 1);
+          let compact: any = null;
+          try {
+            compact = JSON.parse(rawJson);
+          } catch {
+            // Repair common model JSON defects: stray escapes, trailing commas, control chars.
+            const repaired = rawJson
+              .replace(/\\(?!["\\/bfnrtu])/g, '\\\\')
+              .replace(/,\s*([}\]])/g, '$1')
+              .replace(/[\x00-\x1f]/g, (ch) => {
+                if (ch === '\n') return '\\n';
+                if (ch === '\r') return '\\r';
+                if (ch === '\t') return '\\t';
+                return '';
+              });
+            compact = JSON.parse(repaired);
+          }
           if (compact?.summary?.overview) {
             parsedBundle = {
               ...(parsedBundle || {}),
