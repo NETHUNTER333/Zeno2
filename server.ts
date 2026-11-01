@@ -8775,10 +8775,25 @@ Requirements:
     // Compact AI summary fallback when no Gemini key is configured or the big bundle failed.
     if (!parsedBundle?.summary?.overview) {
       try {
+        const compactTranscriptText = (() => {
+          const segs = activeSegments;
+          if (segs.length <= 40) {
+            return segs
+              .map((sg) => `[${Math.floor(sg.start_s)}s] ${sg.text}`)
+              .join('\n')
+              .slice(0, 6000);
+          }
+          const picks: string[] = [];
+          const step = Math.max(1, Math.floor(segs.length / 36));
+          for (let i = 0; i < segs.length && picks.length < 36; i += step) {
+            picks.push(`[${Math.floor(segs[i].start_s)}s] ${segs[i].text}`);
+          }
+          return picks.join('\n').slice(0, 6000);
+        })();
         const compactPrompt = `You are an elite technical educator. Analyze this timestamped YouTube transcript and return ONLY valid JSON (no markdown fences) matching:
-{"summary":{"overview":"2-3 crisp sentences stating the core thesis, problem and conclusion","keyPoints":["8 concrete takeaways grounded in the transcript"]},"explanation":{"coreThesis":"first-principles explanation","concepts":[{"term":"concept","definition":"definition","mechanism":"how it works","timestamp":0}]}}
+{"summary":{"overview":"2-3 crisp sentences stating the core thesis, problem and conclusion","keyPoints":["6 concrete takeaways grounded in the transcript"]},"explanation":{"coreThesis":"first-principles explanation","concepts":[{"term":"concept","definition":"definition","mechanism":"how it works","timestamp":0}]}}
 Name the concrete objects, quantities and mechanisms the video actually discusses. Transcript:
-${timedTranscriptText}`;
+${compactTranscriptText}`;
         const metrics: any = await Promise.race([
           generateChatCompletion(
             [{ role: 'user', content: compactPrompt }],
