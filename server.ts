@@ -8820,7 +8820,7 @@ ${compactTranscriptText}`;
           } catch {
             // Repair common model JSON defects: stray escapes, trailing commas, control chars.
             const repaired = rawJson
-              .replace(/\\(?!["\\/bfnrtu])/g, '\\\\')
+              .replace(/\\(?!["\\/bfnrtu])/g, () => '\\\\')
               .replace(/,\s*([}\]])/g, '$1')
               .replace(/[\x00-\x1f]/g, (ch) => {
                 if (ch === '\n') return '\\n';
