@@ -8811,24 +8811,41 @@ ${compactTranscriptText}`;
           .replace(/```\s*$/i, '')
           .trim();
         const firstBrace = cleaned.indexOf('{');
-        const lastBrace = cleaned.lastIndexOf('}');
-        if (firstBrace !== -1 && lastBrace > firstBrace) {
-          const rawJson = cleaned.slice(firstBrace, lastBrace + 1);
+        if (firstBrace !== -1) {
+          // Find the largest prefix ending in '}' that parses as complete JSON.
           let compact: any = null;
-          try {
-            compact = JSON.parse(rawJson);
-          } catch {
-            // Repair common model JSON defects: stray escapes, trailing commas, control chars.
-            const repaired = rawJson
-              .replace(/\\(?!["\\/bfnrtu])/g, () => '\\\\')
-              .replace(/,\s*([}\]])/g, '$1')
-              .replace(/[\x00-\x1f]/g, (ch) => {
-                if (ch === '\n') return '\\n';
-                if (ch === '\r') return '\\r';
-                if (ch === '\t') return '\\t';
-                return '';
-              });
-            compact = JSON.parse(repaired);
+          const bracePositions: number[] = [];
+          for (let i = firstBrace; i < cleaned.length; i++) {
+            if (cleaned[i] === '}') bracePositions.push(i);
+          }
+          for (let j = bracePositions.length - 1; j >= 0; j--) {
+            const candidate = cleaned.slice(firstBrace, bracePositions[j] + 1);
+            try {
+              compact = JSON.parse(candidate);
+              break;
+            } catch {
+              try {
+                const repaired = candidate
+                  .replace(/\\(?!["\\/bfnrtu])/g, () => '\\\\')
+                  .replace(/,\s*([}\]])/g, '$1');
+                compact = JSON.parse(repaired);
+                break;
+              } catch {}
+            }
+          }
+          if (!compact) {
+            // Last resort: try the full slice with repair.
+            const lastBrace = cleaned.lastIndexOf('}');
+            if (lastBrace > firstBrace) {
+              const candidate = cleaned.slice(firstBrace, lastBrace + 1);
+              try {
+                const repaired = candidate
+                  .replace(/\\(?!["\\/bfnrtu])/g, () => '\\\\')
+                  .replace(/,\s*([}\]])/g, '$1');
+                compact = JSON.parse(repaired);
+                rawJson = candidate;
+              } catch {}
+            }
           }
           if (compact?.summary?.overview) {
             parsedBundle = {
