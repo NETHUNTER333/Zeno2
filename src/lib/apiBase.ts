@@ -43,3 +43,31 @@ export async function apiFetch(path: string, init?: RequestInit): Promise<Respon
   };
   return fetch(url, options);
 }
+
+
+// Monkey-patch window.fetch to route /api/* calls through the backend origin.
+// This is a belt-and-suspenders backup for the Vercel rewrite rule.
+if (typeof window !== 'undefined' && typeof window.fetch === 'function') {
+  const originalFetch = window.fetch.bind(window);
+  window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+    let url = '';
+    if (typeof input === 'string') url = input;
+    else if (input instanceof URL) url = input.toString();
+    else if (input instanceof Request) url = input.url;
+
+    if (url.startsWith('/api/') || url.startsWith('/api?')) {
+      const base = getBackendBaseUrl();
+      if (base) {
+        const newUrl = `${base}${url}`;
+        if (typeof input === 'string') {
+          return originalFetch(newUrl, init);
+        } else if (input instanceof URL) {
+          return originalFetch(new URL(newUrl), init);
+        } else if (input instanceof Request) {
+          return originalFetch(new Request(newUrl, input), init);
+        }
+      }
+    }
+    return originalFetch(input, init);
+  };
+}
