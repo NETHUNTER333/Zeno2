@@ -8841,6 +8841,7 @@ ${compactTranscriptText}`;
       } catch (e: any) {
         console.warn('[study] compact summary fallback failed:', e?.message || e);
         console.warn('[study] compact raw head:', compactText.slice(0, 400));
+        console.warn('[study] compact raw around 3044:', JSON.stringify(compactText.slice(2980, 3120)));
         console.warn('[study] compact raw tail:', compactText.slice(-400));
       }
     }
