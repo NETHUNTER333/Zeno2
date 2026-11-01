@@ -255,6 +255,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
   onOpenShareStudio,
   onOpenKnowledgeVault,
   theme = 'dark',
+  nsfwMode = false,
 }) => {
   const [copied, setCopied] = useState(false);
   const [reaction, setReaction] = useState<'good' | 'bad' | null>(null);
@@ -270,6 +271,12 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
     Record<number, { videoUrl?: string; embedUrl?: string; useProxyStream?: boolean }>
   >({});
   const [activeImageIndex, setActiveImageIndex] = useState<number | null>(null);
+  const [isImageGalleryExpanded, setIsImageGalleryExpanded] = useState(true);
+  const [displayedImages, setDisplayedImages] = useState<NonNullable<ChatMessageType['images']>>(
+    () => (message.images ? message.images.slice(0, 4) : [])
+  );
+  const [isLoadingMoreImages, setIsLoadingMoreImages] = useState(false);
+  const [hasMoreImages, setHasMoreImages] = useState(true);
   const [showTtsPopup, setShowTtsPopup] = useState(false);
   const [activeStudyVideo, setActiveStudyVideo] = useState<YouTubeVideoInfo | null>(null);
   const [showActivityDetails, setShowActivityDetails] = useState(false);
@@ -292,6 +299,66 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
   const isUser = message.role === 'user';
 
   const searchQueriesKey = (message.searchQueries || []).join('|');
+
+  useEffect(() => {
+    if (message.images && message.images.length > 0) {
+      setDisplayedImages((prev) => {
+        if (prev.length === 0) return message.images!.slice(0, 4);
+        return prev;
+      });
+    }
+  }, [message.images]);
+
+  const handleLoadMoreImages = async () => {
+    if (isLoadingMoreImages) return;
+    const rawPreFetched = message.images || [];
+    if (rawPreFetched.length > displayedImages.length) {
+      const nextSlice = rawPreFetched.slice(0, displayedImages.length + 4);
+      setDisplayedImages(nextSlice);
+      return;
+    }
+
+    const queryForImages = (
+      message.searchQueries?.[0] ||
+      message.personaWiki?.name ||
+      threadTitle ||
+      ''
+    ).trim();
+    if (!queryForImages) {
+      setHasMoreImages(false);
+      return;
+    }
+
+    setIsLoadingMoreImages(true);
+    try {
+      const res = await fetch(
+        `/api/media/more-images?q=${encodeURIComponent(queryForImages)}&offset=${
+          displayedImages.length
+        }&limit=4&nsfw=${nsfwMode ? '1' : '0'}`
+      );
+      const data = await res.json();
+      if (data && Array.isArray(data.images) && data.images.length > 0) {
+        setDisplayedImages((prev) => {
+          const existingUrls = new Set(prev.map((i) => i.imageUrl));
+          const fresh = data.images.filter((i: any) => i.imageUrl && !existingUrls.has(i.imageUrl));
+          if (fresh.length === 0) {
+            setHasMoreImages(false);
+            return prev;
+          }
+          return [...prev, ...fresh.slice(0, 4)];
+        });
+        if (!data.hasMore) {
+          setHasMoreImages(false);
+        }
+      } else {
+        setHasMoreImages(false);
+      }
+    } catch {
+      setHasMoreImages(false);
+    } finally {
+      setIsLoadingMoreImages(false);
+    }
+  };
 
   // Auto-detect stock & crypto tickers ($NVDA, $AAPL, BTC, SOL, etc.) in assistant messages
   useEffect(() => {
@@ -1054,69 +1121,118 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
             />
           )}
 
-          {/* Top Interactive Web Image Gallery when images are fetched */}
-          {message.images && message.images.length > 0 && (
-            <div className={`my-3 pb-3 border-b ${isDark ? 'border-[#1f1f1f]' : 'border-[#e5e5e5]'}`}>
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2 text-xs">
-                  <span className={`font-semibold ${isDark ? 'text-white' : 'text-black'}`}>
-                    Images ({message.images.length})
-                  </span>
-                  <span aria-hidden="true" className={isDark ? 'text-[#444444]' : 'text-[#cccccc]'}>
-                    ·
+          {/* Collapsible Interactive Web Image Gallery (4 initial images + Load More) */}
+          {displayedImages.length > 0 && (
+            <div className={`my-2.5 ${isImageGalleryExpanded ? `pb-3 border-b ${isDark ? 'border-[#1f1f1f]' : 'border-[#e5e5e5]'}` : ''}`}>
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsImageGalleryExpanded((prev) => !prev)}
+                  className={`inline-flex items-center gap-2.5 px-3 py-1.5 rounded-full border text-xs transition-all cursor-pointer select-none ${
+                    isDark
+                      ? 'bg-[#111111] hover:bg-[#191919] border-[#242424] text-white'
+                      : 'bg-[#f7f7f8] hover:bg-[#efefef] border-[#e2e2e5] text-black'
+                  }`}
+                >
+                  {/* Stacked preview thumbnails */}
+                  <div className="flex items-center -space-x-1.5">
+                    {displayedImages.slice(0, 4).map((img, i) => (
+                      <img
+                        key={i}
+                        src={img.thumbnailUrl || img.imageUrl}
+                        alt=""
+                        loading="lazy"
+                        className={`w-4 h-4 rounded-full object-cover ring-1 ${
+                          isDark ? 'ring-[#111111] bg-[#222222]' : 'ring-white bg-[#e5e5e5]'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                  <span className="font-semibold">
+                    Images ({displayedImages.length})
                   </span>
                   <span className={`text-[11px] ${isDark ? 'text-[#8a8a8a]' : 'text-[#666666]'}`}>
-                    Tap to expand or download
+                    {isImageGalleryExpanded ? 'Hide' : 'Show gallery'}
                   </span>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-                {message.images.slice(0, 8).map((img, idx) => (
-                  <div
-                    key={idx}
-                    onClick={() => setActiveImageIndex(idx)}
-                    className={`group/img relative aspect-square rounded-2xl overflow-hidden border cursor-pointer transition-all ${
+                  <ChevronDown
+                    className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                      isDark ? 'text-[#8a8a8a]' : 'text-[#666666]'
+                    } ${isImageGalleryExpanded ? 'rotate-180' : ''}`}
+                  />
+                </button>
+
+                {isImageGalleryExpanded && hasMoreImages && (
+                  <button
+                    type="button"
+                    onClick={handleLoadMoreImages}
+                    disabled={isLoadingMoreImages}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-all cursor-pointer disabled:opacity-60 ${
                       isDark
-                        ? 'bg-[#0a0a0a] border-[#1f1f1f] hover:border-[#444444]'
-                        : 'bg-[#f5f5f5] border-[#e5e5e5] hover:border-[#999999]'
+                        ? 'bg-[#111111] hover:bg-[#1b1b1b] border-[#262626] text-white/90 hover:text-white'
+                        : 'bg-[#f7f7f8] hover:bg-[#ececef] border-[#e2e2e5] text-black/85 hover:text-black'
                     }`}
                   >
-                    <img
-                      src={img.imageUrl || img.thumbnailUrl}
-                      alt={img.title}
-                      loading="lazy"
-                      onError={(e) => {
-                        const target = e.currentTarget;
-                        if (img.thumbnailUrl && target.src !== img.thumbnailUrl) {
-                          target.src = img.thumbnailUrl;
-                        }
-                      }}
-                      className="w-full h-full object-cover group-hover/img:scale-105 transition-transform duration-200"
-                    />
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        triggerMediaDownload(img.imageUrl, img.thumbnailUrl, img.title, 'image');
-                      }}
-                      className="absolute top-2 right-2 p-1.5 rounded-full bg-black/75 hover:bg-black text-white border border-white/15 transition-opacity opacity-90 sm:opacity-0 sm:group-hover/img:opacity-100 cursor-pointer"
-                      title="Download image"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                    </button>
-                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent p-2 opacity-0 group-hover/img:opacity-100 transition-opacity">
-                      <div className="text-[11px] text-white font-medium truncate">
-                        {img.title}
-                      </div>
-                      {img.domain && (
-                        <div className="text-[10px] text-white/70 truncate">
-                          {img.domain}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                    {isLoadingMoreImages ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Loading...</span>
+                      </>
+                    ) : (
+                      <span>+ Load more</span>
+                    )}
+                  </button>
+                )}
               </div>
+
+              {isImageGalleryExpanded && (
+                <div className="mt-2.5 grid grid-cols-2 sm:grid-cols-4 gap-2 animate-in fade-in duration-150">
+                  {displayedImages.map((img, idx) => (
+                    <div
+                      key={idx}
+                      onClick={() => setActiveImageIndex(idx)}
+                      className={`group/img relative aspect-square rounded-2xl overflow-hidden border cursor-pointer transition-all ${
+                        isDark
+                          ? 'bg-[#0a0a0a] border-[#1f1f1f] hover:border-[#444444]'
+                          : 'bg-[#f5f5f5] border-[#e5e5e5] hover:border-[#999999]'
+                      }`}
+                    >
+                      <img
+                        src={img.imageUrl || img.thumbnailUrl}
+                        alt={img.title}
+                        loading="lazy"
+                        onError={(e) => {
+                          const target = e.currentTarget;
+                          if (img.thumbnailUrl && target.src !== img.thumbnailUrl) {
+                            target.src = img.thumbnailUrl;
+                          }
+                        }}
+                        className="w-full h-full object-cover group-hover/img:scale-105 transition-transform duration-200"
+                      />
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          triggerMediaDownload(img.imageUrl, img.thumbnailUrl, img.title, 'image');
+                        }}
+                        className="absolute top-2 right-2 p-1.5 rounded-full bg-black/75 hover:bg-black text-white border border-white/15 transition-opacity opacity-90 sm:opacity-0 sm:group-hover/img:opacity-100 cursor-pointer"
+                        title="Download image"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                      </button>
+                      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent p-2 opacity-0 group-hover/img:opacity-100 transition-opacity">
+                        <div className="text-[11px] text-white font-medium truncate">
+                          {img.title}
+                        </div>
+                        {img.domain && (
+                          <div className="text-[10px] text-white/70 truncate">
+                            {img.domain}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -1685,62 +1801,10 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
               );
             })()}
 
-        {/* Interactive Multi-Image Generative UI Gallery */}
-          {message.images && message.images.length > 0 && (
-            <div className={`mt-4 pt-3 border-t ${isDark ? 'border-[#1f1f1f]' : 'border-[#e5e5e5]'}`}>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-                {message.images.map((img, idx) => (
-                  <div
-                    key={idx}
-                    onClick={() => setActiveImageIndex(idx)}
-                    className={`group/img relative aspect-square rounded-2xl overflow-hidden border cursor-pointer transition-all ${
-                      isDark
-                        ? 'bg-[#0a0a0a] border-[#1f1f1f] hover:border-[#444444]'
-                        : 'bg-[#f5f5f5] border-[#e5e5e5] hover:border-[#999999]'
-                    }`}
-                  >
-                    <img
-                      src={img.imageUrl || img.thumbnailUrl}
-                      alt={img.title}
-                      loading="lazy"
-                      onError={(e) => {
-                        const target = e.currentTarget;
-                        if (img.thumbnailUrl && target.src !== img.thumbnailUrl) {
-                          target.src = img.thumbnailUrl;
-                        }
-                      }}
-                      className="w-full h-full object-cover group-hover/img:scale-105 transition-transform duration-200"
-                    />
-
-                    {/* Direct Image Download Button */}
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        triggerMediaDownload(img.imageUrl, img.thumbnailUrl, img.title, 'image');
-                      }}
-                      className="absolute top-2 right-2 p-1.5 rounded-full bg-black/75 hover:bg-black text-white border border-white/15 transition-opacity opacity-90 sm:opacity-0 sm:group-hover/img:opacity-100 cursor-pointer"
-                      title="Download image"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                    </button>
-
-                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent p-2 opacity-0 group-hover/img:opacity-100 transition-opacity">
-                      <div className="text-[11px] text-white font-medium truncate">
-                        {img.title}
-                      </div>
-                      {img.domain && (
-                        <div className="text-[10px] text-white/70 truncate">
-                          {img.domain}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Lightbox Modal for Active Image */}
-              {activeImageIndex !== null && message.images[activeImageIndex] && (
+        {/* Lightbox Modal for Active Image */}
+          {displayedImages.length > 0 && activeImageIndex !== null && displayedImages[activeImageIndex] && (
+            <div>
+              {activeImageIndex !== null && displayedImages[activeImageIndex] && (
                 <div
                   className="fixed inset-0 z-50 bg-black/90 flex flex-col items-center justify-center p-4"
                   onClick={() => setActiveImageIndex(null)}
@@ -1752,16 +1816,16 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                     <div className="w-full flex items-center justify-between mb-3 px-1">
                       <div className="min-w-0 pr-4">
                         <div className="text-sm font-medium text-white truncate">
-                          {message.images[activeImageIndex].title}
+                          {displayedImages[activeImageIndex].title}
                         </div>
-                        {message.images[activeImageIndex].link && (
+                        {displayedImages[activeImageIndex].link && (
                           <a
-                            href={message.images[activeImageIndex].link}
+                            href={displayedImages[activeImageIndex].link}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-xs text-[#a3a3a3] hover:text-white inline-flex items-center gap-1 hover:underline"
                           >
-                            <span>{message.images[activeImageIndex].domain || 'View source'}</span>
+                            <span>{displayedImages[activeImageIndex].domain || 'View source'}</span>
                             <ExternalLink className="w-3 h-3" />
                           </a>
                         )}
@@ -1771,9 +1835,9 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                           type="button"
                           onClick={() =>
                             triggerMediaDownload(
-                              message.images![activeImageIndex].imageUrl,
-                              message.images![activeImageIndex].thumbnailUrl,
-                              message.images![activeImageIndex].title,
+                              displayedImages[activeImageIndex].imageUrl,
+                              displayedImages[activeImageIndex].thumbnailUrl,
+                              displayedImages[activeImageIndex].title,
                               'image'
                             )
                           }
@@ -1795,11 +1859,11 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                     </div>
 
                     <div className="relative w-full flex items-center justify-center">
-                      {message.images.length > 1 && (
+                      {displayedImages.length > 1 && (
                         <button
                           onClick={() =>
                             setActiveImageIndex(
-                              (activeImageIndex - 1 + message.images!.length) % message.images!.length
+                              (activeImageIndex - 1 + displayedImages.length) % displayedImages.length
                             )
                           }
                           className="absolute left-2 z-10 p-2 rounded-full bg-black/70 hover:bg-black text-white border border-white/15 cursor-pointer"
@@ -1811,13 +1875,13 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
 
                       <img
                         src={
-                          message.images[activeImageIndex].imageUrl ||
-                          message.images[activeImageIndex].thumbnailUrl
+                          displayedImages[activeImageIndex].imageUrl ||
+                          displayedImages[activeImageIndex].thumbnailUrl
                         }
-                        alt={message.images[activeImageIndex].title}
+                        alt={displayedImages[activeImageIndex].title}
                         onError={(e) => {
                           const target = e.currentTarget;
-                          const fallback = message.images![activeImageIndex].thumbnailUrl;
+                          const fallback = displayedImages[activeImageIndex].thumbnailUrl;
                           if (fallback && target.src !== fallback) {
                             target.src = fallback;
                           }
@@ -1825,10 +1889,10 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                         className="max-h-[75vh] max-w-full rounded-2xl object-contain border border-white/10"
                       />
 
-                      {message.images.length > 1 && (
+                      {displayedImages.length > 1 && (
                         <button
                           onClick={() =>
-                            setActiveImageIndex((activeImageIndex + 1) % message.images!.length)
+                            setActiveImageIndex((activeImageIndex + 1) % displayedImages.length)
                           }
                           className="absolute right-2 z-10 p-2 rounded-full bg-black/70 hover:bg-black text-white border border-white/15 cursor-pointer"
                           title="Next image"

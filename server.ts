@@ -2121,9 +2121,10 @@ async function resolveVideoFromWebpage(url: string, timeoutMs = 3500): Promise<{
 }
 
 // Search images via Treg, TinyFish, DuckDuckGo Live Image Search (i.js), Wikipedia PageImages, and Wikimedia Commons
-async function searchImagesViaTreg(query: string, nsfwMode = false) {
+async function searchImagesViaTreg(query: string, nsfwMode = false, maxCount = 4, offset = 0) {
   const cleanQ = String(query || '').trim();
   if (!cleanQ) return [];
+  const targetPoolSize = Math.max(16, offset + maxCount + 6);
 
   const isSpamImageItem = (urlStr: string, titleStr: string, domainStr: string) => {
     const combined = `${urlStr} ${titleStr} ${domainStr}`.toLowerCase();
@@ -2178,7 +2179,7 @@ async function searchImagesViaTreg(query: string, nsfwMode = false) {
       }
       const data = await callTregEndpoint('serper.google.serp.images', params);
       const rawImages = data?.output?.images || data?.images || [];
-      for (const img of rawImages.slice(0, 12)) {
+      for (const img of rawImages.slice(0, targetPoolSize)) {
         addImage({
           title: img.title || cleanQ,
           imageUrl: img.imageUrl || img.thumbnailUrl || '',
@@ -2190,7 +2191,9 @@ async function searchImagesViaTreg(query: string, nsfwMode = false) {
           height: img.imageHeight,
         });
       }
-      if (results.length >= 6) return results.slice(0, 12);
+      if (results.length >= offset + maxCount) {
+        return results.slice(offset, offset + maxCount);
+      }
     } catch {
       // Fall through to live web image providers
     }
@@ -2234,7 +2237,7 @@ async function searchImagesViaTreg(query: string, nsfwMode = false) {
       if (!imgRes.ok) return;
       const json: any = await imgRes.json();
       const rawResults = Array.isArray(json?.results) ? json.results : [];
-      for (const item of rawResults.slice(0, 14)) {
+      for (const item of rawResults.slice(0, targetPoolSize)) {
         let domain = '';
         try {
           domain = new URL(item.url || item.image || '').hostname.replace(/^www\./i, '');
@@ -2268,7 +2271,7 @@ async function searchImagesViaTreg(query: string, nsfwMode = false) {
         body: JSON.stringify({
           query: cleanQ,
           type: 'images',
-          num: 10,
+          num: targetPoolSize,
           include_images: true,
         }),
         signal: AbortSignal.timeout(2500),
@@ -2295,7 +2298,7 @@ async function searchImagesViaTreg(query: string, nsfwMode = false) {
     try {
       const wpSearchUrl = `https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(
         cleanQ
-      )}&gsrlimit=4&prop=pageimages|info&inprop=url&pithumbsize=900&format=json&origin=*`;
+      )}&gsrlimit=6&prop=pageimages|info&inprop=url&pithumbsize=900&format=json&origin=*`;
       const res = await fetch(wpSearchUrl, {
         headers: { 'User-Agent': 'ZenoAI/1.0' },
         signal: AbortSignal.timeout(2500),
@@ -2324,7 +2327,7 @@ async function searchImagesViaTreg(query: string, nsfwMode = false) {
     try {
       const commonsUrl = `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(
         `filetype:bitmap ${cleanQ}`
-      )}&gsrlimit=8&prop=imageinfo&iiprop=url|dimensions|extmetadata&iiurlwidth=800&format=json`;
+      )}&gsrlimit=12&prop=imageinfo&iiprop=url|dimensions|extmetadata&iiurlwidth=800&format=json`;
       const res = await fetch(commonsUrl, {
         headers: { 'User-Agent': 'ZenoAI/1.0' },
         signal: AbortSignal.timeout(2500),
@@ -2351,7 +2354,7 @@ async function searchImagesViaTreg(query: string, nsfwMode = false) {
 
   await Promise.allSettled([ddgImageTask, tinyfishImageTask, wikipediaImageTask, commonsImageTask]);
 
-  return results.slice(0, 12);
+  return results.slice(offset, offset + maxCount);
 }
 
 // Search videos across the entire internet (Google Video SERP + YouTube Treg + Direct YouTube Live Search)
@@ -5707,6 +5710,34 @@ app.post('/api/treg/extract', async (req, res) => {
     });
   } catch (error: any) {
     return sendNormalizedError(res, 500, 'extract/internal-error', error?.message || 'Failed to extract URL');
+  }
+});
+
+// Load More Live Web Images on Demand (4 images per batch)
+app.get('/api/media/more-images', async (req, res) => {
+  try {
+    const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const offset = Math.max(0, Math.min(40, parseInt(String(req.query.offset || '4'), 10) || 4));
+    const limit = Math.max(1, Math.min(8, parseInt(String(req.query.limit || '4'), 10) || 4));
+    const nsfw = req.query.nsfw === 'true' || req.query.nsfw === '1';
+
+    if (!q) {
+      return res.json({ success: true, images: [], hasMore: false });
+    }
+
+    const images = await searchImagesViaTreg(q, nsfw, limit, offset);
+    return res.json({
+      success: true,
+      images,
+      hasMore: images.length >= limit && offset + limit < 24,
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      success: false,
+      images: [],
+      hasMore: false,
+      error: error?.message || 'Failed to load more images',
+    });
   }
 });
 

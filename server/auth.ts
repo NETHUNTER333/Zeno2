@@ -80,6 +80,7 @@ export const PUBLIC_API_ROUTES = [
   '/social/resolve',
   '/social/post-comments',
   '/media/resolve-video',
+  '/media/more-images',
   '/media/stream',
   '/media/embed-proxy',
   '/media/download',
