@@ -25,7 +25,7 @@ export const GROK_MODELS: ModelOption[] = [
   {
     id: 'zro-glm-5.3-flash',
     name: 'GLM 5.3 Flash (1M)',
-    description: 'Fast reasoning & vision (Free Vision)',
+    description: 'MoonMath fast reasoning & vision (Free Vision)',
     geminiModel: 'zro/glm-5.3-flash',
     supportsVision: true,
     contextLength: '1M',
@@ -34,46 +34,47 @@ export const GROK_MODELS: ModelOption[] = [
   {
     id: 'zro-deepseek-v4-flash-0731',
     name: 'DeepSeek V4 (0731)',
-    description: 'Coding & math',
+    description: 'Coding & math ($3 Spark)',
     geminiModel: 'zro/deepseek-v4-flash-0731',
     supportsVision: false,
     contextLength: '1M',
+    requiredTier: 'spark',
   },
   {
     id: 'deepseek-v4.1-flash-free',
     name: 'DeepSeek V4.1',
-    description: 'Instant reasoning (Free)',
+    description: 'Instant reasoning ($3 Spark)',
     geminiModel: 'zro/deepseek-v4.1-flash',
     supportsVision: false,
     contextLength: '1M',
-    requiredTier: 'free',
+    requiredTier: 'spark',
   },
   {
     id: 'itera-qwen3.8-27b-free',
     name: 'Qwen 3.8 27B',
-    description: 'Fast reply & vision (Free)',
+    description: 'Fast reply & vision ($3 Spark)',
     geminiModel: 'itera/qwen/qwen3.8-27b',
     supportsVision: true,
     contextLength: '256K',
-    requiredTier: 'free',
+    requiredTier: 'spark',
   },
   {
     id: 'deepseek-v4-flash-0731-free',
     name: 'DeepSeek V4 Flash',
-    description: 'Analytical reasoning',
+    description: 'Analytical reasoning ($3 Spark)',
     geminiModel: 'zro/deepseek-v4-flash-0731',
     supportsVision: false,
     contextLength: '1M',
-    requiredTier: 'free',
+    requiredTier: 'spark',
   },
   {
     id: 'glm-5.3-flash-free',
     name: 'GLM 5.3 Flash',
-    description: 'Low-latency vision (Free)',
+    description: 'Low-latency vision ($3 Spark)',
     geminiModel: 'zro/glm-5.3-flash',
     supportsVision: true,
     contextLength: '1M',
-    requiredTier: 'free',
+    requiredTier: 'spark',
   },
   {
     id: 'mimo-v2.6-flash-free',
@@ -823,11 +824,7 @@ const FIRE_MODEL_IDS = new Set([
 
 export const FREE_MODEL_IDS = new Set<string>([
   'zro-deepseek-v4.1-flash',
-  'deepseek-v4.1-flash-free',
   'zro-glm-5.3-flash',
-  'glm-5.3-flash-free',
-  'itera-qwen3.8-27b-free',
-  'flm-auto',
 ]);
 
 export function getModelRequiredTier(model: ModelOption): 'free' | 'spark' | 'fire' {

@@ -28,6 +28,8 @@ import {
   SERVER_LIMITS,
   getFirebaseProjectId,
   getStagingConfigSummary,
+  getTinyfishApiKey,
+  getTinyfishBaseUrl,
   getTregBaseUrl,
   getTregOrg,
   getTregToken,
@@ -2118,155 +2120,396 @@ async function resolveVideoFromWebpage(url: string, timeoutMs = 3500): Promise<{
   return { videoUrl, embedUrl };
 }
 
-// Search images via Treg Google Images SERP across the web with Wikimedia Commons / Wikipedia fallback
+// Search images via Treg, TinyFish, DuckDuckGo Live Image Search (i.js), Wikipedia PageImages, and Wikimedia Commons
 async function searchImagesViaTreg(query: string, nsfwMode = false) {
-  try {
-    const params: any = { q: query };
-    if (nsfwMode) {
-      params.safe = 'off';
-      params.adult = '1';
+  const cleanQ = String(query || '').trim();
+  if (!cleanQ) return [];
+
+  const isSpamImageItem = (urlStr: string, titleStr: string, domainStr: string) => {
+    const combined = `${urlStr} ${titleStr} ${domainStr}`.toLowerCase();
+    return /\b(slot|gacor|toto|togel|judi|poker|casino|sbobet|betting|maxwin|pragmatic|bokep|payday-loan|1xbet)\b/i.test(
+      combined
+    );
+  };
+
+  const results: any[] = [];
+  const seenUrls = new Set<string>();
+  const addImage = (img: {
+    title?: string;
+    imageUrl?: string;
+    thumbnailUrl?: string;
+    source?: string;
+    domain?: string;
+    link?: string;
+    width?: number;
+    height?: number;
+  }) => {
+    const imageUrl = String(img.imageUrl || img.thumbnailUrl || '').trim();
+    const thumbnailUrl = String(img.thumbnailUrl || img.imageUrl || '').trim();
+    if (!imageUrl || !/^https?:\/\//i.test(imageUrl)) return;
+    if (seenUrls.has(imageUrl)) return;
+    let domain = String(img.domain || '').trim();
+    if (!domain && (img.link || imageUrl)) {
+      try {
+        domain = new URL(img.link || imageUrl).hostname.replace(/^www\./i, '');
+      } catch {}
     }
-    const data = await callTregEndpoint('serper.google.serp.images', params);
-    const rawImages = data?.output?.images || data?.images || [];
-    const mapped = rawImages
-      .slice(0, 12)
-      .map((img: any) => ({
-        title: img.title || 'Image',
-        imageUrl: img.imageUrl || img.thumbnailUrl || '',
-        thumbnailUrl: img.thumbnailUrl || img.imageUrl || '',
-        source: img.source || img.domain || '',
-        domain: img.domain || '',
-        link: img.link || img.imageUrl || '',
-        width: img.imageWidth,
-        height: img.imageHeight,
-      }))
-      .filter((img: any) => Boolean(img.imageUrl || img.thumbnailUrl));
-    if (mapped.length > 0) return mapped;
-  } catch {
-    // Fall through to Wikimedia Commons & Wikipedia pageimages search
+    if (isSpamImageItem(imageUrl, img.title || '', domain)) return;
+    seenUrls.add(imageUrl);
+    results.push({
+      title: String(img.title || cleanQ).trim(),
+      imageUrl,
+      thumbnailUrl: thumbnailUrl || imageUrl,
+      source: String(img.source || domain || 'Web').trim(),
+      domain: domain || 'web',
+      link: String(img.link || imageUrl).trim(),
+      width: img.width,
+      height: img.height,
+    });
+  };
+
+  // 1. Try Treg Google Images SERP first if configured
+  if (getTregToken()) {
+    try {
+      const params: any = { q: cleanQ };
+      if (nsfwMode) {
+        params.safe = 'off';
+        params.adult = '1';
+      }
+      const data = await callTregEndpoint('serper.google.serp.images', params);
+      const rawImages = data?.output?.images || data?.images || [];
+      for (const img of rawImages.slice(0, 12)) {
+        addImage({
+          title: img.title || cleanQ,
+          imageUrl: img.imageUrl || img.thumbnailUrl || '',
+          thumbnailUrl: img.thumbnailUrl || img.imageUrl || '',
+          source: img.source || img.domain || '',
+          domain: img.domain || '',
+          link: img.link || img.imageUrl || '',
+          width: img.imageWidth,
+          height: img.imageHeight,
+        });
+      }
+      if (results.length >= 6) return results.slice(0, 12);
+    } catch {
+      // Fall through to live web image providers
+    }
   }
 
-  try {
-    const commonsUrl = `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(
-      `filetype:bitmap ${query}`
-    )}&gsrlimit=8&prop=imageinfo&iiprop=url|dimensions|extmetadata&iiurlwidth=800&format=json`;
-    const res = await fetch(commonsUrl, {
-      headers: { 'User-Agent': 'ZenoAI/1.0' },
-      signal: AbortSignal.timeout(4000),
-    });
-    if (res.ok) {
+  // 2. Run DuckDuckGo Live Web Image Search (i.js), TinyFish Images, Wikipedia PageImages, and Wikimedia Commons in parallel
+  const ddgImageTask = (async () => {
+    try {
+      const htmlRes = await fetch(
+        `https://duckduckgo.com/?q=${encodeURIComponent(cleanQ)}&iax=images&ia=images`,
+        {
+          headers: {
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            Accept: 'text/html,application/xhtml+xml',
+          },
+          signal: AbortSignal.timeout(2600),
+        }
+      );
+      const html = await htmlRes.text();
+      const vqdMatch =
+        html.match(/vqd=['"]?([\d-]+)['"]?/i) || html.match(/vqd=([\d-]+)&/i);
+      const vqd = vqdMatch?.[1];
+      if (!vqd) return;
+
+      const safeParam = nsfwMode ? '-1' : '1';
+      const imgRes = await fetch(
+        `https://duckduckgo.com/i.js?l=us-en&o=json&q=${encodeURIComponent(cleanQ)}&vqd=${encodeURIComponent(
+          vqd
+        )}&f=,,,,,&p=${safeParam}`,
+        {
+          headers: {
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            Referer: 'https://duckduckgo.com/',
+            Accept: 'application/json',
+          },
+          signal: AbortSignal.timeout(2800),
+        }
+      );
+      if (!imgRes.ok) return;
+      const json: any = await imgRes.json();
+      const rawResults = Array.isArray(json?.results) ? json.results : [];
+      for (const item of rawResults.slice(0, 14)) {
+        let domain = '';
+        try {
+          domain = new URL(item.url || item.image || '').hostname.replace(/^www\./i, '');
+        } catch {}
+        addImage({
+          title: item.title || cleanQ,
+          imageUrl: item.image || item.thumbnail || '',
+          thumbnailUrl: item.thumbnail || item.image || '',
+          source: item.source || domain || 'Web',
+          domain,
+          link: item.url || item.image || '',
+          width: item.width,
+          height: item.height,
+        });
+      }
+    } catch {}
+  })();
+
+  const tinyfishImageTask = (async () => {
+    const tfKey = getTinyfishApiKey();
+    if (!tfKey) return;
+    try {
+      const base = getTinyfishBaseUrl();
+      const res = await fetch(`${base}/v1/search`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${tfKey}`,
+          'X-API-Key': tfKey,
+        },
+        body: JSON.stringify({
+          query: cleanQ,
+          type: 'images',
+          num: 10,
+          include_images: true,
+        }),
+        signal: AbortSignal.timeout(2500),
+      });
+      if (!res.ok) return;
+      const data: any = await res.json();
+      const imgs = data?.images || data?.results || data?.data || [];
+      for (const item of imgs) {
+        const imgUrl = item?.imageUrl || item?.image || item?.url || item?.thumbnailUrl;
+        if (!imgUrl) continue;
+        addImage({
+          title: item.title || cleanQ,
+          imageUrl: imgUrl,
+          thumbnailUrl: item.thumbnailUrl || item.thumbnail || imgUrl,
+          source: item.source || item.domain || 'TinyFish',
+          domain: item.domain || '',
+          link: item.link || item.pageUrl || imgUrl,
+        });
+      }
+    } catch {}
+  })();
+
+  const wikipediaImageTask = (async () => {
+    try {
+      const wpSearchUrl = `https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(
+        cleanQ
+      )}&gsrlimit=4&prop=pageimages|info&inprop=url&pithumbsize=900&format=json&origin=*`;
+      const res = await fetch(wpSearchUrl, {
+        headers: { 'User-Agent': 'ZenoAI/1.0' },
+        signal: AbortSignal.timeout(2500),
+      });
+      if (!res.ok) return;
       const json: any = await res.json();
       const pages = Object.values(json?.query?.pages || {}) as any[];
-      const fallbackImgs = pages
-        .map((p: any) => {
-          const ii = p?.imageinfo?.[0];
-          if (!ii?.url) return null;
-          return {
-            title: String(p.title || query).replace(/^File:/i, '').replace(/\.[^.]+$/, ''),
-            imageUrl: ii.thumburl || ii.url,
-            thumbnailUrl: ii.thumburl || ii.url,
-            source: 'Wikimedia Commons',
-            domain: 'commons.wikimedia.org',
-            link: ii.descriptionurl || ii.url,
-            width: ii.width,
-            height: ii.height,
-          };
-        })
-        .filter(Boolean);
-      if (fallbackImgs.length > 0) return fallbackImgs.slice(0, 8);
-    }
-  } catch {}
+      for (const p of pages) {
+        const thumb = p?.thumbnail?.source;
+        if (!thumb) continue;
+        addImage({
+          title: p.title || cleanQ,
+          imageUrl: thumb,
+          thumbnailUrl: thumb,
+          source: 'Wikipedia',
+          domain: 'en.wikipedia.org',
+          link: p.fullurl || `https://en.wikipedia.org/wiki/${encodeURIComponent(p.title || cleanQ)}`,
+          width: p?.thumbnail?.width,
+          height: p?.thumbnail?.height,
+        });
+      }
+    } catch {}
+  })();
 
-  return [];
+  const commonsImageTask = (async () => {
+    try {
+      const commonsUrl = `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(
+        `filetype:bitmap ${cleanQ}`
+      )}&gsrlimit=8&prop=imageinfo&iiprop=url|dimensions|extmetadata&iiurlwidth=800&format=json`;
+      const res = await fetch(commonsUrl, {
+        headers: { 'User-Agent': 'ZenoAI/1.0' },
+        signal: AbortSignal.timeout(2500),
+      });
+      if (!res.ok) return;
+      const json: any = await res.json();
+      const pages = Object.values(json?.query?.pages || {}) as any[];
+      for (const p of pages) {
+        const ii = p?.imageinfo?.[0];
+        if (!ii?.url) continue;
+        addImage({
+          title: String(p.title || cleanQ).replace(/^File:/i, '').replace(/\.[^.]+$/, ''),
+          imageUrl: ii.thumburl || ii.url,
+          thumbnailUrl: ii.thumburl || ii.url,
+          source: 'Wikimedia Commons',
+          domain: 'commons.wikimedia.org',
+          link: ii.descriptionurl || ii.url,
+          width: ii.width,
+          height: ii.height,
+        });
+      }
+    } catch {}
+  })();
+
+  await Promise.allSettled([ddgImageTask, tinyfishImageTask, wikipediaImageTask, commonsImageTask]);
+
+  return results.slice(0, 12);
 }
 
-// Search videos across the entire internet (Google Video SERP + YouTube) via Treg
+// Search videos across the entire internet (Google Video SERP + YouTube Treg + Direct YouTube Live Search)
 async function searchYouTubeViaTreg(query: string, _nsfwMode = false) {
+  const cleanQ = String(query || '').trim();
+  if (!cleanQ) return [];
+
+  const combined: any[] = [];
+  const seenKeys = new Set<string>();
+
   try {
-    const [webVideoRes, ytVideoRes] = await Promise.allSettled([
-      callTregEndpoint('serper.google.serp.videos', { q: query }),
-      callTregEndpoint('treg.youtube.search.videos', { q: query }),
-    ]);
+    if (getTregToken()) {
+      const [webVideoRes, ytVideoRes] = await Promise.allSettled([
+        callTregEndpoint('serper.google.serp.videos', { q: cleanQ }),
+        callTregEndpoint('treg.youtube.search.videos', { q: cleanQ }),
+      ]);
 
-    const combined: any[] = [];
-    const seenKeys = new Set<string>();
+      // 1. Add videos from across the entire internet
+      if (webVideoRes.status === 'fulfilled') {
+        const rawWebVideos = webVideoRes.value?.output?.videos || webVideoRes.value?.videos || [];
+        for (const v of rawWebVideos) {
+          const link = v.link || '';
+          const ytId = extractYouTubeId(link);
+          const key = ytId || link || v.title;
+          if (!key || seenKeys.has(key)) continue;
+          seenKeys.add(key);
 
-    // 1. Add videos from across the entire internet (YouTube, TikTok, Vimeo, Reddit, Dailymotion, adult/18+, news sites, etc.)
-    if (webVideoRes.status === 'fulfilled') {
-      const rawWebVideos = webVideoRes.value?.output?.videos || webVideoRes.value?.videos || [];
-      for (const v of rawWebVideos) {
-        const link = v.link || '';
-        const ytId = extractYouTubeId(link);
-        const key = ytId || link || v.title;
-        if (!key || seenKeys.has(key)) continue;
-        seenKeys.add(key);
+          let domainSource = v.source || '';
+          if (!domainSource && link) {
+            try {
+              domainSource = new URL(link).hostname.replace('www.', '');
+            } catch {}
+          }
 
-        let domainSource = v.source || '';
-        if (!domainSource && link) {
-          try {
-            domainSource = new URL(link).hostname.replace('www.', '');
-          } catch {}
+          const initialEmbed = buildUniversalEmbedUrl(link, ytId);
+
+          combined.push({
+            videoId: ytId,
+            title: v.title || 'Video',
+            author: v.channel || domainSource || 'Web Video',
+            source: domainSource || 'Web',
+            link,
+            videoUrl: v.videoUrl || '',
+            embedUrl: initialEmbed,
+            thumbnail:
+              v.imageUrl ||
+              (ytId ? `https://i.ytimg.com/vi/${ytId}/hqdefault.jpg` : ''),
+            length: v.duration || '',
+            date: v.date || '',
+            snippet: v.snippet || '',
+          });
         }
+      }
 
-        const initialEmbed = buildUniversalEmbedUrl(link, ytId);
+      // 2. Enrich or append additional YouTube videos from Treg
+      if (ytVideoRes.status === 'fulfilled') {
+        const rawYtVideos = ytVideoRes.value?.output?.videos || [];
+        for (const v of rawYtVideos) {
+          const ytId = v.video_id;
+          if (!ytId) continue;
+          const viewsStr = v.number_of_views ? `${Math.round(v.number_of_views / 1000)}K views` : '';
+          const existing = combined.find((item) => item.videoId === ytId);
+          if (existing) {
+            if (viewsStr && !existing.views) existing.views = viewsStr;
+            if (!existing.length && v.video_length) existing.length = v.video_length;
+            continue;
+          }
+          if (seenKeys.has(ytId)) continue;
+          seenKeys.add(ytId);
 
-        combined.push({
-          videoId: ytId,
-          title: v.title || 'Video',
-          author: v.channel || domainSource || 'Web Video',
-          source: domainSource || 'Web',
-          link,
-          videoUrl: v.videoUrl || '',
-          embedUrl: initialEmbed,
-          thumbnail:
-            v.imageUrl ||
-            (ytId ? `https://i.ytimg.com/vi/${ytId}/hqdefault.jpg` : ''),
-          length: v.duration || '',
-          date: v.date || '',
-          snippet: v.snippet || '',
-        });
+          const ytLink = `https://www.youtube.com/watch?v=${ytId}`;
+          combined.push({
+            videoId: ytId,
+            title: v.title || 'Video',
+            author: v.author || 'YouTube',
+            source: 'YouTube',
+            link: ytLink,
+            videoUrl: '',
+            embedUrl: buildUniversalEmbedUrl(ytLink, ytId),
+            thumbnail: v.thumbnails?.[0]?.url || `https://i.ytimg.com/vi/${ytId}/hqdefault.jpg`,
+            views: viewsStr,
+            length: v.video_length || '',
+          });
+        }
       }
     }
 
-    // 2. Enrich or append additional YouTube videos
-    if (ytVideoRes.status === 'fulfilled') {
-      const rawYtVideos = ytVideoRes.value?.output?.videos || [];
-      for (const v of rawYtVideos) {
-        const ytId = v.video_id;
-        if (!ytId) continue;
-        const viewsStr = v.number_of_views ? `${Math.round(v.number_of_views / 1000)}K views` : '';
-        const existing = combined.find((item) => item.videoId === ytId);
-        if (existing) {
-          if (viewsStr && !existing.views) existing.views = viewsStr;
-          if (!existing.length && v.video_length) existing.length = v.video_length;
-          continue;
-        }
-        if (seenKeys.has(ytId)) continue;
-        seenKeys.add(ytId);
+    // 3. Direct YouTube Live Search fallback whenever Treg is unset or returned fewer than 4 videos
+    if (combined.length < 4) {
+      try {
+        const ytRes = await fetch(
+          `https://www.youtube.com/results?search_query=${encodeURIComponent(cleanQ)}&hl=en`,
+          {
+            headers: {
+              'User-Agent':
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+              'Accept-Language': 'en-US,en;q=0.9',
+            },
+            signal: AbortSignal.timeout(2800),
+          }
+        );
+        if (ytRes.ok) {
+          const html = await ytRes.text();
+          const dataMatch = html.match(/var ytInitialData = (\{[\s\S]*?\});<\/script>/);
+          if (dataMatch?.[1]) {
+            const parsed = JSON.parse(dataMatch[1]);
+            const contents =
+              parsed?.contents?.twoColumnSearchResultsRenderer?.primaryContents?.sectionListRenderer
+                ?.contents?.[0]?.itemSectionRenderer?.contents || [];
+            for (const item of contents) {
+              const vr = item?.videoRenderer;
+              const ytId = vr?.videoId;
+              if (!ytId || seenKeys.has(ytId)) continue;
+              seenKeys.add(ytId);
 
-        const ytLink = `https://www.youtube.com/watch?v=${ytId}`;
-        combined.push({
-          videoId: ytId,
-          title: v.title || 'Video',
-          author: v.author || 'YouTube',
-          source: 'YouTube',
-          link: ytLink,
-          videoUrl: '',
-          embedUrl: buildUniversalEmbedUrl(ytLink, ytId),
-          thumbnail: v.thumbnails?.[0]?.url || `https://i.ytimg.com/vi/${ytId}/hqdefault.jpg`,
-          views: viewsStr,
-          length: v.video_length || '',
-        });
-      }
+              const ytLink = `https://www.youtube.com/watch?v=${ytId}`;
+              const title =
+                vr?.title?.runs?.map((r: any) => r.text).join('') ||
+                vr?.title?.simpleText ||
+                cleanQ;
+              const author =
+                vr?.ownerText?.runs?.[0]?.text ||
+                vr?.longBylineText?.runs?.[0]?.text ||
+                'YouTube';
+              const length = vr?.lengthText?.simpleText || '';
+              const views = vr?.shortViewCountText?.simpleText || vr?.viewCountText?.simpleText || '';
+              const snippet =
+                vr?.detailedMetadataSnippets?.[0]?.snippetText?.runs
+                  ?.map((r: any) => r.text)
+                  .join('') || '';
+
+              combined.push({
+                videoId: ytId,
+                title,
+                author,
+                source: 'YouTube',
+                link: ytLink,
+                videoUrl: '',
+                embedUrl: buildUniversalEmbedUrl(ytLink, ytId),
+                thumbnail: `https://i.ytimg.com/vi/${ytId}/hqdefault.jpg`,
+                views,
+                length,
+                snippet,
+              });
+              if (combined.length >= 8) break;
+            }
+          }
+        }
+      } catch {}
     }
 
     const finalVideos = combined.slice(0, 9);
 
-    // 3. Pre-resolve direct MP4 streams and embed URLs for non-YouTube web videos in parallel
+    // 4. Pre-resolve direct MP4 streams and embed URLs for non-YouTube web videos in parallel
     await Promise.allSettled(
       finalVideos.map(async (vid) => {
         if (!vid.videoId && vid.link && (!vid.videoUrl || !vid.embedUrl)) {
-          const resolved = await resolveVideoFromWebpage(vid.link, 2200);
+          const resolved = await resolveVideoFromWebpage(vid.link, 1800);
           if (resolved.videoUrl && !vid.videoUrl) vid.videoUrl = resolved.videoUrl;
           if (resolved.embedUrl && !vid.embedUrl) vid.embedUrl = resolved.embedUrl;
         }
@@ -2278,8 +2521,8 @@ async function searchYouTubeViaTreg(query: string, _nsfwMode = false) {
 
     return finalVideos;
   } catch (err: any) {
-    console.warn('Video search via Treg failed:', err.message);
-    return [];
+    console.warn('Video search failed:', err.message);
+    return combined.slice(0, 8);
   }
 }
 
@@ -5573,15 +5816,25 @@ function resolveCoreTopic(
     return attachmentExtractedTopic.split(/\s+/).slice(0, 8).join(' ').slice(0, 65);
   }
 
-  // Look back through prior user messages for the main conversation subject
+  // Look back through prior user and assistant messages for the main conversation subject
   let priorTopic = '';
   for (let i = messages.length - 2; i >= 0; i--) {
     const m = messages[i];
-    if (m && m.role === 'user' && m.content) {
+    if (!m || !m.content) continue;
+    if (m.role === 'user') {
       const candidate = extractTopicFromText(m.content);
       if (candidate.length >= 2) {
         priorTopic = candidate;
         break;
+      }
+    } else if (m.role === 'assistant' && !priorTopic) {
+      const headingMatch = m.content.match(/(?:^|\n)#{1,3}\s+(?:\d+\.\s*)?([^\n#]{3,55})/);
+      const boldMatch = m.content.match(/\*\*([A-Za-z][A-Za-z0-9\s-]{2,40})\*\*/);
+      const assistantCandidate = extractTopicFromText(
+        headingMatch?.[1] || boldMatch?.[1] || m.content.slice(0, 160)
+      );
+      if (assistantCandidate.length >= 3) {
+        priorTopic = assistantCandidate;
       }
     }
   }
@@ -9756,20 +10009,36 @@ ${transcriptSnippet
 
     const personCandidate = extractPersonSearchCandidate(userQuery, coreTopic);
     const hasExplicitPersonaIntent =
-      /\b(persona[\s-]*wiki|person[\s-]*wiki|who\s+is|whos|biography|bio|specs|age|height|nationality|net\s*worth|celebrity|politician|sports?\s*person|athlete|player)\b/i.test(
+      /\b(persona[\s-]*wiki|person[\s-]*wiki|who\s+is|whos|biography|bio|specs|age|height|nationality|net\s*worth|celebrity|actor|actress|hero|star|director|singer|politician|sports?\s*person|athlete|player|cricketer|footballer)\b/i.test(
         userQuery
       );
     const candidateWordCount = personCandidate ? personCandidate.split(/\s+/).length : 0;
 
-    // Intelligent intent gating: ONLY fetch YouTube, Images, or Web Search when genuinely relevant
+    // Detect educational, engineering, scientific, medical, or academic syllabus concepts across any stream/branch
+    const isEducationalOrConceptQuery =
+      /\b(diagram|gear|planetary|sun\s+gear|ring\s+gear|engine|motor|turbine|circuit|transistor|semiconductor|diode|microprocessor|architecture|mechanism|kinematics|thermodynamics|fluid|hydraulics|aerodynamics|robotics|mechatronics|anatomy|physiology|cell|mitosis|meiosis|dna|rna|protein|molecule|atom|periodic\s+table|chemical|reaction|organic|inorganic|physics|quantum|relativity|optics|electromagnetism|magnetic|gravity|black\s+hole|orbit|solar\s+system|tectonic|volcano|photosynthesis|ecosystem|neuron|brain|heart|skeleton|fracture|pathology|surgery|pharmacology|syllabus|jntuh|btech|mtech|engineering|mechanical|electrical|electronics|ece|eee|cse|civil|biotech|aerospace|automobile|chemical\s+engineering|concept|working\s+principle|how\s+does\s+.*\s+work|explain\s+the\s+working|construction\s+and\s+working|block\s+diagram|schematic|cross\s+section)\b/i.test(
+        `${userQuery} ${coreTopic}`
+      );
+
+    // Intelligent intent gating: Fetch YouTube videos & Web Images when explicitly requested OR when exploring educational concepts, streams of education, or public figures/celebrities
     const wantsVideo =
       hasVideoKeywords ||
-      /\b(video|videos|watch|youtube|yt|clip|clips|trailer|stream|footage|documentary|play)\b/i.test(userQuery);
+      isFetchIntent ||
+      isEducationalOrConceptQuery ||
+      hasExplicitPersonaIntent ||
+      /\b(video|videos|watch|youtube|yt|clip|clips|trailer|stream|footage|documentary|play|lecture|tutorial|animation)\b/i.test(
+        userQuery
+      );
 
     const wantsImage =
       hasImageKeywords ||
+      isFetchIntent ||
+      isEducationalOrConceptQuery ||
       hasExplicitPersonaIntent ||
-      /\b(images?|imgs?|photos?|pics?|pictures?|wallpaper|gallery|look like|portraits?|diagrams?|illustrations?|scans?)\b/i.test(userQuery);
+      Boolean(personCandidate && candidateWordCount >= 1 && candidateWordCount <= 4) ||
+      /\b(images?|imgs?|photos?|pics?|pictures?|wallpaper|gallery|look like|portraits?|diagrams?|illustrations?|scans?|sketch|schematics?|stills?)\b/i.test(
+        userQuery
+      );
 
     const isResearchModeRequest = Boolean(req.body?.isResearchMode) || Boolean(req.body?.isResearch);
     // Check if query is pure code or math (never true in Deep Research mode)
@@ -9788,15 +10057,16 @@ ${transcriptSnippet
       !isPureCodeOrMath &&
       /\b(search|google|lookup|look up|browse|find online|sources?|links?|url|website|latest|news|today|recent|yesterday|this week|2024|2025|2026|weather|stock|price|who won|score|schedule|release date|when does|when will)\b/i.test(userQuery);
 
-    // Candidate for Persona Wiki lookup (only when user explicitly asks for persona/biography/who-is)
+    // Candidate for Persona Wiki lookup (when user asks about a person/celebrity or asks for images/info of a person)
     const shouldCheckPersonaWiki =
       !shouldSkipSearchForConversational &&
       !isClockQuery &&
       !shouldSkipSearchForAttachment &&
       !isPureCodeOrMath &&
       !isCreativeOrBrainstorm &&
+      !isEducationalOrConceptQuery &&
       Boolean(personCandidate) &&
-      hasExplicitPersonaIntent;
+      (hasExplicitPersonaIntent || (candidateWordCount >= 1 && candidateWordCount <= 4 && wantsImage));
 
     // Run live web search only for substantive informational queries (never on conversational, currency, math, or clock queries)
     const isCurrencyQ = isCurrencyQuery(userQuery);
@@ -10152,7 +10422,7 @@ ${transcriptSnippet
       if (tasks.length > 0) {
         await Promise.race([
           Promise.allSettled(tasks),
-          new Promise<void>((resolve) => setTimeout(resolve, 650)),
+          new Promise<void>((resolve) => setTimeout(resolve, 3800)),
         ]);
       }
 
@@ -10496,13 +10766,14 @@ Rules:
 1. Date/Time Accuracy: Today's verified date is ${liveClock.localDateOnly} (${liveClock.localTimeOnly}). Never guess fake dates or agree with false dates if tested.
 2. Directness & Speed: Give clear, well-structured, high-signal answers directly addressing the user's prompt. Keep standard explanations concise (around 65-110 words) unless the user asks for deep code or long-form analysis.
 3. Citations & Factual Integrity: When web search sources are provided below, cite facts naturally using [1], [2]. Never fabricate sources or claim unverified search counts (e.g., never say "I checked 6 sites" or "I am standing firm"). Never output \`\`\`html:generative-ui blocks unless explicitly asked for a simulator.
-4. Factual Humility: If the user questions or corrects a factual detail (such as a person's height, age, filmography, or statistics), do NOT argue stubbornly or defend an inaccurate snippet. Acknowledge the correction respectfully and provide the verified facts.${
+4. Real Media Gallery Rule: Real web images and YouTube videos fetched for this query are automatically rendered in the interactive UI gallery above/below your response. NEVER write fake placeholder text lists like "[FETCHED LIVE IMAGES]: 1. Promotional Portrait: [Image of...]" or pretend to describe imaginary image placeholders in brackets. Instead, provide a concise, helpful overview of the person or concept that complements the live visual gallery.
+5. Factual Humility: If the user questions or corrects a factual detail (such as a person's height, age, filmography, or statistics), do NOT argue stubbornly or defend an inaccurate snippet. Acknowledge the correction respectfully and provide the verified facts.${
       hasXContext
-        ? `\n5. Live X Posts: Prioritize [FETCHED REAL LIVE X / TWITTER POSTS] below as the latest verified posts.`
+        ? `\n6. Live X Posts: Prioritize [FETCHED REAL LIVE X / TWITTER POSTS] below as the latest verified posts.`
         : ''
     }${
       hasYouTubeContext
-        ? `\n6. YouTube Videos: You have direct access to the video details and transcript in [DETECTED YOUTUBE VIDEO] below; explain and break down the video directly.`
+        ? `\n7. YouTube Videos: You have direct access to the video details and transcript in [DETECTED YOUTUBE VIDEO] or [FETCHED YOUTUBE & INTERNET VIDEOS] below; explain and break down the video/topic directly.`
         : ''
     }${nsfwDirective}${personalizationDirective}${languageDirective}${pinnedDirective}`;
 

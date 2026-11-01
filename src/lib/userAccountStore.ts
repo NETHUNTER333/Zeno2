@@ -704,7 +704,7 @@ export const PLAN_LIMITS: Record<
     name: 'Free',
     priceMonthlyUsd: 0,
     priceYearlyUsd: 0,
-    fileUploadLimit: 5, // 5 daily free file uploads
+    fileUploadLimit: 3, // 3 daily free file uploads
     maxFilesPerMessage: 2,
     messageLimit: 5, // 5 daily free AI messages
     searchLimit: 5, // 5 daily free web searches

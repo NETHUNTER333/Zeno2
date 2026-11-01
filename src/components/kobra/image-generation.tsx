@@ -19,14 +19,16 @@ export interface ImageGenerationCardProps {
 
 export function detectImageGenerationIntent(query: string): string | null {
   if (!query) return null;
-  const match = query.match(
-    /\b(?:generate|create|draw|render|design|make|paint|illustrate)\s+(?:an?\s+)?(?:image|picture|photo|illustration|artwork|wallpaper|poster|logo|concept art|visual)\s+(?:of\s+|showing\s+|for\s+)?(.+)/i
+  const cleanQ = query.trim();
+  // Never trigger AI image generation when the user is asking to fetch/show/find real web images
+  if (/\b(fetch|fentch|featch|fetech|search|find|show|get|lookup|browse)\b/i.test(cleanQ)) {
+    return null;
+  }
+  const match = cleanQ.match(
+    /\b(?:generate|create|draw|render|design|paint|illustrate)\s+(?:an?\s+)?(?:ai\s+)?(?:image|picture|photo|illustration|artwork|wallpaper|poster|logo|concept art)\s+(?:of\s+|showing\s+|for\s+)?(.+)/i
   );
   if (match && match[1]) {
     return match[1].trim();
-  }
-  if (/^(?:image|photo|wallpaper|illustration)\s+of\s+(.+)/i.test(query.trim())) {
-    return query.trim().replace(/^(?:image|photo|wallpaper|illustration)\s+of\s+/i, '').trim();
   }
   return null;
 }

@@ -220,6 +220,13 @@ const preprocessMessageContent = (content: string): string => {
         return fullMatch;
       });
 
+      // Strip any hallucinated [FETCHED LIVE IMAGES]: placeholder lists if an upstream model emits them
+      processed = processed.replace(
+        /\[FETCHED LIVE IMAGES[^\]]*\]:?\s*(?:\n+(?:\d+\.|[-*])\s*[^\n]*\[Images?\s+of[^\n]*)+/gi,
+        ''
+      );
+      processed = processed.replace(/\[FETCHED LIVE IMAGES[^\]]*\]:?/gi, '');
+
       // Convert standalone citations [1], [2], [1, 2], [2][3] into markdown links so ReactMarkdown triggers interactive WebSearchCitation
       processed = processed.replace(/\[(\d{1,2}(?:\s*,\s*\d{1,2})+)\](?!\()/g, (_, nums) =>
         nums.split(',').map((n: string) => `[${n.trim()}](#cite-${n.trim()})`).join(' ')
@@ -1045,6 +1052,72 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
               isDark={isDark}
               onAskZeno={onAskZeno}
             />
+          )}
+
+          {/* Top Interactive Web Image Gallery when images are fetched */}
+          {message.images && message.images.length > 0 && (
+            <div className={`my-3 pb-3 border-b ${isDark ? 'border-[#1f1f1f]' : 'border-[#e5e5e5]'}`}>
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2 text-xs">
+                  <span className={`font-semibold ${isDark ? 'text-white' : 'text-black'}`}>
+                    Images ({message.images.length})
+                  </span>
+                  <span aria-hidden="true" className={isDark ? 'text-[#444444]' : 'text-[#cccccc]'}>
+                    ·
+                  </span>
+                  <span className={`text-[11px] ${isDark ? 'text-[#8a8a8a]' : 'text-[#666666]'}`}>
+                    Tap to expand or download
+                  </span>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                {message.images.slice(0, 8).map((img, idx) => (
+                  <div
+                    key={idx}
+                    onClick={() => setActiveImageIndex(idx)}
+                    className={`group/img relative aspect-square rounded-2xl overflow-hidden border cursor-pointer transition-all ${
+                      isDark
+                        ? 'bg-[#0a0a0a] border-[#1f1f1f] hover:border-[#444444]'
+                        : 'bg-[#f5f5f5] border-[#e5e5e5] hover:border-[#999999]'
+                    }`}
+                  >
+                    <img
+                      src={img.imageUrl || img.thumbnailUrl}
+                      alt={img.title}
+                      loading="lazy"
+                      onError={(e) => {
+                        const target = e.currentTarget;
+                        if (img.thumbnailUrl && target.src !== img.thumbnailUrl) {
+                          target.src = img.thumbnailUrl;
+                        }
+                      }}
+                      className="w-full h-full object-cover group-hover/img:scale-105 transition-transform duration-200"
+                    />
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        triggerMediaDownload(img.imageUrl, img.thumbnailUrl, img.title, 'image');
+                      }}
+                      className="absolute top-2 right-2 p-1.5 rounded-full bg-black/75 hover:bg-black text-white border border-white/15 transition-opacity opacity-90 sm:opacity-0 sm:group-hover/img:opacity-100 cursor-pointer"
+                      title="Download image"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                    </button>
+                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent p-2 opacity-0 group-hover/img:opacity-100 transition-opacity">
+                      <div className="text-[11px] text-white font-medium truncate">
+                        {img.title}
+                      </div>
+                      {img.domain && (
+                        <div className="text-[10px] text-white/70 truncate">
+                          {img.domain}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
 
           {/* Floating Highlight & Save Selection Bar when text is selected inside AI response */}

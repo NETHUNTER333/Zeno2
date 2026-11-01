@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import type { Request, Response } from 'express';
 import firebaseAppletConfig from '../firebase-applet-config.json';
 
@@ -24,11 +26,33 @@ export function getFirebaseProjectId(): string {
 
 const DEFAULT_TREG_ORG = 'syntrofoi';
 
+let cachedRouterKeys: Record<string, any> | null = null;
+function loadLocalRouterKeys(): Record<string, any> {
+  if (cachedRouterKeys) return cachedRouterKeys;
+  const candidates = [
+    path.resolve(process.cwd(), 'keys/keysAndRouters.json'),
+    path.resolve(process.cwd(), 'keysAndRouters.json'),
+  ];
+  for (const filePath of candidates) {
+    try {
+      if (fs.existsSync(filePath)) {
+        cachedRouterKeys = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+        return cachedRouterKeys || {};
+      }
+    } catch {}
+  }
+  cachedRouterKeys = {};
+  return cachedRouterKeys;
+}
+
 export function getTregToken(): string {
   if (process.env.NODE_ENV === 'test' || process.env.VITEST === 'true') {
     return (process.env.TREG_TOKEN || '').trim();
   }
-  return (process.env.TREG_TOKEN || '').trim();
+  const envVal = (process.env.TREG_TOKEN || '').trim();
+  if (envVal) return envVal;
+  const localKeys = loadLocalRouterKeys();
+  return String(localKeys?.treg?.token || localKeys?.TREG_TOKEN || '').trim();
 }
 
 export function getTregOrg(): string {
@@ -43,7 +67,10 @@ export function getTinyfishApiKey(): string {
   if (process.env.NODE_ENV === 'test' || process.env.VITEST === 'true') {
     return (process.env.TINYFISH_API_KEY || '').trim();
   }
-  return (process.env.TINYFISH_API_KEY || '').trim();
+  const envVal = (process.env.TINYFISH_API_KEY || '').trim();
+  if (envVal) return envVal;
+  const localKeys = loadLocalRouterKeys();
+  return String(localKeys?.tinyfish?.apiKey || localKeys?.TINYFISH_API_KEY || '').trim();
 }
 
 export function getTinyfishBaseUrl(): string {

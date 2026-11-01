@@ -280,8 +280,14 @@ export function isBoilerplateOrJunkSearchResult(
     }
   }
 
-  // Also reject low-quality SEO directory / aggregator domains for non-navigational queries
+  // Also reject low-quality SEO directory / aggregator / ad / casino domains for non-navigational queries
   if (
+    dom.includes('dedoco') ||
+    dom.includes('casino') ||
+    dom.includes('bet365') ||
+    dom.includes('1xbet') ||
+    dom.includes('stake') ||
+    dom.includes('roobet') ||
     /^(dedoco\.com|co[m]?\.tr\b|xyz\b|top\b|click\b|bid\b|stream\b)\b/i.test(dom) &&
     !q.includes(dom.split('.')[0])
   ) {

@@ -65,17 +65,31 @@ export const PricingModal: React.FC<PricingModalProps> = ({
 
   if (!isOpen && !embedded) return null;
 
-  const handleSelectPlan = (targetPlan: 'spark' | 'fire') => {
+  const handleSelectPlan = (targetPlan: 'free' | 'spark' | 'fire') => {
     UserAccountStore.upgradePlan(
       targetPlan,
       billingCycle === 'annual' ? 'yearly' : 'monthly'
     );
     setCurrentPlan(targetPlan);
     setUsage(UserAccountStore.getUsage());
-    const label = targetPlan === 'spark' ? 'Spark ($3/mo)' : 'Fire ($7/mo)';
-    setUpgradeBanner(`Switched active plan to ${label}. Your 10x limits and models are now updated.`);
+    const label =
+      targetPlan === 'free'
+        ? 'Free Plan (5 chats, 3 uploads)'
+        : targetPlan === 'spark'
+        ? 'Spark ($3/mo)'
+        : 'Fire ($7/mo)';
+    setUpgradeBanner(`Switched active plan to ${label}. Your usage quotas and model access are now updated.`);
     setTimeout(() => setUpgradeBanner(null), 4000);
   };
+
+  const freeFeatures: PlanFeatureRow[] = [
+    { text: '3 File Uploads / day (up to 2/msg)', included: true },
+    { text: '5 Daily AI Prompts (Chats)', included: true },
+    { text: 'Free Default Model & MoonMath Vision Model', included: true },
+    { text: '5 Daily Web Searches & PDF Study sessions', included: true },
+    { text: 'Spark ($3) & Fire ($7) Flagship Models', included: false },
+    { text: '10x Quota Boost & Unlimited Inference', included: false },
+  ];
 
   const sparkFeatures: PlanFeatureRow[] = [
     { text: '250 File Uploads / day (10x limit boost — up to 25/msg)', included: true },
@@ -361,11 +375,90 @@ export const PricingModal: React.FC<PricingModalProps> = ({
         </div>
       </div>
 
-      {/* Strictly 2 Clean Padded Pricing Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 max-w-4xl mx-auto gap-6 items-stretch">
-        {/* ==================== CARD 1: SPARK PLAN ($3 USD) ==================== */}
+      {/* 3 Pricing Cards: Free, Spark ($3), Fire ($7) */}
+      <div className="grid grid-cols-1 md:grid-cols-3 max-w-6xl mx-auto gap-6 items-stretch">
+        {/* ==================== CARD 0: FREE PLAN ($0) ==================== */}
         <div
           onClick={() => setActiveCardIndex(0)}
+          className={`relative rounded-[28px] p-6 sm:p-7 flex flex-col justify-between transition-all border bg-[#141418] text-white shadow-xl ${
+            currentPlan === 'free'
+              ? 'border-white ring-4 ring-white/15'
+              : 'border-white/15'
+          }`}
+        >
+          <div className="flex items-start justify-between gap-2 mb-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-xl font-bold tracking-tight text-white">Free Tier</h2>
+                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 uppercase tracking-wider">
+                  Starter
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 text-white text-[11px] font-bold">
+              <span>{currentPlan === 'free' ? 'Active Plan' : 'Free'}</span>
+            </div>
+          </div>
+
+          <div>
+            <div className="flex items-baseline gap-2.5 mt-1 mb-3">
+              <span className="text-4xl sm:text-5xl font-bold tracking-tight text-white tabular-nums">
+                $0
+              </span>
+              <div className="text-[11px] leading-tight text-neutral-400">
+                <div>forever free</div>
+                <div>no credit card</div>
+              </div>
+            </div>
+
+            <p className="text-xs leading-relaxed text-neutral-400 mb-5">
+              Get started with <strong>5 daily chats</strong> and <strong>3 file uploads</strong> on free default and MoonMath vision models.
+            </p>
+
+            <div className="border-b border-dashed border-white/15 mb-5" />
+
+            <ul className="space-y-3 mb-7">
+              {freeFeatures.map((feat, i) => (
+                <li key={i} className="flex items-center gap-3 text-xs">
+                  {feat.included ? (
+                    <span className="size-5 rounded-full bg-white/20 text-white flex items-center justify-center shrink-0">
+                      <Check className="w-3 h-3 stroke-[2.5]" />
+                    </span>
+                  ) : (
+                    <span className="size-5 flex items-center justify-center text-neutral-600 shrink-0">
+                      <X className="w-3.5 h-3.5 stroke-[2]" />
+                    </span>
+                  )}
+                  <span className={feat.included ? 'font-medium text-white' : 'text-neutral-500'}>
+                    {feat.text}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="pt-2 flex justify-center">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleSelectPlan('free');
+              }}
+              disabled={currentPlan === 'free'}
+              className={`w-full max-w-[260px] py-3 px-6 rounded-full text-xs font-bold transition-all cursor-pointer shadow-lg ${
+                currentPlan === 'free'
+                  ? 'bg-white/20 text-white border border-white/20 cursor-default'
+                  : 'bg-white/10 hover:bg-white/20 text-white active:scale-95'
+              }`}
+            >
+              {currentPlan === 'free' ? 'Active Free Tier' : 'Use Free Tier ($0)'}
+            </button>
+          </div>
+        </div>
+
+        {/* ==================== CARD 1: SPARK PLAN ($3 USD) ==================== */}
+        <div
+          onClick={() => setActiveCardIndex(1)}
           className={`relative rounded-[28px] p-6 sm:p-7 flex flex-col justify-between transition-all border-[2px] bg-[#18181b] text-white shadow-2xl ${
             currentPlan === 'spark'
               ? 'border-white ring-4 ring-white/15'
@@ -459,7 +552,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
 
         {/* ==================== CARD 2: FIRE PLAN ($7 USD) ==================== */}
         <div
-          onClick={() => setActiveCardIndex(1)}
+          onClick={() => setActiveCardIndex(2)}
           className={`relative rounded-[28px] p-6 sm:p-7 flex flex-col justify-between transition-all border bg-white text-[#18181b] shadow-2xl ${
             currentPlan === 'fire'
               ? 'border-[#18181b] ring-4 ring-[#18181b]/15'
