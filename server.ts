@@ -7031,7 +7031,7 @@ async function extractYouTubeTranscriptSubclip(
     }
   } catch {}
 
-  // Tier 1: Fast Residential-IP Backend (3.5s timeout so UI never hangs)
+  // Tier 1: Fast Residential-IP Backend (bounded by the caller's 20s budget)
   try {
     const primaryUrl =
       process.env.TRANSCRIPT_PRIMARY_URL ||
@@ -8538,7 +8538,8 @@ app.post('/api/youtube/transcript', async (req, res) => {
     if (!extracted.segments || extracted.segments.length === 0) {
       return res.status(422).json({
         success: false,
-        error: 'Could not extract real captions or transcript for this YouTube video. The video may lack captions or restrict access.',
+        error:
+          'Could not fetch captions right now. The transcript server may be offline or YouTube blocked the request. Retry in a moment, or paste the transcript.',
       });
     }
 
