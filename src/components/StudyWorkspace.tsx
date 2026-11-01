@@ -1582,6 +1582,17 @@ ${fullTranscriptText}`;
       : segments;
 
   const transcriptRequiredTabs = ['summary', 'quiz', 'flashcards', 'lesson_plan', 'transcripts', 'podcast'];
+  const transcriptProviderLabel = (() => {
+    const p = transcriptProvider;
+    if (!p) return '';
+    if (p === 'youtube-transcript-npm') return 'phone';
+    if (p === 'provided') return 'provided';
+    if (p === 'pasted') return 'pasted';
+    if (p.startsWith('whisper')) return 'whisper';
+    if (p.includes('caption')) return 'direct';
+    if (p.toLowerCase().includes('yt-dlp')) return 'yt-dlp';
+    return p;
+  })();
 
   const filteredLanguages = LANGUAGES.filter((l) =>
     l.label.toLowerCase().includes(langSearch.trim().toLowerCase())
@@ -3951,7 +3962,7 @@ ${fullTranscriptText}`;
                             className={`px-2 py-0.5 rounded-lg text-[10px] font-mono ${bgSubtle}`}
                             title="Transcript provider"
                           >
-                            {transcriptProvider}
+                            {transcriptProviderLabel}
                           </span>
                         )}
                       </div>
