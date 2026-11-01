@@ -8377,7 +8377,7 @@ app.post('/api/youtube/transcript', async (req, res) => {
     if (!extracted.segments || extracted.segments.length === 0) {
       return res.status(422).json({
         success: false,
-        error: 'Could not extract real captions or transcript for this YouTube video. The video may lack captions or restrict access.',
+        error: "Couldn't fetch captions right now. The transcript server may be offline or YouTube blocked the request. Retry in a moment, or paste the transcript.",
       });
     }
 
