@@ -297,6 +297,8 @@ export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
   );
   const [studyBundle, setStudyBundle] = useState<YouTubeStudyBundle | null>(null);
   const [studyError, setStudyError] = useState<string | null>(null);
+  const [transcriptProvider, setTranscriptProvider] = useState<string>('');
+  const [pasteTranscriptVal, setPasteTranscriptVal] = useState<string>('');
   const [statementBreakdown, setStatementBreakdown] = useState<DetailedStatementItem[]>([]);
   const [aiExhaustiveSummary, setAiExhaustiveSummary] = useState<string>('');
   const [synthesizingDeepSummary, setSynthesizingDeepSummary] = useState<boolean>(false);
@@ -546,7 +548,7 @@ export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({ query: q, limit: 12 }),
-        signal: AbortSignal.timeout(10000),
+        signal: AbortSignal.timeout(20000),
       });
       if (res.ok) {
         const data = await res.json();
@@ -750,6 +752,45 @@ ${fullTranscriptText}`;
   };
 
   // Load YouTube Video (Direct Link or Video ID: loads ONLY this exact video, autoplays, no related videos)
+  const applyPastedTranscript = async (text: string) => {
+    const t = text.trim();
+    if (!t || !activeVideoId) return;
+    setStudyError(null);
+    setLoadingContent(true);
+    try {
+      const consolidated = consolidateTranscriptSegments([{ start_s: 0, duration_s: 0, text: t }]);
+      setSegments(consolidated.length > 0 ? consolidated : [{ start_s: 0, duration_s: 0, text: t }]);
+      const authHeaders = await getAuthHeaders();
+      const aiRes = await fetch('/api/youtube/study', {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({
+          videoId: activeVideoId,
+          videoTitle: resolvedTitle,
+          videoAuthor: resolvedAuthor,
+          segments: consolidated.length > 0 ? consolidated : [{ start_s: 0, duration_s: 0, text: t }],
+        }),
+        signal: AbortSignal.timeout(45000),
+      });
+      if (aiRes.ok) {
+        const aiData = await aiRes.json();
+        if (aiData?.study?.summary?.overview) {
+          setStudyBundle(aiData.study);
+          setStatementBreakdown(
+            aiData.study.summary.chapters.map((ch: any, idx: number) => ({
+              index: idx + 1,
+              heading: ch.title,
+              claim: ch.summary,
+              elaboration: ch.summary,
+            }))
+          );
+        }
+      }
+      setPasteTranscriptVal('');
+    } catch {}
+    setLoadingContent(false);
+  };
+
   const loadYouTubeSource = async (
     targetVidId: string,
     hintTitle?: string,
@@ -823,13 +864,14 @@ ${fullTranscriptText}`;
             }
             if (data.success && Array.isArray(data.segments) && data.segments.length > 0) {
               rawLoadedSegments = data.segments;
+              setTranscriptProvider(String(data.provider || 'youtube'));
             }
           }
         } catch {}
       }
 
       if (rawLoadedSegments.length === 0) {
-        throw new Error('Could not extract captions or transcript for this YouTube video. Please ensure the video has closed captions or verify the URL.');
+        throw new Error("Couldn't fetch captions right now. The transcript server may be offline or YouTube blocked the request. Retry in a moment, or paste the transcript.");
       }
 
       const consolidated = consolidateTranscriptSegments(rawLoadedSegments);
@@ -2030,7 +2072,7 @@ ${fullTranscriptText}`;
                 </div>
               </div>
             ) : studyError ? (
-              <div className="max-w-md mx-auto my-12 p-6 rounded-2xl border border-red-500/20 bg-red-500/5 text-center space-y-3">
+              <div className="max-w-md mx-auto my-12 p-6 rounded-2xl border border-red-500/20 bg-red-500/5 text-center space-y-4">
                 <div className="text-red-400 font-semibold text-sm">Failed to Generate Study Materials</div>
                 <p className="text-xs text-neutral-400 leading-relaxed">{studyError}</p>
                 <button
@@ -2048,6 +2090,26 @@ ${fullTranscriptText}`;
                 >
                   Retry Generation
                 </button>
+                {sourceType === 'youtube' && activeVideoId && (
+                  <div className="pt-4 border-t border-red-500/10 space-y-2 text-left">
+                    <label className="text-xs font-medium text-neutral-400">Or paste the video transcript</label>
+                    <textarea
+                      rows={5}
+                      value={pasteTranscriptVal}
+                      onChange={(e) => setPasteTranscriptVal(e.target.value)}
+                      placeholder="Paste the transcript here (timestamps optional)..."
+                      className={`w-full p-3 rounded-xl border text-xs outline-none resize-y ${isDark ? 'bg-[#09090b] border-white/[0.12] text-white' : 'bg-[#f8f8f9] border-black/[0.12] text-black'}`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => applyPastedTranscript(pasteTranscriptVal)}
+                      disabled={!pasteTranscriptVal.trim()}
+                      className="px-4 py-2 rounded-xl bg-white text-black text-xs font-semibold hover:bg-neutral-200 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      Use pasted transcript
+                    </button>
+                  </div>
+                )}
               </div>
             ) : focusedModuleView ? (
               <div className="max-w-3xl mx-auto px-4 sm:px-6 py-5 space-y-5">
@@ -3676,7 +3738,14 @@ ${fullTranscriptText}`;
                 {activeTabObj?.type === 'transcripts' && (
                   <div className="max-w-3xl mx-auto px-4 sm:px-6 py-5 space-y-5 pb-20">
                     <div className="flex items-center justify-between gap-2">
-                      <h2 className="text-base sm:text-lg font-semibold">Transcript</h2>
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-base sm:text-lg font-semibold">Transcript</h2>
+                        {import.meta.env.DEV && transcriptProvider && (
+                          <span className={`px-2 py-0.5 rounded-lg text-[10px] font-mono ${isDark ? 'bg-white/[0.06]' : 'bg-black/[0.05]'}`} title="Transcript provider">
+                            {transcriptProvider === 'youtube-transcript-npm' ? 'phone' : transcriptProvider}
+                          </span>
+                        )}
+                      </div>
 
                       <div className="flex items-center gap-2">
                         <div className="relative">
