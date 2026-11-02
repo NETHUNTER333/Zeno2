@@ -48,8 +48,8 @@ interface AccountWorkspacePageProps {
   onSelectModel: (model: ModelOption) => void;
   webSearchDefault: boolean;
   onToggleWebSearchDefault: (enabled: boolean) => void;
-  nsfwMode: boolean;
-  onToggleNsfwMode: (enabled: boolean) => void;
+  nsfwMode?: boolean;
+  onToggleNsfwMode?: (enabled: boolean) => void;
   onClearAllHistory: () => void;
   onSelectThread?: (threadId: string) => void;
   onDeleteThread?: (threadId: string) => void;
@@ -65,7 +65,7 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
   onSelectModel,
   webSearchDefault,
   onToggleWebSearchDefault,
-  nsfwMode,
+  nsfwMode = false,
   onToggleNsfwMode,
   onClearAllHistory,
   onSelectThread,
@@ -149,7 +149,7 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
         selectedModelId: selectedModel.id,
         selectedModelName: selectedModel.name,
         webSearchDefault,
-        nsfwMode,
+        nsfwMode: false,
         theme,
       },
       ...(extra || {}),
@@ -1075,29 +1075,21 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
                     </button>
                   </div>
 
-                  <div className="flex items-center justify-between py-2">
+                  <div className="flex items-center justify-between py-2.5">
                     <div>
-                      <div className="text-xs font-semibold">Technical Research / Unrestricted Analysis</div>
-                      <div className="text-[11px] text-neutral-400">
-                        Allow deep technical analysis without excessive safety filters.
+                      <div className="text-xs font-semibold flex items-center gap-2">
+                        <span>SafeSearch & Adult Content Filter</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded font-mono font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                          Strictly Enforced
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-neutral-400 mt-0.5">
+                        Adult/NSFW questions, explicit image pulls, and adult video sites are permanently blocked.
                       </div>
                     </div>
-                    <button
-                      onClick={() => onToggleNsfwMode(!nsfwMode)}
-                      className={`w-11 h-6 rounded-full transition-colors relative cursor-pointer ${
-                        nsfwMode
-                          ? isDark ? 'bg-white' : 'bg-black'
-                          : isDark ? 'bg-neutral-700' : 'bg-neutral-300'
-                      }`}
-                    >
-                      <span
-                        className={`absolute top-1 left-1 w-4 h-4 rounded-full transition-transform ${
-                          nsfwMode
-                            ? isDark ? 'translate-x-5 bg-black' : 'translate-x-5 bg-white'
-                            : 'bg-white'
-                        }`}
-                      />
-                    </button>
+                    <div className="text-[10px] font-mono text-neutral-400 px-2.5 py-1 rounded-md bg-neutral-800/60 border border-neutral-700/60">
+                      Locked
+                    </div>
                   </div>
                 </div>
 

@@ -876,8 +876,43 @@ export async function moderateUploadedAttachment(
 }
 
 // ============================================================================
-// 4. PART 7: PROMPT & OUTPUT SAFETY MODERATION
+// 4. PART 7: PROMPT & OUTPUT SAFETY MODERATION (STRICT ADULT/NSFW FILTERING)
 // ============================================================================
+
+/**
+ * Checks whether a given URL, domain, or link points to a known adult, pornographic,
+ * or webcam website, or has an adult-specific top-level domain.
+ */
+export function isAdultUrlOrDomain(urlOrDomain: string): boolean {
+  if (!urlOrDomain) return false;
+  const target = String(urlOrDomain).toLowerCase().trim();
+  const knownAdultHosts =
+    /\b(pornhub|xvideos|xnxx|xhamster|spankbang|eporner|youporn|motherless|redgifs|chaturbate|stripchat|cam4|onlyfans|fansly|beeg|tube8|tnaflix|drtuber|daftsex|xcafe|livejasmin|bongacams|brazzers|bangbros|naughtyamerica|realitykings|javlibrary|nhentai|hanime|fapelo|rule34|lustpress|porn555|thumbzilla|redtube|voyeurweb|myfreecams|camsoda|babes|twistys|kink\.com|clips4sale|manyvids|eroticmv|xfantazy|tblop|heavy-r|efukt|adultwork|eurogirlsescort|escortservice)\b/i;
+  const adultTlds = /\.(xxx|porn|adult|sex|sexy)(\/|$)/i;
+  const adultPathKeywords = /\b(porn|adult-content|xxx|sex-video|camgirl|escort-service|hardcore-porn|hentai-video)\b/i;
+  return knownAdultHosts.test(target) || adultTlds.test(target) || adultPathKeywords.test(target);
+}
+
+/**
+ * Checks whether a search query, media title, or snippet contains explicit adult,
+ * pornographic, or sexually explicit keywords.
+ */
+export function isAdultQueryOrText(text: string): boolean {
+  if (!text) return false;
+  const target = String(text).toLowerCase().trim();
+  return (
+    isAdultUrlOrDomain(target) ||
+    /\b(hardcore\s*porn|explicit\s*porn|erotic\s*story|erotic\s*roleplay|sex\s*stories|nsfw\s*story|hentai\s*(?:video|pic|comic|manga)|porn\s*(?:video|movie|pic|star|site|link|tube|actress)|sex\s*(?:video|tape|movie|scene)|naked\s*(?:women|men|girls|boys|people|photos?)|nude\s*(?:photos?|pics?|images?|models?)|cybersex|sexting|striptease|blowjob|deepthroat|cunnilingus|penetration\s*sex|orgasm\s*techniques\s*erotic|masturbat\w*\s*(?:porn|tips|guide)|adult\s*cam(?:girl)?|adult\s*(?:dating|escort|hookup|massage))\b/i.test(
+      target
+    ) ||
+    /\b(generate|write|show|find|search|pull|give\s*me|fetch)\s+(?:me\s+)?(?:some\s+)?(?:nsfw|porn|xxx|nude|naked|erotic|sexually\s*explicit|adult\s*video|pornographic)/i.test(
+      target
+    ) ||
+    /\b(how\s+to\s+bypass\s+(?:safesearch|safe\s*search|nsfw\s*filter|adult\s*filter))\b/i.test(
+      target
+    )
+  );
+}
 
 export interface PromptModerationResult {
   allowed: boolean;
@@ -948,16 +983,12 @@ If you are feeling overwhelmed, hopeless, or having thoughts of self-harm or sui
     };
   }
 
-  // 4. Explicit Pornography / Erotica Generation
-  if (
-    /\b(write\s+hardcore\s+porn|generate\s+explicit\s+pornograph|write\s+explicit\s+erotic\s+sex\s+scene|nsfw\s+hentai\s+story)\b/i.test(
-      q
-    )
-  ) {
+  // 4. Explicit Adult / Pornography / Erotica / NSFW Requests & SafeSearch Bypass Attempts
+  if (isAdultQueryOrText(q)) {
     return {
       allowed: false,
       category: 'nsfw',
-      refusalMessage: `**Request Refused:** Zeno is an educational, research, and study workspace and does not generate sexually explicit or pornographic content. See our [Acceptable Use Policy](/acceptable-use).`,
+      refusalMessage: `**Request Refused:** Zeno strictly prohibits adult, pornographic, and sexually explicit content in accordance with our [Acceptable Use Policy](/acceptable-use). All SafeSearch and adult content filters are permanently active and cannot be bypassed. Please feel free to ask any educational, technical, or research question instead.`,
     };
   }
 

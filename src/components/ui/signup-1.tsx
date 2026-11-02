@@ -124,7 +124,7 @@ const Signup1 = ({
     if (!cleanEmail || !password) return;
     if (!consentAccepted) {
       setError(
-        `Please confirm you are ${MIN_AGE} or older (or have parent/guardian consent) and agree to the Terms, Privacy Policy, and Acceptable Use Policy.`
+        `Please confirm you are 18 or older and agree to the Terms, Privacy Policy, and Acceptable Use Policy.`
       );
       return;
     }
@@ -192,7 +192,7 @@ const Signup1 = ({
   const handleGoogleSignup = async () => {
     if (!consentAccepted) {
       setError(
-        `Please check the box below to confirm you are ${MIN_AGE}+ (or have parent/guardian consent) and agree to the Terms, Privacy Policy, and Acceptable Use Policy.`
+        `Please check the box below to confirm you are 18 or older and agree to the Terms, Privacy Policy, and Acceptable Use Policy.`
       );
       return;
     }
@@ -409,7 +409,7 @@ const Signup1 = ({
                 className="mt-0.5 h-4 w-4 accent-[#FC4C01] rounded cursor-pointer shrink-0"
               />
               <span className="text-muted-foreground select-none">
-                By logging in or signing up, you accept our{" "}
+                By logging in or signing up, you confirm you are 18+ and accept our{" "}
                 <a
                   href="/terms"
                   onClick={(e) => {

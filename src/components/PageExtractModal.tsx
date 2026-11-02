@@ -688,7 +688,7 @@ export const PageExtractModal: React.FC<PageExtractModalProps> = ({
             ) : (
               <div className="prose-grok max-w-none min-w-0 text-xs sm:text-sm leading-relaxed">
                 <ReactMarkdown
-                  remarkPlugins={[remarkGfm, remarkMath]}
+                  remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
                   rehypePlugins={[rehypeKatex]}
                   components={renderMarkdownComponents}
                 >
@@ -798,7 +798,7 @@ export const PageExtractModal: React.FC<PageExtractModalProps> = ({
             {viewMode === 'rendered' ? (
               <div className="prose-grok max-w-none min-w-0">
                 <ReactMarkdown
-                  remarkPlugins={[remarkGfm, remarkMath]}
+                  remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
                   rehypePlugins={[rehypeKatex]}
                   components={renderMarkdownComponents}
                 >

@@ -85,6 +85,8 @@ import {
   renderPrerendered404Html,
   moderateUserPromptSafety,
   moderateUploadedAttachment,
+  isAdultUrlOrDomain,
+  isAdultQueryOrText,
 } from './server/legalAndSafetyEngine';
 
 dotenv.config();
@@ -1717,9 +1719,9 @@ async function fallbackPublicWebSearch(query: string): Promise<any[]> {
 async function searchWebViaTreg(
   query: string,
   mode: 'organic' | 'news' = 'organic',
-  nsfwMode = false
+  _nsfwMode = false
 ) {
-  const outcome = await searchWebReliable(query, mode, nsfwMode);
+  const outcome = await searchWebReliable(query, mode, false);
   return outcome.results;
 }
 
@@ -1869,6 +1871,9 @@ function extractYouTubeId(url: string): string | undefined {
 
 // Convert any known video URL across the internet into a direct iframe embed URL
 function buildUniversalEmbedUrl(url: string, ytId?: string): string {
+  if (isAdultUrlOrDomain(url)) {
+    return '';
+  }
   const resolvedYtId = ytId || extractYouTubeId(url);
   if (resolvedYtId) {
     return `https://www.youtube.com/embed/${resolvedYtId}?autoplay=1&rel=0&modestbranding=1&playsinline=1`;
@@ -1929,48 +1934,15 @@ function buildUniversalEmbedUrl(url: string, ytId?: string): string {
   if ((m = url.match(/ted\.com\/talks\/([a-zA-Z0-9_-]+)/i))) {
     return `https://embed.ted.com/talks/${m[1]}`;
   }
-  // RedGIFs
-  if ((m = url.match(/redgifs\.com\/(?:watch|ifr)\/([a-zA-Z0-9_-]+)/i))) {
-    return `https://www.redgifs.com/ifr/${m[1]}`;
-  }
-  // Pornhub
-  if ((m = url.match(/pornhub\.com\/(?:view_video\.php\?viewkey=|embed\/)([a-zA-Z0-9_-]+)/i))) {
-    return `https://www.pornhub.com/embed/${m[1]}`;
-  }
-  // XVideos
-  if ((m = url.match(/xvideos\.com\/(?:video\.?|embedframe\/)([a-zA-Z0-9]+)/i))) {
-    return `https://www.xvideos.com/embedframe/${m[1]}`;
-  }
-  // XNXX
-  if ((m = url.match(/xnxx\.com\/(?:video-|embedframe\/)([a-zA-Z0-9]+)/i))) {
-    return `https://www.xnxx.com/embedframe/${m[1]}`;
-  }
-  // xHamster
-  if ((m = url.match(/xhamster\.com\/(?:videos\/[^/]*?-|embed\/)([a-zA-Z0-9]+)(?:$|[/?#])/i))) {
-    return `https://xhamster.com/embed/${m[1]}`;
-  }
-  // SpankBang
-  if ((m = url.match(/spankbang\.com\/([a-zA-Z0-9]+)\/(?:video|embed)/i))) {
-    return `https://spankbang.com/${m[1]}/embed/`;
-  }
-  // Eporner
-  if ((m = url.match(/eporner\.com\/(?:video-|hd-porn\/|embed\/)([a-zA-Z0-9]+)/i))) {
-    return `https://www.eporner.com/embed/${m[1]}`;
-  }
-  // YouPorn
-  if ((m = url.match(/youporn\.com\/(?:watch|embed)\/(\d+)/i))) {
-    return `https://www.youporn.com/embed/${m[1]}`;
-  }
-  // Motherless
-  if ((m = url.match(/motherless\.com\/(?:embed\/)?([A-Z0-9]{6,10})/i))) {
-    return `https://motherless.com/embed/${m[1]}`;
-  }
 
   return '';
 }
 
 // Resolve direct MP4/WebM stream and/or embed URL from any webpage across the internet
 async function resolveVideoFromWebpage(url: string, timeoutMs = 3500): Promise<{ videoUrl: string; embedUrl: string }> {
+  if (isAdultUrlOrDomain(url)) {
+    return { videoUrl: '', embedUrl: '' };
+  }
   let videoUrl = '';
   let embedUrl = buildUniversalEmbedUrl(url);
 
@@ -2131,12 +2103,14 @@ async function resolveVideoFromWebpage(url: string, timeoutMs = 3500): Promise<{
 }
 
 // Search images via Treg, TinyFish, DuckDuckGo Live Image Search (i.js), Wikipedia PageImages, and Wikimedia Commons
-async function searchImagesViaTreg(query: string, nsfwMode = false, maxCount = 4, offset = 0) {
+async function searchImagesViaTreg(query: string, _nsfwMode = false, maxCount = 4, offset = 0) {
   const cleanQ = String(query || '').trim();
-  if (!cleanQ) return [];
+  if (!cleanQ || isAdultQueryOrText(cleanQ)) return [];
   const targetPoolSize = Math.max(16, offset + maxCount + 6);
 
   const isSpamImageItem = (urlStr: string, titleStr: string, domainStr: string) => {
+    if (isAdultUrlOrDomain(urlStr) || isAdultUrlOrDomain(domainStr)) return true;
+    if (isAdultQueryOrText(titleStr) || isAdultQueryOrText(urlStr)) return true;
     const combined = `${urlStr} ${titleStr} ${domainStr}`.toLowerCase();
     return /\b(slot|gacor|toto|togel|judi|poker|casino|sbobet|betting|maxwin|pragmatic|bokep|payday-loan|1xbet)\b/i.test(
       combined
@@ -2179,14 +2153,10 @@ async function searchImagesViaTreg(query: string, nsfwMode = false, maxCount = 4
     });
   };
 
-  // 1. Try Treg Google Images SERP first if configured
+  // 1. Try Treg Google Images SERP first if configured (always strict SafeSearch)
   if (getTregToken()) {
     try {
-      const params: any = { q: cleanQ };
-      if (nsfwMode) {
-        params.safe = 'off';
-        params.adult = '1';
-      }
+      const params: any = { q: cleanQ, safe: 'active', adult: '0' };
       const data = await callTregEndpoint('serper.google.serp.images', params);
       const rawImages = data?.output?.images || data?.images || [];
       for (const img of rawImages.slice(0, targetPoolSize)) {
@@ -2209,16 +2179,17 @@ async function searchImagesViaTreg(query: string, nsfwMode = false, maxCount = 4
     }
   }
 
-  // 2. Run DuckDuckGo Live Web Image Search (i.js), TinyFish Images, Wikipedia PageImages, and Wikimedia Commons in parallel
+  // 2. Run DuckDuckGo Live Web Image Search (i.js with strict SafeSearch p=1), TinyFish Images, Wikipedia PageImages, and Wikimedia Commons in parallel
   const ddgImageTask = (async () => {
     try {
       const htmlRes = await fetch(
-        `https://duckduckgo.com/?q=${encodeURIComponent(cleanQ)}&iax=images&ia=images`,
+        `https://duckduckgo.com/?q=${encodeURIComponent(cleanQ)}&iax=images&ia=images&kp=1`,
         {
           headers: {
             'User-Agent':
               'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
             Accept: 'text/html,application/xhtml+xml',
+            Cookie: 'kl=us-en; kp=1',
           },
           signal: AbortSignal.timeout(2600),
         }
@@ -2229,7 +2200,7 @@ async function searchImagesViaTreg(query: string, nsfwMode = false, maxCount = 4
       const vqd = vqdMatch?.[1];
       if (!vqd) return;
 
-      const safeParam = nsfwMode ? '-1' : '1';
+      const safeParam = '1'; // Strict SafeSearch permanently active
       const imgRes = await fetch(
         `https://duckduckgo.com/i.js?l=us-en&o=json&q=${encodeURIComponent(cleanQ)}&vqd=${encodeURIComponent(
           vqd
@@ -2370,7 +2341,7 @@ async function searchImagesViaTreg(query: string, nsfwMode = false, maxCount = 4
 // Search videos across the entire internet (Google Video SERP + YouTube Treg + Direct YouTube Live Search)
 async function searchYouTubeViaTreg(query: string, _nsfwMode = false) {
   const cleanQ = String(query || '').trim();
-  if (!cleanQ) return [];
+  if (!cleanQ || isAdultQueryOrText(cleanQ)) return [];
 
   const combined: any[] = [];
   const seenKeys = new Set<string>();
@@ -2387,6 +2358,9 @@ async function searchYouTubeViaTreg(query: string, _nsfwMode = false) {
         const rawWebVideos = webVideoRes.value?.output?.videos || webVideoRes.value?.videos || [];
         for (const v of rawWebVideos) {
           const link = v.link || '';
+          if (isAdultUrlOrDomain(link) || isAdultQueryOrText(v.title || '') || isAdultQueryOrText(v.snippet || '')) {
+            continue;
+          }
           const ytId = extractYouTubeId(link);
           const key = ytId || link || v.title;
           if (!key || seenKeys.has(key)) continue;
@@ -2400,6 +2374,7 @@ async function searchYouTubeViaTreg(query: string, _nsfwMode = false) {
           }
 
           const initialEmbed = buildUniversalEmbedUrl(link, ytId);
+          if (!initialEmbed && !ytId) continue;
 
           combined.push({
             videoId: ytId,
@@ -2423,6 +2398,7 @@ async function searchYouTubeViaTreg(query: string, _nsfwMode = false) {
       if (ytVideoRes.status === 'fulfilled') {
         const rawYtVideos = ytVideoRes.value?.output?.videos || [];
         for (const v of rawYtVideos) {
+          if (isAdultQueryOrText(v.title || '')) continue;
           const ytId = v.video_id;
           if (!ytId) continue;
           const viewsStr = v.number_of_views ? `${Math.round(v.number_of_views / 1000)}K views` : '';
@@ -2478,13 +2454,14 @@ async function searchYouTubeViaTreg(query: string, _nsfwMode = false) {
               const vr = item?.videoRenderer;
               const ytId = vr?.videoId;
               if (!ytId || seenKeys.has(ytId)) continue;
-              seenKeys.add(ytId);
 
-              const ytLink = `https://www.youtube.com/watch?v=${ytId}`;
               const title =
                 vr?.title?.runs?.map((r: any) => r.text).join('') ||
                 vr?.title?.simpleText ||
                 cleanQ;
+              if (isAdultQueryOrText(title)) continue;
+              seenKeys.add(ytId);
+              const ytLink = `https://www.youtube.com/watch?v=${ytId}`;
               const author =
                 vr?.ownerText?.runs?.[0]?.text ||
                 vr?.longBylineText?.runs?.[0]?.text ||
@@ -5087,6 +5064,13 @@ app.get('/api/media/resolve-video', async (req, res) => {
     if (!url && !title) {
       return res.status(400).json({ error: 'url or title is required' });
     }
+    if (isAdultUrlOrDomain(url) || isAdultQueryOrText(title) || isAdultQueryOrText(url)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Adult and NSFW video sources are blocked per Acceptable Use Policy',
+        blocked: true,
+      });
+    }
 
     let { videoUrl, embedUrl } = await resolveVideoFromWebpage(url, 4000);
 
@@ -5133,6 +5117,9 @@ app.get('/api/media/stream', async (req, res) => {
     if (!targetUrl) {
       return res.status(400).send('Missing url');
     }
+    if (isAdultUrlOrDomain(targetUrl) || isAdultQueryOrText(targetUrl)) {
+      return res.status(403).send('Stream blocked: adult media prohibited');
+    }
 
     let referer = '';
     try {
@@ -5177,6 +5164,9 @@ app.get('/api/media/embed-proxy', async (req, res) => {
     const title = (req.query.title as string) || 'Video';
     if (!targetUrl) {
       return res.status(400).send('Missing url');
+    }
+    if (isAdultUrlOrDomain(targetUrl) || isAdultQueryOrText(targetUrl) || isAdultQueryOrText(title)) {
+      return res.status(403).send('Embed blocked: adult media prohibited');
     }
 
     const { videoUrl, embedUrl } = await resolveVideoFromWebpage(targetUrl, 3500);
@@ -5242,6 +5232,14 @@ app.get('/api/media/download', async (req, res) => {
     const rawTargetUrl = (req.query.url as string) || '';
     const fallbackUrl = (req.query.fallback as string) || '';
     const title = (req.query.title as string) || 'media';
+    if (
+      isAdultUrlOrDomain(rawTargetUrl) ||
+      isAdultUrlOrDomain(fallbackUrl) ||
+      isAdultQueryOrText(rawTargetUrl) ||
+      isAdultQueryOrText(title)
+    ) {
+      return res.status(403).send('Download blocked: adult media prohibited');
+    }
     const mediaType = ((req.query.type as string) || 'image') === 'video' ? 'video' : 'image';
 
     const safeName =
@@ -5544,16 +5542,32 @@ app.post('/api/treg/search', async (req, res) => {
 // Unified /api/search Endpoint (rate-limited under search_and_extract tier + quota tracked)
 app.post('/api/search', async (req, res) => {
   try {
-    const { query, mode = 'organic', nsfwMode = false } = req.body || {};
+    const { query, mode = 'organic' } = req.body || {};
     if (!query || typeof query !== 'string' || !query.trim()) {
       return sendNormalizedError(res, 400, 'validation/missing-query', 'Query parameter is required');
+    }
+    const cleanQuery = query.trim();
+    if (isAdultQueryOrText(cleanQuery)) {
+      return res.json({
+        success: true,
+        query: cleanQuery,
+        mode,
+        durationMs: 0,
+        resultsCount: 0,
+        results: [],
+        providerUsed: 'zeno-safesearch-strict',
+        fallbackUsed: false,
+        blocked: true,
+        message: 'Adult content searches are blocked under Acceptable Use Policy',
+        quota: getServerQuotaSnapshot(req),
+      });
     }
     const abortController = attachRequestAbortController(req, res);
     const startTime = Date.now();
     const outcome = await searchWebReliable(
-      query.trim(),
+      cleanQuery,
       mode === 'news' ? 'news' : 'organic',
-      Boolean(nsfwMode),
+      false,
       abortController.signal
     );
     const quota = recordServerQuotaConsumption(req, { searches: 1 });
@@ -5823,19 +5837,18 @@ app.get('/api/discover/live', async (req, res) => {
   }
 });
 
-// Load More Live Web Images on Demand (4 images per batch)
+// Load More Live Web Images on Demand (4 images per batch with strict SafeSearch)
 app.get('/api/media/more-images', async (req, res) => {
   try {
     const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
     const offset = Math.max(0, Math.min(40, parseInt(String(req.query.offset || '4'), 10) || 4));
     const limit = Math.max(1, Math.min(8, parseInt(String(req.query.limit || '4'), 10) || 4));
-    const nsfw = req.query.nsfw === 'true' || req.query.nsfw === '1';
 
-    if (!q) {
+    if (!q || isAdultQueryOrText(q)) {
       return res.json({ success: true, images: [], hasMore: false });
     }
 
-    const images = await searchImagesViaTreg(q, nsfw, limit, offset);
+    const images = await searchImagesViaTreg(q, false, limit, offset);
     return res.json({
       success: true,
       images,
@@ -6946,6 +6959,14 @@ app.post('/api/search/live', async (req, res) => {
     if (!userQuery || isDateOrTimeClockQuery(userQuery)) {
       return res.json({ success: true, sources: [] });
     }
+    if (isAdultQueryOrText(userQuery)) {
+      return res.json({
+        success: true,
+        sources: [],
+        blocked: true,
+        message: 'Adult content searches are blocked per Acceptable Use Policy',
+      });
+    }
 
     const liveSources: any[] = [];
     const tasks: Promise<void>[] = [];
@@ -7103,7 +7124,7 @@ app.post('/api/search/live', async (req, res) => {
             const results = await searchWebViaTreg(
               coreTopic || userQuery,
               searchMode === 'news' || isImplicitNewsQuery ? 'news' : 'organic',
-              Boolean(nsfwMode)
+              false
             );
             for (const r of results.slice(0, isResearchMode ? 10 : 6)) {
               if (
@@ -7122,7 +7143,7 @@ app.post('/api/search/live', async (req, res) => {
         tasks.push(
           (async () => {
             try {
-              const imgs = await searchImagesViaTreg(coreTopic || userQuery, Boolean(nsfwMode));
+              const imgs = await searchImagesViaTreg(coreTopic || userQuery, false);
               for (const img of imgs.slice(0, 6)) {
                 const link = img.link || img.imageUrl;
                 if (link && !liveSources.some((s) => s.url === link)) {
@@ -7148,7 +7169,7 @@ app.post('/api/search/live', async (req, res) => {
         tasks.push(
           (async () => {
             try {
-              const vids = await searchYouTubeViaTreg(coreTopic || userQuery, Boolean(nsfwMode));
+              const vids = await searchYouTubeViaTreg(coreTopic || userQuery, false);
               for (const v of vids.slice(0, 4)) {
                 if (v.link && !liveSources.some((s) => s.url === v.link)) {
                   let dom = v.source || 'youtube.com';
@@ -10492,7 +10513,7 @@ ${transcriptSnippet
           (async () => {
             try {
               const vidStart = Date.now();
-              const searchedVids = await searchYouTubeViaTreg(coreTopic, Boolean(nsfwMode));
+              const searchedVids = await searchYouTubeViaTreg(coreTopic, false);
               if (directYoutubeVideo) {
                 youtubeVideos = [
                   directYoutubeVideo,
@@ -10524,7 +10545,7 @@ ${transcriptSnippet
           (async () => {
             try {
               const imgStart = Date.now();
-              fetchedImages = await searchImagesViaTreg(coreTopic, Boolean(nsfwMode));
+              fetchedImages = await searchImagesViaTreg(coreTopic, false);
               if (fetchedImages.length > 0) {
                 toolsUsed.push({
                   tool: 'serper.google.serp.images',
@@ -10667,7 +10688,7 @@ ${transcriptSnippet
             const imgStart = Date.now();
             fetchedImages = await searchImagesViaTreg(
               rawWikiPersonProfile?.name || personCandidate,
-              Boolean(nsfwMode)
+              false
             );
             if (fetchedImages.length > 0) {
               toolsUsed.push({
@@ -10964,12 +10985,10 @@ ${transcriptSnippet
       groundingContext += currencyContext;
     }
 
-    const nsfwDirective = nsfwMode
-      ? `\n6. 18+ / ADVANCED BIOLOGY & CASE STUDY MODE IS EXPLICITLY ENABLED:
-   - The user has enabled the 18+ toggle in Settings to access unfiltered clinical, anatomical, biological, forensic, and historical case studies, along with fetched reference images and videos.
-   - You DO have full access to the live fetched images ([FETCHED LIVE IMAGES]), videos ([FETCHED YOUTUBE & INTERNET VIDEOS]), and web/scientific sources in the context below.
-   - Present the complete scientific, anatomical, pathological, or historical case study analysis objectively and clinically, and directly reference the fetched images and videos without any censorship or blurring.`
-      : '';
+    const contentSafetyDirective = `\n6. STRICT CONTENT SAFETY & SAFE SEARCH POLICY:
+   - Zeno strictly enforces SafeSearch and content boundaries per our Acceptable Use Policy (/acceptable-use).
+   - Adult, pornographic, sexually explicit, erotic, or NSFW generation requests must be strictly refused.
+   - If the user asks an adult, pornographic, or NSFW question, refuse politely and objectively: "I cannot generate or assist with adult, sexually explicit, or NSFW content in accordance with our Acceptable Use Policy. Please let me know if you would like help with any safe, educational, technical, or creative topic."`;
 
     let personalizationDirective = '';
     if (personalization) {
@@ -11009,7 +11028,7 @@ Rules:
       hasYouTubeContext
         ? `\n7. YouTube Videos: You have direct access to the video details and transcript in [DETECTED YOUTUBE VIDEO] or [FETCHED YOUTUBE & INTERNET VIDEOS] below; explain and break down the video/topic directly.`
         : ''
-    }${nsfwDirective}${personalizationDirective}${languageDirective}${pinnedDirective}`;
+    }${contentSafetyDirective}${personalizationDirective}${languageDirective}${pinnedDirective}`;
 
     const isRedundantClockPrompt =
       typeof systemPrompt === 'string' &&

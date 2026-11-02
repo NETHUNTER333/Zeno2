@@ -576,7 +576,7 @@ export const PublicArtifactView: React.FC<PublicArtifactViewProps> = ({
               {/* Main Markdown + LaTeX + Responsive Table Body */}
               <div className="prose-grok max-w-none text-sm sm:text-[15px] leading-relaxed">
                 <ReactMarkdown
-                  remarkPlugins={[remarkGfm, remarkMath]}
+                  remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
                   rehypePlugins={[rehypeKatex]}
                   components={{
                     table: ({ children }) => (

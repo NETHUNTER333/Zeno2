@@ -542,13 +542,8 @@ export default function App() {
   const [isRunning, setIsRunning] = useState(false);
   const [searchMode, setSearchMode] = useState<SearchMode>('organic');
   const [selectedModel, setSelectedModel] = useState<ModelOption>(GROK_MODELS[0]);
-  const [nsfwMode, setNsfwMode] = useState<boolean>(() => {
-    try {
-      const saved = localStorage.getItem('zeno_nsfw_mode');
-      if (saved !== null) return saved === 'true';
-    } catch {}
-    return false;
-  });
+  // SafeSearch is permanently active and enforced (adult/NSFW content strictly blocked)
+  const nsfwMode = false;
   const [isResearchMode, setIsResearchMode] = useState(false);
 
   // Studio & Research Tool Modals
@@ -939,12 +934,12 @@ export default function App() {
     }
   }, [theme]);
 
-  // Persist 18+ NSFW Mode
+  // Clean up any legacy NSFW Mode from localStorage
   useEffect(() => {
     try {
-      localStorage.setItem('zeno_nsfw_mode', String(nsfwMode));
+      localStorage.removeItem('zeno_nsfw_mode');
     } catch {}
-  }, [nsfwMode]);
+  }, []);
 
   // Persist threads to localStorage & Firebase Firestore
   useEffect(() => {
@@ -1883,8 +1878,7 @@ export default function App() {
                 onSelectModel={(newModel) => setSelectedModel(newModel)}
                 webSearchDefault={searchMode !== 'off'}
                 onToggleWebSearchDefault={(enabled) => setSearchMode(enabled ? 'organic' : 'off')}
-                nsfwMode={nsfwMode}
-                onToggleNsfwMode={(enabled) => setNsfwMode(enabled)}
+                nsfwMode={false}
                 onClearAllHistory={handleClearAllHistory}
                 onSelectThread={handleSelectThread}
                 onDeleteThread={handleDeleteThread}

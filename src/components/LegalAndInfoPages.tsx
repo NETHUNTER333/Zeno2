@@ -293,7 +293,7 @@ export const SiteFooter: React.FC<SiteFooterProps> = ({
 
   return (
     <footer
-      className={`w-full border-t px-4 sm:px-8 py-6 text-xs ${
+      className={`w-full border-t px-4 sm:px-8 py-6 pb-28 sm:pb-24 text-xs ${
         isDark
           ? 'border-white/10 bg-[#09090b] text-white/55'
           : 'border-black/10 bg-[#fafafa] text-black/60'
@@ -536,7 +536,7 @@ export const GuestFirstPromptConsentModal: React.FC<{
             className="mt-0.5 h-4 w-4 accent-[#FC4C01] rounded cursor-pointer shrink-0"
           />
           <span className="text-xs leading-relaxed">
-            I am {MIN_AGE} or older (or have verifiable parent/guardian consent) and agree to the{' '}
+            I am {MIN_AGE} or older and agree to the{' '}
             <a
               href="/terms"
               onClick={(e) => handleLink(e, '/terms')}
@@ -911,7 +911,7 @@ export const LegalAndInfoPages: React.FC<LegalAndInfoPagesProps> = ({
             }}
             className="hidden sm:flex items-center gap-2 pl-2"
           >
-            <GrokLogo className="w-5 h-5" />
+            <GrokLogo className="w-5 h-5 shrink-0" size="sm" showText={false} isDark={isDark} />
             <span className="font-bold tracking-tight text-sm">{TRADE_NAME} Legal</span>
           </a>
         </div>

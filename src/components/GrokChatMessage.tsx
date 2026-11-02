@@ -98,8 +98,20 @@ interface GrokChatMessageProps {
   nsfwMode?: boolean;
 }
 
+const isAdultUrl = (url?: string): boolean => {
+  if (!url) return false;
+  return (
+    /\b(pornhub|xvideos|xnxx|xhamster|spankbang|eporner|youporn|motherless|redgifs|chaturbate|stripchat|cam4|onlyfans|fansly|beeg|tube8|tnaflix|drtuber|daftsex|xcafe|livejasmin|bongacams|brazzers|bangbros|naughtyamerica|realitykings|javlibrary|nhentai|hanime|fapelo|rule34)\b/i.test(
+      url
+    ) || /\.(xxx|porn|adult|sex|sexy)(\/|$)/i.test(url)
+  );
+};
+
 // Client-side helper to convert any video webpage URL into an embeddable player URL
 function getUniversalClientEmbedUrl(url?: string, ytId?: string, existingEmbed?: string): string {
+  if (url && isAdultUrl(url)) {
+    return '';
+  }
   if (ytId) {
     return `https://www.youtube.com/embed/${ytId}?autoplay=1&rel=0&modestbranding=1&playsinline=1`;
   }
@@ -154,33 +166,6 @@ function getUniversalClientEmbedUrl(url?: string, ytId?: string, existingEmbed?:
   }
   if ((m = url.match(/ted\.com\/talks\/([a-zA-Z0-9_-]+)/i))) {
     return `https://embed.ted.com/talks/${m[1]}`;
-  }
-  if ((m = url.match(/redgifs\.com\/(?:watch|ifr)\/([a-zA-Z0-9_-]+)/i))) {
-    return `https://www.redgifs.com/ifr/${m[1]}`;
-  }
-  if ((m = url.match(/pornhub\.com\/(?:view_video\.php\?viewkey=|embed\/)([a-zA-Z0-9_-]+)/i))) {
-    return `https://www.pornhub.com/embed/${m[1]}`;
-  }
-  if ((m = url.match(/xvideos\.com\/(?:video\.?|embedframe\/)([a-zA-Z0-9]+)/i))) {
-    return `https://www.xvideos.com/embedframe/${m[1]}`;
-  }
-  if ((m = url.match(/xnxx\.com\/(?:video-|embedframe\/)([a-zA-Z0-9]+)/i))) {
-    return `https://www.xnxx.com/embedframe/${m[1]}`;
-  }
-  if ((m = url.match(/xhamster\.com\/(?:videos\/[^/]*?-|embed\/)([a-zA-Z0-9]+)(?:$|[/?#])/i))) {
-    return `https://xhamster.com/embed/${m[1]}`;
-  }
-  if ((m = url.match(/spankbang\.com\/([a-zA-Z0-9]+)\/(?:video|embed)/i))) {
-    return `https://spankbang.com/${m[1]}/embed/`;
-  }
-  if ((m = url.match(/eporner\.com\/(?:video-|hd-porn\/|embed\/)([a-zA-Z0-9]+)/i))) {
-    return `https://www.eporner.com/embed/${m[1]}`;
-  }
-  if ((m = url.match(/youporn\.com\/(?:watch|embed)\/(\d+)/i))) {
-    return `https://www.youporn.com/embed/${m[1]}`;
-  }
-  if ((m = url.match(/motherless\.com\/(?:embed\/)?([A-Z0-9]{6,10})/i))) {
-    return `https://motherless.com/embed/${m[1]}`;
   }
 
   return existingEmbed || `/api/media/embed-proxy?url=${encodeURIComponent(url)}`;
@@ -336,7 +321,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
       const res = await fetch(
         `/api/media/more-images?q=${encodeURIComponent(queryForImages)}&offset=${
           displayedImages.length
-        }&limit=4&nsfw=${nsfwMode ? '1' : '0'}`
+        }&limit=4`
       );
       const data = await res.json();
       if (data && Array.isArray(data.images) && data.images.length > 0) {

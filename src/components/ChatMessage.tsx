@@ -116,7 +116,7 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ message, onExtractUrl,
           ) : (
             <div className="prose-custom max-w-none text-slate-200 text-sm leading-relaxed">
               <ReactMarkdown
-                remarkPlugins={[remarkGfm, remarkMath]}
+                remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
                 rehypePlugins={[[rehypeKatex, { throwOnError: false, strict: false }]]}
                 components={{
                   a: ({ node, ...props }) => (

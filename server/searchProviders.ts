@@ -6,6 +6,7 @@ import {
   getTregToken,
   validateSafePublicUrl,
 } from './config';
+import { isAdultUrlOrDomain, isAdultQueryOrText } from './legalAndSafetyEngine';
 
 export interface SearchResultItem {
   position: number;
@@ -260,16 +261,20 @@ export function isBoilerplateOrJunkSearchResult(
     return true;
   }
 
-  // Reject Gambling / Casino / Betting / SEO malware / Adult spam unless the user query explicitly searches for it
-  const isGamblingOrAdultQuery = /\b(casino|gambling|bet|betting|slot\s*machine|poker|roulette|blackjack|porn|adult|escort)\b/i.test(q);
-  if (!isGamblingOrAdultQuery) {
+  // STRICT ADULT / NSFW BLOCKING: Pornographic, adult sites, and explicit sexual content are ALWAYS rejected
+  if (isAdultUrlOrDomain(url) || isAdultUrlOrDomain(dom) || isAdultQueryOrText(`${title} ${snippet}`)) {
+    return true;
+  }
+
+  // Reject Gambling / Casino / Betting / SEO malware spam unless the user query explicitly searches for it
+  const isGamblingQuery = /\b(casino|gambling|bet|betting|slot\s*machine|poker|roulette|blackjack)\b/i.test(q);
+  if (!isGamblingQuery) {
     const textToCheck = `${title} ${snippet} ${dom} ${url}`.toLowerCase();
     const spamPatterns = [
       /\b(casino|siteleri|yat[ıi]r[ıi]m\s*bonusu|bonus\s*veren|deneme\s*bonusu|g[uü]venilir\s*casino|canl[ıi]\s*bahis|ka[cç]ak\s*bahis|kumar|bahis\s*siteleri)\b/i,
       /\b(slot\s*gacor|judi\s*online|slot88|pragmatic\s*play|poker88|togel|bocoran\s*slot|situs\s*slot)\b/i,
       /\b(poker\s*online|roulette\s*online|free\s*spins\s*no\s*deposit|real\s*money\s*casino|online\s*casinos?)\b/i,
       /\b(dedoco|1xbet|bet365|stake\.com|roobet|mostbet|parimatch|betway|draftkings)\b/i,
-      /\b(escort\s*service|adult\s*dating|cam\s*girls|porn\s*video|xxx|sex\s*chat)\b/i,
       /\b(warez|keygen|cracked\s*software|torrent\s*download|free\s*download\s*full\s*version)\b/i,
     ];
 
@@ -621,18 +626,18 @@ export async function fallbackPublicWebSearchWithStatus(
     return items;
   };
 
-  // 3. DuckDuckGo HTML organic search (forced US-English region kl=us-en)
+  // 3. DuckDuckGo HTML organic search (forced US-English region kl=us-en & Strict SafeSearch kp=1)
   const fetchDuckDuckGoHtml = async (): Promise<SearchResultItem[]> => {
     const items: SearchResultItem[] = [];
     try {
       const ddgRes = await fetch(
-        `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}&kl=us-en`,
+        `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}&kl=us-en&kp=1`,
         {
           headers: {
             'User-Agent':
               'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
             'Accept-Language': 'en-US,en;q=0.9',
-            Cookie: 'kl=us-en',
+            Cookie: 'kl=us-en; kp=1',
           },
           signal: signal || AbortSignal.timeout(3_500),
         }
@@ -1048,7 +1053,7 @@ export async function searchWebReliable(
     const tinyfishConfigured = Boolean(tinyfishKey);
     const endpointId = mode === 'news' ? 'treg.google.serp.news' : 'treg.google.serp.organic';
 
-    if (!trimmed) {
+    if (!trimmed || isAdultQueryOrText(trimmed)) {
       return {
         results: [],
         providerUsed: 'none',
@@ -1056,12 +1061,12 @@ export async function searchWebReliable(
         providerStatus: 'empty_results',
         tregConfigured,
         tinyfishConfigured,
-        toolLabel: tregConfigured
+        toolLabel: isAdultQueryOrText(trimmed) ? 'zeno.safesearch.strict' : tregConfigured
           ? endpointId
           : tinyfishConfigured
           ? 'tinyfish.search'
           : 'public.web.search.fallback',
-        endpointUsed: tregConfigured
+        endpointUsed: isAdultQueryOrText(trimmed) ? 'policy://acceptable-use' : tregConfigured
           ? `${getTregBaseUrl()}/call/${endpointId}`
           : tinyfishConfigured
           ? `${getTinyfishBaseUrl()}`
@@ -1086,7 +1091,11 @@ export async function searchWebReliable(
       tasks.push(
         (async () => {
           try {
-            const data = await callTregEndpointReliable(endpointId, { q: trimmed }, { signal });
+            const data = await callTregEndpointReliable(
+              endpointId,
+              { q: trimmed, safe: 'active', adult: '0' },
+              { signal }
+            );
             const rawResults = Array.isArray(data?.output?.results) ? data.output.results : [];
 
             const mappedTreg: SearchResultItem[] = rawResults.map((item: any, idx: number) => {

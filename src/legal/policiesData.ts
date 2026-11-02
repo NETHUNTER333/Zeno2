@@ -68,11 +68,11 @@ export const LEGAL_DOCUMENTS: Record<LegalDocId, PolicyDocument> = {
     lastUpdated: LEGAL_CONFIG.EFFECTIVE_DATE,
     version: LEGAL_CONFIG.CONSENT_VERSION,
     shortVersionBullets: [
-      `${LEGAL_CONFIG.TRADE_NAME} is operated by ${LEGAL_CONFIG.OPERATOR_NAME} (${LEGAL_CONFIG.ADDRESS}).`,
+      `${LEGAL_CONFIG.TRADE_NAME} is an independent SaaS platform operated by ${LEGAL_CONFIG.OPERATOR_NAME} (${LEGAL_CONFIG.ADDRESS}).`,
       `Your prompts, PDFs, and study materials are never sold and are never used by ${LEGAL_CONFIG.TRADE_NAME} to train foundation AI models.`,
       `Paid subscriptions (${LEGAL_CONFIG.PRICE}) are processed by Dodo Payments as our Merchant of Record, backed by a ${LEGAL_CONFIG.REFUND_WINDOW_DAYS}-day first-purchase refund window.`,
       `We comply with India's Digital Personal Data Protection Act 2023 (DPDP Act), Information Technology Act 2000, IT Rules 2021, and international GDPR-standard data rights.`,
-      `Strict safety guards prohibit uploading photos of real people, government IDs, financial credentials, or explicit content.`,
+      `Upload standards prohibit uploading photos of real people, government IDs (Aadhaar, PAN), financial credentials, or explicit content.`,
     ],
     sections: [
       {
@@ -94,7 +94,7 @@ export const LEGAL_DOCUMENTS: Record<LegalDocId, PolicyDocument> = {
             [
               'Terms of Service',
               '/terms',
-              'Binding service agreement covering eligibility, AI output disclaimers, ownership of your content, subscription billing, referral rules, liability limits, and governing law.',
+              'Binding service agreement covering eligibility (18+), AI output disclaimers, ownership of your content, subscription billing, referral rules, liability limits, and governing law.',
             ],
             [
               'Privacy Policy',
@@ -132,9 +132,9 @@ export const LEGAL_DOCUMENTS: Record<LegalDocId, PolicyDocument> = {
           `In accordance with the Digital Personal Data Protection Act, 2023 (DPDP Act) and Rule 3(2) of the Information Technology (Intermediary Guidelines and Digital Media Ethics Code) Rules, 2021, details of the Data Fiduciary and Grievance Officer are published below:`,
         ],
         bullets: [
-          `Operator / Data Fiduciary: ${LEGAL_CONFIG.OPERATOR_NAME} (trading as "${LEGAL_CONFIG.TRADE_NAME}")`,
-          `Registered / Operational Address: ${LEGAL_CONFIG.ADDRESS}`,
-          `General & Billing Support: ${LEGAL_CONFIG.SUPPORT_EMAIL} (Target response: within 48 hours)`,
+          `Operator / Data Fiduciary: ${LEGAL_CONFIG.OPERATOR_NAME} (operating the "${LEGAL_CONFIG.TRADE_NAME}" SaaS)`,
+          `Operational Location: ${LEGAL_CONFIG.ADDRESS}`,
+          `General & Billing Support: ${LEGAL_CONFIG.SUPPORT_EMAIL} (Target response: within 24–48 hours)`,
           `Grievance Officer & Privacy Contact: ${LEGAL_CONFIG.GRIEVANCE_OFFICER_NAME} — ${LEGAL_CONFIG.GRIEVANCE_EMAIL} (Acknowledgment within ${LEGAL_CONFIG.GRIEVANCE_ACK_HOURS} hours; resolution within ${LEGAL_CONFIG.GRIEVANCE_RESOLUTION_DAYS} days)`,
         ],
       },
@@ -168,7 +168,7 @@ export const LEGAL_DOCUMENTS: Record<LegalDocId, PolicyDocument> = {
     lastUpdated: LEGAL_CONFIG.EFFECTIVE_DATE,
     version: LEGAL_CONFIG.CONSENT_VERSION,
     shortVersionBullets: [
-      `You must be at least ${LEGAL_CONFIG.MIN_AGE} years old (or at least ${LEGAL_CONFIG.MIN_AGE_WITH_PARENTAL_CONSENT} outside India with verifiable parent/guardian consent; users under 18 in India require verifiable parental consent under the DPDP Act).`,
+      `You must be at least ${LEGAL_CONFIG.MIN_AGE} years old to access or use ${LEGAL_CONFIG.TRADE_NAME}.`,
       `You own the prompts and study documents you upload, and you may use Zeno's AI outputs for personal, educational, and commercial work. We do not use your content to train AI models.`,
       `AI outputs can be inaccurate or incomplete. Never rely on Zeno as a substitute for qualified medical, legal, financial, tax, or mental-health professionals.`,
       `Paid subscriptions (${LEGAL_CONFIG.PRICE}) are billed by Dodo Payments as Merchant of Record, renew automatically until cancelled, and are covered by our Refund Policy (/refund).`,
@@ -180,7 +180,7 @@ export const LEGAL_DOCUMENTS: Record<LegalDocId, PolicyDocument> = {
         number: '01',
         title: 'Who We Are & Acceptance of Terms',
         paragraphs: [
-          `These Terms of Service ("Terms") form a legally binding contract between you ("User", "you") and ${LEGAL_CONFIG.OPERATOR_NAME}, operating under the trade name "${LEGAL_CONFIG.TRADE_NAME}" with its principal place of business at ${LEGAL_CONFIG.ADDRESS} ("${LEGAL_CONFIG.TRADE_NAME}", "we", "us", or "our").`,
+          `These Terms of Service ("Terms") form a legally binding contract between you ("User", "you") and ${LEGAL_CONFIG.OPERATOR_NAME}, the creator and operator of the "${LEGAL_CONFIG.TRADE_NAME}" SaaS platform (${LEGAL_CONFIG.ADDRESS}) ("${LEGAL_CONFIG.TRADE_NAME}", "we", "us", or "our").`,
           `These Terms govern your access to and use of ${LEGAL_CONFIG.LIVE_SITE_URL} and all associated web applications, APIs, AI search tools, Deep Research reports, YouTube Study workspaces, PDF study tools, and related services (collectively, the "Service"). By creating an account, checking the consent box, or using the Service in guest mode, you accept and agree to these Terms, our Privacy Policy (/privacy), our Acceptable Use Policy (/acceptable-use), and our Refund & Cancellation Policy (/refund).`,
         ],
       },
@@ -189,8 +189,7 @@ export const LEGAL_DOCUMENTS: Record<LegalDocId, PolicyDocument> = {
         number: '02',
         title: 'Eligibility & Minimum Age',
         paragraphs: [
-          `You must be at least ${LEGAL_CONFIG.MIN_AGE} years of age to create an account and enter into these Terms independently. If you are between ${LEGAL_CONFIG.MIN_AGE_WITH_PARENTAL_CONSENT} and ${LEGAL_CONFIG.MIN_AGE} years old, you may use the Service only with the verifiable consent and supervision of a parent or legal guardian who agrees to be bound by these Terms on your behalf.`,
-          `In accordance with the Digital Personal Data Protection Act, 2023 (India), any user in India under the age of 18 is considered a child and may only use ${LEGAL_CONFIG.TRADE_NAME} with verifiable parental or guardian consent. Children under ${LEGAL_CONFIG.MIN_AGE_WITH_PARENTAL_CONSENT} are strictly prohibited from using the Service anywhere in the world.`,
+          `You must be at least ${LEGAL_CONFIG.MIN_AGE} years of age to create an account and access or use ${LEGAL_CONFIG.TRADE_NAME}. The Service is strictly intended for adults and is not directed to individuals under ${LEGAL_CONFIG.MIN_AGE}. By using the Service, you represent and warrant that you are at least ${LEGAL_CONFIG.MIN_AGE} years old.`,
         ],
       },
       {
@@ -339,7 +338,7 @@ export const LEGAL_DOCUMENTS: Record<LegalDocId, PolicyDocument> = {
         title: 'Copyright & Intellectual Property Complaints',
         paragraphs: [
           `We respect intellectual property rights and respond to notices of alleged copyright infringement in accordance with the Indian Copyright Act, 1957, Rule 3(1)(d) of the Information Technology (Intermediary Guidelines and Digital Media Ethics Code) Rules, 2021, and the U.S. Digital Millennium Copyright Act (DMCA).`,
-          `If you believe that any public content on ${LEGAL_CONFIG.TRADE_NAME} (such as a published Zeno Discover page or shared thread) infringes your copyright, please send a written takedown notice to ${LEGAL_CONFIG.SUPPORT_EMAIL} (or ${LEGAL_CONFIG.COPYRIGHT_EMAIL}) containing: (1) identification of the copyrighted work; (2) the exact URL on ${LEGAL_CONFIG.LIVE_SITE_URL} of the allegedly infringing material; (3) your name, postal address, telephone number, and email address; (4) a good-faith statement that the disputed use is not authorized by the copyright owner, its agent, or the law; and (5) a statement, under penalty of perjury, that the information in your notice is accurate and that you are the copyright owner or authorized to act on the owner's behalf.`,
+          `If you believe that any public content on ${LEGAL_CONFIG.TRADE_NAME} (such as a published Zeno Discover page or shared thread) infringes your copyright, please send a written takedown notice to ${LEGAL_CONFIG.SUPPORT_EMAIL} containing: (1) identification of the copyrighted work; (2) the exact URL on ${LEGAL_CONFIG.LIVE_SITE_URL} of the allegedly infringing material; (3) your name, postal address, telephone number, and email address; (4) a good-faith statement that the disputed use is not authorized by the copyright owner, its agent, or the law; and (5) a statement, under penalty of perjury, that the information in your notice is accurate and that you are the copyright owner or authorized to act on the owner's behalf.`,
         ],
       },
       {
@@ -364,7 +363,7 @@ export const LEGAL_DOCUMENTS: Record<LegalDocId, PolicyDocument> = {
         number: '19',
         title: 'Contact Information',
         paragraphs: [
-          `Questions about these Terms may be directed to ${LEGAL_CONFIG.OPERATOR_NAME} at ${LEGAL_CONFIG.SUPPORT_EMAIL}, or by mail to ${LEGAL_CONFIG.ADDRESS}, or through our Contact & Support page (/contact).`,
+          `Questions about these Terms may be directed to ${LEGAL_CONFIG.OPERATOR_NAME} at ${LEGAL_CONFIG.SUPPORT_EMAIL}, or through our Contact & Support page (/contact).`,
         ],
       },
     ],
@@ -520,7 +519,7 @@ export const LEGAL_DOCUMENTS: Record<LegalDocId, PolicyDocument> = {
               'Individual threads or your entire history can be deleted immediately from the sidebar or Settings.',
             ],
             [
-              'Blocked Uploads (Safety / Upload Guard Rejections)',
+              'Blocked Uploads (Safety Rejections)',
               '0 seconds (discarded immediately in memory)',
               'Rejected files containing faces, NSFW content, or government IDs are never stored; only a non-content timestamp counter is logged for 24 hours.',
             ],
@@ -550,10 +549,10 @@ export const LEGAL_DOCUMENTS: Record<LegalDocId, PolicyDocument> = {
           `We implement reasonable security practices and procedures as mandated under Section 8(5) of the DPDP Act 2023 and the IT Act 2000, including:`,
         ],
         bullets: [
-          `Encryption in transit via HTTPS/TLS 1.3 across all frontend, backend, and AI provider connections, and encryption at rest (AES-256) in Google Cloud Firestore.`,
-          `Cryptographic RS256 Firebase ID token verification on protected API routes and strict per-user Firestore Security Rules isolating each user's threads, vault items, and quotas.`,
-          `Automated Upload Guard and prompt moderation to prevent the ingestion and storage of sensitive government IDs (Aadhaar/PAN) and payment card numbers.`,
-          `In the event of a personal data breach affecting your rights, we will notify the Data Protection Board of India and affected users as required by law.`,
+          `Encryption in transit via HTTPS/TLS across all web and API connections, and encryption at rest in Google Cloud Firestore.`,
+          `Cryptographic Firebase authentication token verification on protected routes and per-user access control rules.`,
+          `Upload moderation guidelines and filters to prevent the ingestion and storage of sensitive government IDs (Aadhaar/PAN) and payment card numbers.`,
+          `In the event of a personal data security incident affecting your rights, we will notify affected users and regulatory authorities as required by applicable law.`,
         ],
       },
       {
@@ -564,25 +563,25 @@ export const LEGAL_DOCUMENTS: Record<LegalDocId, PolicyDocument> = {
           `Under the Indian Digital Personal Data Protection Act, 2023 (Sections 11–14) and international privacy laws (GDPR Articles 15–22), you have the following rights:`,
         ],
         bullets: [
-          `Right to Access & Summary of Data: Request a summary of the personal data we process about you and the identities of all Data Processors/Subprocessors with whom data has been shared.`,
-          `Right to Correction & Updating: Update your display name and profile directly in Settings → Profile & Account, or request correction of inaccurate personal data.`,
-          `Right to Erasure / Account Deletion: Permanently delete your chat threads or your entire account at any time using the "Delete Account" button in Settings → Profile & Account, or by emailing ${LEGAL_CONFIG.PRIVACY_EMAIL}.`,
-          `Right to Data Portability / Export: Download a complete machine-readable JSON archive of your profile, conversation threads, bookmarks, and Knowledge Vault at any time via Settings → Chat History & Export ("Export My Data").`,
-          `Right to Withdraw Consent: Withdraw your consent to data processing at any time by deleting your account or adjusting your cookie/storage preferences.`,
+          `Right to Access & Summary of Data: Request a summary of the personal data we process about you and the subprocessors involved in providing the service.`,
+          `Right to Correction & Updating: Update your profile and display preferences in Settings, or request correction of inaccurate personal data.`,
+          `Right to Erasure / Account Deletion: Permanently delete your chat history or request account deletion at any time in Settings → Profile & Account, or by emailing ${LEGAL_CONFIG.PRIVACY_EMAIL}.`,
+          `Right to Data Portability / Export: Request an export of your personal account data by emailing ${LEGAL_CONFIG.PRIVACY_EMAIL}.`,
+          `Right to Withdraw Consent: Withdraw your consent to data processing at any time by deleting your account or clearing your local cookies/storage.`,
           `Right to Nominate (India DPDP Act Section 14): You have the right to nominate another individual who may exercise your data principal rights in the event of your death or incapacity by emailing ${LEGAL_CONFIG.PRIVACY_EMAIL} with the subject line "DPDP Nomination".`,
-          `Right to Grievance Redressal & Regulatory Complaint: You must first contact our Grievance Officer (${LEGAL_CONFIG.GRIEVANCE_EMAIL}) for redressal. If your grievance is not resolved within the statutory period, you have the right to lodge a complaint with the Data Protection Board of India (or your local EEA/UK supervisory authority).`,
+          `Right to Grievance Redressal & Regulatory Complaint: You may contact our Grievance Officer (${LEGAL_CONFIG.GRIEVANCE_EMAIL}) for redressal. If your grievance is not resolved within the statutory period, you have the right to lodge a complaint with the Data Protection Board of India.`,
         ],
         callout: {
-          title: 'How to Exercise Your Rights & Response Timeline',
-          body: `You can exercise data export and account deletion instantly in Settings → Profile & Account, or email ${LEGAL_CONFIG.PRIVACY_EMAIL}. We verify requests via your registered email address and complete all data rights requests within ${LEGAL_CONFIG.DATA_RIGHTS_RESPONSE_DAYS} days.`,
+          title: 'How to Exercise Your Rights',
+          body: `You can clear chat data and manage your account in Settings, or email ${LEGAL_CONFIG.PRIVACY_EMAIL}. We verify requests via your registered account email and respond within ${LEGAL_CONFIG.DATA_RIGHTS_RESPONSE_DAYS} days.`,
         },
       },
       {
         id: 'children',
         number: '10',
-        title: 'Children’s Privacy',
+        title: 'Age Requirement & Children’s Privacy',
         paragraphs: [
-          `${LEGAL_CONFIG.TRADE_NAME} is not directed at children under ${LEGAL_CONFIG.MIN_AGE_WITH_PARENTAL_CONSENT}. Under the DPDP Act 2023, we do not knowingly process personal data of users under 18 in India without verifiable parental consent, and we never perform behavioral tracking, profiling, or targeted advertising directed at children. If you are a parent or guardian and believe your child has provided personal data without consent, please contact ${LEGAL_CONFIG.PRIVACY_EMAIL} and we will promptly delete the account and associated data.`,
+          `${LEGAL_CONFIG.TRADE_NAME} is strictly intended for individuals ${LEGAL_CONFIG.MIN_AGE} years of age and older. We do not knowingly collect or process personal data from individuals under ${LEGAL_CONFIG.MIN_AGE}. If you believe an individual under 18 has registered an account, please contact ${LEGAL_CONFIG.PRIVACY_EMAIL} and we will promptly delete the account and associated records.`,
         ],
       },
       {
@@ -595,8 +594,8 @@ export const LEGAL_DOCUMENTS: Record<LegalDocId, PolicyDocument> = {
         bullets: [
           `Name: ${LEGAL_CONFIG.GRIEVANCE_OFFICER_NAME}`,
           `Email: ${LEGAL_CONFIG.GRIEVANCE_EMAIL}`,
-          `Postal Address: ${LEGAL_CONFIG.OPERATOR_NAME}, ${LEGAL_CONFIG.ADDRESS}`,
-          `Response SLA: We acknowledge every grievance within ${LEGAL_CONFIG.GRIEVANCE_ACK_HOURS} hours with a unique ticket number and resolve it within ${LEGAL_CONFIG.GRIEVANCE_RESOLUTION_DAYS} days from receipt.`,
+          `Operational Location: ${LEGAL_CONFIG.OPERATOR_NAME}, ${LEGAL_CONFIG.ADDRESS}`,
+          `Response SLA: We endeavor to acknowledge grievances within ${LEGAL_CONFIG.GRIEVANCE_ACK_HOURS} hours and resolve them within ${LEGAL_CONFIG.GRIEVANCE_RESOLUTION_DAYS} days from receipt.`,
         ],
       },
       {
@@ -776,7 +775,7 @@ export const LEGAL_DOCUMENTS: Record<LegalDocId, PolicyDocument> = {
     shortVersionBullets: [
       `Do NOT upload photos of real people, selfies, or portraits. ${LEGAL_CONFIG.TRADE_NAME} is strictly for documents, notes, diagrams, and educational media.`,
       `Zero tolerance for CSAM/CSAE, 18+/NSFW sexually explicit material, or non-consensual intimate imagery — violations result in an immediate permanent ban and reporting to authorities.`,
-      `Do NOT upload sensitive personal IDs (Aadhaar, PAN, passport, driver's licence) or financial credentials (card numbers, UPI PINs, API keys). Our Upload Guard automatically blocks them.`,
+      `Do NOT upload sensitive personal IDs (Aadhaar, PAN, passport, driver's licence) or financial credentials (card numbers, UPI PINs, API keys). Such uploads are strictly prohibited and subject to removal.`,
       `Do NOT use ${LEGAL_CONFIG.TRADE_NAME} for self-harm, illegal weapons/drugs, malware, harassment, or live proctored exam cheating.`,
       `Anyone can report unsafe outputs or shared pages using the in-app Report button or by emailing ${LEGAL_CONFIG.ABUSE_EMAIL}.`,
     ],
@@ -787,7 +786,7 @@ export const LEGAL_DOCUMENTS: Record<LegalDocId, PolicyDocument> = {
         title: 'Category A — Zero-Tolerance Prohibited Uploads & Visual Content',
         callout: {
           title: 'STUDY MATERIAL ONLY — DO NOT UPLOAD PHOTOS OF PEOPLE',
-          body: `Do not upload images of people. ${LEGAL_CONFIG.TRADE_NAME} is for documents, notes, study material, diagrams, code screenshots, and educational media. Uploads containing human faces, selfies, or explicit content are automatically rejected by our Upload Guard.`,
+          body: `Do not upload images of people. ${LEGAL_CONFIG.TRADE_NAME} is for documents, notes, study material, diagrams, code screenshots, and educational media. Uploads containing human faces, selfies, or explicit content are prohibited.`,
         },
         bullets: [
           `Child Sexual Abuse Material (CSAM) & Child Sexual Exploitation and Abuse (CSAE): Absolute zero tolerance. Any attempt to upload, request, generate, or share content that depicts, encourages, or sexualizes minors results in immediate permanent account termination, preservation of forensic metadata, and mandatory reporting to the National Center for Missing & Exploited Children (NCMEC) and Indian cybercrime authorities (CERT-In / MHA Cyber Crime Portal) under the POCSO Act and IT Act Section 67B.`,
@@ -803,7 +802,7 @@ export const LEGAL_DOCUMENTS: Record<LegalDocId, PolicyDocument> = {
         title: 'Category B — Prohibited Sensitive Personal & Financial Data',
         paragraphs: [
           `To protect your privacy and comply with Indian and international data minimization laws, you must NOT upload documents, images, or prompts containing sensitive government identifiers or financial secrets:`,
-          `Automated Upload Guard Enforcement: Our upload pipeline scans attached images and extracted PDF text for Aadhaar patterns, PAN patterns, and Luhn-validated payment card numbers. Matching uploads are immediately discarded in memory and never stored.`,
+          `Prohibited Data Policy: Users are strictly forbidden from uploading Indian government IDs (such as Aadhaar or PAN), payment card credentials, or bank details. Matching or flagged uploads are discarded and subject to immediate removal.`,
         ],
         bullets: [
           `Indian & International Government IDs: Aadhaar cards or 12-digit Aadhaar numbers, Permanent Account Number (PAN) cards, passports, voter ID (EPIC) cards, driver's licences, or Social Security numbers.`,
@@ -836,8 +835,8 @@ export const LEGAL_DOCUMENTS: Record<LegalDocId, PolicyDocument> = {
         number: '04',
         title: 'Category D — Enforcement Ladder & Appeals',
         paragraphs: [
-          `When our automated safety systems or trust & safety reviewers detect a policy violation, we apply a proportionate enforcement ladder:`,
-          `Right to Appeal: If you believe an upload block, content removal, or account suspension was applied in error, you may submit an appeal within 30 days by emailing ${LEGAL_CONFIG.SUPPORT_EMAIL} with the subject "Safety Appeal" and your account email. Human reviewers will evaluate your appeal within 7 business days.`,
+          `When safety checks or user reports identify a policy violation, we apply a proportionate enforcement approach:`,
+          `Right to Appeal: If you believe an upload rejection or account action was applied in error, you may email ${LEGAL_CONFIG.SUPPORT_EMAIL} with the subject "Safety Appeal" and your account email. Appeals are evaluated in good faith, typically within 7 to 14 business days.`,
         ],
         table: {
           headers: ['Step', 'Action Taken', 'Triggering Condition'],
@@ -964,11 +963,11 @@ export const LEGAL_DOCUMENTS: Record<LegalDocId, PolicyDocument> = {
     lastUpdated: LEGAL_CONFIG.EFFECTIVE_DATE,
     version: LEGAL_CONFIG.CONSENT_VERSION,
     shortVersionBullets: [
-      `General & Technical Support: ${LEGAL_CONFIG.SUPPORT_EMAIL} — target response within 48 hours.`,
+      `General & Technical Support: ${LEGAL_CONFIG.SUPPORT_EMAIL} — target response within 24–48 hours.`,
       `Billing & Refunds: Processed with Dodo Payments (Merchant of Record) via Settings → Plans & Pricing or ${LEGAL_CONFIG.SUPPORT_EMAIL}.`,
-      `Privacy & Data Requests (DPDP Act / GDPR): ${LEGAL_CONFIG.PRIVACY_EMAIL} — completed within ${LEGAL_CONFIG.DATA_RIGHTS_RESPONSE_DAYS} days.`,
-      `Statutory Grievance Officer (India): ${LEGAL_CONFIG.GRIEVANCE_OFFICER_NAME} (${LEGAL_CONFIG.GRIEVANCE_EMAIL}) — acknowledged within ${LEGAL_CONFIG.GRIEVANCE_ACK_HOURS}h, resolved within ${LEGAL_CONFIG.GRIEVANCE_RESOLUTION_DAYS} days.`,
-      `Operator & Registered Address: ${LEGAL_CONFIG.OPERATOR_NAME}, ${LEGAL_CONFIG.ADDRESS}.`,
+      `Privacy & Data Requests (DPDP Act / GDPR): ${LEGAL_CONFIG.PRIVACY_EMAIL} — processed within ${LEGAL_CONFIG.DATA_RIGHTS_RESPONSE_DAYS} days.`,
+      `Statutory Grievance Officer (India): ${LEGAL_CONFIG.GRIEVANCE_OFFICER_NAME} (${LEGAL_CONFIG.GRIEVANCE_EMAIL}) — acknowledged within ${LEGAL_CONFIG.GRIEVANCE_ACK_HOURS} hours, resolved within ${LEGAL_CONFIG.GRIEVANCE_RESOLUTION_DAYS} days.`,
+      `Operator & Location: ${LEGAL_CONFIG.OPERATOR_NAME}, ${LEGAL_CONFIG.ADDRESS}.`,
     ],
     sections: [
       {
@@ -981,7 +980,7 @@ export const LEGAL_DOCUMENTS: Record<LegalDocId, PolicyDocument> = {
             [
               'General & Technical Support',
               LEGAL_CONFIG.SUPPORT_EMAIL,
-              'Within 48 hours (Priority < 12 hours for Spark & Fire subscribers). Bug reports, account help, and feature questions.',
+              'Within 24–48 hours. Bug reports, account help, and general inquiries.',
             ],
             [
               'Billing, Subscriptions & Refunds (Dodo Payments)',
@@ -991,7 +990,7 @@ export const LEGAL_DOCUMENTS: Record<LegalDocId, PolicyDocument> = {
             [
               'Privacy & Data Principal Rights (DPDP / GDPR)',
               LEGAL_CONFIG.PRIVACY_EMAIL,
-              `Within ${LEGAL_CONFIG.DATA_RIGHTS_RESPONSE_DAYS} days. Data access, correction, JSON export, account deletion, and DPDP nominations.`,
+              `Within ${LEGAL_CONFIG.DATA_RIGHTS_RESPONSE_DAYS} days. Data access, correction, export, account deletion, and DPDP nominations.`,
             ],
             [
               'Statutory Grievance Officer (India DPDP Act & IT Rules)',
@@ -1001,12 +1000,12 @@ export const LEGAL_DOCUMENTS: Record<LegalDocId, PolicyDocument> = {
             [
               'Trust & Safety / Abuse Reporting',
               LEGAL_CONFIG.ABUSE_EMAIL,
-              'Reviewed within 24 hours. Report unsafe AI outputs, prohibited uploads, or abusive shared links.',
+              'Reviewed within 24–48 hours. Report unsafe AI outputs, prohibited uploads, or abusive shared links.',
             ],
             [
               'Copyright & DMCA / IT Rules Takedowns',
               LEGAL_CONFIG.COPYRIGHT_EMAIL,
-              'Acknowledged within 24 hours; actioned within 36 hours in accordance with India IT Rules 2021 & DMCA.',
+              'Acknowledged within 24–48 hours in accordance with applicable laws.',
             ],
           ],
         },
@@ -1014,11 +1013,11 @@ export const LEGAL_DOCUMENTS: Record<LegalDocId, PolicyDocument> = {
       {
         id: 'operator-address',
         number: '02',
-        title: 'Operator Identity & Postal Address',
+        title: 'Operator Identity & Contact Details',
         bullets: [
-          `Operator / Legal Entity: ${LEGAL_CONFIG.OPERATOR_NAME}`,
-          `Trade Name: ${LEGAL_CONFIG.TRADE_NAME} (${LEGAL_CONFIG.LIVE_SITE_URL})`,
-          `Address: ${LEGAL_CONFIG.ADDRESS}`,
+          `Operator: ${LEGAL_CONFIG.OPERATOR_NAME}`,
+          `SaaS: ${LEGAL_CONFIG.TRADE_NAME} (${LEGAL_CONFIG.LIVE_SITE_URL})`,
+          `Operational Location: ${LEGAL_CONFIG.ADDRESS}`,
           `Grievance Officer: ${LEGAL_CONFIG.GRIEVANCE_OFFICER_NAME} (${LEGAL_CONFIG.GRIEVANCE_EMAIL})`,
         ],
       },
