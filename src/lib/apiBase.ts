@@ -92,3 +92,25 @@ if (typeof window !== 'undefined' && typeof window.fetch === 'function') {
     console.warn('[apiBase] Could not patch window.fetch:', err);
   }
 }
+
+
+if (typeof window !== 'undefined' && typeof window.fetch === 'function') {
+  const originalFetch = window.fetch.bind(window);
+  window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+    let url = '';
+    if (typeof input === 'string') url = input;
+    else if (input instanceof URL) url = input.toString();
+    else if (input instanceof Request) url = input.url;
+
+    if (url.startsWith('/api/') || url.startsWith('/api?')) {
+      const base = getBackendBaseUrl();
+      if (base) {
+        const newUrl = `${base}${url}`;
+        if (typeof input === 'string') return originalFetch(newUrl, init);
+        if (input instanceof URL) return originalFetch(new URL(newUrl), init);
+        if (input instanceof Request) return originalFetch(new Request(newUrl, input), init);
+      }
+    }
+    return originalFetch(input, init);
+  };
+}
