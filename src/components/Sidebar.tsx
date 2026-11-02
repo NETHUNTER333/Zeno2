@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   Plus,
   Trash2,
@@ -105,8 +105,21 @@ const ThreadTrailingMenu: React.FC<{
   onExportThread?: (id: string, format: 'markdown' | 'pdf') => void;
 }> = ({ thread, isDark, onDeleteThread, onUpdateThreadTitle, onExportThread }) => {
   const [showMenu, setShowMenu] = useState(false);
+  const [openUpward, setOpenUpward] = useState(false);
+  const buttonRef = useRef<HTMLButtonElement>(null);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(thread.title);
+
+  const toggleMenu = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!showMenu && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      // If within 230px of bottom, open upside above the item
+      setOpenUpward(spaceBelow < 230);
+    }
+    setShowMenu((prev) => !prev);
+  };
 
   const handleSaveTitle = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -172,17 +185,16 @@ const ThreadTrailingMenu: React.FC<{
       )}
 
       <button
+        ref={buttonRef}
         type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          setShowMenu((prev) => !prev);
-        }}
+        onClick={toggleMenu}
         className={`p-1 rounded-lg transition-colors cursor-pointer ${
           isDark
             ? 'text-[#8a8a8a] hover:text-white hover:bg-[#2c2c2c]'
             : 'text-[#666666] hover:text-[#0d0d0d] hover:bg-[#e0e0e0]'
         }`}
         title="Chat options"
+        aria-label="Chat options"
       >
         <MoreHorizontal className="w-3.5 h-3.5" />
       </button>
@@ -190,17 +202,19 @@ const ThreadTrailingMenu: React.FC<{
       {showMenu && (
         <>
           <div
-            className="fixed inset-0 z-30"
+            className="fixed inset-0 z-40"
             onClick={(e) => {
               e.stopPropagation();
               setShowMenu(false);
             }}
           />
           <div
-            className={`absolute right-0 top-7 z-40 w-44 rounded-2xl shadow-2xl border py-1.5 backdrop-blur-md ${
+            className={`absolute right-0 z-50 w-44 rounded-2xl shadow-2xl border py-1.5 backdrop-blur-md ${
+              openUpward ? 'bottom-full mb-1.5 origin-bottom-right' : 'top-7 origin-top-right'
+            } ${
               isDark
-                ? 'bg-[#1e1e1e]/95 border-[#2e2e2e] text-white'
-                : 'bg-white/95 border-[#e0e0e0] text-[#0d0d0d]'
+                ? 'bg-[#1e1e1e]/95 border-[#2e2e2e] text-white shadow-[0_-8px_30px_rgba(0,0,0,0.6)]'
+                : 'bg-white/95 border-[#e0e0e0] text-[#0d0d0d] shadow-[0_-8px_30px_rgba(0,0,0,0.15)]'
             }`}
           >
             <button
@@ -1101,7 +1115,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         {/* Rare UI BounceSidebar with motion arc dot animation */}
-        <div className="flex-1 overflow-y-auto px-2 py-1 scrollbar-thin">
+        <div className="flex-1 overflow-y-auto px-2 pt-1 pb-48 scrollbar-thin">
           <BounceSidebar
             items={bounceItems}
             value={activeBounceIndex}

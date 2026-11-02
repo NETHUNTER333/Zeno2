@@ -165,6 +165,25 @@ function cleanCaptionText(raw: string): string {
     .trim();
 }
 
+export function splitSegmentIntoSentences(
+  text: string
+): { sentence: string; charOffset: number }[] {
+  if (!text) return [];
+  const trimmed = text.trim();
+  if (!trimmed) return [];
+  const parts = trimmed.split(/(?<=[.!?])\s+(?=[A-Z0-9"'\n])/);
+  let offset = 0;
+  const results: { sentence: string; charOffset: number }[] = [];
+  for (const p of parts) {
+    const clean = p.trim();
+    if (clean) {
+      results.push({ sentence: clean, charOffset: offset });
+      offset += p.length + 1;
+    }
+  }
+  return results.length > 0 ? results : [{ sentence: trimmed, charOffset: 0 }];
+}
+
 export function consolidateTranscriptSegments(
   rawSegments: YouTubeTranscriptSegment[]
 ): YouTubeTranscriptSegment[] {
@@ -367,6 +386,8 @@ export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
   const [translatedSegments, setTranslatedSegments] = useState<Record<string, YouTubeTranscriptSegment[]>>({});
   const [translatingLang, setTranslatingLang] = useState<boolean>(false);
   const [copiedTranscript, setCopiedTranscript] = useState<boolean>(false);
+  const [copiedSegmentIdx, setCopiedSegmentIdx] = useState<number | null>(null);
+  const [activeJumpTimestamp, setActiveJumpTimestamp] = useState<number | null>(null);
   const [pastedTranscriptText, setPastedTranscriptText] = useState<string>('');
 
   // Notes State
@@ -1158,6 +1179,68 @@ ${fullTranscriptText}`;
     setTranslatingLang(false);
   };
 
+  const handleCopyFormattedTranscript = async () => {
+    if (!activeTranscriptList || activeTranscriptList.length === 0) return;
+    const titleHeader = resolvedTitle ? `# ${resolvedTitle}\n` : '';
+    const langHeader =
+      selectedLang && selectedLang.code !== 'en'
+        ? `Language: ${selectedLang.label}\n`
+        : '';
+    const header = titleHeader || langHeader ? `${titleHeader}${langHeader}\n` : '';
+    const body = activeTranscriptList
+      .map((s) => `[${formatTime(s.start_s)}] ${s.text.trim()}`)
+      .join('\n\n');
+    const fullText = `${header}${body}`.trim();
+
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(fullText);
+      } else {
+        throw new Error('Clipboard API unavailable');
+      }
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = fullText;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand('copy');
+      } catch {}
+      document.body.removeChild(ta);
+    }
+
+    setCopiedTranscript(true);
+    setTimeout(() => setCopiedTranscript(false), 2200);
+  };
+
+  const handleCopySingleSegment = async (seg: YouTubeTranscriptSegment, idx: number) => {
+    const formatted = `[${formatTime(seg.start_s)}] ${seg.text.trim()}`;
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(formatted);
+      } else {
+        throw new Error('Clipboard API unavailable');
+      }
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = formatted;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand('copy');
+      } catch {}
+      document.body.removeChild(ta);
+    }
+    setCopiedSegmentIdx(idx);
+    setTimeout(() => setCopiedSegmentIdx(null), 1800);
+  };
+
   const handleToggleListenSummary = () => {
     if (isListeningSummary) {
       stopSmallestSpeech();
@@ -1379,7 +1462,7 @@ ${fullTranscriptText}`;
   const completedLessonSteps = Object.values(completedModules).filter(Boolean).length;
 
   return (
-    <div className={`w-full h-full min-h-screen flex flex-col font-sans select-text ${bgMain}`}>
+    <div className={`w-full h-full flex flex-col font-sans select-text ${bgMain}`}>
       <input
         ref={fileInputRef}
         type="file"
@@ -1393,27 +1476,29 @@ ${fullTranscriptText}`;
       />
 
       {/* ===================================================================== */}
-      {/* VIEW 1: STUDY SPACE HOME                                              */}
+      {/* VIEW 1: STUDY SPACE HOME (Compact, Monochrome, Clean)                  */}
       {/* ===================================================================== */}
       {viewMode === 'home' ? (
         <div className="flex-1 flex flex-col overflow-y-auto">
+          {/* Header without translucent scrim, blur, or gradient */}
           <header
-            className={`h-14 px-4 sm:px-6 border-b flex items-center justify-between shrink-0 sticky top-0 z-20 backdrop-blur-md ${
-              isDark ? 'bg-[#09090b]/90 border-white/[0.08]' : 'bg-white/90 border-black/[0.08]'
+            className={`h-14 px-4 sm:px-6 flex items-center justify-between shrink-0 ${
+              isDark ? 'bg-[#09090b]' : 'bg-[#fafafa]'
             }`}
           >
             <div className="flex items-center gap-3">
               <button
                 type="button"
                 onClick={onBackToChat}
-                className={`p-2 rounded-xl border transition-colors cursor-pointer ${
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer active:scale-95 ${
                   isDark
-                    ? 'bg-white/[0.04] border-white/[0.08] hover:bg-white/[0.08] text-white'
-                    : 'bg-black/[0.03] border-black/[0.08] hover:bg-black/[0.06] text-black'
+                    ? 'bg-white/[0.05] hover:bg-white/[0.1] border-white/[0.1] text-neutral-200 hover:text-white'
+                    : 'bg-black/[0.04] hover:bg-black/[0.08] border-black/[0.1] text-neutral-800 hover:text-black'
                 }`}
                 title="Back to Chat"
               >
-                <ArrowLeft className="w-4 h-4" />
+                <ArrowLeft className="w-3.5 h-3.5 stroke-[2.2]" />
+                <span>Back</span>
               </button>
               <span className="font-semibold text-sm tracking-tight">Study Space</span>
             </div>
@@ -1422,85 +1507,88 @@ ${fullTranscriptText}`;
               <button
                 type="button"
                 onClick={() => setViewMode('workspace')}
-                className={`px-3.5 py-1.5 rounded-xl border text-xs font-medium transition-colors cursor-pointer ${
+                className={`px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer active:scale-95 ${
                   isDark
                     ? 'bg-white text-black border-white hover:bg-neutral-200'
                     : 'bg-black text-white border-black hover:bg-neutral-800'
                 }`}
               >
-                Resume: {resolvedTitle.slice(0, 24)}
+                Resume: {resolvedTitle.slice(0, 20)}...
               </button>
             )}
           </header>
 
-          <div className="max-w-3xl w-full mx-auto px-4 sm:px-6 py-8 sm:py-12 space-y-8">
-            <div className="space-y-1">
-              <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">
-                What would you like to learn, {displayName}?
-              </h1>
-              <p className={`text-xs sm:text-sm ${textMuted}`}>
-                Ask any question or topic to fetch YouTube videos, study notes, flashcards, and quizzes.
-              </p>
-            </div>
-
-            {/* 3-Column Ingestion Grid: Upload, Link, Paste */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="max-w-2xl w-full mx-auto px-4 sm:px-6 py-3 space-y-4">
+            {/* 3-Column Compact Ingestion: Upload, Link, Paste (Monochrome, Small) */}
+            <div className="grid grid-cols-3 gap-2 sm:gap-2.5">
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className={`p-4 rounded-2xl border text-left flex items-center gap-3.5 transition-all cursor-pointer ${
+                className={`p-2.5 sm:p-3 rounded-2xl border text-left flex items-center gap-2.5 transition-all cursor-pointer ${
                   isDark
-                    ? 'bg-[#121215] border-white/[0.08] hover:border-white/[0.22]'
-                    : 'bg-white border-black/[0.08] hover:border-black/[0.22]'
+                    ? 'bg-[#121215] border-white/[0.08] hover:border-white/[0.2] hover:bg-[#18181c]'
+                    : 'bg-white border-black/[0.08] hover:border-black/[0.2] hover:bg-neutral-50 shadow-xs'
                 }`}
               >
-                <div className={`size-10 rounded-xl flex items-center justify-center shrink-0 ${iconBoxClass}`}>
-                  <Upload className="w-4 h-4" />
+                <div
+                  className={`size-8 rounded-xl flex items-center justify-center shrink-0 ${
+                    isDark ? 'bg-white/[0.06] text-neutral-200' : 'bg-black/[0.05] text-neutral-800'
+                  }`}
+                >
+                  <Upload className="w-3.5 h-3.5" />
                 </div>
                 <div className="min-w-0">
-                  <div className="text-sm font-medium">Upload</div>
-                  <div className={`text-xs truncate ${textMuted}`}>PDF, Document, Audio</div>
+                  <div className="text-xs sm:text-sm font-semibold truncate">Upload</div>
+                  <div className={`text-[10px] truncate ${textMuted} hidden sm:block`}>PDF, Audio</div>
                 </div>
               </button>
 
               <button
                 type="button"
                 onClick={() => setLinkModalOpen(true)}
-                className={`p-4 rounded-2xl border text-left flex items-center gap-3.5 transition-all cursor-pointer ${
+                className={`p-2.5 sm:p-3 rounded-2xl border text-left flex items-center gap-2.5 transition-all cursor-pointer ${
                   isDark
-                    ? 'bg-[#121215] border-white/[0.08] hover:border-white/[0.22]'
-                    : 'bg-white border-black/[0.08] hover:border-black/[0.22]'
+                    ? 'bg-[#121215] border-white/[0.08] hover:border-white/[0.2] hover:bg-[#18181c]'
+                    : 'bg-white border-black/[0.08] hover:border-black/[0.2] hover:bg-neutral-50 shadow-xs'
                 }`}
               >
-                <div className={`size-10 rounded-xl flex items-center justify-center shrink-0 ${iconBoxClass}`}>
-                  <Link2 className="w-4 h-4" />
+                <div
+                  className={`size-8 rounded-xl flex items-center justify-center shrink-0 ${
+                    isDark ? 'bg-white/[0.06] text-neutral-200' : 'bg-black/[0.05] text-neutral-800'
+                  }`}
+                >
+                  <Link2 className="w-3.5 h-3.5" />
                 </div>
                 <div className="min-w-0">
-                  <div className="text-sm font-medium">Link</div>
-                  <div className={`text-xs truncate ${textMuted}`}>YouTube, Website</div>
+                  <div className="text-xs sm:text-sm font-semibold truncate">Link</div>
+                  <div className={`text-[10px] truncate ${textMuted} hidden sm:block`}>YouTube, Web</div>
                 </div>
               </button>
 
               <button
                 type="button"
                 onClick={() => setPasteModalOpen(true)}
-                className={`p-4 rounded-2xl border text-left flex items-center gap-3.5 transition-all cursor-pointer ${
+                className={`p-2.5 sm:p-3 rounded-2xl border text-left flex items-center gap-2.5 transition-all cursor-pointer ${
                   isDark
-                    ? 'bg-[#121215] border-white/[0.08] hover:border-white/[0.22]'
-                    : 'bg-white border-black/[0.08] hover:border-black/[0.22]'
+                    ? 'bg-[#121215] border-white/[0.08] hover:border-white/[0.2] hover:bg-[#18181c]'
+                    : 'bg-white border-black/[0.08] hover:border-black/[0.2] hover:bg-neutral-50 shadow-xs'
                 }`}
               >
-                <div className={`size-10 rounded-xl flex items-center justify-center shrink-0 ${iconBoxClass}`}>
-                  <ClipboardPaste className="w-4 h-4" />
+                <div
+                  className={`size-8 rounded-xl flex items-center justify-center shrink-0 ${
+                    isDark ? 'bg-white/[0.06] text-neutral-200' : 'bg-black/[0.05] text-neutral-800'
+                  }`}
+                >
+                  <ClipboardPaste className="w-3.5 h-3.5" />
                 </div>
                 <div className="min-w-0">
-                  <div className="text-sm font-medium">Paste</div>
-                  <div className={`text-xs truncate ${textMuted}`}>Notes or Text</div>
+                  <div className="text-xs sm:text-sm font-semibold truncate">Paste</div>
+                  <div className={`text-[10px] truncate ${textMuted} hidden sm:block`}>Text notes</div>
                 </div>
               </button>
             </div>
 
-            {/* Topic / Question / YouTube URL Input Bar */}
+            {/* Topic / Question / YouTube URL Input Bar (Compact) */}
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -1514,131 +1602,151 @@ ${fullTranscriptText}`;
                   loadTopicStudySpace(q);
                 }
               }}
-              className={`flex items-center justify-between gap-2 pl-4 pr-2 py-2.5 rounded-2xl border transition-all ${
+              className={`flex items-center justify-between gap-2 p-1.5 pl-3 sm:p-2 sm:pl-3.5 rounded-2xl border transition-all ${
                 isDark
                   ? 'bg-[#121215] border-white/[0.1] focus-within:border-white/[0.25]'
                   : 'bg-white border-black/[0.1] focus-within:border-black/[0.25]'
               }`}
             >
-              <input
-                type="text"
-                value={homePromptDraft}
-                onChange={(e) => setHomePromptDraft(e.target.value)}
-                placeholder="Ask a question, enter a topic, or paste a YouTube link..."
-                className="flex-1 bg-transparent border-0 text-sm outline-none"
-              />
+              <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                <Search className="w-4 h-4 opacity-40 shrink-0" />
+                <input
+                  type="text"
+                  value={homePromptDraft}
+                  onChange={(e) => setHomePromptDraft(e.target.value)}
+                  placeholder="Ask a question, enter a topic, or paste a YouTube link..."
+                  className="w-full bg-transparent border-0 text-xs sm:text-sm outline-none placeholder:text-muted-foreground/60"
+                />
+              </div>
               <button
                 type="submit"
-                className={`size-9 rounded-xl flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
-                  isDark
-                    ? 'bg-white text-black hover:bg-neutral-200'
-                    : 'bg-black text-white hover:bg-neutral-800'
+                disabled={!homePromptDraft.trim()}
+                className={`size-8 sm:size-9 rounded-xl flex items-center justify-center transition-all cursor-pointer shrink-0 ${
+                  !homePromptDraft.trim()
+                    ? 'opacity-30 cursor-not-allowed bg-neutral-500/20 text-neutral-400'
+                    : isDark
+                    ? 'bg-white text-black hover:bg-neutral-200 active:scale-95'
+                    : 'bg-black text-white hover:bg-neutral-800 active:scale-95'
                 }`}
                 title="Start learning"
               >
-                <ArrowUp className="w-4 h-4" />
+                <ArrowUp className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               </button>
             </form>
 
             {/* Saved Spaces Section */}
-            <div className="space-y-3.5 pt-2">
+            <div className="space-y-2.5 pt-1">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <h2 className="text-sm font-semibold tracking-tight">Spaces</h2>
-                  <button
-                    type="button"
-                    onClick={() => setSpacesSort((s) => (s === 'Newest' ? 'Oldest' : 'Newest'))}
-                    className={`inline-flex items-center gap-1 text-xs ${textMuted} hover:opacity-100 cursor-pointer`}
-                  >
-                    <Clock className="w-3 h-3" />
-                    <span>{spacesSort}</span>
-                    <ChevronDown className="w-3 h-3" />
-                  </button>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-xs sm:text-sm font-semibold tracking-tight">Spaces</h2>
+                  <span className="text-[10px] font-medium px-1.5 py-0.2 rounded-full bg-neutral-500/10 text-muted-foreground">
+                    {spaces.length}
+                  </span>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setSpacesSort((s) => (s === 'Newest' ? 'Oldest' : 'Newest'))}
+                  className={`inline-flex items-center gap-1 text-[11px] font-medium ${textMuted} hover:opacity-100 cursor-pointer`}
+                >
+                  <Clock className="w-3 h-3" />
+                  <span>{spacesSort}</span>
+                  <ChevronDown className="w-3 h-3 opacity-60" />
+                </button>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
                 {[...spaces]
                   .sort((a, b) =>
                     spacesSort === 'Newest' ? b.createdAt - a.createdAt : a.createdAt - b.createdAt
                   )
-                  .map((sp) => (
-                    <div
-                      key={sp.id}
-                      onClick={() => {
-                        if (sp.videoId) {
-                          loadYouTubeSource(sp.videoId, sp.name);
-                        } else if (sp.rawText && sp.rawText.length >= 240) {
-                          loadTextOrPdfSource(
-                            sp.name,
-                            sp.rawText,
-                            sp.sourceType === 'pdf' ? 'pdf' : 'text'
-                          );
-                        } else {
-                          loadTopicStudySpace(sp.name);
-                        }
-                      }}
-                      className={`p-4 rounded-2xl border flex items-center justify-between gap-3 transition-all cursor-pointer relative ${
-                        isDark
-                          ? 'bg-[#121215] border-white/[0.08] hover:border-white/[0.22]'
-                          : 'bg-white border-black/[0.08] hover:border-black/[0.22]'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div
-                          className={`size-9 rounded-xl flex items-center justify-center shrink-0 ${iconBoxClass}`}
-                        >
-                          <Box className="w-4 h-4" />
-                        </div>
-                        <div className="min-w-0">
-                          <div className="text-sm font-medium truncate">{sp.name}</div>
-                          <div className={`text-xs ${textMuted}`}>
-                            {sp.sourceType === 'youtube'
-                              ? 'YouTube Video'
-                              : sp.sourceType === 'pdf'
-                              ? 'PDF Document'
-                              : 'Topic Study'}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setOpenSpaceMenuId((prev) => (prev === sp.id ? null : sp.id))
+                  .map((sp) => {
+                    const isYt = sp.sourceType === 'youtube';
+                    const isPdf = sp.sourceType === 'pdf';
+                    return (
+                      <div
+                        key={sp.id}
+                        onClick={() => {
+                          if (sp.videoId) {
+                            loadYouTubeSource(sp.videoId, sp.name);
+                          } else if (sp.rawText && sp.rawText.length >= 240) {
+                            loadTextOrPdfSource(
+                              sp.name,
+                              sp.rawText,
+                              sp.sourceType === 'pdf' ? 'pdf' : 'text'
+                            );
+                          } else {
+                            loadTopicStudySpace(sp.name);
                           }
-                          className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                            isDark ? 'hover:bg-white/[0.08]' : 'hover:bg-black/[0.06]'
-                          }`}
-                        >
-                          <MoreVertical className="w-4 h-4 opacity-60" />
-                        </button>
-
-                        {openSpaceMenuId === sp.id && (
+                        }}
+                        className={`group px-3 py-2.5 rounded-xl border flex items-center justify-between gap-3 transition-all cursor-pointer ${
+                          isDark
+                            ? 'bg-[#121215] border-white/[0.07] hover:border-white/[0.18] hover:bg-[#16161a]'
+                            : 'bg-white border-black/[0.07] hover:border-black/[0.18] hover:bg-neutral-50 shadow-2xs'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
                           <div
-                            className={`absolute right-0 top-full mt-1 w-36 rounded-xl border p-1 z-30 shadow-xl ${
-                              isDark
-                                ? 'bg-[#18181b] border-white/[0.12] text-white'
-                                : 'bg-white border-black/[0.1] text-black'
+                            className={`size-7 rounded-lg flex items-center justify-center shrink-0 ${
+                              isDark ? 'bg-white/[0.06] text-neutral-300' : 'bg-black/[0.05] text-neutral-700'
                             }`}
                           >
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setSpaces((prev) => prev.filter((item) => item.id !== sp.id));
-                                setOpenSpaceMenuId(null);
-                              }}
-                              className="w-full px-3 py-2 rounded-lg text-xs text-left flex items-center gap-2 hover:bg-current/5 cursor-pointer"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                              <span>Delete</span>
-                            </button>
+                            {isYt ? (
+                              <Video className="w-3.5 h-3.5" />
+                            ) : isPdf ? (
+                              <FileText className="w-3.5 h-3.5" />
+                            ) : (
+                              <BookOpen className="w-3.5 h-3.5" />
+                            )}
                           </div>
-                        )}
+                          <div className="min-w-0 flex-1">
+                            <div className="text-xs sm:text-sm font-medium truncate group-hover:text-primary transition-colors">
+                              {sp.name}
+                            </div>
+                          </div>
+                          <span className={`text-[10px] shrink-0 ${textMuted}`}>
+                            {isYt ? 'YouTube' : isPdf ? 'PDF' : 'Topic'}
+                          </span>
+                        </div>
+
+                        <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setOpenSpaceMenuId((prev) => (prev === sp.id ? null : sp.id))
+                            }
+                            className={`p-1 rounded-lg transition-colors cursor-pointer ${
+                              isDark ? 'hover:bg-white/[0.08]' : 'hover:bg-black/[0.06]'
+                            }`}
+                            title="Space options"
+                          >
+                            <MoreVertical className="w-3.5 h-3.5 opacity-50 hover:opacity-100" />
+                          </button>
+
+                          {openSpaceMenuId === sp.id && (
+                            <div
+                              className={`absolute right-0 top-full mt-1 w-32 rounded-xl border p-1 z-30 shadow-xl ${
+                                isDark
+                                  ? 'bg-[#18181b] border-white/[0.12] text-white'
+                                  : 'bg-white border-black/[0.1] text-black'
+                              }`}
+                            >
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSpaces((prev) => prev.filter((item) => item.id !== sp.id));
+                                  setOpenSpaceMenuId(null);
+                                }}
+                                className="w-full px-2.5 py-1.5 rounded-lg text-xs text-left flex items-center gap-2 hover:bg-red-500/10 text-red-500 cursor-pointer transition-colors"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                                <span>Delete</span>
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
               </div>
             </div>
           </div>
@@ -1790,21 +1898,22 @@ ${fullTranscriptText}`;
           {/* Top Header */}
           <header
             className={`px-3 sm:px-5 py-2.5 border-b flex items-center justify-between gap-2 shrink-0 ${
-              isDark ? 'bg-[#09090b] border-white/[0.08]' : 'bg-white border-black/[0.08]'
+              isDark ? 'bg-[#09090b] border-white/[0.08]' : 'bg-[#fafafa] border-black/[0.08]'
             }`}
           >
             <div className="flex items-center gap-2.5 min-w-0 flex-1">
               <button
                 type="button"
                 onClick={onBackToChat}
-                className={`p-1.5 rounded-xl border transition-colors cursor-pointer shrink-0 ${
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer shrink-0 active:scale-95 ${
                   isDark
-                    ? 'border-white/[0.08] hover:bg-white/[0.06]'
-                    : 'border-black/[0.08] hover:bg-black/[0.05]'
+                    ? 'bg-white/[0.05] hover:bg-white/[0.1] border-white/[0.1] text-neutral-200 hover:text-white'
+                    : 'bg-black/[0.04] hover:bg-black/[0.08] border-black/[0.1] text-neutral-800 hover:text-black'
                 }`}
                 title="Back to Chat"
               >
-                <ArrowLeft className="w-4 h-4" />
+                <ArrowLeft className="w-3.5 h-3.5 stroke-[2.2]" />
+                <span>Back</span>
               </button>
 
               <div className="min-w-0 flex-1">
@@ -3961,22 +4070,22 @@ ${fullTranscriptText}`;
 
                         <button
                           type="button"
-                          onClick={() => {
-                            const txt = activeTranscriptList
-                              .map((s) => `[${formatTime(s.start_s)}] ${s.text}`)
-                              .join('\n\n');
-                            navigator.clipboard.writeText(txt);
-                            setCopiedTranscript(true);
-                            setTimeout(() => setCopiedTranscript(false), 2000);
-                          }}
-                          className={`px-3 py-1.5 rounded-xl border text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer ${borderSubtle}`}
+                          onClick={handleCopyFormattedTranscript}
+                          disabled={activeTranscriptList.length === 0}
+                          className={`px-3 py-1.5 rounded-xl border text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+                            copiedTranscript
+                              ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400 font-semibold'
+                              : borderSubtle
+                          }`}
+                          title="Copy formatted transcript with timestamps to clipboard"
+                          aria-label="Copy transcript"
                         >
                           {copiedTranscript ? (
-                            <Check className="w-3.5 h-3.5" />
+                            <Check className="w-3.5 h-3.5 text-emerald-400" />
                           ) : (
                             <Copy className="w-3.5 h-3.5" />
                           )}
-                          <span>{copiedTranscript ? 'Copied' : 'Copy'}</span>
+                          <span>{copiedTranscript ? 'Transcript Copied!' : 'Copy Transcript'}</span>
                         </button>
                       </div>
                     </div>
@@ -4046,26 +4155,125 @@ ${fullTranscriptText}`;
                       </div>
                     ) : (
                       <div className="space-y-3">
-                        {activeTranscriptList.map((seg, idx) => (
-                          <div
-                            key={idx}
-                            className={`p-4 rounded-2xl border flex items-start gap-3.5 ${bgCard}`}
-                          >
-                            {activeVideoId && (
+                        {activeTranscriptList.map((seg, idx) => {
+                          const nextSeg = activeTranscriptList[idx + 1];
+                          const segDuration =
+                            seg.duration_s && seg.duration_s > 0
+                              ? seg.duration_s
+                              : nextSeg
+                              ? Math.max(3, nextSeg.start_s - seg.start_s)
+                              : 8;
+                          const sentenceItems = splitSegmentIntoSentences(seg.text);
+                          const totalChars = Math.max(1, seg.text.length);
+
+                          const triggerJump = (sec: number) => {
+                            handleJumpToTimestamp(sec);
+                            setActiveJumpTimestamp(sec);
+                            setTimeout(() => setActiveJumpTimestamp(null), 2500);
+                          };
+
+                          return (
+                            <div
+                              key={idx}
+                              onClick={() => triggerJump(seg.start_s)}
+                              className={`p-4 rounded-2xl border flex items-start gap-3.5 group/seg transition-all duration-200 cursor-pointer ${bgCard} hover:border-[#FC4C01]/30 hover:shadow-xs`}
+                              title="Click to jump YouTube player to this segment"
+                            >
+                              {activeVideoId && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    triggerJump(seg.start_s);
+                                  }}
+                                  className={`px-2 py-1 rounded-lg font-mono text-xs shrink-0 cursor-pointer flex items-center gap-1 transition-all ${
+                                    activeJumpTimestamp !== null &&
+                                    Math.abs(activeJumpTimestamp - seg.start_s) < 2
+                                      ? 'bg-[#FC4C01] text-white shadow-xs'
+                                      : `${bgSubtle} hover:bg-[#FC4C01]/10 hover:text-[#FC4C01]`
+                                  }`}
+                                  title="Jump to timestamp in video"
+                                >
+                                  <Play className="w-2.5 h-2.5 fill-current opacity-70 group-hover/seg:opacity-100" />
+                                  <span>{formatTime(seg.start_s)}</span>
+                                </button>
+                              )}
+                              <p className="text-sm sm:text-[15px] leading-relaxed whitespace-pre-line flex-1 select-text">
+                                {sentenceItems.map((item, sIdx) => {
+                                  const sentenceTime =
+                                    sentenceItems.length <= 1
+                                      ? seg.start_s
+                                      : Math.round(
+                                          seg.start_s +
+                                            (item.charOffset / totalChars) * segDuration
+                                        );
+                                  const isJumped =
+                                    activeJumpTimestamp !== null &&
+                                    Math.abs(activeJumpTimestamp - sentenceTime) < 2;
+
+                                  return (
+                                    <span
+                                      key={sIdx}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        triggerJump(sentenceTime);
+                                      }}
+                                      className={`inline cursor-pointer rounded px-1 -mx-0.5 transition-all duration-150 ${
+                                        isJumped
+                                          ? 'bg-[#FC4C01]/25 text-[#FC4C01] font-semibold ring-1 ring-[#FC4C01]/40'
+                                          : isDark
+                                          ? 'hover:bg-white/[0.08] hover:text-white hover:underline hover:decoration-[#FC4C01]/40'
+                                          : 'hover:bg-black/[0.06] hover:text-black hover:underline hover:decoration-[#FC4C01]/40'
+                                      }`}
+                                      title={`Click sentence to jump video to ${formatTime(sentenceTime)}`}
+                                    >
+                                      {item.sentence}{' '}
+                                    </span>
+                                  );
+                                })}
+                              </p>
                               <button
                                 type="button"
-                                onClick={() => handleJumpToTimestamp(seg.start_s)}
-                                className={`px-2 py-1 rounded-lg font-mono text-xs shrink-0 cursor-pointer ${bgSubtle}`}
-                                title="Jump to timestamp in video"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleCopySingleSegment(seg, idx);
+                                }}
+                                className={`p-1.5 rounded-lg opacity-40 group-hover/seg:opacity-100 hover:bg-neutral-500/15 transition-all text-neutral-400 hover:text-white shrink-0 cursor-pointer`}
+                                title="Copy this segment with timestamp"
+                                aria-label="Copy segment"
                               >
-                                {formatTime(seg.start_s)}
+                                {copiedSegmentIdx === idx ? (
+                                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                ) : (
+                                  <Copy className="w-3.5 h-3.5" />
+                                )}
                               </button>
-                            )}
-                            <p className="text-sm sm:text-[15px] leading-relaxed whitespace-pre-line flex-1">
-                              {seg.text}
-                            </p>
+                            </div>
+                          );
+                        })}
+
+                        {activeTranscriptList.length > 5 && (
+                          <div className="pt-3 pb-2 flex items-center justify-between text-xs text-neutral-400 border-t border-neutral-500/10">
+                            <span>{activeTranscriptList.length} transcript paragraphs</span>
+                            <button
+                              type="button"
+                              onClick={handleCopyFormattedTranscript}
+                              className={`px-3 py-1.5 rounded-xl border text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer transition-all ${
+                                copiedTranscript
+                                  ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400 font-semibold'
+                                  : borderSubtle
+                              }`}
+                              title="Copy formatted transcript with timestamps to clipboard"
+                            >
+                              {copiedTranscript ? (
+                                <Check className="w-3.5 h-3.5 text-emerald-400" />
+                              ) : (
+                                <Copy className="w-3.5 h-3.5" />
+                              )}
+                              <span>{copiedTranscript ? 'Transcript Copied!' : 'Copy Transcript'}</span>
+                            </button>
                           </div>
-                        ))}
+                        )}
                       </div>
                     )}
                   </div>

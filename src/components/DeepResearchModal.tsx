@@ -1751,17 +1751,31 @@ ${sourceContext ? `Grounding Sources:\n${sourceContext}\n` : ''}`;
             }`}
           >
             {/* Drawer Header */}
-            <div className="shrink-0 p-4 sm:p-5 border-b border-current/10 flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <Clock className="w-4 h-4 opacity-75" />
-                <h2 className="text-sm sm:text-base font-semibold">Research History</h2>
-                <span
-                  className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                    isDark ? 'bg-white/10 text-neutral-300' : 'bg-black/10 text-neutral-700'
+            <div className="shrink-0 p-3.5 sm:p-4 border-b border-current/10 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsHistoryOpen(false)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer active:scale-95 ${
+                    isDark
+                      ? 'bg-white/[0.06] hover:bg-white/[0.12] border-white/10 text-white'
+                      : 'bg-black/[0.04] hover:bg-black/[0.08] border-black/10 text-black'
                   }`}
+                  aria-label="Back to research"
                 >
-                  {historyList.length}
-                </span>
+                  <ArrowLeft className="w-3.5 h-3.5 stroke-[2.2]" />
+                  <span>Back</span>
+                </button>
+                <div className="flex items-center gap-1.5">
+                  <h2 className="text-sm font-semibold">History</h2>
+                  <span
+                    className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                      isDark ? 'bg-white/10 text-neutral-300' : 'bg-black/10 text-neutral-700'
+                    }`}
+                  >
+                    {historyList.length}
+                  </span>
+                </div>
               </div>
               <div className="flex items-center gap-1.5">
                 {historyList.length > 0 && (

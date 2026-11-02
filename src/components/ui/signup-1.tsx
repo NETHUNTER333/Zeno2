@@ -389,21 +389,27 @@ const Signup1 = ({
               </div>
             </div>
 
-            {/* Required Unchecked-by-Default Age & Policy Consent Checkbox */}
-            <label className="flex items-start gap-2.5 rounded-xl border border-border p-3 text-left text-[11px] leading-relaxed text-muted-foreground cursor-pointer hover:border-primary/40 transition-colors">
+            {/* Clean, Non-AI-Slop Terms & Policies Consent Checkbox */}
+            <label
+              className={`flex items-start gap-2.5 rounded-xl border p-3 text-left text-xs leading-snug cursor-pointer transition-all ${
+                !consentAccepted
+                  ? "border-border/80 bg-neutral-500/[0.03] hover:border-border"
+                  : "border-primary/40 bg-primary/[0.03]"
+              }`}
+            >
               <input
                 type="checkbox"
                 checked={consentAccepted}
                 onChange={(e) => {
                   setConsentAccepted(e.target.checked);
-                  if (e.target.checked && error?.includes("agree to the Terms")) {
+                  if (e.target.checked) {
                     setError(null);
                   }
                 }}
                 className="mt-0.5 h-4 w-4 accent-[#FC4C01] rounded cursor-pointer shrink-0"
               />
-              <span>
-                I am {MIN_AGE} or older (or have parent/guardian consent) and agree to the{" "}
+              <span className="text-muted-foreground select-none">
+                By logging in or signing up, you accept our{" "}
                 <a
                   href="/terms"
                   onClick={(e) => {
@@ -412,11 +418,11 @@ const Signup1 = ({
                       new CustomEvent("zeno-navigate-route", { detail: { path: "/terms" } })
                     );
                   }}
-                  className="text-foreground font-semibold underline hover:text-primary"
+                  className="text-foreground font-semibold underline hover:text-primary transition-colors"
                 >
                   Terms
-                </a>
-                ,{" "}
+                </a>{" "}
+                and{" "}
                 <a
                   href="/privacy"
                   onClick={(e) => {
@@ -425,22 +431,9 @@ const Signup1 = ({
                       new CustomEvent("zeno-navigate-route", { detail: { path: "/privacy" } })
                     );
                   }}
-                  className="text-foreground font-semibold underline hover:text-primary"
+                  className="text-foreground font-semibold underline hover:text-primary transition-colors"
                 >
-                  Privacy Policy
-                </a>{" "}
-                and{" "}
-                <a
-                  href="/acceptable-use"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    window.dispatchEvent(
-                      new CustomEvent("zeno-navigate-route", { detail: { path: "/acceptable-use" } })
-                    );
-                  }}
-                  className="text-foreground font-semibold underline hover:text-primary"
-                >
-                  Acceptable Use Policy
+                  Policies
                 </a>
                 .
               </span>
@@ -449,8 +442,12 @@ const Signup1 = ({
             <div className="flex flex-col gap-2.5 pt-1">
               <Button
                 type="submit"
-                className="w-full cursor-pointer h-10 font-semibold"
-                disabled={loading || resetLoading}
+                className={`w-full h-10 font-semibold transition-all ${
+                  !consentAccepted || loading || resetLoading
+                    ? "opacity-50 cursor-not-allowed"
+                    : "cursor-pointer hover:opacity-90"
+                }`}
+                disabled={loading || resetLoading || !consentAccepted}
               >
                 {loading
                   ? isLoginMode
@@ -465,9 +462,13 @@ const Signup1 = ({
               <Button
                 type="button"
                 variant="outline"
-                className="w-full cursor-pointer h-10"
+                className={`w-full h-10 transition-all ${
+                  !consentAccepted || loading || resetLoading
+                    ? "opacity-50 cursor-not-allowed"
+                    : "cursor-pointer"
+                }`}
                 onClick={handleGoogleSignup}
-                disabled={loading || resetLoading}
+                disabled={loading || resetLoading || !consentAccepted}
               >
                 <FcGoogle className="mr-2 size-5 shrink-0" />
                 <span className="text-xs sm:text-sm truncate">
@@ -481,15 +482,21 @@ const Signup1 = ({
               <Button
                 type="button"
                 variant="outline"
-                className="w-full cursor-pointer h-10 border-dashed"
+                className={`w-full h-10 border-dashed transition-all ${
+                  !consentAccepted || loading || resetLoading
+                    ? "opacity-50 cursor-not-allowed"
+                    : "cursor-pointer"
+                }`}
                 onClick={async () => {
-                  if (consentAccepted) {
-                    await recordUserLegalConsent(undefined, "guest_signin_card");
+                  if (!consentAccepted) {
+                    setError("Please tick the box above to accept the Terms and Policies before proceeding.");
+                    return;
                   }
+                  await recordUserLegalConsent(undefined, "guest_signin_card");
                   UserAccountStore.loginAsGuest();
                   if (onSuccess) onSuccess();
                 }}
-                disabled={loading || resetLoading}
+                disabled={loading || resetLoading || !consentAccepted}
               >
                 <span className="text-xs sm:text-sm font-medium">
                   Continue as Guest
