@@ -95,7 +95,22 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const isProd = process.env.NODE_ENV === 'production';
 const isTest = process.env.NODE_ENV === 'test' || process.env.VITEST === 'true';
-const PORT = process.env.PORT || 3000;
+
+function getListenPort(): number {
+  const args = process.argv;
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--port' || args[i] === '-p') {
+      const parsed = parseInt(args[i + 1], 10);
+      if (!isNaN(parsed) && parsed > 0) return parsed;
+    }
+  }
+  // In development, AI Studio dev server runs on port 3000
+  if (!isProd && !isTest) {
+    return 3000;
+  }
+  return Number(process.env.PORT) || 3000;
+}
+const PORT = getListenPort();
 
 // Initialize Server-Side GoogleGenAI Client with required telemetry header
 export const geminiClient = process.env.GEMINI_API_KEY

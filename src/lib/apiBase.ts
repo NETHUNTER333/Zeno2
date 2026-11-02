@@ -44,9 +44,8 @@ export async function apiFetch(path: string, init?: RequestInit): Promise<Respon
   return fetch(url, options);
 }
 
-
 // Safely intercept fetch to route /api/* calls through the backend origin on static hosts like Vercel.
-// This is a belt-and-suspenders backup for the Vercel rewrite rule.
+// Wrapped in safe try/catch blocks that never throw even if window.fetch has only a getter.
 if (typeof window !== 'undefined' && typeof window.fetch === 'function') {
   try {
     const originalFetch = window.fetch.bind(window);
@@ -86,31 +85,12 @@ if (typeof window !== 'undefined' && typeof window.fetch === 'function') {
     } catch {
       try {
         (window as any).fetch = patchedFetch;
-      } catch {}
+      } catch {
+        // window.fetch is getter-only and non-configurable in this environment;
+        // apiFetch() will explicitly route calls without mutating window.fetch
+      }
     }
   } catch (err) {
     console.warn('[apiBase] Could not patch window.fetch:', err);
   }
-}
-
-
-if (typeof window !== 'undefined' && typeof window.fetch === 'function') {
-  const originalFetch = window.fetch.bind(window);
-  window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
-    let url = '';
-    if (typeof input === 'string') url = input;
-    else if (input instanceof URL) url = input.toString();
-    else if (input instanceof Request) url = input.url;
-
-    if (url.startsWith('/api/') || url.startsWith('/api?')) {
-      const base = getBackendBaseUrl();
-      if (base) {
-        const newUrl = `${base}${url}`;
-        if (typeof input === 'string') return originalFetch(newUrl, init);
-        if (input instanceof URL) return originalFetch(new URL(newUrl), init);
-        if (input instanceof Request) return originalFetch(new Request(newUrl, input), init);
-      }
-    }
-    return originalFetch(input, init);
-  };
 }
