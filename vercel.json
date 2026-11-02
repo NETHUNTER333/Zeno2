@@ -3,6 +3,10 @@
   "trailingSlash": false,
   "rewrites": [
     {
+      "source": "/api/:path*",
+      "destination": "https://prod-main-zeno-api-c257d4-00gfx3c9932.compute.instacloud-edge.com/api/:path*"
+    },
+    {
       "source": "/favicon.ico",
       "destination": "/favicon.ico"
     },
