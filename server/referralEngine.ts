@@ -172,25 +172,60 @@ export class ReferralDatabase {
   }
 
   /**
+   * Computes a deterministic 8-hex referral code (zp_xxxxxxxx) identical on client and server.
+   */
+  public static computeCanonicalCode(userId: string): string {
+    const clean = String(userId || 'guest').trim() || 'guest';
+    let h1 = 0x811c9dc5;
+    let h2 = 0x01000193;
+    const seed = `zeno_ref_${clean}`;
+    for (let i = 0; i < seed.length; i++) {
+      const ch = seed.charCodeAt(i);
+      h1 ^= ch;
+      h1 = Math.imul(h1, 0x01000193);
+      h2 ^= ch + i;
+      h2 = Math.imul(h2, 0x85ebca6b);
+    }
+    const hex1 = (h1 >>> 0).toString(16).padStart(4, '0').slice(-4);
+    const hex2 = (h2 >>> 0).toString(16).padStart(4, '0').slice(-4);
+    return `zp_${hex1}${hex2}`.toLowerCase();
+  }
+
+  /**
    * Generates or retrieves a unique persistent referral code for a user.
    * Format: zp_<unique 8 chars>
    */
   public getOrCreateReferralCode(userId: string): string {
+    const canonical = ReferralDatabase.computeCanonicalCode(userId);
     const existing = this.db
       .prepare('SELECT code FROM referral_codes WHERE user_id = ?')
       .get(userId) as { code: string } | undefined;
 
     if (existing?.code) {
+      if (existing.code !== canonical) {
+        try {
+          this.db
+            .prepare('UPDATE referral_codes SET code = ? WHERE user_id = ?')
+            .run(canonical, userId);
+          return canonical;
+        } catch {
+          return existing.code;
+        }
+      }
       return existing.code;
     }
 
-    // Generate unique code based on userId hash with collision fallback
+    // Generate unique code based on canonical hash with collision fallback
     let candidate = '';
     let attempts = 0;
     while (attempts < 10) {
-      const seed = attempts === 0 ? `zeno_ref_${userId}` : `${userId}_${attempts}_${Date.now()}`;
-      const hash = crypto.createHash('sha256').update(seed).digest('hex').slice(0, 8);
-      candidate = `zp_${hash}`;
+      if (attempts === 0) {
+        candidate = canonical;
+      } else {
+        const seed = `${userId}_${attempts}_${Date.now()}`;
+        const hash = crypto.createHash('sha256').update(seed).digest('hex').slice(0, 8);
+        candidate = `zp_${hash}`;
+      }
 
       try {
         this.db

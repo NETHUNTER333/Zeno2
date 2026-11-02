@@ -552,134 +552,22 @@ export const DEFAULT_PERSONALIZATION: UserPersonalization = {
   defaultModelId: 'deepseek-v4.1-flash-free',
 };
 
-export const DEFAULT_PROJECT_FOLDERS: ProjectFolder[] = [
-  {
-    id: 'folder-ai',
-    name: 'Frontier AI & Agents',
-    color: '#3b82f6',
-    icon: 'Sparkles',
-    description: 'LLM reasoning benchmarks, agent tool calling, and multi-modal models',
-    createdAt: Date.now() - 20 * 24 * 3600 * 1000,
-  },
-  {
-    id: 'folder-code',
-    name: 'Code & Architecture',
-    color: '#10b981',
-    icon: 'Code',
-    description: 'Systems programming, TypeScript, Redis rate limiters, and WebSockets',
-    createdAt: Date.now() - 15 * 24 * 3600 * 1000,
-  },
-  {
-    id: 'folder-physics',
-    name: 'Physics & Quantum',
-    color: '#8b5cf6',
-    icon: 'Atom',
-    description: 'General relativity, Tokamaks, and quantum error mitigation',
-    createdAt: Date.now() - 8 * 24 * 3600 * 1000,
-  },
-  {
-    id: 'folder-research',
-    name: 'Literature & Papers',
-    color: '#f59e0b',
-    icon: 'BookOpen',
-    description: 'arXiv papers, citation bookmarks, and synthesized reading notes',
-    createdAt: Date.now() - 4 * 24 * 3600 * 1000,
-  },
-];
+export const DEFAULT_PROJECT_FOLDERS: ProjectFolder[] = [];
 
-export const DEFAULT_WORKSPACE_FILES: WorkspaceFile[] = [
-  {
-    id: 'file-1',
-    name: 'Quantum_Surface_Codes_Overview.pdf',
-    size: 2480000,
-    type: 'application/pdf',
-    uploadedAt: Date.now() - 8 * 24 * 3600 * 1000,
-    threadTitle: 'Explain quantum error correction',
-    category: 'pdf',
-  },
-  {
-    id: 'file-2',
-    name: 'webrtc_signaling_architecture.png',
-    size: 1140000,
-    type: 'image/png',
-    uploadedAt: Date.now() - 5 * 24 * 3600 * 1000,
-    threadTitle: 'Production WebRTC Server',
-    category: 'image',
-  },
-  {
-    id: 'file-3',
-    name: 'rate_limiter_token_bucket.ts',
-    size: 14200,
-    type: 'text/typescript',
-    uploadedAt: Date.now() - 2 * 24 * 3600 * 1000,
-    threadTitle: 'Distributed rate limiter in Node.js',
-    category: 'code',
-  },
-  {
-    id: 'file-4',
-    name: 'zeno_research_synthesis_2026.md',
-    size: 48900,
-    type: 'text/markdown',
-    uploadedAt: Date.now() - 1 * 24 * 3600 * 1000,
-    threadTitle: 'AI Breakthroughs this week',
-    category: 'export',
-  },
-];
+export const DEFAULT_WORKSPACE_FILES: WorkspaceFile[] = [];
 
-export const DEFAULT_CITATIONS: SavedCitation[] = [
-  {
-    id: 'cit-1',
-    title: 'Attention Is All You Need — Transformer Architecture Foundations',
-    url: 'https://arxiv.org/abs/1706.03762',
-    domain: 'arxiv.org',
-    dateAdded: Date.now() - 12 * 24 * 3600 * 1000,
-    note: 'Essential reference for multi-head self-attention formulas',
-  },
-  {
-    id: 'cit-2',
-    title: 'High-Rate Fault-Tolerant Quantum Computation with LDPC Codes',
-    url: 'https://arxiv.org/abs/2308.07915',
-    domain: 'arxiv.org',
-    dateAdded: Date.now() - 6 * 24 * 3600 * 1000,
-    note: 'Key paper comparing surface codes with 3D color codes',
-  },
-  {
-    id: 'cit-3',
-    title: 'RFC 8829 — JavaScript Session Establishment Protocol (JSEP) for WebRTC',
-    url: 'https://datatracker.ietf.org/doc/html/rfc8829',
-    domain: 'datatracker.ietf.org',
-    dateAdded: Date.now() - 3 * 24 * 3600 * 1000,
-    note: 'Signaling flow and ICE candidate gathering specifications',
-  },
-];
+export const DEFAULT_CITATIONS: SavedCitation[] = [];
 
 export const DEFAULT_SESSIONS: ActiveSession[] = [
   {
     id: 'sess-current',
-    device: 'Apple Mac (Chrome 130)',
-    browser: 'Chrome 130.0 / macOS Sonoma',
-    ip: '198.51.100.24',
-    location: 'San Francisco, CA, United States',
+    device: 'Current Browser Session',
+    browser:
+      typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 64) : 'Web Browser',
+    ip: 'Active Session',
+    location: 'Authenticated Workspace',
     isCurrent: true,
     lastActive: Date.now(),
-  },
-  {
-    id: 'sess-mobile',
-    device: 'iPhone 16 Pro (Safari)',
-    browser: 'Safari 18.1 / iOS 18',
-    ip: '198.51.100.89',
-    location: 'San Francisco, CA, United States',
-    isCurrent: false,
-    lastActive: Date.now() - 3600000 * 3,
-  },
-  {
-    id: 'sess-linux',
-    device: 'Ubuntu Workstation (Brave)',
-    browser: 'Brave 1.70 / Linux x86_64',
-    ip: '203.0.113.15',
-    location: 'San Jose, CA, United States',
-    isCurrent: false,
-    lastActive: Date.now() - 86400000 * 2,
   },
 ];
 
@@ -745,32 +633,32 @@ export const PLAN_LIMITS: Record<
 };
 
 export const DEFAULT_SUBSCRIPTION: UserSubscription = {
-  plan: 'spark',
+  plan: 'free',
   status: 'active',
-  renewalDate: 'Nov 27, 2026',
+  renewalDate: 'Daily Reset (00:00 UTC)',
   billingCycle: 'monthly',
-  paymentMethod: 'Spark ($3 USD)',
+  paymentMethod: 'Free Tier ($0 USD)',
 };
 
 export const DEFAULT_USAGE: UsageQuota = {
   messagesUsed: 0,
-  messageLimit: PLAN_LIMITS.spark.messageLimit,
+  messageLimit: PLAN_LIMITS.free.messageLimit,
   filesUploaded: 0,
-  fileUploadLimit: PLAN_LIMITS.spark.fileUploadLimit,
-  maxFilesPerMessage: PLAN_LIMITS.spark.maxFilesPerMessage,
+  fileUploadLimit: PLAN_LIMITS.free.fileUploadLimit,
+  maxFilesPerMessage: PLAN_LIMITS.free.maxFilesPerMessage,
   tokensUsed: 0,
-  tokenLimit: PLAN_LIMITS.spark.tokenLimit,
+  tokenLimit: PLAN_LIMITS.free.tokenLimit,
   searchesUsed: 0,
-  searchLimit: PLAN_LIMITS.spark.searchLimit,
+  searchLimit: PLAN_LIMITS.free.searchLimit,
   deepResearchUsed: 0,
-  deepResearchLimit: PLAN_LIMITS.spark.deepResearchLimit,
+  deepResearchLimit: PLAN_LIMITS.free.deepResearchLimit,
   pdfStudyUsed: 0,
-  pdfStudyLimit: PLAN_LIMITS.spark.pdfStudyLimit,
+  pdfStudyLimit: PLAN_LIMITS.free.pdfStudyLimit,
   toolsUsed: 0,
-  toolLimit: PLAN_LIMITS.spark.toolLimit,
-  storageBytesUsed: 4200000,
-  storageBytesLimit: PLAN_LIMITS.spark.storageBytesLimit,
-  resetDate: 'Tomorrow, 12:00 AM',
+  toolLimit: PLAN_LIMITS.free.toolLimit,
+  storageBytesUsed: 0,
+  storageBytesLimit: PLAN_LIMITS.free.storageBytesLimit,
+  resetDate: 'Resets 00:00 UTC',
 };
 
 export const DEFAULT_PRIVACY: PrivacySettings = {
@@ -1183,7 +1071,8 @@ export const UserAccountStore = {
   },
 
   getUsage(): UsageQuota {
-    const limits = this.getPlanLimits();
+    const currentPlan = this.getNormalizedPlan();
+    const limits = this.getPlanLimits(currentPlan);
     const raw = loadFromStorage<
       UsageQuota & {
         bonusMessagesGranted?: number;
@@ -1192,10 +1081,15 @@ export const UserAccountStore = {
         bonusDeepResearchGranted?: number;
       }
     >(STORAGE_KEYS.USAGE, DEFAULT_USAGE);
-    const bonusMsgs = Number(raw.bonusMessagesGranted || 0);
-    const bonusUploads = Number(raw.bonusUploadsGranted || 0);
-    const bonusQuizzes = Number(raw.bonusQuizzesGranted || 0);
-    const bonusResearch = Number(raw.bonusDeepResearchGranted || 0);
+
+    // On Free Tier, strictly enforce the starter daily limits (5 prompts, 3 uploads, 5 searches, 3 deep research, 5 PDF study)
+    // so legacy localStorage bonuses or Math.max(999999) bugs never show Unlimited or 625/133 on Free Tier.
+    const isFree = currentPlan === 'free';
+    const isFire = currentPlan === 'fire';
+    const bonusMsgs = isFree ? 0 : Number(raw.bonusMessagesGranted || 0);
+    const bonusUploads = isFree ? 0 : Number(raw.bonusUploadsGranted || 0);
+    const bonusQuizzes = isFree ? 0 : Number(raw.bonusQuizzesGranted || 0);
+    const bonusResearch = isFree ? 0 : Number(raw.bonusDeepResearchGranted || 0);
 
     return {
       ...DEFAULT_USAGE,
@@ -1207,13 +1101,15 @@ export const UserAccountStore = {
       pdfStudyUsed: Number(raw.pdfStudyUsed || 0),
       tokensUsed: Number(raw.tokensUsed || 0),
       toolsUsed: Number(raw.toolsUsed || 0),
-      messageLimit: limits.messageLimit + bonusMsgs,
-      fileUploadLimit: limits.fileUploadLimit + bonusUploads,
-      maxFilesPerMessage: Math.max(limits.maxFilesPerMessage, bonusUploads > 0 ? 10 : 0),
+      messageLimit: isFire ? 999999 : limits.messageLimit + bonusMsgs,
+      fileUploadLimit: isFire ? 999999 : limits.fileUploadLimit + bonusUploads,
+      maxFilesPerMessage: isFree
+        ? limits.maxFilesPerMessage
+        : Math.max(limits.maxFilesPerMessage, bonusUploads > 0 ? 10 : 0),
       tokenLimit: limits.tokenLimit,
-      searchLimit: limits.searchLimit + bonusResearch,
-      deepResearchLimit: Math.max(999999, Number(limits.deepResearchLimit || 999999) + bonusResearch),
-      pdfStudyLimit: Math.max(999999, Number(limits.pdfStudyLimit || 999999) + bonusQuizzes),
+      searchLimit: isFire ? 999999 : limits.searchLimit + bonusResearch,
+      deepResearchLimit: isFire ? 999999 : limits.deepResearchLimit + bonusResearch,
+      pdfStudyLimit: isFire ? 999999 : limits.pdfStudyLimit + bonusQuizzes,
       toolLimit: limits.toolLimit,
       storageBytesLimit: limits.storageBytesLimit,
     };
@@ -1222,20 +1118,15 @@ export const UserAccountStore = {
   applyServerQuotaSnapshot(snapshot: any, pushToFirestore = true): void {
     if (!snapshot || typeof snapshot !== 'object') return;
     const currentSub = this.getSubscription();
+    const localPlan = this.getNormalizedPlan(currentSub.plan);
+    const hasExplicitLocalSub = Boolean(localStorage.getItem(STORAGE_KEYS.SUBSCRIPTION));
     const serverPlan: 'free' | 'spark' | 'fire' =
       snapshot.plan === 'fire' || snapshot.plan === 'spark' || snapshot.plan === 'free'
         ? snapshot.plan
-        : this.getNormalizedPlan(currentSub.plan);
+        : localPlan;
 
-    const tierRank: Record<'free' | 'spark' | 'fire', number> = {
-      free: 0,
-      spark: 1,
-      fire: 2,
-    };
-    const effectivePlan: 'free' | 'spark' | 'fire' =
-      tierRank[serverPlan] >= tierRank[this.getNormalizedPlan(currentSub.plan)]
-        ? serverPlan
-        : this.getNormalizedPlan(currentSub.plan);
+    // Respect explicit local plan selection (including when user switches to 'free')
+    const effectivePlan: 'free' | 'spark' | 'fire' = hasExplicitLocalSub ? localPlan : serverPlan;
 
     if (effectivePlan !== currentSub.plan) {
       saveToStorage(STORAGE_KEYS.SUBSCRIPTION, {
@@ -1259,14 +1150,14 @@ export const UserAccountStore = {
       pdfStudyUsed: Math.max(Number(local.pdfStudyUsed || 0), Number(snapshot.pdfStudyUsed || 0)),
       tokensUsed: Math.max(Number(local.tokensUsed || 0), Number(snapshot.tokensUsed || 0)),
       toolsUsed: Math.max(Number(local.toolsUsed || 0), Number(snapshot.toolsUsed || 0)),
-      messageLimit: Number(snapshot.messageLimit || limits.messageLimit),
-      fileUploadLimit: Number(snapshot.fileUploadLimit || limits.fileUploadLimit),
-      maxFilesPerMessage: Number(snapshot.maxFilesPerMessage || limits.maxFilesPerMessage),
-      tokenLimit: Number(snapshot.tokenLimit || limits.tokenLimit),
-      searchLimit: Number(snapshot.searchLimit || limits.searchLimit),
-      deepResearchLimit: Number(snapshot.deepResearchLimit || limits.deepResearchLimit),
-      pdfStudyLimit: Number(snapshot.pdfStudyLimit || limits.pdfStudyLimit),
-      toolLimit: Number(snapshot.toolLimit || limits.toolLimit),
+      messageLimit: limits.messageLimit,
+      fileUploadLimit: limits.fileUploadLimit,
+      maxFilesPerMessage: limits.maxFilesPerMessage,
+      tokenLimit: limits.tokenLimit,
+      searchLimit: limits.searchLimit,
+      deepResearchLimit: limits.deepResearchLimit,
+      pdfStudyLimit: limits.pdfStudyLimit,
+      toolLimit: limits.toolLimit,
       storageBytesLimit: limits.storageBytesLimit,
       resetDate: snapshot.resetAtUtc ? 'Resets 00:00 UTC' : local.resetDate || 'Resets 00:00 UTC',
     };
@@ -1472,17 +1363,14 @@ export const UserAccountStore = {
       dateSet.add(raw.lastActiveDate);
     }
 
-    // Backfill active dates & interaction counts from conversation threads
+    // Backfill active dates & interaction counts ONLY from user messages in conversation threads
+    // (Never count empty threads or page reloads so opening a referral link never awards a badge)
     if (Array.isArray(effectiveThreads)) {
       const threadCounts: Record<string, number> = {};
       for (const t of effectiveThreads) {
-        if (typeof t.createdAt === 'number' && t.createdAt > 0) {
-          const k = toLocalDateKey(t.createdAt);
-          dateSet.add(k);
-          threadCounts[k] = (threadCounts[k] || 0) + 1;
-        }
-        if (Array.isArray(t.messages)) {
-          for (const m of t.messages) {
+        if (Array.isArray(t.messages) && t.messages.length > 0) {
+          for (const m of t.messages as Array<{ role?: string; timestamp?: number }>) {
+            if (m?.role && m.role !== 'user') continue;
             if (typeof m?.timestamp === 'number' && m.timestamp > 0) {
               const k = toLocalDateKey(m.timestamp);
               dateSet.add(k);
@@ -1555,7 +1443,7 @@ export const UserAccountStore = {
       : [];
     const exploredModels = Array.isArray(raw.exploredModels)
       ? Array.from(new Set(raw.exploredModels.map(String).filter(Boolean)))
-      : ['zro-deepseek-v4.1-flash', 'deepseek-v4.1-flash-free'];
+      : ['deepseek-v4.1-flash-free'];
     const featuredBadgeId =
       typeof raw.featuredBadgeId === 'string' && raw.featuredBadgeId
         ? raw.featuredBadgeId
@@ -1659,7 +1547,7 @@ export const UserAccountStore = {
     );
     const exploredModels = Array.isArray(raw.exploredModels)
       ? Array.from(new Set(raw.exploredModels.map(String).filter(Boolean)))
-      : ['zro-deepseek-v4.1-flash', 'deepseek-v4.1-flash-free'];
+      : ['deepseek-v4.1-flash-free'];
     const featuredBadgeId =
       typeof raw.featuredBadgeId === 'string' && raw.featuredBadgeId
         ? raw.featuredBadgeId
@@ -1749,7 +1637,7 @@ export const UserAccountStore = {
       streak.todayInteractions || 1
     );
 
-    const modelSet = new Set<string>(streak.exploredModels || ['zro-deepseek-v4.1-flash']);
+    const modelSet = new Set<string>(streak.exploredModels || ['deepseek-v4.1-flash-free']);
     if (Array.isArray(effectiveThreads)) {
       for (const t of effectiveThreads) {
         if (Array.isArray(t.messages)) {

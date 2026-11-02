@@ -35,8 +35,78 @@ export interface ReferralDashboardResponse {
 }
 
 const STORAGE_KEY = 'zeno_pending_ref_code';
+const SHARED_CLIENT_ID_KEY = 'zeno_growth_client_id';
+const LEGACY_CLIENT_ID_KEY = 'zeno_client_id';
 const COOKIE_NAME = 'zeno_ref_code';
 const COOKIE_MAX_AGE = 30 * 24 * 60 * 60; // 30 days in seconds
+
+export function getOrCreateSharedClientId(): string {
+  if (typeof window === 'undefined') return 'zcid_session_fallback';
+  try {
+    const primary = localStorage.getItem(SHARED_CLIENT_ID_KEY);
+    if (primary && /^[a-zA-Z0-9_-]{6,64}$/.test(primary)) {
+      localStorage.setItem(LEGACY_CLIENT_ID_KEY, primary);
+      return primary;
+    }
+    const legacy = localStorage.getItem(LEGACY_CLIENT_ID_KEY);
+    if (legacy && /^[a-zA-Z0-9_-]{6,64}$/.test(legacy) && legacy !== 'guest') {
+      localStorage.setItem(SHARED_CLIENT_ID_KEY, legacy);
+      return legacy;
+    }
+    const generated = `zcid_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+    localStorage.setItem(SHARED_CLIENT_ID_KEY, generated);
+    localStorage.setItem(LEGACY_CLIENT_ID_KEY, generated);
+    return generated;
+  } catch {
+    return 'zcid_session_fallback';
+  }
+}
+
+export function computeCanonicalReferralCode(userId?: string): string {
+  const effectiveId =
+    (userId && userId !== 'guest' ? userId : '') ||
+    auth.currentUser?.uid ||
+    getOrCreateSharedClientId();
+  const clean = String(effectiveId || 'guest').trim() || 'guest';
+  let h1 = 0x811c9dc5;
+  let h2 = 0x01000193;
+  const seed = `zeno_ref_${clean}`;
+  for (let i = 0; i < seed.length; i++) {
+    const ch = seed.charCodeAt(i);
+    h1 ^= ch;
+    h1 = Math.imul(h1, 0x01000193);
+    h2 ^= ch + i;
+    h2 = Math.imul(h2, 0x85ebca6b);
+  }
+  const hex1 = (h1 >>> 0).toString(16).padStart(4, '0').slice(-4);
+  const hex2 = (h2 >>> 0).toString(16).padStart(4, '0').slice(-4);
+  return `zp_${hex1}${hex2}`.toLowerCase();
+}
+
+export function isSelfReferralCode(candidateCode?: string | null): boolean {
+  if (!candidateCode) return false;
+  const normalized = candidateCode.trim().toLowerCase();
+  if (!normalized) return false;
+
+  const clientCode = computeCanonicalReferralCode(getOrCreateSharedClientId()).toLowerCase();
+  if (normalized === clientCode) return true;
+
+  if (auth.currentUser?.uid) {
+    const authCode = computeCanonicalReferralCode(auth.currentUser.uid).toLowerCase();
+    if (normalized === authCode) return true;
+  }
+
+  try {
+    const cachedRaw = localStorage.getItem('zeno_referral_status_v1');
+    if (cachedRaw) {
+      const parsed = JSON.parse(cachedRaw);
+      const cachedCode = String(parsed?.referralCode || parsed?.code || '').trim().toLowerCase();
+      if (cachedCode && normalized === cachedCode) return true;
+    }
+  } catch {}
+
+  return false;
+}
 
 function setCookie(name: string, value: string, maxAgeSec: number): void {
   if (typeof document === 'undefined') return;
@@ -88,10 +158,17 @@ export function extractReferralCodeFromUrl(): string | null {
 /**
  * Captures and validates an inbound referral code from the URL on landing.
  * Saves to both localStorage and a 30-day cookie to survive OAuth redirects.
+ * Strictly ignores and clears self-referral links.
  */
 export async function captureInboundReferral(): Promise<PendingReferralInfo | null> {
   const code = extractReferralCodeFromUrl();
   if (code) {
+    // Block self-referrals immediately when opening one's own link
+    if (isSelfReferralCode(code)) {
+      clearPendingReferral();
+      return null;
+    }
+
     const pending: PendingReferralInfo = {
       code,
       capturedAt: Date.now(),
@@ -123,6 +200,11 @@ export async function captureInboundReferral(): Promise<PendingReferralInfo | nu
   }
 
   const existing = getPendingReferral();
+  if (existing?.code && isSelfReferralCode(existing.code)) {
+    clearPendingReferral();
+    return null;
+  }
+
   if (existing?.code && !existing.referrerName) {
     try {
       const res = await apiFetch(`/api/referral/validate/${encodeURIComponent(existing.code)}`);
@@ -153,11 +235,19 @@ export function getPendingReferral(): PendingReferralInfo | null {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed?.code) {
+        if (isSelfReferralCode(parsed.code)) {
+          clearPendingReferral();
+          return null;
+        }
         return parsed as PendingReferralInfo;
       }
     }
     const directRef = localStorage.getItem('ref');
     if (directRef && directRef.trim()) {
+      if (isSelfReferralCode(directRef.trim())) {
+        clearPendingReferral();
+        return null;
+      }
       return {
         code: directRef.trim(),
         capturedAt: Date.now(),
@@ -168,6 +258,10 @@ export function getPendingReferral(): PendingReferralInfo | null {
   // 2. Check Cookie
   const cookieCode = getCookie(COOKIE_NAME);
   if (cookieCode) {
+    if (isSelfReferralCode(cookieCode)) {
+      clearPendingReferral();
+      return null;
+    }
     return {
       code: cookieCode,
       capturedAt: Date.now(),
@@ -184,6 +278,7 @@ export function clearPendingReferral(): void {
   if (typeof window === 'undefined') return;
   try {
     localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem('ref');
   } catch {}
   clearCookie(COOKIE_NAME);
 }
@@ -201,11 +296,17 @@ export async function claimPendingReferralAfterAuth(
     return { success: false, error: 'No pending referral code found' };
   }
 
+  if (isSelfReferralCode(pending.code) || pending.code.toLowerCase() === computeCanonicalReferralCode(userId).toLowerCase()) {
+    clearPendingReferral();
+    return { success: false, error: 'Self-referrals are not permitted' };
+  }
+
   try {
     const token = await auth.currentUser?.getIdToken().catch(() => null);
+    const effectiveUid = userId || auth.currentUser?.uid || getOrCreateSharedClientId();
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      'X-Zeno-Client-Id': userId,
+      'X-Zeno-Client-Id': effectiveUid,
     };
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
@@ -250,7 +351,7 @@ export async function claimPendingReferralAfterAuth(
 export async function fetchUserReferralDashboard(): Promise<ReferralDashboardResponse | null> {
   try {
     const token = await auth.currentUser?.getIdToken().catch(() => null);
-    const uid = auth.currentUser?.uid || localStorage.getItem('zeno_client_id') || 'guest';
+    const uid = auth.currentUser?.uid || getOrCreateSharedClientId();
     const headers: Record<string, string> = {
       'X-Zeno-Client-Id': uid,
     };

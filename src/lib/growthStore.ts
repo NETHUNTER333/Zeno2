@@ -29,7 +29,13 @@ import {
 import { UserAccountStore } from './userAccountStore';
 import { ShareCardTheme } from './exportChat';
 import { apiFetch } from './apiBase';
-import { captureInboundReferral, claimPendingReferralAfterAuth } from './referralClient';
+import {
+  captureInboundReferral,
+  claimPendingReferralAfterAuth,
+  getOrCreateSharedClientId,
+  computeCanonicalReferralCode,
+  isSelfReferralCode,
+} from './referralClient';
 
 const GROWTH_KEYS = {
   CLIENT_ID: 'zeno_growth_client_id',
@@ -110,17 +116,7 @@ function safeSave<T>(key: string, value: T): void {
 }
 
 export function getOrCreateClientId(): string {
-  try {
-    const existing = localStorage.getItem(GROWTH_KEYS.CLIENT_ID);
-    if (existing && /^[a-zA-Z0-9_-]{6,64}$/.test(existing)) {
-      return existing;
-    }
-    const generated = `zcid_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
-    localStorage.setItem(GROWTH_KEYS.CLIENT_ID, generated);
-    return generated;
-  } catch {
-    return 'zcid_session_fallback';
-  }
+  return getOrCreateSharedClientId();
 }
 
 async function getGrowthHeaders(): Promise<Record<string, string>> {
@@ -896,26 +892,30 @@ export async function getMyReferralStatus(): Promise<ZenoReferralStatus> {
     }
   } catch {}
 
+  const myUid = auth.currentUser?.uid || getOrCreateClientId();
+  const canonicalCode = computeCanonicalReferralCode(myUid);
   const cached = safeLoad<ZenoReferralStatus | null>(GROWTH_KEYS.REFERRAL_STATUS, null);
-  if (cached) return cached;
+  if (cached && cached.referralCode === canonicalCode) return cached;
 
-  const fallbackCode = `zp_${getOrCreateClientId().replace(/[^a-zA-Z0-9]/g, '').slice(-8)}`;
+  const fallbackCode = canonicalCode;
   const inviteUrl = `${origin}/r/${fallbackCode}`;
-  return {
+  const fallbackStatus: ZenoReferralStatus = {
     referralCode: fallbackCode,
     code: fallbackCode,
-    referrerUid: getOrCreateClientId(),
+    referrerUid: myUid,
     inviteUrl,
     referralUrl: inviteUrl,
-    visitsCount: 0,
-    validatedSignupsCount: 0,
-    verifiedReferralsCount: 0,
-    qualifiedActionsCount: 0,
-    unlockedThemes: ['carbon', 'ivory', 'slate'],
-    referredByCode: null,
+    visitsCount: cached?.visitsCount || 0,
+    validatedSignupsCount: cached?.validatedSignupsCount || 0,
+    verifiedReferralsCount: cached?.verifiedReferralsCount || 0,
+    qualifiedActionsCount: cached?.qualifiedActionsCount || 0,
+    unlockedThemes: cached?.unlockedThemes || ['carbon', 'ivory', 'slate'],
+    referredByCode: cached?.referredByCode || null,
     attributionWindowDays: 7,
-    createdAt: Date.now(),
+    createdAt: cached?.createdAt || Date.now(),
   };
+  safeSave(GROWTH_KEYS.REFERRAL_STATUS, fallbackStatus);
+  return fallbackStatus;
 }
 
 export const fetchMyReferralStatus = getMyReferralStatus;
@@ -1762,7 +1762,7 @@ export async function fetchGrowthLeaderboards(): Promise<{
     uid: myUid,
     displayName: UserAccountStore.getProfile().displayName || 'You (Zeno Explorer)',
     username: UserAccountStore.getProfile().username || 'you',
-    referralCode: cachedRef?.referralCode || 'zp_explorer',
+    referralCode: computeCanonicalReferralCode(auth.currentUser?.uid || myUid),
     claimedReferrals: localMyCount,
     visitsCount: cachedRef?.visitsCount || 0,
     conversionRate: 0,
@@ -1793,6 +1793,12 @@ export async function claimReferralCodeManual(
     return {
       ok: false,
       message: 'Please enter a valid Zeno Pass code starting with zp_ (e.g. zp_elena94x).',
+    };
+  }
+  if (isSelfReferralCode(code)) {
+    return {
+      ok: false,
+      message: 'You cannot claim your own referral code.',
     };
   }
 
@@ -1983,7 +1989,7 @@ export interface EightReferralTrackerState {
 export function getEightReferralTrackerState(): EightReferralTrackerState {
   const origin =
     typeof window !== 'undefined' ? window.location.origin : 'https://zeno0x.vercel.app';
-  const myUid = getOrCreateClientId();
+  const myUid = auth.currentUser?.uid || getOrCreateClientId();
   const cachedRef = safeLoad<ZenoReferralStatus | null>(GROWTH_KEYS.REFERRAL_STATUS, null);
   const tracker = getLocalReferralTracker();
   const savedRewards = safeLoad<{ count?: number; claimedTiers?: number[] }>(
@@ -1991,11 +1997,8 @@ export function getEightReferralTrackerState(): EightReferralTrackerState {
     {}
   );
 
-  const code =
-    cachedRef?.referralCode ||
-    cachedRef?.code ||
-    `zp_${myUid.replace(/[^a-zA-Z0-9]/g, '').slice(-8)}`;
-  const inviteUrl = `${origin}/?ref=${encodeURIComponent(code)}`;
+  const code = computeCanonicalReferralCode(myUid);
+  const inviteUrl = `${origin}/r/${encodeURIComponent(code)}`;
 
   const count = Math.max(
     0,

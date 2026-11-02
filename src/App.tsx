@@ -60,6 +60,16 @@ import {
 
 import { Signup1 } from './components/ui/signup-1';
 import {
+  LegalAndInfoPages,
+  LegalPageRoute,
+  resolveLegalOr404Route,
+  SiteFooter,
+  CookieConsentBanner,
+  GuestFirstPromptConsentModal,
+  ReportContentModal,
+  hasValidUserConsent,
+} from './components/LegalAndInfoPages';
+import {
   auth,
   getAuthHeaders,
   saveChatThreadToFirestore,
@@ -580,6 +590,41 @@ export default function App() {
   const [sharedBannerId, setSharedBannerId] = useState<string | null>(null);
 
   const [isSignedIn, setIsSignedIn] = useState(() => UserAccountStore.isUserSignedIn());
+  const [legalOr404Route, setLegalOr404Route] = useState<LegalPageRoute | null>(() =>
+    typeof window !== 'undefined' ? resolveLegalOr404Route(window.location.pathname) : null
+  );
+  const [pendingConsentPrompt, setPendingConsentPrompt] = useState<{
+    promptText: string;
+    mode: SearchMode;
+    attachments: any[];
+  } | null>(null);
+
+  const navigateRoute = (path: string) => {
+    try {
+      window.history.pushState({}, '', path);
+      setLegalOr404Route(resolveLegalOr404Route(window.location.pathname));
+    } catch {
+      window.location.href = path;
+    }
+  };
+
+  useEffect(() => {
+    const onPopState = () => {
+      setLegalOr404Route(resolveLegalOr404Route(window.location.pathname));
+    };
+    const onLegalNav = (e: Event) => {
+      const targetPath = (e as CustomEvent)?.detail?.path;
+      if (typeof targetPath === 'string') {
+        navigateRoute(targetPath);
+      }
+    };
+    window.addEventListener('popstate', onPopState);
+    window.addEventListener('zeno-navigate-route', onLegalNav);
+    return () => {
+      window.removeEventListener('popstate', onPopState);
+      window.removeEventListener('zeno-navigate-route', onLegalNav);
+    };
+  }, []);
 
   // Listen for global 'zeno-open-pricing' events from ChatInput, GrokModelPicker, Sidebar, etc.
   useEffect(() => {
@@ -965,32 +1010,43 @@ export default function App() {
         t.id === threadId
           ? {
               ...t,
-              messages: t.messages.map((m) =>
-                m.id === messageId
-                  ? {
-                      ...m,
-                      content: fullText,
-                      sources:
-                        Array.isArray(data.sources) && data.sources.length > 0
-                          ? data.sources
-                          : m.sources,
-                      images: data.images,
-                      personaWiki: data.personaWiki,
-                      videos: data.videos,
-                      arxivPapers: data.arxivPapers,
-                      githubRepos: data.githubRepos,
-                      xPosts: data.xPosts,
-                      searchQueries:
-                        Array.isArray(data.searchQueries) && data.searchQueries.length > 0
-                          ? data.searchQueries
-                          : m.searchQueries,
-                      toolsUsed: data.toolsUsed,
-                      timing: data.timing,
-                      modelUsed: m.modelUsed || data.modelUsed,
-                      isStreaming: false,
-                    }
-                  : m
-              ),
+              messages: t.messages.map((m) => {
+                if (m.id !== messageId) return m;
+                const existingSources = Array.isArray(m.sources) ? m.sources : [];
+                const incomingSources = Array.isArray(data.sources) ? data.sources : [];
+                // Preserve existing live sources in their original order so source cards never flip mid-stream,
+                // and append any new non-duplicate sources from the completed chat response.
+                let mergedSources = existingSources;
+                if (existingSources.length === 0) {
+                  mergedSources = incomingSources;
+                } else if (incomingSources.length > 0) {
+                  const seenUrls = new Set(existingSources.map((s: any) => s?.url).filter(Boolean));
+                  const extras = incomingSources.filter(
+                    (s: any) => s?.url && !seenUrls.has(s.url)
+                  );
+                  mergedSources = [...existingSources, ...extras].slice(0, 12);
+                }
+
+                return {
+                  ...m,
+                  content: fullText,
+                  sources: mergedSources.length > 0 ? mergedSources : undefined,
+                  images: data.images,
+                  personaWiki: data.personaWiki,
+                  videos: data.videos,
+                  arxivPapers: data.arxivPapers,
+                  githubRepos: data.githubRepos,
+                  xPosts: data.xPosts,
+                  searchQueries:
+                    Array.isArray(data.searchQueries) && data.searchQueries.length > 0
+                      ? data.searchQueries
+                      : m.searchQueries,
+                  toolsUsed: data.toolsUsed,
+                  timing: data.timing,
+                  modelUsed: m.modelUsed || data.modelUsed,
+                  isStreaming: false,
+                };
+              }),
             }
           : t
       )
@@ -1060,10 +1116,17 @@ export default function App() {
   const handleSend = async (
     promptText: string,
     mode: SearchMode = searchMode,
-    attachments: any[] = []
+    attachments: any[] = [],
+    bypassConsentGate = false
   ) => {
     const query = promptText.trim();
     if (!query || isRunning) return;
+
+    // 0. Enforce one-time Guest First-Prompt Consent or Re-Consent if CONSENT_VERSION changed
+    if (!bypassConsentGate && !hasValidUserConsent()) {
+      setPendingConsentPrompt({ promptText: query, mode, attachments });
+      return;
+    }
 
     // 1. Check daily prompt/message limit and file upload limit
     const currentUsage = UserAccountStore.getUsage();
@@ -1119,9 +1182,13 @@ export default function App() {
       /^(hi+|hey+|hello+|yo+|sup|wassup|whats up|howdy|greetings|good (morning|afternoon|evening|night)|how are you|thanks|thank you|thx|ty|ok|okay|k|cool|nice|great|awesome|got it|wave|hand wave|waving|bye|cya)$/i.test(query.trim().toLowerCase());
 
     const isClockQuery = isDateOrTimeClockQuery(query);
+    const isNewsQuery =
+      /\b(news|headlines|happened|update|updates|this\s+week|today'?s\s+news|latest\s+news|breaking)\b/i.test(
+        query
+      );
     const effectiveMode: SearchMode = isResearchMode
       ? 'organic'
-      : mode === 'news'
+      : mode === 'news' || isNewsQuery
       ? 'news'
       : 'organic';
     const hasSearchIntent = !isClockQuery && !isCasualOrGreeting;
@@ -1742,7 +1809,15 @@ export default function App() {
         isDark ? 'bg-[#000000] text-white' : 'bg-[#ffffff] text-[#000000]'
       }`}
     >
-      {!isSignedIn ? (
+      {legalOr404Route ? (
+        <div className="flex-1 w-full h-full overflow-y-auto">
+          <LegalAndInfoPages
+            route={legalOr404Route}
+            onNavigate={(path) => navigateRoute(path)}
+            isDark={isDark}
+          />
+        </div>
+      ) : !isSignedIn ? (
         <Signup1 onSuccess={() => setIsSignedIn(true)} />
       ) : (
         <>
@@ -1992,7 +2067,7 @@ export default function App() {
                       />
                     </div>
 
-                    {/* Minimalist footer */}
+                    {/* Minimalist disclaimer */}
                     <div
                       className={`mt-2 text-center text-[10px] ${
                         isDark ? 'text-[#666666]' : 'text-[#8a8a8a]'
@@ -2327,6 +2402,30 @@ export default function App() {
           />
         </>
       )}
+
+      {/* One-Time Guest First-Prompt / Re-Consent Modal */}
+      <GuestFirstPromptConsentModal
+        open={pendingConsentPrompt !== null}
+        isDark={isDark}
+        onNavigate={(path) => {
+          setPendingConsentPrompt(null);
+          navigateRoute(path);
+        }}
+        onCancel={() => setPendingConsentPrompt(null)}
+        onAccept={() => {
+          const queued = pendingConsentPrompt;
+          setPendingConsentPrompt(null);
+          if (queued) {
+            handleSend(queued.promptText, queued.mode, queued.attachments, true);
+          }
+        }}
+      />
+
+      {/* Global Content & Safety Report Modal */}
+      <ReportContentModal isDark={isDark} />
+
+      {/* Global Cookie & Local Storage Notice Banner */}
+      <CookieConsentBanner isDark={isDark} onNavigate={(path) => navigateRoute(path)} />
     </div>
   );
 }

@@ -338,6 +338,19 @@ export const DeepResearchModal: React.FC<DeepResearchModalProps> = ({
     setSelectedReasonMap({});
   };
 
+  const [researchElapsedSec, setResearchElapsedSec] = useState(0);
+
+  useEffect(() => {
+    if (!isSearching && !(isStreaming && !streamingFullText)) {
+      return;
+    }
+    setResearchElapsedSec(0);
+    const id = window.setInterval(() => {
+      setResearchElapsedSec((prev) => prev + 1);
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [isSearching, isStreaming, streamingFullText]);
+
   const loadHistoryItem = (record: DeepResearchRecord) => {
     if (abortRef.current) abortRef.current.abort();
     if (streamTimerRef.current) window.clearInterval(streamTimerRef.current);
@@ -710,15 +723,15 @@ ${sourceContext ? `Grounding Sources:\n${sourceContext}\n` : ''}`;
     setLiveStatusAnnouncement('Exported report (.md)');
   };
 
-  // Render inline text with KaTeX math, **bold**, and [1] or [1,3] citation chips
+  // Render inline text with KaTeX math ($$...$$ only, never single-$ currency), **bold**, and [1] or [1,3] numbered citation chips
   const renderRichLine = (lineText: string, lineKey: string, turnSources: AnswerSource[]) => {
-    const parts = lineText.split(/(\$[^\$\n]+\$|\*\*[^*]+\*\*|\[\d+(?:,\s*\d+)*\])/g);
+    const parts = lineText.split(/(\$\$[^\$\n]+\$\$|\*\*[^*]+\*\*|\[\d+(?:,\s*\d+)*\])/g);
 
     return parts.map((part, idx) => {
       if (!part) return null;
 
-      // Inline LaTeX math $...$
-      if (part.startsWith('$') && part.endsWith('$') && part.length > 2) {
+      // Inline LaTeX math $$...$$ (single-$ disabled so currency like $20 is never mangled)
+      if (part.startsWith('$$') && part.endsWith('$$') && part.length > 4) {
         return (
           <span key={`${lineKey}-m-${idx}`} className="inline-block mx-0.5 align-baseline">
             <MathMarkdown content={part} inline isDark={isDark} />
@@ -749,7 +762,8 @@ ${sourceContext ? `Grounding Sources:\n${sourceContext}\n` : ''}`;
         if (!primarySource) return null;
 
         const extraCount = ids.length > 1 ? ` +${ids.length - 1}` : '';
-        const chipLabel = `${primarySource.name}${extraCount}`;
+        const numberBadge = `[${ids.join(',')}]`;
+        const chipLabel = `${numberBadge} ${primarySource.name}${extraCount}`;
         const anchorKey = `${lineKey}-c-${idx}`;
         const isHighlighted = ids.some((id) => hoveredSourceIds.includes(id));
         const isPreviewOpen = activeChipPreview?.anchorKey === anchorKey;
@@ -779,8 +793,8 @@ ${sourceContext ? `Grounding Sources:\n${sourceContext}\n` : ''}`;
                   });
                 }
               }}
-              aria-label={`Source: ${chipLabel}`}
-              className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10.5px] font-medium leading-tight transition-all cursor-pointer ${
+              aria-label={`Source ${chipLabel}`}
+              className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10.5px] font-medium leading-tight transition-all cursor-pointer ${
                 isHighlighted || isPreviewOpen
                   ? isDark
                     ? 'bg-white text-black font-semibold'
@@ -790,7 +804,8 @@ ${sourceContext ? `Grounding Sources:\n${sourceContext}\n` : ''}`;
                   : 'bg-black/[0.06] text-neutral-700 hover:bg-black/[0.12] hover:text-black'
               }`}
             >
-              {chipLabel}
+              <span className="font-mono font-bold text-[10px] opacity-85">{numberBadge}</span>
+              <span>{primarySource.name}{extraCount}</span>
             </button>
           </span>
         );
@@ -1145,11 +1160,13 @@ ${sourceContext ? `Grounding Sources:\n${sourceContext}\n` : ''}`;
                                     </span>
                                   </div>
                                   <span
-                                    className={`text-[10px] font-mono tabular-nums ${
-                                      isDark ? 'text-neutral-500' : 'text-neutral-400'
+                                    className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold tabular-nums ${
+                                      isDark
+                                        ? 'bg-white/[0.08] text-neutral-300'
+                                        : 'bg-black/[0.06] text-neutral-700'
                                     }`}
                                   >
-                                    #{src.id}
+                                    [{src.id}]
                                   </span>
                                 </div>
 
@@ -1176,12 +1193,90 @@ ${sourceContext ? `Grounding Sources:\n${sourceContext}\n` : ''}`;
                     }`}
                   >
                     {blocks.length === 0 && (isCurrentTurnSearching || isCurrentTurnStreaming) ? (
-                      <div className="py-2">
-                        <ShimmerText
-                          text={isCurrentTurnSearching ? 'Conducting research and verifying citations...' : 'Synthesizing response...'}
-                          isDark={isDark}
-                          className="text-xs"
-                        />
+                      <div
+                        className={`p-4 rounded-xl border space-y-3 ${
+                          isDark
+                            ? 'bg-white/[0.02] border-white/[0.08]'
+                            : 'bg-black/[0.02] border-black/[0.08]'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <ShimmerText
+                            text={
+                              isCurrentTurnSearching
+                                ? 'Stage 1/4 · Searching academic & live web indexes...'
+                                : researchElapsedSec < 4
+                                ? `Stage 2/4 · Cross-verifying ${turnSources.length || 'live'} sources & extracting passages...`
+                                : researchElapsedSec < 9
+                                ? `Stage 3/4 · Mapping inline citations [1–${Math.max(1, turnSources.length)}] & evidence tables...`
+                                : 'Stage 4/4 · Synthesizing structured research report...'
+                            }
+                            isDark={isDark}
+                            className="text-xs font-medium"
+                          />
+                          <span
+                            className={`text-[11px] font-mono tabular-nums px-2 py-0.5 rounded border shrink-0 ${
+                              isDark
+                                ? 'bg-white/[0.05] border-white/[0.1] text-neutral-300'
+                                : 'bg-black/[0.04] border-black/[0.1] text-neutral-700'
+                            }`}
+                          >
+                            {String(Math.floor(researchElapsedSec / 60)).padStart(2, '0')}:
+                            {String(researchElapsedSec % 60).padStart(2, '0')}s
+                          </span>
+                        </div>
+                        <div
+                          className={`w-full h-1.5 rounded-full overflow-hidden ${
+                            isDark ? 'bg-white/[0.07]' : 'bg-black/[0.07]'
+                          }`}
+                        >
+                          <div
+                            className={`h-full transition-all duration-500 rounded-full ${
+                              isDark ? 'bg-white' : 'bg-neutral-900'
+                            }`}
+                            style={{
+                              width: `${Math.min(
+                                94,
+                                isCurrentTurnSearching
+                                  ? 26
+                                  : 38 + Math.min(56, researchElapsedSec * 5)
+                              )}%`,
+                            }}
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 pt-0.5 text-[11px]">
+                          {[
+                            { label: '1. Literature Search', done: !isCurrentTurnSearching },
+                            {
+                              label: `2. ${turnSources.length || 'Live'} Sources Indexed`,
+                              done: !isCurrentTurnSearching && researchElapsedSec >= 2,
+                            },
+                            {
+                              label: '3. Citation Mapping',
+                              done: !isCurrentTurnSearching && researchElapsedSec >= 5,
+                            },
+                            {
+                              label: '4. Final Report',
+                              done: false,
+                            },
+                          ].map((st, sIdx) => (
+                            <div
+                              key={sIdx}
+                              className={`px-2 py-1 rounded border truncate font-mono text-[10px] ${
+                                st.done
+                                  ? isDark
+                                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                                    : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                                  : isDark
+                                  ? 'bg-white/[0.02] border-white/[0.06] text-neutral-400'
+                                  : 'bg-white border-black/[0.06] text-neutral-500'
+                              }`}
+                            >
+                              {st.done ? '✓ ' : '⋯ '}
+                              {st.label}
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     ) : (
                       blocks.map((block, bIdx) => {

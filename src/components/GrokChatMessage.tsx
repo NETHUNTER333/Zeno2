@@ -31,8 +31,10 @@ import {
   Share2,
   Bookmark,
   Highlighter,
-  Globe
+  Globe,
+  Flag
 } from 'lucide-react';
+import { openZenoReportModal } from './LegalAndInfoPages';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
@@ -1470,7 +1472,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                 isDark={isDark}
               >
                 <ReactMarkdown
-                  remarkPlugins={[remarkGfm, remarkMath]}
+                  remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
                   rehypePlugins={[rehypeRaw, rehypeKatex]}
                 components={{
                   a: ({ node, href, children, ...props }) => {
@@ -2583,6 +2585,24 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                     <Share2 className="w-3.5 h-3.5" />
                   </button>
                 )}
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    openZenoReportModal({
+                      targetType: 'ai_answer',
+                      targetId: message.id,
+                      contentPreview: String(message.content || '').slice(0, 400),
+                    })
+                  }
+                  className={`p-1 rounded transition-colors cursor-pointer ${
+                    isDark ? 'hover:text-red-400' : 'hover:text-red-600'
+                  }`}
+                  title="Report AI output or safety issue"
+                  aria-label="Report AI output"
+                >
+                  <Flag className="w-3.5 h-3.5" />
+                </button>
               </div>
 
               {/* Timing Tooltip */}

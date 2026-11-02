@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Gift, Copy, Check, X, Plus, Sparkles } from 'lucide-react';
 import {
   getEightReferralTrackerState,
+  getMyReferralStatus,
   setHomeReferralPopupDismissed,
   claimEightReferralTier,
   REFERRAL_8_REWARD_TIERS,
@@ -23,6 +24,9 @@ export const HomeReferralPopup: React.FC<HomeReferralPopupProps> = ({ theme = 'd
 
   useEffect(() => {
     refresh();
+    getMyReferralStatus()
+      .then(() => refresh())
+      .catch(() => {});
     window.addEventListener('zeno-growth-updated', refresh);
     window.addEventListener('zeno-account-updated', refresh);
     return () => {
@@ -218,6 +222,16 @@ export const HomeReferralPopup: React.FC<HomeReferralPopupProps> = ({ theme = 'd
               </div>
 
               <div className="flex items-center gap-1.5 ml-auto">
+                <span
+                  className={`px-2 py-1 rounded-md font-mono text-[10px] border ${
+                    isDark
+                      ? 'bg-white/5 border-white/10 text-neutral-300'
+                      : 'bg-black/5 border-black/10 text-neutral-700'
+                  }`}
+                  title="Your personal referral code"
+                >
+                  {tracker.code}
+                </span>
                 <button
                   type="button"
                   onClick={handleCopyInvite}
@@ -226,7 +240,7 @@ export const HomeReferralPopup: React.FC<HomeReferralPopupProps> = ({ theme = 'd
                   {copied ? (
                     <>
                       <Check className="w-3 h-3" />
-                      Copied Invite Link
+                      Copied ({tracker.code})
                     </>
                   ) : (
                     <>

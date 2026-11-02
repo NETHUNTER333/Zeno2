@@ -952,18 +952,6 @@ export const StreakModal: React.FC<StreakModalProps> = ({
                         </div>
 
                         <div className="flex items-center gap-1.5 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => handleTriggerBadgeToast(b.id)}
-                            className={`px-2 py-1 rounded-lg border text-[10px] font-mono transition-colors cursor-pointer ${
-                              isDark
-                                ? 'border-white/15 hover:bg-white/10 text-neutral-300'
-                                : 'border-black/15 hover:bg-black/5 text-neutral-700'
-                            }`}
-                            title="Preview Achievement Unlocked Toast"
-                          >
-                            Toast
-                          </button>
 
                           {b.isUnlocked && !b.isFeatured && (
                             <button
@@ -1055,36 +1043,6 @@ export const StreakModal: React.FC<StreakModalProps> = ({
                     }}
                   />
                 </div>
-
-                {/* Achievement Unlocked Toast Preview Bar (7d / 30d / 100d) */}
-                <div
-                  className={`mt-3 pt-3 border-t flex flex-wrap items-center justify-between gap-2 ${
-                    isDark ? 'border-white/10' : 'border-black/10'
-                  }`}
-                >
-                  <div className="flex items-center gap-1.5">
-                    <Bell className="w-3.5 h-3.5 text-[#FC4C01]" />
-                    <span className="text-[11px] font-medium">
-                      Achievement Unlocked Toast Notifications
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    {[7, 30, 100].map((mDays) => (
-                      <button
-                        key={mDays}
-                        type="button"
-                        onClick={() => handleTriggerMilestoneToast(mDays)}
-                        className={`px-2.5 py-1 rounded-lg border text-[11px] font-mono tabular-nums font-medium transition-colors cursor-pointer ${
-                          isDark
-                            ? 'bg-[#FC4C01]/10 hover:bg-[#FC4C01]/20 border-[#FC4C01]/35 text-[#FC4C01]'
-                            : 'bg-[#FC4C01]/10 hover:bg-[#FC4C01]/20 border-[#FC4C01]/35 text-[#FC4C01]'
-                        }`}
-                      >
-                        Trigger {mDays}-Day Toast
-                      </button>
-                    ))}
-                  </div>
-                </div>
               </div>
 
               {/* Milestone Ladder */}
@@ -1155,18 +1113,6 @@ export const StreakModal: React.FC<StreakModalProps> = ({
                       </div>
 
                       <div className="shrink-0 flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => handleTriggerMilestoneToast(m.days)}
-                          className={`px-2 py-1 rounded-lg border text-[10.5px] font-mono transition-colors cursor-pointer ${
-                            isDark
-                              ? 'border-white/15 hover:bg-white/10 text-neutral-300'
-                              : 'border-black/15 hover:bg-black/5 text-neutral-700'
-                          }`}
-                          title={`Preview ${m.days}-Day Achievement Unlocked toast`}
-                        >
-                          Toast
-                        </button>
                         {isClaimed ? (
                           <span
                             className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[11px] font-mono ${
@@ -1444,17 +1390,9 @@ export const StreakModal: React.FC<StreakModalProps> = ({
                     />
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={handleTestReminderToast}
-                    className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors cursor-pointer ${
-                      isDark
-                        ? 'bg-white/[0.06] hover:bg-white/[0.12] border-white/15 text-white'
-                        : 'bg-white hover:bg-neutral-100 border-black/15 text-neutral-900'
-                    }`}
-                  >
-                    Test Reminder Toast
-                  </button>
+                  <div className="text-[11px] text-neutral-400 font-mono">
+                    Scheduled daily at {streak.reminderTime || '18:00'}
+                  </div>
                 </div>
               </div>
 

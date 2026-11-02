@@ -1,17 +1,66 @@
 {
   "cleanUrls": true,
+  "trailingSlash": false,
   "rewrites": [
     {
-      "source": "/api/:path*",
-      "destination": "https://prod-main-zeno-api-c257d4-00gfx3c9932.compute.instacloud-edge.com/api/:path*"
+      "source": "/favicon.ico",
+      "destination": "/favicon.ico"
+    },
+    {
+      "source": "/favicon.svg",
+      "destination": "/favicon.svg"
+    },
+    {
+      "source": "/apple-touch-icon.png",
+      "destination": "/apple-touch-icon.png"
+    },
+    {
+      "source": "/sitemap.xml",
+      "destination": "/sitemap.xml"
+    },
+    {
+      "source": "/robots.txt",
+      "destination": "/robots.txt"
+    },
+    {
+      "source": "/legal",
+      "destination": "/legal.html"
+    },
+    {
+      "source": "/terms",
+      "destination": "/terms.html"
+    },
+    {
+      "source": "/privacy",
+      "destination": "/privacy.html"
+    },
+    {
+      "source": "/refund",
+      "destination": "/refund.html"
+    },
+    {
+      "source": "/refunds",
+      "destination": "/refund.html"
+    },
+    {
+      "source": "/contact",
+      "destination": "/contact.html"
+    },
+    {
+      "source": "/acceptable-use",
+      "destination": "/acceptable-use.html"
+    },
+    {
+      "source": "/cookies",
+      "destination": "/cookies.html"
     },
     {
       "source": "/r/:code",
       "destination": "/?ref=:code"
     },
     {
-      "source": "/(.*)",
-      "destination": "/"
+      "source": "/(discover|study|research|pricing|settings|account|login|signup)",
+      "destination": "/index.html"
     }
   ],
   "headers": [
@@ -25,6 +74,10 @@
         {
           "key": "X-Frame-Options",
           "value": "SAMEORIGIN"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
         }
       ]
     }

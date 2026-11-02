@@ -28,8 +28,8 @@ export function normalizeMathDelimiters(raw: string): string {
       // 1. Convert \[ ... \] display math to $$ ... $$
       s = s.replace(/\\\[([\s\S]*?)\\\]/g, (_, inner) => `\n$$\n${inner.trim()}\n$$\n`);
 
-      // 2. Convert \( ... \) inline math to $ ... $
-      s = s.replace(/\\\(([\s\S]*?)\\\)/g, (_, inner) => `$${inner.trim()}$`);
+      // 2. Convert \( ... \) inline math to $$ ... $$ (since singleDollarTextMath is disabled)
+      s = s.replace(/\\\(([\s\S]*?)\\\)/g, (_, inner) => `$$${inner.trim()}$$`);
 
       // 3. Wrap standalone \begin{equation|align|aligned|gather|pmatrix|bmatrix|matrix|cases}...\end{...}
       // blocks that are not already inside $$...$$
@@ -38,8 +38,22 @@ export function normalizeMathDelimiters(raw: string): string {
         (_, prefix, env, body) => `${prefix}\n$$\n\\begin{${env}}${body}\\end{${env}}\n$$\n`
       );
 
-      // 4. Trim stray spaces immediately inside single-line $ ... $ so remark-math recognizes inline math
-      s = s.replace(/(?<!\$)\$(?!\$)\s+([^$\n]+?)\s+\$(?!\$)/g, (_, inner) => `$${inner.trim()}$`);
+      // 4. Upgrade unambiguous single-$ LaTeX expressions (containing \command, ^, or _) to $$...$$
+      // while NEVER matching currency amounts like "$20 per month. Claude Pro costs $20"
+      s = s.replace(/(?<!\$)\$(?!\$)([^\$\n]{1,120}?)\$(?!\$)/g, (full, inner) => {
+        const trimmed = inner.trim();
+        // Never treat currency/price spans starting with a digit followed by space/words or ending with a digit as math
+        if (/^\d+(?:[.,]\d+)?(?:\s|$|[a-zA-Z]{2,})/.test(trimmed)) {
+          return full;
+        }
+        // Only upgrade if it contains explicit LaTeX commands (\frac, \alpha, etc.) or math scripts (^, _) without prose sentences
+        const hasLatexCommand = /\\[a-zA-Z]{2,}/.test(trimmed);
+        const hasMathScript = /[\^_]/.test(trimmed) && !/\s{1}[a-zA-Z]{4,}\s+[a-zA-Z]{4,}/.test(trimmed);
+        if (hasLatexCommand || hasMathScript) {
+          return `$$${trimmed}$$`;
+        }
+        return full;
+      });
 
       return s;
     })
@@ -71,7 +85,7 @@ export const MathMarkdown: React.FC<MathMarkdownProps> = ({
     return (
       <span className={`katex-markdown-body inline [&>p]:inline [&>p]:m-0 ${className}`}>
         <ReactMarkdown
-          remarkPlugins={[remarkGfm, remarkMath]}
+          remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
           rehypePlugins={[[rehypeKatex, { throwOnError: false, strict: false, output: 'htmlAndMathml' }]]}
           components={{
             p: ({ children }) => <span className="leading-relaxed">{children}</span>,
@@ -118,7 +132,7 @@ export const MathMarkdown: React.FC<MathMarkdownProps> = ({
       className={`katex-markdown-body space-y-2.5 ${className}`}
     >
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkMath]}
+        remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
         rehypePlugins={[[rehypeKatex, { throwOnError: false, strict: false, output: 'htmlAndMathml' }]]}
         components={{
           p: ({ children }) => <p className="leading-[1.68] last:mb-0">{children}</p>,

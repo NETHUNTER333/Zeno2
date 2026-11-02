@@ -70,6 +70,12 @@ export const OPTIONAL_AUTH_API_ROUTES = [
   '/referral/claim',
   '/growth/referrals/me',
   '/growth/referrals/claim',
+  '/contact',
+  '/report',
+  '/moderation/upload',
+  '/moderation/check',
+  '/consent',
+  '/account/delete',
 ] as const;
 
 export const PUBLIC_API_ROUTES = [
@@ -88,6 +94,7 @@ export const PUBLIC_API_ROUTES = [
   '/referral/validate',
   '/growth/referrals/visit',
   '/growth/referrals/leaderboard',
+  '/legal/audit',
 ] as const;
 
 let cachedAdminApp: FirebaseAdminApp | null = null;

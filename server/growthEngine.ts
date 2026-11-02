@@ -996,14 +996,30 @@ export function deleteArtifactById(
 // REFERRAL ATTRIBUTION ENGINE (FRAUD-RESISTANT, NO SELF-REFERRALS)
 // ============================================================================
 
+function computeCanonicalReferralCode(userId: string): string {
+  const clean = String(userId || 'guest').trim() || 'guest';
+  let h1 = 0x811c9dc5;
+  let h2 = 0x01000193;
+  const seed = `zeno_ref_${clean}`;
+  for (let i = 0; i < seed.length; i++) {
+    const ch = seed.charCodeAt(i);
+    h1 ^= ch;
+    h1 = Math.imul(h1, 0x01000193);
+    h2 ^= ch + i;
+    h2 = Math.imul(h2, 0x85ebca6b);
+  }
+  const hex1 = (h1 >>> 0).toString(16).padStart(4, '0').slice(-4);
+  const hex2 = (h2 >>> 0).toString(16).padStart(4, '0').slice(-4);
+  return `zp_${hex1}${hex2}`.toLowerCase();
+}
+
 export function getOrCreateReferralRecord(uid: string): ServerReferralRecord {
   const existingCode = referralCodeByUid.get(uid);
   if (existingCode && referralsByCode.has(existingCode)) {
     return referralsByCode.get(existingCode)!;
   }
 
-  const hash = crypto.createHash('sha256').update(`zeno_ref_${uid}`).digest('hex').slice(0, 8);
-  const code = `zp_${hash}`;
+  const code = computeCanonicalReferralCode(uid);
   const record: ServerReferralRecord = {
     referralCode: code,
     referrerUid: uid,

@@ -458,7 +458,7 @@ export const SERVER_PLAN_LIMITS: Record<SubscriptionPlanTier, ServerPlanLimits> 
   free: {
     name: 'Free',
     priceMonthly: 0,
-    fileUploadLimit: 5, // 5 daily free file uploads
+    fileUploadLimit: 3, // 3 daily free file uploads
     maxFilesPerMessage: 2,
     messageLimit: 5, // 5 daily free AI messages
     searchLimit: 5, // 5 daily free web searches
@@ -827,14 +827,11 @@ export function syncServerQuotaFromClient(
 
   if (payload.plan === 'free' || payload.plan === 'spark' || payload.plan === 'fire') {
     const incomingPlan = normalizePlanTier(payload.plan);
-    // Allow plan sync if upgraded or explicitly set
-    if (TIER_RANK[incomingPlan] > TIER_RANK[rec.plan]) {
-      rec.plan = incomingPlan;
-      planByPrincipal.set(principalKey, {
-        plan: rec.plan,
-        billingCycle: payload.billingCycle === 'yearly' ? 'yearly' : rec.billingCycle,
-      });
-    }
+    rec.plan = incomingPlan;
+    planByPrincipal.set(principalKey, {
+      plan: rec.plan,
+      billingCycle: payload.billingCycle === 'yearly' ? 'yearly' : rec.billingCycle,
+    });
   }
 
   const safeNonNegInt = (val: unknown, cap = 100_000_000): number => {

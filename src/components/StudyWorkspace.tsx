@@ -174,8 +174,9 @@ export function consolidateTranscriptSegments(
     rawSegments.reduce((acc, s) => acc + (s.text || '').length, 0) /
     Math.max(1, rawSegments.length);
   if (avgLen > 140) {
-    return rawSegments.map((s) => ({
+    return rawSegments.map((s, idx) => ({
       ...s,
+      start_s: idx === 0 && (s.start_s || 0) <= 25 ? 0 : s.start_s,
       text: cleanCaptionText(s.text),
     }));
   }
@@ -212,8 +213,10 @@ export function consolidateTranscriptSegments(
       if (combined.length > 0) {
         combined = combined.charAt(0).toUpperCase() + combined.slice(1);
         if (!/[.!?]$/.test(combined)) combined += '.';
+        const effectiveStart =
+          consolidated.length === 0 && currentStart <= 25 ? 0 : currentStart;
         consolidated.push({
-          start_s: currentStart,
+          start_s: effectiveStart,
           duration_s: Math.max(10, Math.round(currentDuration)),
           text: combined,
         });
@@ -285,9 +288,10 @@ export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
   // Open Workspace Tabs
   const [openTabs, setOpenTabs] = useState<OpenWorkspaceTab[]>([
     { id: 'tab-summary', type: 'summary', title: 'Summary' },
-    { id: 'tab-learn', type: 'learn', title: 'Study Tools' },
     { id: 'tab-quiz', type: 'quiz', title: 'Quiz' },
     { id: 'tab-flashcards', type: 'flashcards', title: 'Flashcards' },
+    { id: 'tab-transcripts', type: 'transcripts', title: 'Transcript' },
+    { id: 'tab-learn', type: 'learn', title: 'Study Tools' },
   ]);
   const [activeTabId, setActiveTabId] = useState<string>('tab-summary');
 
@@ -303,6 +307,8 @@ export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
   const [aiExhaustiveSummary, setAiExhaustiveSummary] = useState<string>('');
   const [synthesizingDeepSummary, setSynthesizingDeepSummary] = useState<boolean>(false);
   const [loadingContent, setLoadingContent] = useState<boolean>(false);
+  const [loadingElapsedSec, setLoadingElapsedSec] = useState<number>(0);
+  const [loadingStageText, setLoadingStageText] = useState<string>('Extracting transcript & source metadata...');
 
   // My Sets Filter & Menu
   const [mySetsFilter, setMySetsFilter] = useState<'all' | 'summary' | 'flashcards' | 'quiz' | 'podcast'>('all');
@@ -429,9 +435,22 @@ export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const ytIframeRef = useRef<HTMLIFrameElement>(null);
 
   const userProfile = useMemo(() => UserAccountStore.getProfile(), []);
   const displayName = userProfile?.displayName?.split(' ')[0] || 'Wake';
+
+  useEffect(() => {
+    if (!loadingContent) {
+      setLoadingElapsedSec(0);
+      return;
+    }
+    setLoadingElapsedSec(0);
+    const interval = setInterval(() => {
+      setLoadingElapsedSec((prev) => prev + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [loadingContent]);
 
   useEffect(() => {
     try {
@@ -876,6 +895,7 @@ ${fullTranscriptText}`;
 
       const consolidated = consolidateTranscriptSegments(rawLoadedSegments);
       setSegments(consolidated);
+      setLoadingStageText('Transcript ready — synthesizing chapters, quiz & flashcards...');
 
       const authHeaders = await getAuthHeaders();
       const aiRes = await fetch('/api/youtube/study', {
@@ -1055,9 +1075,35 @@ ${fullTranscriptText}`;
   };
 
   const handleJumpToTimestamp = (sec: number) => {
-    setSeekSeconds(Math.max(0, Math.floor(sec)));
+    const targetSec = Math.max(0, Math.floor(sec));
+    setSeekSeconds(targetSec);
     setAutoPlayVideo(true);
     setShowSourceViewer(true);
+
+    // Seek in-place via YouTube IFrame Player API postMessage without reloading the iframe
+    setTimeout(() => {
+      try {
+        const win = ytIframeRef.current?.contentWindow;
+        if (win) {
+          win.postMessage(
+            JSON.stringify({
+              event: 'command',
+              func: 'seekTo',
+              args: [targetSec, true],
+            }),
+            '*'
+          );
+          win.postMessage(
+            JSON.stringify({
+              event: 'command',
+              func: 'playVideo',
+              args: [],
+            }),
+            '*'
+          );
+        }
+      } catch {}
+    }, 50);
   };
 
   const formatTime = (totalSeconds: number): string => {
@@ -1821,6 +1867,29 @@ ${fullTranscriptText}`;
                 <Share2 className="w-3.5 h-3.5" />
               </button>
 
+              <button
+                type="button"
+                onClick={() => {
+                  window.dispatchEvent(
+                    new CustomEvent('zeno-open-report', {
+                      detail: {
+                        targetType: 'study_set',
+                        targetId: activeVideoId || resolvedTitle,
+                        contentPreview: `${resolvedTitle} (${sourceType})`,
+                      },
+                    })
+                  );
+                }}
+                className={`px-2 py-1.5 rounded-xl border text-[11px] font-medium transition-colors cursor-pointer ${
+                  isDark
+                    ? 'border-white/[0.08] hover:bg-white/[0.08] text-neutral-300'
+                    : 'border-black/[0.08] hover:bg-black/[0.05] text-neutral-700'
+                }`}
+                title="Report study set or transcript issue"
+              >
+                Report
+              </button>
+
               <div className="relative">
                 <button
                   type="button"
@@ -1892,10 +1961,23 @@ ${fullTranscriptText}`;
                 {activeVideoId ? (
                   <div className="aspect-video w-full max-h-[360px] bg-black">
                     <iframe
-                      key={`${activeVideoId}-${seekSeconds}`}
-                      src={`https://www.youtube-nocookie.com/embed/${activeVideoId}?autoplay=1&enablejsapi=1&rel=0&modestbranding=1${
-                        seekSeconds > 0 ? `&start=${seekSeconds}` : ''
-                      }`}
+                      ref={ytIframeRef}
+                      key={activeVideoId}
+                      src={`https://www.youtube-nocookie.com/embed/${activeVideoId}?autoplay=1&enablejsapi=1&rel=0&modestbranding=1`}
+                      onLoad={() => {
+                        if (seekSeconds > 0) {
+                          try {
+                            ytIframeRef.current?.contentWindow?.postMessage(
+                              JSON.stringify({
+                                event: 'command',
+                                func: 'seekTo',
+                                args: [seekSeconds, true],
+                              }),
+                              '*'
+                            );
+                          } catch {}
+                        }
+                      }}
                       title={resolvedTitle}
                       className="w-full h-full border-0"
                       allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
@@ -2060,16 +2142,93 @@ ${fullTranscriptText}`;
           {/* Main Tab Content Viewport */}
           <div className="flex-1 overflow-y-auto">
             {loadingContent ? (
-              <div className="max-w-2xl mx-auto px-4 py-8 space-y-4">
-                <div className="flex items-center justify-center gap-2 text-sm font-medium animate-pulse text-neutral-400">
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  <span>Analyzing transcript and generating chapters, quiz & flashcards with AI...</span>
+              <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
+                <div
+                  className={`rounded-2xl border p-5 space-y-4 ${
+                    isDark ? 'bg-[#121215] border-white/[0.1]' : 'bg-white border-black/[0.08]'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <div className="flex items-center gap-2.5 text-sm font-semibold">
+                      <Loader2 className="w-4 h-4 animate-spin text-emerald-500" />
+                      <span>
+                        {segments.length > 0
+                          ? loadingStageText
+                          : 'Fetching full transcript from YouTube...'}
+                      </span>
+                    </div>
+                    <span className="px-2.5 py-1 rounded-lg text-xs font-mono font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                      {formatTime(loadingElapsedSec)} elapsed
+                    </span>
+                  </div>
+
+                  {/* Step Progress Pills */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                    {[
+                      { label: '1. Transcript', done: segments.length > 0, active: segments.length === 0 },
+                      { label: '2. Summary & Sections', done: false, active: segments.length > 0 && loadingElapsedSec < 12 },
+                      { label: '3. Grounded Quiz', done: false, active: segments.length > 0 && loadingElapsedSec >= 12 && loadingElapsedSec < 24 },
+                      { label: '4. Flashcards', done: false, active: segments.length > 0 && loadingElapsedSec >= 24 },
+                    ].map((st) => (
+                      <div
+                        key={st.label}
+                        className={`px-3 py-2 rounded-xl border font-medium flex items-center gap-1.5 ${
+                          st.done
+                            ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
+                            : st.active
+                            ? isDark
+                              ? 'border-white/25 bg-white/[0.07] text-white'
+                              : 'border-black/25 bg-black/[0.06] text-black'
+                            : isDark
+                            ? 'border-white/[0.06] text-neutral-500'
+                            : 'border-black/[0.06] text-neutral-400'
+                        }`}
+                      >
+                        {st.done ? <Check className="w-3.5 h-3.5 shrink-0" /> : st.active ? <Loader2 className="w-3 h-3 animate-spin shrink-0" /> : null}
+                        <span className="truncate">{st.label}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <div className="space-y-3 pt-4">
-                  <div className={`h-28 rounded-2xl animate-pulse ${isDark ? 'bg-white/[0.04]' : 'bg-black/[0.04]'}`} />
-                  <div className={`h-44 rounded-2xl animate-pulse ${isDark ? 'bg-white/[0.04]' : 'bg-black/[0.04]'}`} />
-                  <div className={`h-32 rounded-2xl animate-pulse ${isDark ? 'bg-white/[0.04]' : 'bg-black/[0.04]'}`} />
-                </div>
+
+                {/* Stream in Transcript immediately while AI finishes generating chapters/quiz */}
+                {segments.length > 0 ? (
+                  <div
+                    className={`rounded-2xl border p-5 space-y-3 ${
+                      isDark ? 'bg-[#121215] border-white/[0.08]' : 'bg-white border-black/[0.08]'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold uppercase tracking-wider text-emerald-400">
+                        Live Transcript Ready ({segments.length} sections) — Click any timestamp to seek video
+                      </span>
+                    </div>
+                    <div className="max-h-80 overflow-y-auto space-y-2.5 pr-1">
+                      {segments.slice(0, 12).map((seg, idx) => (
+                        <div
+                          key={idx}
+                          className={`p-3 rounded-xl border text-xs leading-relaxed flex items-start gap-3 ${
+                            isDark ? 'bg-white/[0.02] border-white/[0.06]' : 'bg-black/[0.02] border-black/[0.06]'
+                          }`}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => handleJumpToTimestamp(seg.start_s)}
+                            className="px-2 py-0.5 rounded-md font-mono text-[11px] font-semibold bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 shrink-0 cursor-pointer"
+                          >
+                            {formatTime(seg.start_s)}
+                          </button>
+                          <p className={isDark ? 'text-neutral-300' : 'text-neutral-700'}>{seg.text}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3 pt-2">
+                    <div className={`h-28 rounded-2xl animate-pulse ${isDark ? 'bg-white/[0.04]' : 'bg-black/[0.04]'}`} />
+                    <div className={`h-44 rounded-2xl animate-pulse ${isDark ? 'bg-white/[0.04]' : 'bg-black/[0.04]'}`} />
+                  </div>
+                )}
               </div>
             ) : studyError ? (
               <div className="max-w-md mx-auto my-12 p-6 rounded-2xl border border-red-500/20 bg-red-500/5 text-center space-y-4">

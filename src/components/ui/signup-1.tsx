@@ -11,6 +11,9 @@ import {
   PendingReferralInfo,
 } from "../../lib/referralClient";
 import { apiFetch } from "../../lib/apiBase";
+import { auth } from "../../lib/firebase";
+import { recordUserLegalConsent, SiteFooter } from "../LegalAndInfoPages";
+import { MIN_AGE } from "../../legal/config";
 
 interface Signup1Props {
   heading?: string;
@@ -44,6 +47,7 @@ const Signup1 = ({
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoginMode, setIsLoginMode] = useState(true);
+  const [consentAccepted, setConsentAccepted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -118,6 +122,12 @@ const Signup1 = ({
     e.preventDefault();
     const cleanEmail = email.trim();
     if (!cleanEmail || !password) return;
+    if (!consentAccepted) {
+      setError(
+        `Please confirm you are ${MIN_AGE} or older (or have parent/guardian consent) and agree to the Terms, Privacy Policy, and Acceptable Use Policy.`
+      );
+      return;
+    }
     try {
       setLoading(true);
       setError(null);
@@ -127,6 +137,7 @@ const Signup1 = ({
       } else {
         await UserAccountStore.signUp(cleanEmail, password);
       }
+      await recordUserLegalConsent(auth.currentUser?.uid, isLoginMode ? "email_login" : "email_signup");
       if (onSuccess) onSuccess();
     } catch (err: any) {
       const code = err?.code || "";
@@ -136,6 +147,7 @@ const Signup1 = ({
         // If not found in login mode, auto-create account for them
         try {
           await UserAccountStore.signUp(cleanEmail, password);
+          await recordUserLegalConsent(auth.currentUser?.uid, "email_signup");
           if (onSuccess) onSuccess();
           return;
         } catch {
@@ -178,14 +190,21 @@ const Signup1 = ({
   };
 
   const handleGoogleSignup = async () => {
+    if (!consentAccepted) {
+      setError(
+        `Please check the box below to confirm you are ${MIN_AGE}+ (or have parent/guardian consent) and agree to the Terms, Privacy Policy, and Acceptable Use Policy.`
+      );
+      return;
+    }
     try {
       setLoading(true);
       setError(null);
       setResetSuccess(null);
       const user = await UserAccountStore.signIn();
-      if (user && onSuccess) {
-        onSuccess();
-      } else if (!user) {
+      if (user) {
+        await recordUserLegalConsent(user.uid, "google_signin");
+        if (onSuccess) onSuccess();
+      } else {
         setError("Google sign-in was cancelled or closed.");
       }
     } catch (err: any) {
@@ -369,6 +388,64 @@ const Signup1 = ({
                 </button>
               </div>
             </div>
+
+            {/* Required Unchecked-by-Default Age & Policy Consent Checkbox */}
+            <label className="flex items-start gap-2.5 rounded-xl border border-border p-3 text-left text-[11px] leading-relaxed text-muted-foreground cursor-pointer hover:border-primary/40 transition-colors">
+              <input
+                type="checkbox"
+                checked={consentAccepted}
+                onChange={(e) => {
+                  setConsentAccepted(e.target.checked);
+                  if (e.target.checked && error?.includes("agree to the Terms")) {
+                    setError(null);
+                  }
+                }}
+                className="mt-0.5 h-4 w-4 accent-[#FC4C01] rounded cursor-pointer shrink-0"
+              />
+              <span>
+                I am {MIN_AGE} or older (or have parent/guardian consent) and agree to the{" "}
+                <a
+                  href="/terms"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    window.dispatchEvent(
+                      new CustomEvent("zeno-navigate-route", { detail: { path: "/terms" } })
+                    );
+                  }}
+                  className="text-foreground font-semibold underline hover:text-primary"
+                >
+                  Terms
+                </a>
+                ,{" "}
+                <a
+                  href="/privacy"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    window.dispatchEvent(
+                      new CustomEvent("zeno-navigate-route", { detail: { path: "/privacy" } })
+                    );
+                  }}
+                  className="text-foreground font-semibold underline hover:text-primary"
+                >
+                  Privacy Policy
+                </a>{" "}
+                and{" "}
+                <a
+                  href="/acceptable-use"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    window.dispatchEvent(
+                      new CustomEvent("zeno-navigate-route", { detail: { path: "/acceptable-use" } })
+                    );
+                  }}
+                  className="text-foreground font-semibold underline hover:text-primary"
+                >
+                  Acceptable Use Policy
+                </a>
+                .
+              </span>
+            </label>
+
             <div className="flex flex-col gap-2.5 pt-1">
               <Button
                 type="submit"
@@ -405,7 +482,10 @@ const Signup1 = ({
                 type="button"
                 variant="outline"
                 className="w-full cursor-pointer h-10 border-dashed"
-                onClick={() => {
+                onClick={async () => {
+                  if (consentAccepted) {
+                    await recordUserLegalConsent(undefined, "guest_signin_card");
+                  }
                   UserAccountStore.loginAsGuest();
                   if (onSuccess) onSuccess();
                 }}
@@ -431,6 +511,16 @@ const Signup1 = ({
             >
               {isLoginMode ? "Create an account" : "Sign In"}
             </button>
+          </div>
+
+          <div className="w-full pt-2 border-t border-border/50 flex justify-center text-center">
+            <SiteFooter
+              compact
+              isDark
+              onNavigate={(path) =>
+                window.dispatchEvent(new CustomEvent("zeno-navigate-route", { detail: { path } }))
+              }
+            />
           </div>
         </div>
       </div>

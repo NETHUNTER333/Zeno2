@@ -1,5 +1,18 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { X, Search } from 'lucide-react';
+import {
+  X,
+  Search,
+  RefreshCw,
+  ExternalLink,
+  GitBranch,
+  Star,
+  BookOpen,
+  FileText,
+  Sparkles,
+  Bookmark,
+  Check,
+  Code2,
+} from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -72,8 +85,38 @@ export interface ZenoGrowthHubModalProps {
 function normalizeLatexDelimiters(raw: string): string {
   if (!raw) return '';
   return raw
-    .replace(/\\\[([\s\S]*?)\\\]/g, (_m, inner) => `\n$$${inner.trim()}$$\n`)
-    .replace(/\\\(([\s\S]*?)\\\)/g, (_m, inner) => `$${inner.trim()}$`);
+    .replace(/\\\[([\s\S]*?)\\\]/g, (_m, inner) => `\n$$\n${inner.trim()}\n$$\n`)
+    .replace(/\\\(([\s\S]*?)\\\)/g, (_m, inner) => `$$${inner.trim()}$$`);
+}
+
+interface LiveDiscoverConnectedRepo {
+  id: number;
+  fullName: string;
+  name: string;
+  owner: string;
+  ownerAvatar?: string;
+  description: string;
+  url: string;
+  stars: number;
+  forks: number;
+  language: string;
+  topics?: string[];
+  updatedAt?: string;
+  license?: string | null;
+}
+
+interface LiveDiscoverArxivPaper {
+  id: string;
+  title: string;
+  summary: string;
+  authors: string[];
+  published: string;
+  updated?: string;
+  pdfUrl: string;
+  absUrl: string;
+  primaryCategory: string;
+  categories?: string[];
+  connectedRepos?: LiveDiscoverConnectedRepo[];
 }
 
 export const ZenoGrowthHubModal: React.FC<ZenoGrowthHubModalProps> = ({
@@ -86,7 +129,9 @@ export const ZenoGrowthHubModal: React.FC<ZenoGrowthHubModalProps> = ({
   onContinueVaultItemInChat,
   isDark = true,
 }) => {
-  const [activeTab, setActiveTab] = useState<GrowthHubTab>(initialTab);
+  const [activeTab, setActiveTab] = useState<GrowthHubTab>(
+    initialTab === 'weekly' ? 'discover' : initialTab
+  );
 
   // --- TAB 1: DISCOVER STATE ---
   const [discoverItems, setDiscoverItems] = useState<PublicArtifact[]>([]);
@@ -95,6 +140,14 @@ export const ZenoGrowthHubModal: React.FC<ZenoGrowthHubModalProps> = ({
   const [discoverCategory, setDiscoverCategory] = useState<DiscoverCategory | 'All'>('All');
   const [discoverQuery, setDiscoverQuery] = useState<string>('');
   const [discoverSort, setDiscoverSort] = useState<'recent' | 'saved' | 'views'>('recent');
+  const [discoverSourceFilter, setDiscoverSourceFilter] = useState<
+    'all' | 'arxiv' | 'github' | 'community'
+  >('all');
+  const [liveArxivPapers, setLiveArxivPapers] = useState<LiveDiscoverArxivPaper[]>([]);
+  const [liveGithubRepos, setLiveGithubRepos] = useState<LiveDiscoverConnectedRepo[]>([]);
+  const [liveFeedLoading, setLiveFeedLoading] = useState<boolean>(false);
+  const [liveRefreshTick, setLiveRefreshTick] = useState<number>(0);
+  const [savedLiveIds, setSavedLiveIds] = useState<Record<string, boolean>>({});
 
   // --- TAB 2: KNOWLEDGE VAULT STATE ---
   const [vaultItems, setVaultItems] = useState<KnowledgeVaultItem[]>(() =>
@@ -186,7 +239,7 @@ export const ZenoGrowthHubModal: React.FC<ZenoGrowthHubModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      setActiveTab(initialTab);
+      setActiveTab(initialTab === 'weekly' ? 'discover' : initialTab);
       setVaultItems(KnowledgeVaultStore.getItems());
       setCollections(KnowledgeVaultStore.getCollections());
       KnowledgeVaultStore.syncFromCloud().then((synced) => {
@@ -204,11 +257,13 @@ export const ZenoGrowthHubModal: React.FC<ZenoGrowthHubModalProps> = ({
     return () => window.removeEventListener('zeno-vault-updated', syncVault);
   }, []);
 
-  // Load Discover items when Discover tab or filters change
+  // Load Discover items + Live arXiv & Connected GitHub feed when Discover tab or filters change
   useEffect(() => {
     if (!isOpen || activeTab !== 'discover') return;
     let cancelled = false;
     setDiscoverLoading(true);
+    setLiveFeedLoading(true);
+
     fetchDiscoverArtifacts({
       category: discoverCategory,
       q: discoverQuery,
@@ -223,10 +278,31 @@ export const ZenoGrowthHubModal: React.FC<ZenoGrowthHubModalProps> = ({
       .finally(() => {
         if (!cancelled) setDiscoverLoading(false);
       });
+
+    fetch(
+      `/api/discover/live?category=${encodeURIComponent(discoverCategory)}&q=${encodeURIComponent(
+        discoverQuery
+      )}&refresh=${liveRefreshTick}`
+    )
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled || !data) return;
+        if (Array.isArray(data.arxivPapers)) {
+          setLiveArxivPapers(data.arxivPapers);
+        }
+        if (Array.isArray(data.githubRepos)) {
+          setLiveGithubRepos(data.githubRepos);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setLiveFeedLoading(false);
+      });
+
     return () => {
       cancelled = true;
     };
-  }, [isOpen, activeTab, discoverCategory, discoverQuery, discoverSort]);
+  }, [isOpen, activeTab, discoverCategory, discoverQuery, discoverSort, liveRefreshTick]);
 
   useEffect(() => {
     if (!isOpen || activeTab !== 'passes') return;
@@ -467,7 +543,7 @@ export const ZenoGrowthHubModal: React.FC<ZenoGrowthHubModalProps> = ({
             Zeno Workspace Hub
           </h2>
           <p className="text-[11px] text-neutral-500 truncate hidden sm:block">
-            Community Research · Knowledge Vault · Weekly Brief · Zeno Passes
+            Live arXiv + Connected GitHub · Knowledge Vault · Zeno Passes
           </p>
         </div>
 
@@ -499,7 +575,7 @@ export const ZenoGrowthHubModal: React.FC<ZenoGrowthHubModalProps> = ({
         </div>
       </div>
 
-      {/* Navigation Tabs — clean monochrome pills, zero icons */}
+      {/* Navigation Tabs — clean monochrome pills */}
       <div
         className={`px-4 sm:px-6 py-2.5 border-b flex items-center gap-1.5 overflow-x-auto scrollbar-none shrink-0 ${
           isDark ? 'bg-[#09090b] border-white/[0.08]' : 'bg-white border-black/[0.08]'
@@ -507,9 +583,8 @@ export const ZenoGrowthHubModal: React.FC<ZenoGrowthHubModalProps> = ({
       >
         {(
           [
-            { id: 'discover', label: 'Discover' },
+            { id: 'discover', label: 'Discover (arXiv + GitHub)' },
             { id: 'vault', label: `Knowledge Vault (${vaultItems.length})` },
-            { id: 'weekly', label: 'Weekly Brief' },
             { id: 'passes', label: 'Referrals (8x Rewards)' },
             { id: 'feedback', label: 'Feedback' },
           ] as const
@@ -537,45 +612,94 @@ export const ZenoGrowthHubModal: React.FC<ZenoGrowthHubModalProps> = ({
       <div className="flex-1 overflow-y-auto slim-scrollbar p-4 sm:p-6 text-xs">
         <div className="max-w-6xl mx-auto">
           {/* =========================================================
-              TAB 1: ZENO DISCOVER (PUBLIC COMMUNITY LIBRARY)
+              TAB 1: ZENO DISCOVER (LIVE ARXIV + CONNECTED GITHUB + COMMUNITY)
              ========================================================= */}
           {activeTab === 'discover' && (
-            <div className="space-y-4">
-              {/* Search & Sort Bar */}
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+            <div className="space-y-5">
+              {/* Brutalist Header Banner + Live Refresh Action */}
+              <div
+                className={`p-4 sm:p-5 rounded-2xl border-2 flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
+                  isDark
+                    ? 'bg-[#101014] border-white/25 shadow-[4px_4px_0px_0px_rgba(252,76,1,0.45)]'
+                    : 'bg-white border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,0.85)]'
+                }`}
+              >
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="px-2 py-0.5 rounded bg-[#FC4C01] text-white font-mono text-[10px] font-bold uppercase tracking-widest">
+                      LIVE FEED // ARXIV × GITHUB
+                    </span>
+                    <span className="font-mono text-[11px] text-neutral-400">
+                      {liveArxivPapers.length} arXiv Papers · {liveGithubRepos.length} GitHub Repos ·{' '}
+                      {discoverItems.length} Blueprints
+                    </span>
+                  </div>
+                  <h3 className="text-base sm:text-lg font-bold tracking-tight">
+                    Frontier Research Papers, Connected Code & Study Blueprints
+                  </h3>
+                  <p className={`text-xs ${isDark ? 'text-neutral-400' : 'text-neutral-600'}`}>
+                    Real-time arXiv preprints automatically linked to open-source GitHub implementations, plus community research workflows.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setLiveRefreshTick((t) => t + 1)}
+                    disabled={liveFeedLoading}
+                    className={`px-3.5 py-2 rounded-xl border-2 font-mono text-xs font-bold inline-flex items-center gap-2 cursor-pointer transition-all active:translate-y-0.5 ${
+                      isDark
+                        ? 'bg-[#FC4C01] hover:bg-[#e04300] border-white/20 text-white shadow-[3px_3px_0px_0px_rgba(255,255,255,0.2)]'
+                        : 'bg-[#FC4C01] hover:bg-[#e04300] border-black text-white shadow-[3px_3px_0px_0px_rgba(0,0,0,1)]'
+                    }`}
+                  >
+                    <RefreshCw
+                      className={`w-3.5 h-3.5 ${liveFeedLoading ? 'animate-spin' : ''}`}
+                    />
+                    <span>{liveFeedLoading ? 'Syncing Live Feed…' : 'Refresh Feed'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Search, Source Filter & Sort Bar */}
+              <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
                 <div className="relative flex-1">
                   <Search className="w-3.5 h-3.5 absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-500" />
                   <input
                     type="text"
                     value={discoverQuery}
                     onChange={(e) => setDiscoverQuery(e.target.value)}
-                    placeholder="Search study guides, research syntheses, workflows, and tags..."
-                    className={`w-full pl-9 pr-4 py-2 rounded-full border text-xs outline-none ${inputSurface}`}
+                    placeholder="Search arXiv papers, GitHub repositories, transformers, agents, physics, or study guides..."
+                    className={`w-full pl-9 pr-4 py-2.5 rounded-xl border-2 font-mono text-xs outline-none ${
+                      isDark
+                        ? 'bg-[#09090b] border-white/20 text-white placeholder-neutral-500 focus:border-[#FC4C01]'
+                        : 'bg-white border-black/80 text-black placeholder-neutral-400 focus:border-[#FC4C01]'
+                    }`}
                   />
                 </div>
 
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <span className="text-[11px] text-neutral-500 mr-1">Sort:</span>
+                <div className="flex flex-wrap items-center gap-1.5 shrink-0">
                   {(
                     [
-                      { id: 'recent', label: 'Recent' },
-                      { id: 'saved', label: 'Most Saved' },
-                      { id: 'views', label: 'Most Viewed' },
+                      { id: 'all', label: 'All Sources' },
+                      { id: 'arxiv', label: 'arXiv + GitHub' },
+                      { id: 'github', label: 'GitHub Repos' },
+                      { id: 'community', label: 'Study Blueprints' },
                     ] as const
-                  ).map((s) => (
+                  ).map((src) => (
                     <button
-                      key={s.id}
+                      key={src.id}
                       type="button"
-                      onClick={() => setDiscoverSort(s.id)}
-                      className={`px-3 py-1.5 rounded-full border text-[11px] font-medium cursor-pointer transition-colors ${
-                        discoverSort === s.id
-                          ? isDark
-                            ? 'bg-white text-black border-white font-semibold'
-                            : 'bg-neutral-900 text-white border-neutral-900 font-semibold'
-                          : secondaryBtn
+                      onClick={() => setDiscoverSourceFilter(src.id)}
+                      className={`px-3 py-1.5 rounded-lg border-2 font-mono text-[11px] font-bold cursor-pointer transition-all ${
+                        discoverSourceFilter === src.id
+                          ? 'bg-[#FC4C01] text-white border-[#FC4C01]'
+                          : isDark
+                          ? 'bg-[#121215] border-white/15 text-neutral-300 hover:border-white/35'
+                          : 'bg-white border-black/20 text-neutral-800 hover:border-black'
                       }`}
                     >
-                      {s.label}
+                      {src.label}
                     </button>
                   ))}
                 </div>
@@ -588,11 +712,11 @@ export const ZenoGrowthHubModal: React.FC<ZenoGrowthHubModalProps> = ({
                     key={cat}
                     type="button"
                     onClick={() => setDiscoverCategory(cat)}
-                    className={`px-3 py-1.5 rounded-full border text-xs font-medium whitespace-nowrap transition-colors cursor-pointer ${
+                    className={`px-3 py-1.5 rounded-lg border text-xs font-medium whitespace-nowrap transition-colors cursor-pointer ${
                       discoverCategory === cat
                         ? isDark
-                          ? 'bg-white/[0.14] border-white/40 text-white font-semibold'
-                          : 'bg-neutral-900 text-white border-neutral-900 font-semibold'
+                          ? 'bg-white text-black border-white font-bold'
+                          : 'bg-neutral-900 text-white border-neutral-900 font-bold'
                         : secondaryBtn
                     }`}
                   >
@@ -601,143 +725,657 @@ export const ZenoGrowthHubModal: React.FC<ZenoGrowthHubModalProps> = ({
                 ))}
               </div>
 
-              {/* Results Grid */}
-              {discoverLoading ? (
-                <div className="py-12 text-center text-neutral-500">
-                  Loading public Zeno library…
-                </div>
-              ) : discoverItems.length === 0 ? (
-                <div className={`p-8 rounded-2xl border text-center space-y-1.5 ${cardSurface}`}>
-                  <div className="text-sm font-semibold">No matching public resources found</div>
-                  <p className="text-xs text-neutral-500">
-                    Try clearing your search query or switching to another category.
-                  </p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                  {discoverItems.map((item) => {
-                    const isSaved = KnowledgeVaultStore.isArtifactBookmarked(item.id);
-                    return (
-                      <div
-                        key={item.id}
-                        className={`p-4 sm:p-5 rounded-2xl border flex flex-col justify-between gap-3.5 transition-colors ${cardSurface}`}
-                      >
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between gap-2">
-                            <span
-                              className={`px-2.5 py-0.5 rounded-full text-[10px] font-medium uppercase tracking-wider ${
-                                isDark
-                                  ? 'bg-white/[0.06] text-neutral-300'
-                                  : 'bg-neutral-200/70 text-neutral-700'
-                              }`}
-                            >
-                              {item.category}
-                            </span>
+              {/* SECTION A: LIVE ARXIV PAPERS WITH CONNECTED GITHUB REPOSITORIES */}
+              {(discoverSourceFilter === 'all' || discoverSourceFilter === 'arxiv') && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <BookOpen className="w-4 h-4 text-[#FC4C01]" />
+                      <h4 className="text-xs sm:text-sm font-bold uppercase tracking-wider font-mono">
+                        arXiv Preprints + Connected GitHub Implementations
+                      </h4>
+                    </div>
+                    <span className="text-[11px] font-mono text-neutral-500">
+                      {liveFeedLoading ? 'Fetching live arXiv API…' : `${liveArxivPapers.length} papers`}
+                    </span>
+                  </div>
 
-                            <div className="flex items-center gap-3 text-[11px] text-neutral-500">
-                              <span>{item.viewsCount || 1} views</span>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const nowSaved =
-                                    KnowledgeVaultStore.toggleBookmarkFromArtifact(item);
-                                  if (nowSaved) {
-                                    recordArtifactInteraction(item.id, 'save');
-                                  }
-                                  setVaultItems(KnowledgeVaultStore.getItems());
-                                }}
-                                className={`cursor-pointer font-medium transition-colors ${
-                                  isSaved
-                                    ? isDark
-                                      ? 'text-white underline'
-                                      : 'text-black underline'
-                                    : 'text-neutral-500 hover:text-current'
-                                }`}
-                              >
-                                {isSaved ? 'Saved' : 'Save'}
-                              </button>
-                            </div>
-                          </div>
-
-                          <h3
-                            onClick={() => {
-                              trackGrowthEvent('discover_resource_opened', {
-                                artifactId: item.id,
-                                category: item.category,
-                              });
-                              onOpenArtifactPage(item);
-                            }}
-                            className="text-sm font-semibold leading-snug hover:underline cursor-pointer"
-                          >
-                            {item.title}
-                          </h3>
-
-                          <p
-                            className={`text-xs line-clamp-2 leading-relaxed ${
-                              isDark ? 'text-neutral-400' : 'text-neutral-600'
-                            }`}
-                          >
-                            {item.summary}
-                          </p>
-                        </div>
-
+                  {liveFeedLoading && liveArxivPapers.length === 0 ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {[1, 2, 3, 4].map((n) => (
                         <div
-                          className={`pt-3 border-t flex items-center justify-between gap-2 ${
-                            isDark ? 'border-white/[0.06]' : 'border-black/[0.06]'
+                          key={n}
+                          className={`p-5 rounded-2xl border-2 animate-pulse space-y-3 ${
+                            isDark ? 'bg-[#121215] border-white/15' : 'bg-neutral-100 border-black/15'
                           }`}
                         >
-                          <div className="flex flex-wrap gap-1 min-w-0">
-                            {item.tags.slice(0, 3).map((tag) => (
-                              <span
-                                key={tag}
-                                className={`text-[10px] px-2 py-0.5 rounded-full ${
-                                  isDark
-                                    ? 'bg-white/[0.04] text-neutral-400'
-                                    : 'bg-black/[0.04] text-neutral-600'
+                          <div className="h-4 w-1/3 rounded bg-neutral-500/20" />
+                          <div className="h-5 w-4/5 rounded bg-neutral-500/20" />
+                          <div className="h-14 w-full rounded bg-neutral-500/15" />
+                        </div>
+                      ))}
+                    </div>
+                  ) : liveArxivPapers.length === 0 ? (
+                    <div className={`p-6 rounded-2xl border-2 text-center ${cardSurface}`}>
+                      <div className="text-xs font-mono text-neutral-400">
+                        No arXiv papers matched this filter. Click "Refresh Feed" or try another topic.
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {liveArxivPapers.map((paper) => {
+                        const connectedRepo = paper.connectedRepos?.[0] || null;
+                        const isSaved = Boolean(savedLiveIds[`arxiv_${paper.id}`]);
+                        return (
+                          <div
+                            key={paper.id}
+                            className={`p-4 sm:p-5 rounded-2xl border-2 flex flex-col justify-between gap-4 transition-all ${
+                              isDark
+                                ? 'bg-[#111115] border-white/20 hover:border-[#FC4C01]/70 shadow-[4px_4px_0px_0px_rgba(255,255,255,0.08)]'
+                                : 'bg-white border-black hover:border-[#FC4C01] shadow-[4px_4px_0px_0px_rgba(0,0,0,0.85)]'
+                            }`}
+                          >
+                            <div className="space-y-2.5">
+                              {/* Top Brutalist Meta Strip */}
+                              <div className="flex items-center justify-between gap-2 flex-wrap">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="px-2 py-0.5 rounded bg-[#FC4C01]/15 border border-[#FC4C01]/40 text-[#FC4C01] font-mono text-[10px] font-bold uppercase">
+                                    ARXIV // {paper.primaryCategory || 'CS.AI'}
+                                  </span>
+                                  <span
+                                    className={`px-2 py-0.5 rounded font-mono text-[10px] border ${
+                                      isDark
+                                        ? 'bg-white/5 border-white/10 text-neutral-300'
+                                        : 'bg-neutral-100 border-black/15 text-neutral-700'
+                                    }`}
+                                  >
+                                    {paper.id}
+                                  </span>
+                                </div>
+                                <span className="font-mono text-[10px] text-neutral-500">
+                                  {paper.published
+                                    ? new Date(paper.published).toLocaleDateString('en-US', {
+                                        month: 'short',
+                                        day: 'numeric',
+                                        year: 'numeric',
+                                      })
+                                    : 'Recent'}
+                                </span>
+                              </div>
+
+                              {/* Paper Title */}
+                              <a
+                                href={paper.absUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="block text-sm sm:text-[15px] font-bold leading-snug hover:text-[#FC4C01] transition-colors"
+                              >
+                                {paper.title}
+                              </a>
+
+                              {/* Authors */}
+                              {paper.authors?.length > 0 && (
+                                <div className="text-[11px] font-mono text-neutral-400 truncate">
+                                  {paper.authors.slice(0, 4).join(', ')}
+                                  {paper.authors.length > 4 ? ` +${paper.authors.length - 4} et al.` : ''}
+                                </div>
+                              )}
+
+                              {/* Abstract Summary */}
+                              <p
+                                className={`text-xs line-clamp-3 leading-relaxed ${
+                                  isDark ? 'text-neutral-300' : 'text-neutral-700'
                                 }`}
                               >
-                                #{tag}
-                              </span>
-                            ))}
-                          </div>
+                                {paper.summary}
+                              </p>
 
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                trackGrowthEvent('discover_resource_opened', {
-                                  artifactId: item.id,
-                                  category: item.category,
-                                });
-                                onOpenArtifactPage(item);
-                              }}
-                              className={`px-3 py-1.5 rounded-full border text-[11px] font-medium cursor-pointer ${secondaryBtn}`}
-                            >
-                              Read Page
-                            </button>
+                              {/* Connected GitHub Repository Brutalist Sub-Card */}
+                              {connectedRepo ? (
+                                <div
+                                  className={`mt-2 p-3 rounded-xl border-2 space-y-1.5 ${
+                                    isDark
+                                      ? 'bg-[#09090b] border-emerald-500/40'
+                                      : 'bg-emerald-50/60 border-emerald-700/50'
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="flex items-center gap-1.5 min-w-0">
+                                      <GitBranch className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                      <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-emerald-400">
+                                        Connected GitHub Code
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center gap-2 font-mono text-[10px] shrink-0">
+                                      {connectedRepo.language && (
+                                        <span className="px-1.5 py-0.5 rounded bg-white/10 text-neutral-300">
+                                          {connectedRepo.language}
+                                        </span>
+                                      )}
+                                      <span className="inline-flex items-center gap-1 text-amber-400 font-bold">
+                                        <Star className="w-3 h-3 fill-amber-400" />
+                                        {connectedRepo.stars.toLocaleString()}
+                                      </span>
+                                    </div>
+                                  </div>
 
-                            <button
-                              type="button"
-                              onClick={() => {
-                                recordArtifactInteraction(item.id, 'cta');
-                                onForkArtifactIntoChat(item);
-                                onClose();
-                              }}
-                              className={`px-3.5 py-1.5 rounded-full text-[11px] font-semibold cursor-pointer ${primaryBtn}`}
+                                  <div className="flex items-center justify-between gap-2">
+                                    <a
+                                      href={connectedRepo.url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="font-mono text-xs font-bold hover:underline truncate text-emerald-300"
+                                    >
+                                      {connectedRepo.fullName}
+                                    </a>
+                                    <a
+                                      href={connectedRepo.url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="px-2 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-mono text-[10px] font-bold inline-flex items-center gap-1 shrink-0"
+                                    >
+                                      <span>Repo</span>
+                                      <ExternalLink className="w-2.5 h-2.5" />
+                                    </a>
+                                  </div>
+                                  {connectedRepo.description && (
+                                    <p className="text-[11px] text-neutral-400 line-clamp-1">
+                                      {connectedRepo.description}
+                                    </p>
+                                  )}
+                                </div>
+                              ) : (
+                                <div
+                                  className={`mt-2 px-3 py-2 rounded-xl border flex items-center justify-between gap-2 ${
+                                    isDark
+                                      ? 'bg-white/[0.02] border-white/10'
+                                      : 'bg-neutral-50 border-black/10'
+                                  }`}
+                                >
+                                  <span className="text-[11px] font-mono text-neutral-400 inline-flex items-center gap-1.5">
+                                    <Code2 className="w-3.5 h-3.5 text-[#FC4C01]" />
+                                    <span>Code & Benchmarks Search</span>
+                                  </span>
+                                  <a
+                                    href={`https://github.com/search?q=${encodeURIComponent(
+                                      paper.title.split(/\s+/).slice(0, 5).join(' ')
+                                    )}&type=repositories`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="font-mono text-[10.5px] font-bold text-[#FC4C01] hover:underline inline-flex items-center gap-1"
+                                  >
+                                    <span>Find on GitHub</span>
+                                    <ExternalLink className="w-2.5 h-2.5" />
+                                  </a>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Action Bar: arXiv Article Link, PDF Link, Save, Synthesize */}
+                            <div
+                              className={`pt-3 border-t flex flex-wrap items-center justify-between gap-2 ${
+                                isDark ? 'border-white/10' : 'border-black/10'
+                              }`}
                             >
-                              Fork
-                            </button>
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <a
+                                  href={paper.absUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className={`px-2.5 py-1.5 rounded-lg border font-mono text-[11px] font-semibold inline-flex items-center gap-1 transition-colors ${secondaryBtn}`}
+                                >
+                                  <span>arXiv Article</span>
+                                  <ExternalLink className="w-3 h-3" />
+                                </a>
+                                <a
+                                  href={paper.pdfUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className={`px-2.5 py-1.5 rounded-lg border font-mono text-[11px] font-semibold inline-flex items-center gap-1 transition-colors ${secondaryBtn}`}
+                                >
+                                  <FileText className="w-3 h-3 text-[#FC4C01]" />
+                                  <span>PDF</span>
+                                </a>
+                              </div>
+
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    KnowledgeVaultStore.saveItem({
+                                      title: `[arXiv:${paper.id}] ${paper.title}`,
+                                      summary: paper.summary.slice(0, 240),
+                                      content: `### ${paper.title}\n\n- **arXiv ID:** \`${paper.id}\`\n- **Authors:** ${paper.authors.join(', ')}\n- **arXiv Abstract:** ${paper.absUrl}\n- **Direct PDF:** ${paper.pdfUrl}${
+                                        connectedRepo
+                                          ? `\n- **Connected GitHub Repo:** [${connectedRepo.fullName}](${connectedRepo.url}) (★ ${connectedRepo.stars})`
+                                          : ''
+                                      }\n\n#### Abstract\n${paper.summary}`,
+                                      type: 'research_summary',
+                                      collectionId: 'col_research_ideas',
+                                      tags: [
+                                        'arxiv',
+                                        (paper.primaryCategory || 'research').toLowerCase(),
+                                        ...(connectedRepo ? ['github'] : []),
+                                      ],
+                                    });
+                                    setSavedLiveIds((prev) => ({
+                                      ...prev,
+                                      [`arxiv_${paper.id}`]: true,
+                                    }));
+                                    setVaultItems(KnowledgeVaultStore.getItems());
+                                  }}
+                                  className={`px-2.5 py-1.5 rounded-lg border font-mono text-[11px] font-semibold cursor-pointer inline-flex items-center gap-1 ${secondaryBtn}`}
+                                >
+                                  {isSaved ? (
+                                    <>
+                                      <Check className="w-3 h-3 text-emerald-400" />
+                                      <span>Saved</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Bookmark className="w-3 h-3" />
+                                      <span>Save</span>
+                                    </>
+                                  )}
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const synthArtifact: PublicArtifact = {
+                                      id: `arxiv_${paper.id}`,
+                                      ownerId: 'arxiv',
+                                      showAuthorAttribution: true,
+                                      title: paper.title,
+                                      summary: paper.summary,
+                                      content: `Analyze this arXiv research paper (${paper.absUrl})${
+                                        connectedRepo
+                                          ? ` and its connected GitHub implementation (${connectedRepo.url})`
+                                          : ''
+                                      }:\n\n**Title:** ${paper.title}\n**Authors:** ${paper.authors.join(
+                                        ', '
+                                      )}\n**Abstract:** ${paper.summary}`,
+                                      category: 'Research',
+                                      outputType: 'research_summary',
+                                      tags: ['arxiv', paper.primaryCategory || 'research'],
+                                      authorName: paper.authors[0] || 'arXiv Author',
+                                      authorUsername: 'arxiv',
+                                      visibility: 'public',
+                                      viewsCount: 1,
+                                      savesCount: 0,
+                                      forksCount: 0,
+                                      createdAt: Date.now(),
+                                      updatedAt: Date.now(),
+                                    };
+                                    onForkArtifactIntoChat(synthArtifact);
+                                    onClose();
+                                  }}
+                                  className="px-3 py-1.5 rounded-lg bg-[#FC4C01] hover:bg-[#e04300] text-white font-mono text-[11px] font-bold inline-flex items-center gap-1 cursor-pointer transition-colors"
+                                >
+                                  <Sparkles className="w-3 h-3" />
+                                  <span>Ask Zeno</span>
+                                </button>
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                      </div>
-                    );
-                  })}
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
 
-              <div className="text-[11px] text-neutral-500 flex flex-wrap items-center justify-between gap-2 pt-1">
+              {/* SECTION B: LIVE GITHUB OPEN-SOURCE REPOSITORIES */}
+              {(discoverSourceFilter === 'all' || discoverSourceFilter === 'github') && (
+                <div className="space-y-3 pt-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <GitBranch className="w-4 h-4 text-emerald-400" />
+                      <h4 className="text-xs sm:text-sm font-bold uppercase tracking-wider font-mono">
+                        Trending GitHub Repositories & Engineering Tools
+                      </h4>
+                    </div>
+                    <span className="text-[11px] font-mono text-neutral-500">
+                      {liveGithubRepos.length} repositories
+                    </span>
+                  </div>
+
+                  {liveGithubRepos.length > 0 && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {liveGithubRepos.map((repo) => {
+                        const isSaved = Boolean(savedLiveIds[`gh_${repo.id}`]);
+                        return (
+                          <div
+                            key={repo.id}
+                            className={`p-4 sm:p-5 rounded-2xl border-2 flex flex-col justify-between gap-3.5 transition-all ${
+                              isDark
+                                ? 'bg-[#111115] border-white/20 hover:border-emerald-400/70 shadow-[4px_4px_0px_0px_rgba(255,255,255,0.08)]'
+                                : 'bg-white border-black hover:border-emerald-600 shadow-[4px_4px_0px_0px_rgba(0,0,0,0.85)]'
+                            }`}
+                          >
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="px-2 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/40 text-emerald-400 font-mono text-[10px] font-bold uppercase">
+                                  GITHUB // {repo.language || 'OPEN SOURCE'}
+                                </span>
+                                <div className="flex items-center gap-3 font-mono text-[11px]">
+                                  <span className="inline-flex items-center gap-1 text-amber-400 font-bold">
+                                    <Star className="w-3.5 h-3.5 fill-amber-400" />
+                                    {repo.stars.toLocaleString()}
+                                  </span>
+                                  <span className="text-neutral-400">
+                                    ⑂ {repo.forks.toLocaleString()}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <a
+                                href={repo.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="block font-mono text-sm sm:text-[15px] font-bold hover:text-emerald-400 transition-colors truncate"
+                              >
+                                {repo.fullName}
+                              </a>
+
+                              <p
+                                className={`text-xs line-clamp-2 leading-relaxed ${
+                                  isDark ? 'text-neutral-300' : 'text-neutral-700'
+                                }`}
+                              >
+                                {repo.description}
+                              </p>
+
+                              {repo.topics && repo.topics.length > 0 && (
+                                <div className="flex flex-wrap gap-1 pt-1">
+                                  {repo.topics.slice(0, 4).map((topic) => (
+                                    <span
+                                      key={topic}
+                                      className={`font-mono text-[10px] px-2 py-0.5 rounded border ${
+                                        isDark
+                                          ? 'bg-white/[0.04] border-white/10 text-neutral-400'
+                                          : 'bg-neutral-100 border-black/10 text-neutral-700'
+                                      }`}
+                                    >
+                                      #{topic}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+
+                            <div
+                              className={`pt-3 border-t flex items-center justify-between gap-2 ${
+                                isDark ? 'border-white/10' : 'border-black/10'
+                              }`}
+                            >
+                              <a
+                                href={repo.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className={`px-3 py-1.5 rounded-lg border font-mono text-[11px] font-semibold inline-flex items-center gap-1.5 ${secondaryBtn}`}
+                              >
+                                <span>Open GitHub</span>
+                                <ExternalLink className="w-3 h-3" />
+                              </a>
+
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    KnowledgeVaultStore.saveItem({
+                                      title: `[GitHub] ${repo.fullName}`,
+                                      summary: repo.description,
+                                      content: `### ${repo.fullName}\n\n- **Repository:** ${repo.url}\n- **Language:** ${repo.language}\n- **Stars:** ★ ${repo.stars.toLocaleString()}\n\n${repo.description}`,
+                                      type: 'discover_resource',
+                                      collectionId: 'col_programming',
+                                      tags: ['github', (repo.language || 'code').toLowerCase()],
+                                    });
+                                    setSavedLiveIds((prev) => ({
+                                      ...prev,
+                                      [`gh_${repo.id}`]: true,
+                                    }));
+                                    setVaultItems(KnowledgeVaultStore.getItems());
+                                  }}
+                                  className={`px-2.5 py-1.5 rounded-lg border font-mono text-[11px] font-semibold cursor-pointer inline-flex items-center gap-1 ${secondaryBtn}`}
+                                >
+                                  {isSaved ? 'Saved ✓' : 'Save'}
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const ghArtifact: PublicArtifact = {
+                                      id: `gh_${repo.id}`,
+                                      ownerId: 'github',
+                                      showAuthorAttribution: true,
+                                      title: repo.fullName,
+                                      summary: repo.description,
+                                      content: `Explain the architecture, key patterns, and use cases of the GitHub repository **${repo.fullName}** (${repo.url}):\n\n${repo.description}`,
+                                      category: 'Programming',
+                                      outputType: 'structured_notes',
+                                      tags: ['github', repo.language || 'code'],
+                                      authorName: repo.owner,
+                                      authorUsername: repo.owner,
+                                      visibility: 'public',
+                                      viewsCount: 1,
+                                      savesCount: 0,
+                                      forksCount: 0,
+                                      createdAt: Date.now(),
+                                      updatedAt: Date.now(),
+                                    };
+                                    onForkArtifactIntoChat(ghArtifact);
+                                    onClose();
+                                  }}
+                                  className={`px-3 py-1.5 rounded-lg font-mono text-[11px] font-bold cursor-pointer ${primaryBtn}`}
+                                >
+                                  Inspect in Zeno
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* SECTION C: ZENO COMMUNITY BLUEPRINTS & STUDY GUIDES */}
+              {(discoverSourceFilter === 'all' || discoverSourceFilter === 'community') && (
+                <div className="space-y-3 pt-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-[#FC4C01]" />
+                      <h4 className="text-xs sm:text-sm font-bold uppercase tracking-wider font-mono">
+                        Zeno Community Study Guides & Research Blueprints
+                      </h4>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {(
+                        [
+                          { id: 'recent', label: 'Recent' },
+                          { id: 'saved', label: 'Most Saved' },
+                          { id: 'views', label: 'Most Viewed' },
+                        ] as const
+                      ).map((s) => (
+                        <button
+                          key={s.id}
+                          type="button"
+                          onClick={() => setDiscoverSort(s.id)}
+                          className={`px-2.5 py-1 rounded-lg border font-mono text-[10.5px] cursor-pointer transition-colors ${
+                            discoverSort === s.id
+                              ? isDark
+                                ? 'bg-white text-black border-white font-bold'
+                                : 'bg-neutral-900 text-white border-neutral-900 font-bold'
+                              : secondaryBtn
+                          }`}
+                        >
+                          {s.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {discoverLoading ? (
+                    <div className="py-12 text-center text-neutral-500">
+                      Loading public Zeno library…
+                    </div>
+                  ) : discoverItems.length === 0 ? (
+                    <div className={`p-8 rounded-2xl border-2 text-center space-y-1.5 ${cardSurface}`}>
+                      <div className="text-sm font-semibold">No matching public resources found</div>
+                      <p className="text-xs text-neutral-500">
+                        Try clearing your search query or switching to another category.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {discoverItems.map((item) => {
+                        const isSaved = KnowledgeVaultStore.isArtifactBookmarked(item.id);
+                        return (
+                          <div
+                            key={item.id}
+                            className={`p-4 sm:p-5 rounded-2xl border-2 flex flex-col justify-between gap-3.5 transition-all ${
+                              isDark
+                                ? 'bg-[#121215] border-white/15 hover:border-white/35 shadow-[4px_4px_0px_0px_rgba(255,255,255,0.06)]'
+                                : 'bg-white border-black/80 hover:border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,0.75)]'
+                            }`}
+                          >
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between gap-2">
+                                <span
+                                  className={`px-2.5 py-0.5 rounded font-mono text-[10px] font-bold uppercase tracking-wider border ${
+                                    isDark
+                                      ? 'bg-white/[0.06] border-white/10 text-neutral-200'
+                                      : 'bg-neutral-100 border-black/15 text-neutral-800'
+                                  }`}
+                                >
+                                  {item.category}
+                                </span>
+
+                                <div className="flex items-center gap-3 font-mono text-[11px] text-neutral-500">
+                                  <span>{item.viewsCount || 1} views</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const nowSaved =
+                                        KnowledgeVaultStore.toggleBookmarkFromArtifact(item);
+                                      if (nowSaved) {
+                                        recordArtifactInteraction(item.id, 'save');
+                                      }
+                                      setVaultItems(KnowledgeVaultStore.getItems());
+                                    }}
+                                    className={`cursor-pointer font-semibold transition-colors ${
+                                      isSaved
+                                        ? 'text-[#FC4C01] underline'
+                                        : 'text-neutral-500 hover:text-current'
+                                    }`}
+                                  >
+                                    {isSaved ? 'Saved' : 'Save'}
+                                  </button>
+                                </div>
+                              </div>
+
+                              <h3
+                                onClick={() => {
+                                  trackGrowthEvent('discover_resource_opened', {
+                                    artifactId: item.id,
+                                    category: item.category,
+                                  });
+                                  onOpenArtifactPage(item);
+                                }}
+                                className="text-sm font-bold leading-snug hover:text-[#FC4C01] transition-colors cursor-pointer"
+                              >
+                                {item.title}
+                              </h3>
+
+                              <p
+                                className={`text-xs line-clamp-2 leading-relaxed ${
+                                  isDark ? 'text-neutral-400' : 'text-neutral-600'
+                                }`}
+                              >
+                                {item.summary}
+                              </p>
+                            </div>
+
+                            <div
+                              className={`pt-3 border-t flex items-center justify-between gap-2 ${
+                                isDark ? 'border-white/[0.08]' : 'border-black/[0.08]'
+                              }`}
+                            >
+                              <div className="flex flex-wrap gap-1 min-w-0">
+                                {item.tags.slice(0, 3).map((tag) => (
+                                  <span
+                                    key={tag}
+                                    className={`font-mono text-[10px] px-2 py-0.5 rounded ${
+                                      isDark
+                                        ? 'bg-white/[0.04] text-neutral-400'
+                                        : 'bg-black/[0.04] text-neutral-600'
+                                    }`}
+                                  >
+                                    #{tag}
+                                  </span>
+                                ))}
+                              </div>
+
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    window.dispatchEvent(
+                                      new CustomEvent('zeno-open-report', {
+                                        detail: {
+                                          targetType: 'discover_item',
+                                          targetId: item.id,
+                                          contentPreview: `${item.title}: ${item.summary}`,
+                                        },
+                                      })
+                                    );
+                                  }}
+                                  className={`px-2 py-1.5 rounded-lg border font-mono text-[10.5px] cursor-pointer ${secondaryBtn}`}
+                                  title="Report this shared resource"
+                                >
+                                  Report
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    trackGrowthEvent('discover_resource_opened', {
+                                      artifactId: item.id,
+                                      category: item.category,
+                                    });
+                                    onOpenArtifactPage(item);
+                                  }}
+                                  className={`px-3 py-1.5 rounded-lg border font-mono text-[11px] font-semibold cursor-pointer ${secondaryBtn}`}
+                                >
+                                  Read Page
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    recordArtifactInteraction(item.id, 'cta');
+                                    onForkArtifactIntoChat(item);
+                                    onClose();
+                                  }}
+                                  className={`px-3.5 py-1.5 rounded-lg font-mono text-[11px] font-bold cursor-pointer ${primaryBtn}`}
+                                >
+                                  Fork
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="text-[11px] text-neutral-500 font-mono flex flex-wrap items-center justify-between gap-2 pt-1">
                 <span>
-                  Showing {discoverItems.length} of {discoverTotal} verified public resources
+                  Live Feed: {liveArxivPapers.length} arXiv papers · {liveGithubRepos.length} GitHub repos · {discoverItems.length} community blueprints
                 </span>
                 <span>Private conversations and notes never appear in Discover.</span>
               </div>
@@ -998,7 +1636,7 @@ export const ZenoGrowthHubModal: React.FC<ZenoGrowthHubModalProps> = ({
                       className={`p-4 rounded-xl border prose-grok max-w-none text-xs sm:text-sm leading-relaxed overflow-x-auto ${subCardSurface}`}
                     >
                       <ReactMarkdown
-                        remarkPlugins={[remarkGfm, remarkMath]}
+                        remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
                         rehypePlugins={[rehypeKatex]}
                       >
                         {normalizeLatexDelimiters(activeVaultItem.content)}
@@ -1508,9 +2146,9 @@ export const ZenoGrowthHubModal: React.FC<ZenoGrowthHubModalProps> = ({
                         try {
                           const res = await claimReferralCodeManual(claimPassInput);
                           setClaimPassFeedback(res);
-                          const updated = addOneReferralProgress();
-                          setEightRefState(updated);
                           if (res.ok) {
+                            const updated = addOneReferralProgress();
+                            setEightRefState(updated);
                             setClaimPassInput('');
                           }
                         } finally {

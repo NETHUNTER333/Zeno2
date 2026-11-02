@@ -348,7 +348,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   useEffect(() => {
-    UserAccountStore.recordDailyInteraction(false);
     setDailyStreak(UserAccountStore.getDailyStreak(threads));
     setEvaluatedBadges(UserAccountStore.getEvaluatedBadges(threads));
   }, [threads]);
@@ -551,7 +550,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         items.push({
           id: 'action-discover',
           label: 'Zeno Discover',
-          sublabel: 'Public research & study guides',
+          sublabel: 'Live arXiv papers & connected GitHub repos',
           icon: <Compass className="w-3.5 h-3.5 text-current" />,
           onClick: () => {
             onOpenGrowthHub('discover');
@@ -565,16 +564,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
           icon: <Bookmark className="w-3.5 h-3.5 text-current" />,
           onClick: () => {
             onOpenGrowthHub('vault');
-            if (window.innerWidth < 768) onClose();
-          },
-        });
-        items.push({
-          id: 'action-weekly',
-          label: 'Weekly Intelligence Brief',
-          sublabel: 'Progress & optional missions',
-          icon: <BarChart2 className="w-3.5 h-3.5 text-current" />,
-          onClick: () => {
-            onOpenGrowthHub('weekly');
             if (window.innerWidth < 768) onClose();
           },
         });

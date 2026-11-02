@@ -29,6 +29,7 @@ import { ChatHistory, ChatHistoryItem, ChatHistoryMessageItem } from './chat-his
 import { extractTextFromPdfFile } from '../../lib/pdfStudyEngine';
 import { UserAccountStore } from '../../lib/userAccountStore';
 import type { PdfStudioTab } from '../InbuiltPdfViewer';
+import { moderateFileBeforeUploadClient } from '../LegalAndInfoPages';
 
 export interface PdfStudioLaunchPayload {
   pdfUrl?: string;
@@ -422,14 +423,34 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
     setIsReadingFiles(true);
     setReadingFileProgress(
-      `Reading ${filesToProcess.length} ${filesToProcess.length === 1 ? 'file' : 'files'}...`
+      `Reading & verifying ${filesToProcess.length} ${filesToProcess.length === 1 ? 'file' : 'files'}...`
     );
     try {
       const processed = await Promise.all(filesToProcess.map((f) => processUploadedFile(f)));
-      setAttachments((prev) => [...prev, ...processed]);
-      const defaultVision = getDefaultVisionModel();
-      if (!selectedModel.supportsVision) {
-        onSelectModel(defaultVision);
+      const verifiedAttachments: ChatAttachment[] = [];
+      for (const att of processed) {
+        const modDecision = await moderateFileBeforeUploadClient({
+          fileName: att.name,
+          mimeType: att.type,
+          dataUrl: att.dataUrl,
+          extractedText: att.textContent,
+        });
+        if (!modDecision.allowed) {
+          setUploadLimitWarning(
+            modDecision.reason ||
+              "Don't upload photos of people, IDs, or explicit content. Study material only."
+          );
+          continue;
+        }
+        verifiedAttachments.push(att);
+      }
+
+      if (verifiedAttachments.length > 0) {
+        setAttachments((prev) => [...prev, ...verifiedAttachments]);
+        const defaultVision = getDefaultVisionModel();
+        if (!selectedModel.supportsVision) {
+          onSelectModel(defaultVision);
+        }
       }
     } finally {
       setIsReadingFiles(false);
@@ -841,6 +862,16 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               }`}
             >
               <div className="space-y-0.5">
+                <div
+                  className={`px-2.5 py-1.5 mb-1 rounded-xl border text-[10px] leading-snug ${
+                    isDark
+                      ? 'border-white/10 bg-white/[0.03] text-neutral-400'
+                      : 'border-black/10 bg-neutral-50 text-neutral-600'
+                  }`}
+                >
+                  Don&apos;t upload photos of people, IDs, or explicit content. Study material only.
+                </div>
+
                 <button
                   type="button"
                   onClick={() => {
@@ -870,7 +901,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                     isDark ? 'hover:bg-white/[0.07]' : 'hover:bg-[#f4f4f5]'
                   }`}
                 >
-                  <span className="truncate">Photos & Images</span>
+                  <span className="truncate">Diagrams &amp; Slides</span>
                 </button>
 
                 <button

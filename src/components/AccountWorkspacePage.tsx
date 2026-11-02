@@ -33,7 +33,8 @@ import { ModelOption } from './GrokModelPicker';
 import { ChatThread } from './Sidebar';
 import { DeleteAccountButton } from './DeleteAccountButton';
 import { PricingModal } from './PricingModal';
-import { getAuthHeaders } from '../lib/firebase';
+import { auth, getAuthHeaders } from '../lib/firebase';
+import { SiteFooter } from './LegalAndInfoPages';
 
 export type AccountTab = 'profile' | 'pricing' | 'chats_projects' | 'preferences' | 'database';
 
@@ -132,12 +133,13 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
 
   const isDark = theme === 'dark';
 
+  const isAuthenticatedUser = Boolean(auth.currentUser && profile.signinProvider !== 'guest');
+
   const navItems: { id: AccountTab; label: string; icon: React.ReactNode }[] = [
-    { id: 'profile', label: 'Profile & Backend', icon: <User className="w-4 h-4" /> },
+    { id: 'profile', label: 'Profile & Account', icon: <User className="w-4 h-4" /> },
     { id: 'pricing', label: 'Plans & Pricing ($3 / $7)', icon: <Zap className="w-4 h-4 text-[#FC4C01]" /> },
     { id: 'preferences', label: 'App Preferences', icon: <SlidersHorizontal className="w-4 h-4" /> },
     { id: 'chats_projects', label: 'Chat History & Export', icon: <FolderOpen className="w-4 h-4" /> },
-    { id: 'database', label: 'Firebase & Cloud Backend', icon: <Database className="w-4 h-4" /> },
   ];
 
   const syncWithProfileBackend = async (extra?: Record<string, any>) => {
@@ -597,20 +599,9 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
                       />
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        window.dispatchEvent(new Event('zeno-trigger-streak-reminder'));
-                      }}
-                      className={`px-3 py-1.5 rounded-xl border text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer transition-colors ${
-                        isDark
-                          ? 'bg-white/[0.06] hover:bg-white/[0.12] border-white/15 text-white'
-                          : 'bg-neutral-100 hover:bg-neutral-200 border-black/15 text-black'
-                      }`}
-                    >
-                      <Bell className="w-3.5 h-3.5 text-[#FC4C01]" />
-                      <span>Preview Reminder Toast</span>
-                    </button>
+                    <div className="text-[11px] text-neutral-400 font-mono">
+                      Scheduled daily at {streak.reminderTime || '18:00'}
+                    </div>
                   </div>
                 </div>
 
@@ -752,38 +743,121 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
                   </div>
                 </div>
 
+                {/* Data Export (JSON) — Available to all users */}
                 <div
-                  className={`p-5 rounded-2xl border space-y-4 ${
+                  className={`p-5 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
                     isDark ? 'bg-white/[0.02] border-white/10' : 'bg-white border-black/10 shadow-xs'
                   }`}
                 >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-sm font-bold">Firebase Authentication</div>
-                      <div className="text-xs text-neutral-400 mt-0.5">
-                        Signed in via {profile.signinProvider === 'email' ? 'Email & Password' : 'Google OAuth'} ({profile.email})
-                      </div>
+                  <div>
+                    <div className="text-sm font-bold">Export My Data (Data Portability)</div>
+                    <div className="text-xs text-neutral-400 mt-0.5">
+                      Download a complete JSON archive of your profile, settings, streaks, badges, and chat threads.
                     </div>
-                    <button
-                      onClick={async () => {
-                        await UserAccountStore.signOutUser();
-                        setProfile(UserAccountStore.getProfile());
-                        triggerSuccessAlert('Signed out successfully');
-                      }}
-                      className="px-4 py-2 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 text-xs font-semibold cursor-pointer transition-all"
-                    >
-                      Sign Out
-                    </button>
                   </div>
+                  <button
+                    type="button"
+                    onClick={handleExportAll}
+                    className={`px-4 py-2 rounded-xl border text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer transition-all shrink-0 ${
+                      isDark
+                        ? 'border-white/15 bg-white/5 hover:bg-white/10 text-white'
+                        : 'border-black/15 bg-black/5 hover:bg-black/10 text-black'
+                    }`}
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Export My Data</span>
+                  </button>
                 </div>
 
-                <DeleteAccountButton
-                  isDark={isDark}
-                  onDeleted={() => {
-                    setProfile(UserAccountStore.getProfile());
-                    triggerSuccessAlert('Account deleted successfully');
-                  }}
-                />
+                {isAuthenticatedUser ? (
+                  <>
+                    <div
+                      className={`p-5 rounded-2xl border space-y-4 ${
+                        isDark ? 'bg-white/[0.02] border-white/10' : 'bg-white border-black/10 shadow-xs'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="text-sm font-bold">Account Session</div>
+                          <div className="text-xs text-neutral-400 mt-0.5">
+                            Signed in via {profile.signinProvider === 'email' ? 'Email & Password' : 'Google OAuth'} ({profile.email})
+                          </div>
+                        </div>
+                        <button
+                          onClick={async () => {
+                            await UserAccountStore.signOutUser();
+                            setProfile(UserAccountStore.getProfile());
+                            triggerSuccessAlert('Signed out successfully');
+                          }}
+                          className="px-4 py-2 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 text-xs font-semibold cursor-pointer transition-all"
+                        >
+                          Sign Out
+                        </button>
+                      </div>
+                    </div>
+
+                    <DeleteAccountButton
+                      isDark={isDark}
+                      onDeleted={() => {
+                        setProfile(UserAccountStore.getProfile());
+                        triggerSuccessAlert('Account deleted successfully');
+                      }}
+                    />
+                  </>
+                ) : (
+                  <div className="space-y-4">
+                    <div
+                      className={`p-5 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
+                        isDark ? 'bg-white/[0.02] border-white/10' : 'bg-white border-black/10 shadow-xs'
+                      }`}
+                    >
+                      <div>
+                        <div className="text-sm font-bold">Guest Workspace Session</div>
+                        <div className="text-xs text-neutral-400 mt-0.5">
+                          You are browsing as a guest. Sign in with Google or Email to sync your history across devices.
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await UserAccountStore.signOutUser();
+                          window.location.href = '/login';
+                        }}
+                        className="px-4 py-2 rounded-xl bg-[#FC4C01] hover:bg-[#e04300] text-white text-xs font-semibold cursor-pointer transition-all shrink-0"
+                      >
+                        Sign In / Create Account
+                      </button>
+                    </div>
+
+                    <div
+                      className={`p-5 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
+                        isDark ? 'bg-red-950/10 border-red-500/20' : 'bg-red-50 border-red-200'
+                      }`}
+                    >
+                      <div>
+                        <div className="text-sm font-bold text-red-500">Clear Guest Data</div>
+                        <div className="text-xs text-neutral-400 mt-0.5">
+                          Wipe all local guest chat history, study sets, and browser storage keys from this device.
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onClearAllHistory();
+                          try {
+                            localStorage.removeItem('zeno_threads_v3');
+                            localStorage.removeItem('zeno_knowledge_vault_v1');
+                            localStorage.removeItem('zeno_user_profile_v1');
+                          } catch {}
+                          triggerSuccessAlert('Guest data cleared from this browser');
+                        }}
+                        className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-semibold cursor-pointer transition-all shrink-0"
+                      >
+                        Clear Guest Data
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1026,42 +1100,78 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
                     </button>
                   </div>
                 </div>
-              </div>
-            )}
 
-            {/* Tab: Firebase & Cloud Backend */}
-            {activeTab === 'database' && (
-              <div className="space-y-6">
-                <div>
-                  <h2 className="text-xl sm:text-2xl font-bold tracking-tight">Firebase Cloud Backend</h2>
-                  <p className="text-xs sm:text-sm text-neutral-400 mt-1">
-                    Connect Firebase Firestore for cloud persistence, user auth, and cross-device sync.
-                  </p>
-                </div>
-
+                {/* Legal, Trust & Compliance */}
                 <div
-                  className={`p-5 rounded-2xl border space-y-4 ${
+                  className={`p-5 rounded-2xl border space-y-3 ${
                     isDark ? 'bg-white/[0.02] border-white/10' : 'bg-white border-black/10 shadow-xs'
                   }`}
                 >
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-500 flex items-center justify-center font-bold">
-                      <Database className="w-5 h-5" />
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs font-bold uppercase tracking-wider text-neutral-400">
+                      Legal, Trust & Compliance
                     </div>
-                    <div>
-                      <div className="text-sm font-bold">Firebase Firestore & Authentication</div>
-                      <div className="text-xs text-neutral-400">
-                        Production cloud database for chat threads, user accounts, and real-time syncing.
-                      </div>
-                    </div>
+                    <span className="text-[10px] text-neutral-500 font-mono">DPDP Act 2023 · IT Act 2000</span>
                   </div>
 
-                  <div className="p-3.5 rounded-xl border border-neutral-500/20 bg-neutral-500/5 text-xs text-neutral-400 leading-relaxed">
-                    Cloud database setup requires user confirmation in the AI Studio environment. Once accepted, your chat history and user profile persist securely to Firestore.
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                    {[
+                      { title: 'Terms of Service', path: '/terms', desc: 'Acceptable use, subscriptions & accounts' },
+                      { title: 'Privacy Policy', path: '/privacy', desc: 'Data handling, DPDP & subprocessors' },
+                      { title: 'Refund Policy', path: '/refund', desc: '7-day guarantee & Dodo Payments MoR' },
+                      { title: 'Acceptable Use Policy', path: '/acceptable-use', desc: 'Safety rules & upload guidelines' },
+                      { title: 'Cookie Notice', path: '/cookies', desc: 'Essential storage & preference cookies' },
+                      { title: 'Contact & Grievance', path: '/contact', desc: 'Support & Grievance Officer SLA' },
+                    ].map((item) => (
+                      <button
+                        key={item.path}
+                        type="button"
+                        onClick={() => {
+                          window.dispatchEvent(new CustomEvent('zeno-navigate-route', { detail: { path: item.path } }));
+                        }}
+                        className={`p-3 rounded-xl border text-left transition-all flex items-center justify-between group cursor-pointer ${
+                          isDark
+                            ? 'border-white/10 bg-white/[0.02] hover:bg-white/[0.06] hover:border-white/20'
+                            : 'border-black/10 bg-neutral-50/70 hover:bg-neutral-100/90 hover:border-black/20'
+                        }`}
+                      >
+                        <div className="min-w-0 pr-2">
+                          <div className="text-xs font-semibold group-hover:text-[#FC4C01] transition-colors">
+                            {item.title}
+                          </div>
+                          <div className="text-[10px] text-neutral-400 truncate">
+                            {item.desc}
+                          </div>
+                        </div>
+                        <ChevronRight className="w-3.5 h-3.5 text-neutral-400 group-hover:translate-x-0.5 transition-transform shrink-0" />
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="pt-2 text-[11px] text-neutral-400 flex items-center justify-between">
+                    <span>Contact: <strong className={isDark ? 'text-neutral-300' : 'text-neutral-700'}>wakefullfinding62@gmail.com</strong></span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        window.dispatchEvent(new CustomEvent('zeno-navigate-route', { detail: { path: '/legal' } }));
+                      }}
+                      className="text-[#FC4C01] hover:underline font-medium cursor-pointer"
+                    >
+                      Open Legal Hub →
+                    </button>
                   </div>
                 </div>
               </div>
             )}
+
+            <div className="pt-8">
+              <SiteFooter
+                isDark={isDark}
+                onNavigate={(path) => {
+                  window.dispatchEvent(new CustomEvent('zeno-navigate-route', { detail: { path } }));
+                }}
+              />
+            </div>
           </div>
         </main>
       </div>

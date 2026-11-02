@@ -76,6 +76,16 @@ import {
 } from './server/growthEngine';
 import { getReferralDb } from './server/referralEngine';
 import { getCurrencyPromptContext, isCurrencyQuery } from './server/currencyRates';
+import {
+  registerLegalAndSafetyRoutes,
+  writeStaticSeoAndLegalAssets,
+  resolveServerLegalDocId,
+  isKnownSpaClientRoute,
+  renderPrerenderedLegalHtml,
+  renderPrerendered404Html,
+  moderateUserPromptSafety,
+  moderateUploadedAttachment,
+} from './server/legalAndSafetyEngine';
 
 dotenv.config();
 
@@ -5713,6 +5723,106 @@ app.post('/api/treg/extract', async (req, res) => {
   }
 });
 
+// Live ArXiv + Connected GitHub Discover Feed for Zeno Workspace Hub
+app.get('/api/discover/live', async (req, res) => {
+  try {
+    const rawQuery = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const category = typeof req.query.category === 'string' ? req.query.category.trim() : 'All';
+
+    const categoryQueryMap: Record<string, { arxiv: string; github: string }> = {
+      All: {
+        arxiv: 'large language models reasoning agents transformer architecture',
+        github: 'llm agent rag inference typescript rust python stars:>300',
+      },
+      Learning: {
+        arxiv: 'active recall spaced repetition educational AI tutoring systems',
+        github: 'flashcards spaced-repetition learning education study stars:>100',
+      },
+      Research: {
+        arxiv: 'retrieval augmented generation deep research autonomous agents benchmark',
+        github: 'deep-research arxiv rag autonomous-agent literature-review stars:>150',
+      },
+      Science: {
+        arxiv: 'quantum error correction molecular dynamics protein folding astrophysics',
+        github: 'quantum-computing bioinformatics physics-simulation molecular stars:>150',
+      },
+      Technology: {
+        arxiv: 'distributed systems consensus GPU kernel optimization inference engine',
+        github: 'distributed-systems database vector-search inference engine stars:>400',
+      },
+      Programming: {
+        arxiv: 'program synthesis compiler optimization static analysis code generation',
+        github: 'compiler codegen developer-tools cli parser stars:>300',
+      },
+      Writing: {
+        arxiv: 'natural language generation citation verification factual grounding',
+        github: 'markdown-editor knowledge-base PKM latex typst stars:>200',
+      },
+      Productivity: {
+        arxiv: 'human computer interaction workflow automation knowledge graph',
+        github: 'productivity workflow knowledge-graph local-first stars:>250',
+      },
+      'Study Resources': {
+        arxiv: 'computer science curriculum machine learning foundations mathematics',
+        github: 'awesome-machine-learning computer-science algorithms papers-we-love stars:>500',
+      },
+    };
+
+    const mapped = categoryQueryMap[category] || categoryQueryMap.All;
+    const arxivSearchQuery = rawQuery || mapped.arxiv;
+    const githubSearchQuery = rawQuery ? `${rawQuery} stars:>20` : mapped.github;
+
+    const [rawPapers, rawRepos] = await Promise.all([
+      searchArxiv(arxivSearchQuery, 6).catch(() => []),
+      searchGithubRepos(githubSearchQuery, 6).catch(() => []),
+    ]);
+
+    let enrichedPapers = rawPapers;
+    if (enrichedPapers.length > 0) {
+      try {
+        enrichedPapers = await enrichArxivWithGithubRepos(enrichedPapers);
+      } catch {}
+    }
+
+    // Also link any paper without a matched repo to a top relevant repo from rawRepos if topics overlap
+    const finalPapers = enrichedPapers.map((paper: any, idx: number) => {
+      const existingRepos = Array.isArray(paper.githubRepos) ? paper.githubRepos : [];
+      if (existingRepos.length === 0 && rawRepos[idx]) {
+        const candidate = rawRepos[idx];
+        return {
+          ...paper,
+          githubRepos: [
+            {
+              name: candidate.name || candidate.fullName,
+              url: candidate.url,
+              description: candidate.description || '',
+              stars: String(candidate.stars || '100+'),
+              language: candidate.language || 'Python',
+            },
+          ],
+        };
+      }
+      return paper;
+    });
+
+    return res.json({
+      success: true,
+      query: rawQuery || category,
+      category,
+      updatedAt: Date.now(),
+      arxivPapers: finalPapers,
+      githubRepos: rawRepos,
+    });
+  } catch (err: any) {
+    return res.status(500).json({
+      success: false,
+      arxivPapers: [],
+      githubRepos: [],
+      error: err?.message || 'Failed to fetch live Discover feed',
+    });
+  }
+});
+
 // Load More Live Web Images on Demand (4 images per batch)
 app.get('/api/media/more-images', async (req, res) => {
   try {
@@ -5793,7 +5903,7 @@ app.post('/api/treg/call', requireFirebaseAuth, async (req, res) => {
   }
 });
 
-// Strip command/media/UI meta-words to extract the true subject and fall back to prior user messages on follow-ups
+// Strip command/media/UI meta-words to extract the true subject and fall back to prior user messages ONLY on genuine pronoun follow-ups
 function extractTopicFromText(text: string): string {
   if (!text) return '';
 
@@ -5810,12 +5920,24 @@ function extractTopicFromText(text: string): string {
     .filter((l) => l.length > 2 && !/^(skip to content|navigation menu|repository navigation|notifications|sign in|sign up)$/i.test(l));
   const candidateSource = lines.length > 3 ? lines.slice(0, 2).join(' ') : text;
 
+  // Preserve temporal phrases ("this week", "this month", "this year", "today") when asking about news/events
+  const hasNewsOrTemporalIntent = /\b(news|headlines|updates|releases|breakthroughs|events|happened|happening|this\s+week|this\s+month|this\s+year|today)\b/i.test(
+    candidateSource
+  );
+
   const cleaned = candidateSource
     .replace(/https?:\/\/\S+/gi, ' ')
+    // Strip leading interrogative phrases so "How much does..." or "What happened in..." never leave "much" or "happened"
     .replace(
-      /\b(fentch|featch|fetech|fetc|fetch|scrape|pull|grab|show|find|get|search|give|display|play|watch|embed|render|create|make|build|add|implement|remove|fix|update|explain|tell|describe|know|learn|see|look|view|open|use|using|images?|imgs?|photos?|pics?|pictures?|wallpapers?|gallery|diagrams?|illustrations?|scans?|figures?|videos?|clips?|youtube|yt|internet|web|streams?|playback|footage|scenes?|movies?|trailers?|tutorials?|generative|gen|ui|widget|component|interactive|simulation|simulator|visualizer|dashboard|module|slop|front|eh|from|for|of|about|on|in|to|with|by|at|as|into|like|same|every|any|some|multiple|all|everything|stuff|things?|more|other|parts?|also|too|both|either|there|here|now|then|today|please|plz|pls|ok|okay|k|soo+|so|well|just|even|they|them|their|it|its|this|that|these|those|what|which|who|whom|whose|where|when|why|how|is|are|was|were|be|been|being|do|does|did|doing|done|actually|really|literally|basically|can|could|would|should|will|shall|may|might|must|have|has|had|having|not|no|dont|doesnt|didnt|cant|cannot|wont|i|me|my|mine|you|your|yours|we|us|our|he|him|his|she|her|asked|gave|give|got|me|an|a|the|and|or|but|if|because|as|until|while)\b/gi,
+      /^\s*(?:how\s+much|how\s+many|how\s+long|how\s+old|how\s+far|how\s+often|what\s+happened|what's\s+happening|whats\s+happening|what\s+is\s+going\s+on|what\s+are\s+the|what\s+is\s+the|can\s+you\s+tell\s+me|tell\s+me\s+about)\b/gi,
       ' '
     )
+    .replace(
+      /\b(fentch|featch|fetech|fetc|fetch|scrape|pull|grab|show|find|get|search|give|display|play|watch|embed|render|create|make|build|add|implement|remove|fix|update|explain|tell|describe|know|learn|see|look|view|open|use|using|images?|imgs?|photos?|pics?|pictures?|wallpapers?|gallery|diagrams?|illustrations?|scans?|figures?|videos?|clips?|youtube|yt|internet|web|streams?|playback|footage|scenes?|movies?|trailers?|tutorials?|generative|gen|ui|widget|component|interactive|simulation|simulator|visualizer|dashboard|module|slop|front|eh|from|for|of|about|on|in|to|with|by|at|as|into|like|same|every|any|some|multiple|all|everything|stuff|things?|more|other|parts?|also|too|both|either|there|here|now|then|please|plz|pls|ok|okay|k|soo+|so|well|just|even|they|them|their|it|its|that|these|those|what|which|who|whom|whose|where|when|why|how|much|many|happened|happen|happening|is|are|was|were|be|been|being|do|does|did|doing|done|actually|really|literally|basically|can|could|would|should|will|shall|may|might|must|have|has|had|having|not|no|dont|doesnt|didnt|cant|cannot|wont|i|me|my|mine|you|your|yours|we|us|our|he|him|his|she|her|asked|gave|give|got|an|a|the|and|or|but|if|because|until|while)\b/gi,
+      ' '
+    )
+    // Strip standalone "this" or "today" unless part of temporal news context
+    .replace(/\b(this|today)\b/gi, (m) => (hasNewsOrTemporalIntent ? m : ' '))
     .replace(/[^\w\s+./-]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -5836,7 +5958,16 @@ function resolveCoreTopic(
   }
 
   const currentTopic = extractTopicFromText(userQuery);
-  const hasFollowUpPronoun = /\b(it|this|that|them|those|these|same|there)\b/i.test(userQuery);
+  const currentTopicWords = currentTopic ? currentTopic.split(/\s+/).filter(Boolean) : [];
+
+  // Remove temporal phrases ("this week", "this month", "this year", "this morning", "these days") before checking for follow-up pronouns
+  const queryWithoutTemporalPhrases = userQuery.replace(
+    /\b(this|these|that|those)\s+(week|month|year|morning|afternoon|evening|night|weekend|quarter|season|century|decade|time|moment|point|days?|hours?)\b/gi,
+    ' '
+  );
+  const hasFollowUpPronoun = /\b(it|its|they|them|their|he|him|his|she|her|that\s+one|this\s+one|same\s+one)\b/i.test(
+    queryWithoutTemporalPhrases
+  );
 
   // If the user uploaded an image/file and asked a generic question like "Analyze this image", use the OCR/attachment topic
   const isGenericAttachmentPrompt =
@@ -5847,25 +5978,22 @@ function resolveCoreTopic(
     return attachmentExtractedTopic.split(/\s+/).slice(0, 8).join(' ').slice(0, 65);
   }
 
-  // Look back through prior user and assistant messages for the main conversation subject
+  // If currentTopic already has >= 2 meaningful words and no explicit third-person pronoun reference,
+  // it is a self-contained query (e.g., "What happened in AI news this week?") — NEVER bleed priorTopic!
+  if (currentTopicWords.length >= 2 && !hasFollowUpPronoun) {
+    return currentTopic;
+  }
+
+  // Look back through prior user messages for the main conversation subject ONLY when needed
   let priorTopic = '';
   for (let i = messages.length - 2; i >= 0; i--) {
     const m = messages[i];
     if (!m || !m.content) continue;
     if (m.role === 'user') {
       const candidate = extractTopicFromText(m.content);
-      if (candidate.length >= 2) {
+      if (candidate.length >= 3 && !/^(much|many|cost|price|how|what|why|when|where|who)$/i.test(candidate)) {
         priorTopic = candidate;
         break;
-      }
-    } else if (m.role === 'assistant' && !priorTopic) {
-      const headingMatch = m.content.match(/(?:^|\n)#{1,3}\s+(?:\d+\.\s*)?([^\n#]{3,55})/);
-      const boldMatch = m.content.match(/\*\*([A-Za-z][A-Za-z0-9\s-]{2,40})\*\*/);
-      const assistantCandidate = extractTopicFromText(
-        headingMatch?.[1] || boldMatch?.[1] || m.content.slice(0, 160)
-      );
-      if (assistantCandidate.length >= 3) {
-        priorTopic = assistantCandidate;
       }
     }
   }
@@ -5875,7 +6003,13 @@ function resolveCoreTopic(
     return fallback.split(/\s+/).slice(0, 8).join(' ').slice(0, 65);
   }
 
-  if (hasFollowUpPronoun && priorTopic && !currentTopic.toLowerCase().includes(priorTopic.toLowerCase())) {
+  // Only combine priorTopic when the current query is a short follow-up (<= 2 topic words) with an explicit pronoun ("How much does it cost?", "When was he born?")
+  if (
+    hasFollowUpPronoun &&
+    currentTopicWords.length <= 2 &&
+    priorTopic &&
+    !currentTopic.toLowerCase().includes(priorTopic.toLowerCase())
+  ) {
     return `${priorTopic} ${currentTopic}`.split(/\s+/).slice(0, 10).join(' ').slice(0, 70).trim();
   }
 
@@ -6963,9 +7097,12 @@ app.post('/api/search/live', async (req, res) => {
       tasks.push(
         (async () => {
           try {
+            const isImplicitNewsQuery = /\b(news|headlines|happened|happening|this\s+week|today's\s+news|latest\s+updates|breaking)\b/i.test(
+              userQuery
+            );
             const results = await searchWebViaTreg(
               coreTopic || userQuery,
-              searchMode === 'news' ? 'news' : 'organic',
+              searchMode === 'news' || isImplicitNewsQuery ? 'news' : 'organic',
               Boolean(nsfwMode)
             );
             for (const r of results.slice(0, isResearchMode ? 10 : 6)) {
@@ -7412,12 +7549,15 @@ async function extractYouTubeTranscriptSubclip(
           rawSegs = await fetchFn(videoId);
         }
         if (Array.isArray(rawSegs) && rawSegs.length > 0) {
+          const isMsUnits = rawSegs.some(
+            (x: any) => Number(x.offset ?? x.start ?? 0) > 18000 && Number(x.duration ?? x.dur ?? 0) > 100
+          );
           segments = rawSegs
             .map((s: any) => {
               const rawOffset = Number(s.offset ?? s.start ?? 0);
               const rawDur = Number(s.duration ?? s.dur ?? 2.5);
-              const start_s = rawOffset > 36000 ? rawOffset / 1000 : rawOffset;
-              const duration_s = rawDur > 600 ? rawDur / 1000 : rawDur;
+              const start_s = isMsUnits ? rawOffset / 1000 : rawOffset > 36000 ? rawOffset / 1000 : rawOffset;
+              const duration_s = isMsUnits ? rawDur / 1000 : rawDur > 600 ? rawDur / 1000 : rawDur;
               return {
                 start_s: Number(Math.max(0, start_s).toFixed(2)),
                 duration_s: Number(Math.max(0.4, duration_s).toFixed(2)),
@@ -7425,6 +7565,9 @@ async function extractYouTubeTranscriptSubclip(
               };
             })
             .filter((s: any) => Boolean(s.text));
+          if (segments.length > 0 && segments[0].start_s > 0 && segments[0].start_s <= 25) {
+            segments[0].start_s = 0;
+          }
           const langCode = rawSegs[0]?.lang || preferredLang;
           provider = `instacloud-ytp (${langCode})`;
         }
@@ -7443,12 +7586,15 @@ async function extractYouTubeTranscriptSubclip(
       if (typeof fetchFn === 'function') {
         const rawSegs = await fetchFn(videoId);
         if (Array.isArray(rawSegs) && rawSegs.length > 0) {
+          const isMsUnits = rawSegs.some(
+            (x: any) => Number(x.offset ?? x.start ?? 0) > 18000 && Number(x.duration ?? x.dur ?? 0) > 100
+          );
           segments = rawSegs
             .map((s: any) => {
               const rawOffset = Number(s.offset ?? s.start ?? 0);
               const rawDur = Number(s.duration ?? s.dur ?? 2.5);
-              const start_s = rawOffset > 36000 ? rawOffset / 1000 : rawOffset;
-              const duration_s = rawDur > 600 ? rawDur / 1000 : rawDur;
+              const start_s = isMsUnits ? rawOffset / 1000 : rawOffset > 36000 ? rawOffset / 1000 : rawOffset;
+              const duration_s = isMsUnits ? rawDur / 1000 : rawDur > 600 ? rawDur / 1000 : rawDur;
               return {
                 start_s: Number(Math.max(0, start_s).toFixed(2)),
                 duration_s: Number(Math.max(0.4, duration_s).toFixed(2)),
@@ -7456,6 +7602,9 @@ async function extractYouTubeTranscriptSubclip(
               };
             })
             .filter((s: any) => Boolean(s.text));
+          if (segments.length > 0 && segments[0].start_s > 0 && segments[0].start_s <= 25) {
+            segments[0].start_s = 0;
+          }
           provider = 'instacloud-yt-direct';
         }
       }
@@ -9809,13 +9958,15 @@ app.post('/api/chat', async (req, res) => {
       clientClock,
     } = req.body || {};
     const webSearch = true;
-    const searchMode = rawSearchMode === 'news' ? 'news' : 'organic';
     const messages = validation.messages;
-
     const requestStart = Date.now();
     const lastUserMessage = [...messages].reverse().find((m) => m.role === 'user');
     const rawUserQuery = lastUserMessage ? String(lastUserMessage.content || '') : '';
     const userQuery = stripInjectedClockNote(rawUserQuery);
+    const isImplicitNewsQuery = /\b(news|headlines|happened|happening|this\s+week|today's\s+news|latest\s+updates|breaking)\b/i.test(
+      userQuery
+    );
+    const searchMode = rawSearchMode === 'news' || isImplicitNewsQuery ? 'news' : 'organic';
     const liveClock = buildRealTimeClockContext(clientClock);
     const isClockQuery = isDateOrTimeClockQuery(userQuery);
 
@@ -9839,6 +9990,58 @@ app.post('/api/chat', async (req, res) => {
           quota: quotaCheck.snapshot,
         }
       );
+    }
+
+    // Prompt & Output Safety Moderation (Acceptable Use Categories A, B, C & Self-Harm Crisis Response)
+    const promptSafety = moderateUserPromptSafety(userQuery);
+    if (!promptSafety.allowed) {
+      return res.status(200).json({
+        success: true,
+        text:
+          promptSafety.refusalMessage ||
+          "I can't help with that request. See our [Acceptable Use Policy](/acceptable-use) for details.",
+        moderationCategory: promptSafety.category,
+        sources: [],
+        images: [],
+        videos: [],
+        arxivPapers: [],
+        githubRepos: [],
+        xPosts: [],
+        searchQueries: [],
+        toolsUsed: [],
+        webSearchSteps: [],
+        modelUsed: 'zeno-safety-guard',
+        quota: getServerQuotaSnapshot(req),
+      });
+    }
+
+    // Upload Guard (Images & PDFs): verify attached files against faces, NSFW, and Aadhaar/PAN/Card IDs
+    if (Array.isArray(lastUserMessage?.attachments) && lastUserMessage.attachments.length > 0) {
+      const clientSubjectId =
+        req.auth?.uid ||
+        (typeof req.headers['x-zeno-client-id'] === 'string' && req.headers['x-zeno-client-id'].trim()) ||
+        req.ip ||
+        'anonymous';
+      for (const att of lastUserMessage.attachments) {
+        if (!att) continue;
+        const modDecision = await moderateUploadedAttachment(
+          {
+            name: String(att.name || 'upload'),
+            type: String(att.mimeType || att.type || 'application/octet-stream'),
+            dataUrl: typeof att.dataUrl === 'string' ? att.dataUrl : undefined,
+            textContent: typeof att.textContent === 'string' ? att.textContent : '',
+          },
+          String(clientSubjectId)
+        );
+        if (!modDecision.allowed) {
+          return res.status(422).json({
+            success: false,
+            code: `moderation/${modDecision.category}`,
+            error: modDecision.reason,
+            restricted: Boolean(modDecision.uploadRestricted),
+          });
+        }
+      }
     }
 
     let searchSources: any[] = [];
@@ -11611,6 +11814,10 @@ app.get('/api/tokenharbor/models', async (_req, res) => {
 // Register Zeno Growth Engine Routes (Discover, Public Artifacts, Referrals, Creator Profiles, Analytics)
 registerGrowthEngineRoutes(app);
 
+// Write static SEO / Favicon / Sitemap / Robots assets and register Legal, Moderation, Contact & Report routes
+writeStaticSeoAndLegalAssets(__dirname);
+registerLegalAndSafetyRoutes(app);
+
 // Server-Rendered Open Graph & Twitter Card Metadata Preview Endpoint for Public Pages & Crawlers
 app.get('/api/growth/og-preview', (req, res) => {
   try {
@@ -11823,6 +12030,35 @@ if (!isTest) {
         if (!viteMiddleware) {
           await viteReadyPromise;
         }
+        // Serve server-rendered Legal Pages with full policy text without JS (HTTP 200)
+        const legalDocId = resolveServerLegalDocId(req.path);
+        if ((req.method === 'GET' || req.method === 'HEAD') && legalDocId && viteInstance) {
+          const rawHtml = fs.readFileSync(path.resolve(__dirname, 'index.html'), 'utf8');
+          const transformed = await viteInstance.transformIndexHtml(req.originalUrl, rawHtml);
+          const prerendered = renderPrerenderedLegalHtml(transformed, legalDocId);
+          res.setHeader('Content-Type', 'text/html; charset=utf-8');
+          return res.status(200).end(req.method === 'HEAD' ? undefined : prerendered);
+        }
+
+        // Serve real HTTP 404 page for unknown non-asset routes
+        if (
+          (req.method === 'GET' || req.method === 'HEAD') &&
+          !req.path.startsWith('/api') &&
+          !req.path.startsWith('/@') &&
+          !req.path.startsWith('/src/') &&
+          !req.path.startsWith('/node_modules/') &&
+          !req.path.startsWith('/assets/') &&
+          !req.path.includes('.') &&
+          !isKnownSpaClientRoute(req.path) &&
+          viteInstance
+        ) {
+          const rawHtml = fs.readFileSync(path.resolve(__dirname, 'index.html'), 'utf8');
+          const transformed = await viteInstance.transformIndexHtml(req.originalUrl, rawHtml);
+          const notFoundHtml = renderPrerendered404Html(transformed, req.path);
+          res.setHeader('Content-Type', 'text/html; charset=utf-8');
+          return res.status(404).end(req.method === 'HEAD' ? undefined : notFoundHtml);
+        }
+
         if (
           req.method === 'GET' &&
           (req.path === '/' || req.path === '/index.html') &&
@@ -11854,6 +12090,17 @@ if (!isTest) {
       try {
         const htmlPath = path.resolve(__dirname, 'dist', 'index.html');
         const rawHtml = fs.readFileSync(htmlPath, 'utf8');
+        const legalDocId = resolveServerLegalDocId(req.path);
+        if (legalDocId) {
+          const prerendered = renderPrerenderedLegalHtml(rawHtml, legalDocId);
+          res.setHeader('Content-Type', 'text/html; charset=utf-8');
+          return res.status(200).send(prerendered);
+        }
+        if (!isKnownSpaClientRoute(req.path)) {
+          const notFoundHtml = renderPrerendered404Html(rawHtml, req.path);
+          res.setHeader('Content-Type', 'text/html; charset=utf-8');
+          return res.status(404).send(notFoundHtml);
+        }
         const requestUrl = `${req.protocol}://${req.get('host') || 'zeno0x.vercel.app'}${req.originalUrl}`;
         const enriched = injectSocialMetaIntoHtml(
           rawHtml,
