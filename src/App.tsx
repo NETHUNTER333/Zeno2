@@ -57,6 +57,12 @@ import {
   captureInboundReferral,
   claimPendingReferralAfterAuth,
 } from './lib/referralClient';
+import { ModelRadiantBackground } from './components/ModelRadiantBackground';
+import {
+  BackgroundGradientMode,
+  getStoredBackgroundGradientMode,
+  setStoredBackgroundGradientMode,
+} from './lib/modelGradients';
 
 import { Signup1 } from './components/ui/signup-1';
 import {
@@ -542,6 +548,13 @@ export default function App() {
   const [isRunning, setIsRunning] = useState(false);
   const [searchMode, setSearchMode] = useState<SearchMode>('organic');
   const [selectedModel, setSelectedModel] = useState<ModelOption>(GROK_MODELS[0]);
+  const [bgGradientMode, setBgGradientMode] = useState<BackgroundGradientMode>(() =>
+    getStoredBackgroundGradientMode()
+  );
+  const handleSelectBgGradientMode = (mode: BackgroundGradientMode) => {
+    setBgGradientMode(mode);
+    setStoredBackgroundGradientMode(mode);
+  };
   // SafeSearch is permanently active and enforced (adult/NSFW content strictly blocked)
   const nsfwMode = false;
   const [isResearchMode, setIsResearchMode] = useState(false);
@@ -1800,12 +1813,23 @@ export default function App() {
 
   return (
     <div
-      className={`app-viewport-shell flex h-[100dvh] w-full max-w-[100vw] overflow-hidden font-sans select-text transition-colors duration-200 ${
-        isDark ? 'bg-[#000000] text-white' : 'bg-[#ffffff] text-[#000000]'
+      className={`app-viewport-shell relative isolate flex h-[100dvh] w-full max-w-[100vw] overflow-hidden font-sans select-text transition-colors duration-200 ${
+        isDark
+          ? bgGradientMode === 'off'
+            ? 'bg-[#000000] text-white'
+            : 'text-white'
+          : bgGradientMode === 'off'
+          ? 'bg-[#ffffff] text-[#000000]'
+          : 'text-[#000000]'
       }`}
     >
+      <ModelRadiantBackground
+        modelId={selectedModel.id}
+        theme={theme}
+        mode={bgGradientMode}
+      />
       {legalOr404Route ? (
-        <div className="flex-1 w-full h-full overflow-y-auto">
+        <div className="flex-1 w-full h-full overflow-y-auto relative z-10">
           <LegalAndInfoPages
             route={legalOr404Route}
             onNavigate={(path) => navigateRoute(path)}
@@ -1867,7 +1891,7 @@ export default function App() {
 
           {/* Main View Area: Dedicated Account & Settings Page OR Study Workspace OR Main Chat Canvas */}
           {currentView === 'account' ? (
-            <div className="flex-1 min-w-0 flex flex-col h-full overflow-hidden relative">
+            <div className="flex-1 min-w-0 flex flex-col h-full overflow-hidden relative z-10">
               <AccountWorkspacePage
                 onBackToChat={() => setCurrentView('chat')}
                 initialTab={accountPageTab}
@@ -1882,10 +1906,12 @@ export default function App() {
                 onClearAllHistory={handleClearAllHistory}
                 onSelectThread={handleSelectThread}
                 onDeleteThread={handleDeleteThread}
+                bgGradientMode={bgGradientMode}
+                onSelectBgGradientMode={handleSelectBgGradientMode}
               />
             </div>
           ) : currentView === 'study' ? (
-            <div className="flex-1 min-w-0 flex flex-col h-full overflow-hidden relative">
+            <div className="flex-1 min-w-0 flex flex-col h-full overflow-hidden relative z-10">
               <StudyWorkspace
                 initialVideo={activeStudyVideo}
                 onBackToChat={() => setCurrentView('chat')}
@@ -1898,7 +1924,7 @@ export default function App() {
             </div>
           ) : (
             /* Main Chat Canvas */
-            <div className="flex-1 min-w-0 flex flex-col h-full overflow-hidden relative">
+            <div className="flex-1 min-w-0 flex flex-col h-full overflow-hidden relative z-10">
               {/* Glassmorphic Floating Top Controls (Sidebar toggle, Model Picker, Study Studio & New Chat) */}
               <div className="absolute top-[max(0.5rem,env(safe-area-inset-top))] left-3 right-3 sm:left-4 sm:right-4 z-30 flex items-center justify-between gap-2 pointer-events-none">
                 <button

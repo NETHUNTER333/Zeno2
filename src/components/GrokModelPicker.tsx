@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ChevronDown, Check } from 'lucide-react';
 import { UserAccountStore } from '../lib/userAccountStore';
+import { getModelGradientTheme } from '../lib/modelGradients';
 
 export interface ModelOption {
   id: string;
@@ -869,6 +870,7 @@ export const GrokModelPicker: React.FC<GrokModelPickerProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
 
   const current = GROK_MODELS.find((m) => m.id === selectedModelId) || GROK_MODELS[0];
+  const currentTheme = getModelGradientTheme(current.id);
 
   useEffect(() => {
     const syncPlan = () => setCurrentPlan(UserAccountStore.getNormalizedPlan());
@@ -915,12 +917,12 @@ export const GrokModelPicker: React.FC<GrokModelPickerProps> = ({
 
   const triggerClasses =
     variant === 'header'
-      ? `flex items-center gap-1 px-2.5 py-1.5 rounded-full border backdrop-blur-2xl backdrop-saturate-150 transition-all cursor-pointer font-medium text-[11px] select-none ${
+      ? `flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border backdrop-blur-2xl backdrop-saturate-150 transition-all cursor-pointer font-medium text-[11px] select-none ${
           isDark
             ? 'bg-neutral-900/55 hover:bg-neutral-800/65 border-white/[0.16] text-white shadow-[0_8px_32px_rgba(0,0,0,0.55)]'
             : 'bg-white/65 hover:bg-white/85 border-black/[0.1] text-black shadow-[0_8px_32px_rgba(0,0,0,0.1)]'
         }`
-      : `flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] transition-colors cursor-pointer ${
+      : `flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] transition-colors cursor-pointer ${
           isDark ? 'text-white/80 hover:text-white' : 'text-black/75 hover:text-black'
         }`;
 
@@ -934,9 +936,17 @@ export const GrokModelPicker: React.FC<GrokModelPickerProps> = ({
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className={`${triggerClasses} max-w-[140px] sm:max-w-[200px]`}
-        title={current.name}
+        className={`${triggerClasses} max-w-[155px] sm:max-w-[215px]`}
+        title={`${current.name} • ${currentTheme.name}`}
       >
+        <span
+          className="w-2.5 h-2.5 rounded-full shrink-0 shadow-xs transition-transform duration-300"
+          style={{
+            background: currentTheme.swatchGradient,
+            boxShadow: `0 0 7px ${currentTheme.glowRgba}`,
+          }}
+          aria-hidden="true"
+        />
         <span className="font-medium text-[11px] tracking-tight truncate">{current.name}</span>
         <ChevronDown
           className={`w-3 h-3 shrink-0 transition-transform duration-150 ${
@@ -1008,6 +1018,7 @@ export const GrokModelPicker: React.FC<GrokModelPickerProps> = ({
                 const reqTier = getModelRequiredTier(m);
                 const isLocked = !UserAccountStore.canUseModel(reqTier);
 
+                const itemTheme = getModelGradientTheme(m.id);
                 return (
                   <button
                     key={m.id}
@@ -1022,7 +1033,7 @@ export const GrokModelPicker: React.FC<GrokModelPickerProps> = ({
                       onSelectModel(m);
                       setIsOpen(false);
                     }}
-                    className={`w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg text-left transition-colors cursor-pointer ${
+                    className={`w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg text-left transition-colors cursor-pointer group ${
                       isSelected
                         ? isDark
                           ? 'bg-white/10 text-white'
@@ -1032,32 +1043,43 @@ export const GrokModelPicker: React.FC<GrokModelPickerProps> = ({
                         : 'hover:bg-black/[0.04] text-black/85'
                     }`}
                   >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <span
-                          className={`font-medium text-[11px] leading-tight truncate ${
-                            isLocked ? 'opacity-70' : ''
-                          }`}
-                        >
-                          {m.name}
-                        </span>
-                        {m.contextLength && (
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <span
+                        className="w-3 h-3 rounded-full shrink-0 border border-black/10 dark:border-white/20 shadow-2xs transition-transform group-hover:scale-110"
+                        style={{
+                          background: itemTheme.swatchGradient,
+                          boxShadow: isSelected ? `0 0 7px ${itemTheme.glowRgba}` : undefined,
+                        }}
+                        title={itemTheme.name}
+                        aria-hidden="true"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 min-w-0">
                           <span
-                            className={`text-[9px] font-mono shrink-0 ${
-                              isDark ? 'text-white/35' : 'text-black/40'
+                            className={`font-medium text-[11px] leading-tight truncate ${
+                              isLocked ? 'opacity-70' : ''
                             }`}
                           >
-                            {m.contextLength}
+                            {m.name}
                           </span>
-                        )}
-                      </div>
-                      <div
-                        className={`text-[9.5px] leading-tight truncate mt-0.5 ${
-                          isDark ? 'text-white/45' : 'text-black/45'
-                        }`}
-                      >
-                        {m.description}
-                        {m.supportsVision ? ' · Vision' : ''}
+                          {m.contextLength && (
+                            <span
+                              className={`text-[9px] font-mono shrink-0 ${
+                                isDark ? 'text-white/35' : 'text-black/40'
+                              }`}
+                            >
+                              {m.contextLength}
+                            </span>
+                          )}
+                        </div>
+                        <div
+                          className={`text-[9.5px] leading-tight truncate mt-0.5 ${
+                            isDark ? 'text-white/45' : 'text-black/45'
+                          }`}
+                        >
+                          {m.description}
+                          {m.supportsVision ? ' · Vision' : ''}
+                        </div>
                       </div>
                     </div>
 
