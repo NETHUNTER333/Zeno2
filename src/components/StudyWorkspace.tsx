@@ -389,6 +389,23 @@ export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
   const [copiedSegmentIdx, setCopiedSegmentIdx] = useState<number | null>(null);
   const [activeJumpTimestamp, setActiveJumpTimestamp] = useState<number | null>(null);
   const [pastedTranscriptText, setPastedTranscriptText] = useState<string>('');
+  const [subclipToast, setSubclipToast] = useState<string | null>(null);
+
+  const handleCreateSubclip = (text: string, timestamp_s: number) => {
+    const cleanText = text.trim();
+    if (!cleanText) return;
+    const newCard = {
+      id: `subclip-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      front: cleanText.length > 90 ? `${cleanText.slice(0, 87)}...` : cleanText,
+      back: cleanText,
+      category: resolvedTitle.slice(0, 22),
+      timestamp_s,
+      starred: true,
+    };
+    setCustomFlashcards((prev) => [newCard, ...prev]);
+    setSubclipToast(`Saved subclip (${formatTime(timestamp_s)}) as flashcard!`);
+    setTimeout(() => setSubclipToast(null), 3200);
+  };
 
   // Notes State
   const [userNotes, setUserNotes] = useState<string>('');
@@ -4257,22 +4274,37 @@ ${fullTranscriptText}`;
                                   );
                                 })}
                               </p>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleCopySingleSegment(seg, idx);
-                                }}
-                                className={`p-1.5 rounded-lg opacity-40 group-hover/seg:opacity-100 hover:bg-neutral-500/15 transition-all text-neutral-400 hover:text-white shrink-0 cursor-pointer`}
-                                title="Copy this segment with timestamp"
-                                aria-label="Copy segment"
-                              >
-                                {copiedSegmentIdx === idx ? (
-                                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                                ) : (
-                                  <Copy className="w-3.5 h-3.5" />
-                                )}
-                              </button>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleCreateSubclip(seg.text, seg.start_s);
+                                  }}
+                                  className={`px-2.5 py-1.5 rounded-xl border text-xs font-medium inline-flex items-center gap-1 opacity-60 group-hover/seg:opacity-100 hover:bg-[#FC4C01]/15 hover:text-[#FC4C01] hover:border-[#FC4C01]/30 transition-all text-neutral-400 cursor-pointer`}
+                                  title="Create Subclip (Save as Flashcard)"
+                                  aria-label="Create Subclip"
+                                >
+                                  <Layers className="w-3.5 h-3.5 text-[#FC4C01]" />
+                                  <span className="hidden sm:inline">Subclip</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleCopySingleSegment(seg, idx);
+                                  }}
+                                  className={`p-1.5 rounded-lg opacity-40 group-hover/seg:opacity-100 hover:bg-neutral-500/15 transition-all text-neutral-400 hover:text-white cursor-pointer`}
+                                  title="Copy this segment with timestamp"
+                                  aria-label="Copy segment"
+                                >
+                                  {copiedSegmentIdx === idx ? (
+                                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                  ) : (
+                                    <Copy className="w-3.5 h-3.5" />
+                                  )}
+                                </button>
+                              </div>
                             </div>
                           );
                         })}
@@ -4301,6 +4333,21 @@ ${fullTranscriptText}`;
                         )}
                       </div>
                     )}
+                  </div>
+                )}
+
+                {/* Subclip Toast Banner */}
+                {subclipToast && (
+                  <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 bg-[#18181b] border border-[#FC4C01]/40 text-white px-4 py-2.5 rounded-2xl shadow-2xl flex items-center gap-3">
+                    <Check className="w-4 h-4 text-[#FC4C01]" />
+                    <span className="text-xs font-semibold">{subclipToast}</span>
+                    <button
+                      type="button"
+                      onClick={() => openOrFocusTab('flashcards', 'Flashcards')}
+                      className="px-2.5 py-1 rounded-xl bg-[#FC4C01] text-white text-[11px] font-semibold hover:opacity-90 cursor-pointer ml-1"
+                    >
+                      View Flashcards
+                    </button>
                   </div>
                 )}
 
