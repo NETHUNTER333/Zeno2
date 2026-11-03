@@ -1059,35 +1059,33 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
                   <div className="flex items-center justify-between gap-2">
                     <div>
                       <div className="text-xs font-bold uppercase tracking-wider text-neutral-400">
-                        Radiant Background & Model Colors
+                        Ambient Background Glow
                       </div>
                       <p className="text-[11px] text-neutral-400 mt-0.5">
-                        Luminous top-spotlight & vertical radiant sunset gradients matching reference aesthetics.
+                        Top-centre warm amber (#FC4C01) background glow fading cleanly to near-black.
                       </p>
                     </div>
-                    {/* Live indicator of active model theme */}
-                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-white/10 bg-white/5 text-[11px] font-mono">
-                      <span
-                        className="w-2.5 h-2.5 rounded-full"
-                        style={{
-                          background: `linear-gradient(135deg, ${getModelGradientTheme(selectedModel.id).primary}, ${getModelGradientTheme(selectedModel.id).secondary})`,
-                        }}
-                      />
+                    <div
+                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-mono ${
+                        isDark ? 'border-white/10 bg-white/5' : 'border-black/10 bg-black/[0.03]'
+                      }`}
+                    >
+                      <span className="w-2 h-2 rounded-full bg-[#FC4C01]" />
                       <span className="font-semibold">{selectedModel.name}</span>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {/* Option 1: Dynamic Model Aura */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {/* Option 1: Warm Amber Glow (Default) */}
                     <button
                       type="button"
                       onClick={() => {
                         onSelectBgGradientMode?.('dynamic-model');
                         setStoredBackgroundGradientMode('dynamic-model');
-                        triggerSuccessAlert('Dynamic model gradient aura enabled');
+                        triggerSuccessAlert('Warm amber top-centre glow enabled');
                       }}
                       className={`p-3.5 rounded-xl border text-left flex items-start justify-between gap-2 transition-all cursor-pointer ${
-                        bgGradientMode === 'dynamic-model'
+                        bgGradientMode === 'dynamic-model' || bgGradientMode === 'exact-sunset'
                           ? 'border-[#FC4C01] ring-1 ring-[#FC4C01]/50 bg-[#FC4C01]/10'
                           : isDark
                           ? 'border-white/10 hover:border-white/20 bg-white/[0.02]'
@@ -1096,49 +1094,19 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
                     >
                       <div className="space-y-1">
                         <div className="flex items-center gap-2">
-                          <div className="w-5 h-5 rounded-md bg-gradient-to-tr from-cyan-500 via-indigo-500 to-amber-500 shrink-0" />
-                          <span className="text-xs font-bold">Dynamic Model Aura</span>
+                          <span className="w-3.5 h-3.5 rounded-full bg-[#FC4C01] shrink-0" />
+                          <span className="text-xs font-bold">Warm Amber Glow</span>
                         </div>
                         <p className="text-[11px] text-neutral-400">
-                          Background smoothly morphs to match whichever model is active with radiant lighting.
+                          Top-centre #FC4C01 ambient glow fading to near-black.
                         </p>
                       </div>
-                      {bgGradientMode === 'dynamic-model' && (
+                      {(bgGradientMode === 'dynamic-model' || bgGradientMode === 'exact-sunset') && (
                         <Check className="w-4 h-4 text-[#FC4C01] shrink-0 mt-0.5" />
                       )}
                     </button>
 
-                    {/* Option 2: Exact Sunset Orange (Reference Images) */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onSelectBgGradientMode?.('exact-sunset');
-                        setStoredBackgroundGradientMode('exact-sunset');
-                        triggerSuccessAlert('Exact sunset orange gradient locked');
-                      }}
-                      className={`p-3.5 rounded-xl border text-left flex items-start justify-between gap-2 transition-all cursor-pointer ${
-                        bgGradientMode === 'exact-sunset'
-                          ? 'border-[#FC4C01] ring-1 ring-[#FC4C01]/50 bg-[#FC4C01]/10'
-                          : isDark
-                          ? 'border-white/10 hover:border-white/20 bg-white/[0.02]'
-                          : 'border-black/10 hover:border-black/20 bg-neutral-50'
-                      }`}
-                    >
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <div className="w-5 h-5 rounded-md bg-gradient-to-b from-[#FC4C01] via-[#FF8533] to-[#FFF1E8] shrink-0 shadow-xs" />
-                          <span className="text-xs font-bold">Exact Sunset Orange</span>
-                        </div>
-                        <p className="text-[11px] text-neutral-400">
-                          Locks the exact radiant tangerine sunset & spotlight from your uploaded references.
-                        </p>
-                      </div>
-                      {bgGradientMode === 'exact-sunset' && (
-                        <Check className="w-4 h-4 text-[#FC4C01] shrink-0 mt-0.5" />
-                      )}
-                    </button>
-
-                    {/* Option 3: Subtle Glow */}
+                    {/* Option 2: Subtle Glow */}
                     <button
                       type="button"
                       onClick={() => {
@@ -1156,11 +1124,11 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
                     >
                       <div className="space-y-1">
                         <div className="flex items-center gap-2">
-                          <div className="w-5 h-5 rounded-md border border-dashed border-neutral-400 bg-gradient-to-b from-[#FC4C01]/30 to-transparent shrink-0" />
+                          <span className="w-3.5 h-3.5 rounded-full bg-[#FC4C01]/45 border border-[#FC4C01] shrink-0" />
                           <span className="text-xs font-bold">Subtle Glow</span>
                         </div>
                         <p className="text-[11px] text-neutral-400">
-                          Muted ambient lighting for minimal distraction while retaining colored accents.
+                          Softer top-centre ambient lighting for minimal distraction.
                         </p>
                       </div>
                       {bgGradientMode === 'subtle' && (
@@ -1168,13 +1136,13 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
                       )}
                     </button>
 
-                    {/* Option 4: Solid Minimalist (Off) */}
+                    {/* Option 3: Solid Base (Off) */}
                     <button
                       type="button"
                       onClick={() => {
                         onSelectBgGradientMode?.('off');
                         setStoredBackgroundGradientMode('off');
-                        triggerSuccessAlert('Gradients disabled (solid base)');
+                        triggerSuccessAlert('Background glow disabled (solid base)');
                       }}
                       className={`p-3.5 rounded-xl border text-left flex items-start justify-between gap-2 transition-all cursor-pointer ${
                         bgGradientMode === 'off'
@@ -1186,51 +1154,21 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
                     >
                       <div className="space-y-1">
                         <div className="flex items-center gap-2">
-                          <div className={`w-5 h-5 rounded-md border ${isDark ? 'bg-black border-white/20' : 'bg-white border-black/20'} shrink-0`} />
+                          <span
+                            className={`w-3.5 h-3.5 rounded-full border ${
+                              isDark ? 'bg-black border-white/30' : 'bg-white border-black/30'
+                            } shrink-0`}
+                          />
                           <span className="text-xs font-bold">Solid Base (Off)</span>
                         </div>
                         <p className="text-[11px] text-neutral-400">
-                          Classic monochrome backdrop with standard theme contrast.
+                          Pure monochrome backdrop with zero ambient glow.
                         </p>
                       </div>
                       {bgGradientMode === 'off' && (
                         <Check className="w-4 h-4 text-[#FC4C01] shrink-0 mt-0.5" />
                       )}
                     </button>
-                  </div>
-
-                  {/* Model Color Scheme Showcase Preview */}
-                  <div className="pt-3 border-t border-neutral-500/10">
-                    <div className="text-[11px] font-semibold text-neutral-400 mb-2">
-                      Model Color Palette Signatures:
-                    </div>
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      {[
-                        { name: 'Sunset (Ref)', theme: EXACT_SUNSET_ORANGE_THEME },
-                        { name: 'DeepSeek', theme: getModelGradientTheme('deepseek') },
-                        { name: 'GLM-5', theme: getModelGradientTheme('glm') },
-                        { name: 'Qwen 3.5', theme: getModelGradientTheme('qwen') },
-                        { name: 'Claude 4.6', theme: getModelGradientTheme('claude') },
-                        { name: 'GPT-6', theme: getModelGradientTheme('gpt') },
-                        { name: 'Grok 3.5', theme: getModelGradientTheme('grok') },
-                        { name: 'Gemini 3', theme: getModelGradientTheme('gemini') },
-                        { name: 'Kimi K2.5', theme: getModelGradientTheme('kimi') },
-                      ].map((item) => (
-                        <div
-                          key={item.name}
-                          className="flex items-center gap-1.5 px-2 py-1 rounded-lg border border-neutral-500/15 bg-neutral-500/5 text-[10px] font-mono"
-                          title={item.theme.tagline}
-                        >
-                          <span
-                            className="w-2 h-2 rounded-full shadow-xs"
-                            style={{
-                              background: `linear-gradient(135deg, ${item.theme.primary}, ${item.theme.secondary})`,
-                            }}
-                          />
-                          <span>{item.name}</span>
-                        </div>
-                      ))}
-                    </div>
                   </div>
                 </div>
 

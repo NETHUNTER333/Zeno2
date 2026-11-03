@@ -15,6 +15,7 @@ export const StreakReminderToast: React.FC<StreakReminderToastProps> = ({
 }) => {
   const [streak, setStreak] = useState<DailyStreakData>(() => UserAccountStore.getDailyStreak());
   const [visible, setVisible] = useState<boolean>(false);
+  const [achievementToastActive, setAchievementToastActive] = useState<boolean>(false);
   const [completedAck, setCompletedAck] = useState<boolean>(false);
   const [snoozedUntilTs, setSnoozedUntilTs] = useState<number>(0);
 
@@ -27,6 +28,14 @@ export const StreakReminderToast: React.FC<StreakReminderToastProps> = ({
         latest.todayInteractions >= (latest.dailyGoal || 3) &&
         !completedAck
       ) {
+        setVisible(false);
+      }
+    };
+
+    const handleAchievementToastState = (e: Event) => {
+      const active = Boolean((e as CustomEvent<{ active?: boolean }>).detail?.active);
+      setAchievementToastActive(active);
+      if (active) {
         setVisible(false);
       }
     };
@@ -53,9 +62,10 @@ export const StreakReminderToast: React.FC<StreakReminderToastProps> = ({
 
     window.addEventListener('zeno-account-updated', syncStreak);
     window.addEventListener('zeno-trigger-streak-reminder', handleTriggerManual);
+    window.addEventListener('zeno-achievement-toast-active', handleAchievementToastState);
 
     const checkSchedule = () => {
-      if (Date.now() < snoozedUntilTs) return;
+      if (Date.now() < snoozedUntilTs || achievementToastActive) return;
       const shouldShow = UserAccountStore.shouldShowStreakReminder(new Date());
       if (shouldShow) {
         const latest = UserAccountStore.getDailyStreak();
@@ -64,18 +74,17 @@ export const StreakReminderToast: React.FC<StreakReminderToastProps> = ({
       }
     };
 
-    const initialTimer = setTimeout(checkSchedule, 2500);
-    const interval = setInterval(checkSchedule, 30000);
+    const interval = setInterval(checkSchedule, 60000);
 
     return () => {
       window.removeEventListener('zeno-account-updated', syncStreak);
       window.removeEventListener('zeno-trigger-streak-reminder', handleTriggerManual);
-      clearTimeout(initialTimer);
+      window.removeEventListener('zeno-achievement-toast-active', handleAchievementToastState);
       clearInterval(interval);
     };
-  }, [snoozedUntilTs, completedAck]);
+  }, [snoozedUntilTs, completedAck, achievementToastActive]);
 
-  if (!visible) return null;
+  if (!visible || achievementToastActive) return null;
 
   const handleCompleteDailyCheckIn = () => {
     const updated = UserAccountStore.recordDailyInteraction(true);

@@ -526,10 +526,30 @@ export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
         'pdf',
         initialPdf.pdfUrl
       );
-    } else if (initialId) {
+      return;
+    }
+    if (initialId) {
       loadYouTubeSource(initialId, initialVideo?.title, initialVideo?.author, initialVideo?.transcript);
-    } else if (initialVideo?.title) {
+      return;
+    }
+    if (initialVideo?.title) {
       loadTopicStudySpace(initialVideo.title);
+      return;
+    }
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const urlVid = params.get('v') || params.get('video') || params.get('url');
+      const urlTopic = params.get('topic') || params.get('q');
+      if (urlVid) {
+        const extracted = extractYouTubeIdFromInput(urlVid.trim());
+        if (extracted) {
+          loadYouTubeSource(extracted);
+          return;
+        }
+      }
+      if (urlTopic && urlTopic.trim()) {
+        loadTopicStudySpace(urlTopic.trim());
+      }
     }
   }, [initialId, initialPdf?.pdfName, initialPdf?.extractedText]);
 
@@ -1482,22 +1502,22 @@ ${fullTranscriptText}`;
         <div className="flex-1 flex flex-col overflow-y-auto">
           {/* Header without translucent scrim, blur, or gradient */}
           <header
-            className={`h-14 px-4 sm:px-6 flex items-center justify-between shrink-0 ${
-              isDark ? 'bg-[#09090b]' : 'bg-[#fafafa]'
+            className={`h-13 px-3 sm:px-5 border-b flex items-center justify-between gap-2 shrink-0 ${
+              isDark ? 'bg-[#09090b] border-white/[0.08]' : 'bg-[#fafafa] border-black/[0.08]'
             }`}
           >
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2.5">
               <button
                 type="button"
                 onClick={onBackToChat}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer active:scale-95 ${
+                className={`h-8 px-3.5 rounded-full border text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 active:scale-95 ${
                   isDark
-                    ? 'bg-white/[0.05] hover:bg-white/[0.1] border-white/[0.1] text-neutral-200 hover:text-white'
-                    : 'bg-black/[0.04] hover:bg-black/[0.08] border-black/[0.1] text-neutral-800 hover:text-black'
+                    ? 'bg-white/[0.04] hover:bg-white/[0.09] border-white/[0.12] text-neutral-200 hover:text-white'
+                    : 'bg-black/[0.03] hover:bg-black/[0.07] border-black/[0.12] text-neutral-800 hover:text-black'
                 }`}
                 title="Back to Chat"
               >
-                <ArrowLeft className="w-3.5 h-3.5 stroke-[2.2]" />
+                <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
                 <span>Back</span>
               </button>
               <span className="font-semibold text-sm tracking-tight">Study Space</span>
@@ -1507,13 +1527,13 @@ ${fullTranscriptText}`;
               <button
                 type="button"
                 onClick={() => setViewMode('workspace')}
-                className={`px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer active:scale-95 ${
+                className={`h-8 px-3.5 rounded-full border text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer active:scale-95 ${
                   isDark
                     ? 'bg-white text-black border-white hover:bg-neutral-200'
                     : 'bg-black text-white border-black hover:bg-neutral-800'
                 }`}
               >
-                Resume: {resolvedTitle.slice(0, 20)}...
+                <span>Resume Workspace</span>
               </button>
             )}
           </header>
@@ -1531,7 +1551,7 @@ ${fullTranscriptText}`;
                 }`}
               >
                 <div
-                  className={`size-8 rounded-xl flex items-center justify-center shrink-0 ${
+                  className={`size-8 rounded-full flex items-center justify-center shrink-0 ${
                     isDark ? 'bg-white/[0.06] text-neutral-200' : 'bg-black/[0.05] text-neutral-800'
                   }`}
                 >
@@ -1553,7 +1573,7 @@ ${fullTranscriptText}`;
                 }`}
               >
                 <div
-                  className={`size-8 rounded-xl flex items-center justify-center shrink-0 ${
+                  className={`size-8 rounded-full flex items-center justify-center shrink-0 ${
                     isDark ? 'bg-white/[0.06] text-neutral-200' : 'bg-black/[0.05] text-neutral-800'
                   }`}
                 >
@@ -1575,7 +1595,7 @@ ${fullTranscriptText}`;
                 }`}
               >
                 <div
-                  className={`size-8 rounded-xl flex items-center justify-center shrink-0 ${
+                  className={`size-8 rounded-full flex items-center justify-center shrink-0 ${
                     isDark ? 'bg-white/[0.06] text-neutral-200' : 'bg-black/[0.05] text-neutral-800'
                   }`}
                 >
@@ -1602,7 +1622,7 @@ ${fullTranscriptText}`;
                   loadTopicStudySpace(q);
                 }
               }}
-              className={`flex items-center justify-between gap-2 p-1.5 pl-3 sm:p-2 sm:pl-3.5 rounded-2xl border transition-all ${
+              className={`flex items-center justify-between gap-2 p-1.5 pl-3.5 sm:p-2 sm:pl-4 rounded-full border transition-all ${
                 isDark
                   ? 'bg-[#121215] border-white/[0.1] focus-within:border-white/[0.25]'
                   : 'bg-white border-black/[0.1] focus-within:border-black/[0.25]'
@@ -1621,7 +1641,7 @@ ${fullTranscriptText}`;
               <button
                 type="submit"
                 disabled={!homePromptDraft.trim()}
-                className={`size-8 sm:size-9 rounded-xl flex items-center justify-center transition-all cursor-pointer shrink-0 ${
+                className={`size-8 sm:size-9 rounded-full flex items-center justify-center transition-all cursor-pointer shrink-0 ${
                   !homePromptDraft.trim()
                     ? 'opacity-30 cursor-not-allowed bg-neutral-500/20 text-neutral-400'
                     : isDark
@@ -1686,7 +1706,7 @@ ${fullTranscriptText}`;
                       >
                         <div className="flex items-center gap-2.5 min-w-0 flex-1">
                           <div
-                            className={`size-7 rounded-lg flex items-center justify-center shrink-0 ${
+                            className={`size-7 rounded-full flex items-center justify-center shrink-0 ${
                               isDark ? 'bg-white/[0.06] text-neutral-300' : 'bg-black/[0.05] text-neutral-700'
                             }`}
                           >
@@ -1714,7 +1734,7 @@ ${fullTranscriptText}`;
                             onClick={() =>
                               setOpenSpaceMenuId((prev) => (prev === sp.id ? null : sp.id))
                             }
-                            className={`p-1 rounded-lg transition-colors cursor-pointer ${
+                            className={`p-1.5 rounded-full transition-colors cursor-pointer ${
                               isDark ? 'hover:bg-white/[0.08]' : 'hover:bg-black/[0.06]'
                             }`}
                             title="Space options"
@@ -1768,6 +1788,8 @@ ${fullTranscriptText}`;
                   <button
                     type="button"
                     onClick={() => setLinkModalOpen(false)}
+                    aria-label="Close import modal"
+                    title="Close import modal"
                     className="p-1 rounded-lg opacity-60 hover:opacity-100 cursor-pointer"
                   >
                     <X className="w-4 h-4" />
@@ -1834,6 +1856,8 @@ ${fullTranscriptText}`;
                   <button
                     type="button"
                     onClick={() => setPasteModalOpen(false)}
+                    aria-label="Close paste notes modal"
+                    title="Close paste notes modal"
                     className="p-1 rounded-lg opacity-60 hover:opacity-100 cursor-pointer"
                   >
                     <X className="w-4 h-4" />
@@ -1895,32 +1919,26 @@ ${fullTranscriptText}`;
         /* VIEW 2: ACTIVE STUDY WORKSPACE                                        */
         /* ===================================================================== */
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
-          {/* Top Header */}
+          {/* Top Header — Clean, Consistent Pill Control Row without Crushed Title */}
           <header
-            className={`px-3 sm:px-5 py-2.5 border-b flex items-center justify-between gap-2 shrink-0 ${
+            className={`h-13 px-3 sm:px-5 border-b flex items-center justify-between gap-2 shrink-0 ${
               isDark ? 'bg-[#09090b] border-white/[0.08]' : 'bg-[#fafafa] border-black/[0.08]'
             }`}
           >
-            <div className="flex items-center gap-2.5 min-w-0 flex-1">
+            <div className="flex items-center gap-2 shrink-0">
               <button
                 type="button"
                 onClick={onBackToChat}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer shrink-0 active:scale-95 ${
+                className={`h-8 px-3.5 rounded-full border text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 active:scale-95 ${
                   isDark
-                    ? 'bg-white/[0.05] hover:bg-white/[0.1] border-white/[0.1] text-neutral-200 hover:text-white'
-                    : 'bg-black/[0.04] hover:bg-black/[0.08] border-black/[0.1] text-neutral-800 hover:text-black'
+                    ? 'bg-white/[0.04] hover:bg-white/[0.09] border-white/[0.12] text-neutral-200 hover:text-white'
+                    : 'bg-black/[0.03] hover:bg-black/[0.07] border-black/[0.12] text-neutral-800 hover:text-black'
                 }`}
                 title="Back to Chat"
               >
-                <ArrowLeft className="w-3.5 h-3.5 stroke-[2.2]" />
+                <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
                 <span>Back</span>
               </button>
-
-              <div className="min-w-0 flex-1">
-                <h1 className="text-sm sm:text-base font-semibold tracking-tight truncate">
-                  {resolvedTitle}
-                </h1>
-              </div>
             </div>
 
             <div className="flex items-center gap-1.5 shrink-0">
@@ -1928,25 +1946,34 @@ ${fullTranscriptText}`;
                 <button
                   type="button"
                   onClick={() => setShowSourceViewer((prev) => !prev)}
-                  className={`px-2.5 py-1.5 rounded-xl border text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
+                  aria-label={
+                    showSourceViewer
+                      ? activeVideoId
+                        ? 'Hide Video'
+                        : 'Hide Source'
+                      : activeVideoId
+                      ? 'Show Video Player'
+                      : 'Show Source'
+                  }
+                  className={`h-8 px-3.5 rounded-full border text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
                     showSourceViewer
                       ? isDark
                         ? 'bg-white text-black border-white'
                         : 'bg-black text-white border-black'
                       : isDark
-                      ? 'border-white/[0.12] hover:bg-white/[0.06] text-neutral-200'
-                      : 'border-black/[0.12] hover:bg-black/[0.05] text-neutral-800'
+                      ? 'bg-white/[0.04] hover:bg-white/[0.09] border-white/[0.12] text-neutral-200'
+                      : 'bg-black/[0.03] hover:bg-black/[0.07] border-black/[0.12] text-neutral-800'
                   }`}
                 >
-                  <Video className="w-3.5 h-3.5" />
-                  <span className="hidden xs:inline">
+                  <Video className="w-3.5 h-3.5 shrink-0" />
+                  <span className="inline">
                     {showSourceViewer
                       ? activeVideoId
                         ? 'Hide Video'
                         : 'Hide Source'
                       : activeVideoId
-                      ? 'Player'
-                      : 'Source'}
+                      ? 'Show Video'
+                      : 'Show Source'}
                   </span>
                 </button>
               )}
@@ -1954,10 +1981,10 @@ ${fullTranscriptText}`;
               <button
                 type="button"
                 onClick={() => setViewMode('home')}
-                className={`px-2.5 py-1.5 rounded-xl border text-xs font-medium transition-colors cursor-pointer ${
+                className={`h-8 px-3.5 rounded-full border text-xs font-medium inline-flex items-center justify-center transition-colors cursor-pointer whitespace-nowrap ${
                   isDark
-                    ? 'border-white/[0.12] hover:bg-white/[0.06] text-neutral-200'
-                    : 'border-black/[0.12] hover:bg-black/[0.05] text-neutral-800'
+                    ? 'bg-white/[0.04] hover:bg-white/[0.09] border-white/[0.12] text-neutral-200'
+                    : 'bg-black/[0.03] hover:bg-black/[0.07] border-black/[0.12] text-neutral-800'
                 }`}
               >
                 New Topic
@@ -1966,47 +1993,27 @@ ${fullTranscriptText}`;
               <button
                 type="button"
                 onClick={handleExportStudyPack}
-                className={`p-1.5 rounded-xl border transition-colors cursor-pointer ${
+                className={`h-8 w-8 rounded-full border inline-flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
                   isDark
-                    ? 'border-white/[0.08] hover:bg-white/[0.08]'
-                    : 'border-black/[0.08] hover:bg-black/[0.05]'
+                    ? 'bg-white/[0.04] hover:bg-white/[0.09] border-white/[0.12] text-neutral-200'
+                    : 'bg-black/[0.03] hover:bg-black/[0.07] border-black/[0.12] text-neutral-800'
                 }`}
                 title="Export Notes (.md)"
+                aria-label="Export Notes"
               >
                 <Share2 className="w-3.5 h-3.5" />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  window.dispatchEvent(
-                    new CustomEvent('zeno-open-report', {
-                      detail: {
-                        targetType: 'study_set',
-                        targetId: activeVideoId || resolvedTitle,
-                        contentPreview: `${resolvedTitle} (${sourceType})`,
-                      },
-                    })
-                  );
-                }}
-                className={`px-2 py-1.5 rounded-xl border text-[11px] font-medium transition-colors cursor-pointer ${
-                  isDark
-                    ? 'border-white/[0.08] hover:bg-white/[0.08] text-neutral-300'
-                    : 'border-black/[0.08] hover:bg-black/[0.05] text-neutral-700'
-                }`}
-                title="Report study set or transcript issue"
-              >
-                Report
               </button>
 
               <div className="relative">
                 <button
                   type="button"
                   onClick={() => setTopMoreMenuOpen((p) => !p)}
-                  className={`p-1.5 rounded-xl border transition-colors cursor-pointer ${
+                  aria-label="More study options"
+                  title="More options"
+                  className={`h-8 w-8 rounded-full border inline-flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
                     isDark
-                      ? 'border-white/[0.08] hover:bg-white/[0.08]'
-                      : 'border-black/[0.08] hover:bg-black/[0.05]'
+                      ? 'bg-white/[0.04] hover:bg-white/[0.09] border-white/[0.12] text-neutral-200'
+                      : 'bg-black/[0.03] hover:bg-black/[0.07] border-black/[0.12] text-neutral-800'
                   }`}
                 >
                   <MoreVertical className="w-3.5 h-3.5" />
@@ -2014,7 +2021,7 @@ ${fullTranscriptText}`;
 
                 {topMoreMenuOpen && (
                   <div
-                    className={`absolute right-0 top-full mt-1.5 w-48 rounded-2xl border p-1.5 z-40 shadow-2xl ${
+                    className={`absolute right-0 top-full mt-1.5 w-48 rounded-xl border p-1.5 z-40 shadow-2xl ${
                       isDark
                         ? 'bg-[#18181b] border-white/[0.12] text-white'
                         : 'bg-white border-black/[0.1] text-black'
@@ -2026,7 +2033,7 @@ ${fullTranscriptText}`;
                         setTopMoreMenuOpen(false);
                         setViewMode('home');
                       }}
-                      className="w-full px-3 py-2 rounded-xl text-xs flex items-center justify-between hover:bg-current/5 cursor-pointer"
+                      className="w-full px-3 py-2 rounded-lg text-xs flex items-center justify-between hover:bg-current/5 cursor-pointer"
                     >
                       <span>All Study Spaces</span>
                       <ChevronRight className="w-3.5 h-3.5 opacity-60" />
@@ -2037,7 +2044,7 @@ ${fullTranscriptText}`;
                         setTopMoreMenuOpen(false);
                         fileInputRef.current?.click();
                       }}
-                      className="w-full px-3 py-2 rounded-xl text-xs flex items-center gap-2.5 hover:bg-current/5 cursor-pointer"
+                      className="w-full px-3 py-2 rounded-lg text-xs flex items-center gap-2.5 hover:bg-current/5 cursor-pointer"
                     >
                       <Upload className="w-3.5 h-3.5" />
                       <span>Upload PDF / File</span>
@@ -2048,10 +2055,28 @@ ${fullTranscriptText}`;
                         setTopMoreMenuOpen(false);
                         handleExportStudyPack();
                       }}
-                      className="w-full px-3 py-2 rounded-xl text-xs flex items-center gap-2.5 hover:bg-current/5 cursor-pointer"
+                      className="w-full px-3 py-2 rounded-lg text-xs flex items-center gap-2.5 hover:bg-current/5 cursor-pointer"
                     >
                       <Download className="w-3.5 h-3.5" />
                       <span>Export Notes</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTopMoreMenuOpen(false);
+                        window.dispatchEvent(
+                          new CustomEvent('zeno-open-report', {
+                            detail: {
+                              targetType: 'study_set',
+                              targetId: activeVideoId || resolvedTitle,
+                              contentPreview: `${resolvedTitle} (${sourceType})`,
+                            },
+                          })
+                        );
+                      }}
+                      className="w-full px-3 py-2 rounded-lg text-xs flex items-center gap-2.5 hover:bg-current/5 cursor-pointer text-neutral-500 dark:text-neutral-400"
+                    >
+                      <span>Report Issue</span>
                     </button>
                   </div>
                 )}
@@ -2125,14 +2150,14 @@ ${fullTranscriptText}`;
                     setFocusedModuleView(null);
                     setActiveTabId(tab.id);
                   }}
-                  className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-medium transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                  className={`h-8 inline-flex items-center gap-2 px-3.5 rounded-full border text-xs font-medium transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                     isActive
                       ? isDark
-                        ? 'bg-white text-black font-semibold shadow-2xs'
-                        : 'bg-black text-white font-semibold shadow-2xs'
+                        ? 'bg-white text-black border-white font-semibold shadow-2xs'
+                        : 'bg-black text-white border-black font-semibold shadow-2xs'
                       : isDark
-                      ? 'text-neutral-400 hover:text-white hover:bg-white/[0.05]'
-                      : 'text-neutral-600 hover:text-black hover:bg-black/[0.05]'
+                      ? 'border-transparent text-neutral-400 hover:text-white hover:bg-white/[0.05]'
+                      : 'border-transparent text-neutral-600 hover:text-black hover:bg-black/[0.05]'
                   }`}
                 >
                   <span className="max-w-[150px] truncate">{tab.title}</span>
@@ -2140,7 +2165,9 @@ ${fullTranscriptText}`;
                     <button
                       type="button"
                       onClick={(e) => closeTab(tab.id, e)}
-                      className="opacity-60 hover:opacity-100 p-0.5 rounded-md cursor-pointer"
+                      aria-label={`Close ${tab.title} tab`}
+                      title={`Close ${tab.title} tab`}
+                      className="opacity-60 hover:opacity-100 p-0.5 rounded-full cursor-pointer"
                     >
                       <X className="w-3 h-3" />
                     </button>
@@ -2153,7 +2180,7 @@ ${fullTranscriptText}`;
               <button
                 type="button"
                 onClick={() => openOrFocusTab('videos', `Videos (${topicVideos.length})`)}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-colors cursor-pointer shrink-0 ${
+                className={`h-8 inline-flex items-center gap-1.5 px-3.5 rounded-full text-xs font-medium transition-colors cursor-pointer shrink-0 ${
                   isDark
                     ? 'text-neutral-400 hover:text-white hover:bg-white/[0.05]'
                     : 'text-neutral-600 hover:text-black hover:bg-black/[0.05]'
@@ -2167,12 +2194,13 @@ ${fullTranscriptText}`;
             <button
               type="button"
               onClick={() => openOrFocusTab('learn', 'Study Tools')}
-              className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-medium transition-colors cursor-pointer shrink-0 ${
+              className={`h-8 w-8 inline-flex items-center justify-center rounded-full border text-xs font-medium transition-colors cursor-pointer shrink-0 ${
                 isDark
-                  ? 'bg-white/[0.05] hover:bg-white/[0.1] text-neutral-300'
-                  : 'bg-black/[0.05] hover:bg-black/[0.1] text-neutral-700'
+                  ? 'bg-white/[0.04] hover:bg-white/[0.09] border-white/[0.12] text-neutral-300'
+                  : 'bg-black/[0.03] hover:bg-black/[0.07] border-black/[0.12] text-neutral-700'
               }`}
               title="Open Study Tools"
+              aria-label="Open Study Tools"
             >
               <Plus className="w-3.5 h-3.5" />
             </button>
@@ -2192,6 +2220,8 @@ ${fullTranscriptText}`;
                 <button
                   type="button"
                   onClick={() => setPodcastOpen(false)}
+                  aria-label="Close audio summary player"
+                  title="Close audio summary player"
                   className="p-1 rounded-lg opacity-60 hover:opacity-100 cursor-pointer"
                 >
                   <X className="w-3.5 h-3.5" />
@@ -2312,11 +2342,11 @@ ${fullTranscriptText}`;
                         Live Transcript Ready ({segments.length} sections) — Click any timestamp to seek video
                       </span>
                     </div>
-                    <div className="max-h-80 overflow-y-auto space-y-2.5 pr-1">
-                      {segments.slice(0, 12).map((seg, idx) => (
+                    <div className="space-y-2.5 overflow-visible">
+                      {segments.slice(0, 6).map((seg, idx) => (
                         <div
                           key={idx}
-                          className={`p-3 rounded-xl border text-xs leading-relaxed flex items-start gap-3 ${
+                          className={`p-3.5 rounded-xl border text-xs leading-relaxed flex items-start gap-3 overflow-visible ${
                             isDark ? 'bg-white/[0.02] border-white/[0.06]' : 'bg-black/[0.02] border-black/[0.06]'
                           }`}
                         >
@@ -2327,7 +2357,7 @@ ${fullTranscriptText}`;
                           >
                             {formatTime(seg.start_s)}
                           </button>
-                          <p className={isDark ? 'text-neutral-300' : 'text-neutral-700'}>{seg.text}</p>
+                          <p className={`flex-1 break-words ${isDark ? 'text-neutral-300' : 'text-neutral-700'}`}>{seg.text}</p>
                         </div>
                       ))}
                     </div>
@@ -2393,6 +2423,8 @@ ${fullTranscriptText}`;
                   <button
                     type="button"
                     onClick={() => setFocusedModuleView(null)}
+                    aria-label="Close lesson module view"
+                    title="Close lesson module view"
                     className="p-1 rounded-lg opacity-60 hover:opacity-100 cursor-pointer"
                   >
                     <X className="w-4 h-4" />
@@ -2556,7 +2588,7 @@ ${fullTranscriptText}`;
                               }`}
                             >
                               <div
-                                className={`size-9 rounded-xl flex items-center justify-center shrink-0 ${iconBoxClass}`}
+                                className={`size-9 rounded-full flex items-center justify-center shrink-0 ${iconBoxClass}`}
                               >
                                 <Icon className="w-4 h-4" />
                               </div>
@@ -2622,7 +2654,7 @@ ${fullTranscriptText}`;
                                       setAutoPlayVideo(true);
                                     }
                                   }}
-                                  className={`flex-1 py-1.5 px-3 rounded-xl border text-xs font-medium inline-flex items-center justify-center gap-1.5 cursor-pointer ${borderSubtle}`}
+                                  className={`flex-1 py-1.5 px-3 rounded-full border text-xs font-medium inline-flex items-center justify-center gap-1.5 cursor-pointer ${borderSubtle}`}
                                 >
                                   <Play className="w-3 h-3" />
                                   <span>Watch</span>
@@ -2633,7 +2665,7 @@ ${fullTranscriptText}`;
                                     onClick={() =>
                                       loadYouTubeSource(vid.videoId!, vid.title, vid.author)
                                     }
-                                    className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-medium inline-flex items-center justify-center gap-1.5 cursor-pointer ${
+                                    className={`flex-1 py-1.5 px-3 rounded-full text-xs font-medium inline-flex items-center justify-center gap-1.5 cursor-pointer ${
                                       isDark
                                         ? 'bg-white text-black hover:bg-neutral-200'
                                         : 'bg-black text-white hover:bg-neutral-800'
@@ -2710,7 +2742,7 @@ ${fullTranscriptText}`;
                               >
                                 <div className="flex items-center gap-3 min-w-0">
                                   <div
-                                    className={`size-9 rounded-xl flex items-center justify-center shrink-0 ${iconBoxClass}`}
+                                    className={`size-9 rounded-full flex items-center justify-center shrink-0 ${iconBoxClass}`}
                                   >
                                     <Icon className="w-4 h-4" />
                                   </div>
@@ -2735,7 +2767,7 @@ ${fullTranscriptText}`;
                                         prev === setItem.id ? null : setItem.id
                                       )
                                     }
-                                    className="p-1.5 rounded-lg opacity-60 hover:opacity-100 cursor-pointer"
+                                    className="p-1.5 rounded-full opacity-60 hover:opacity-100 cursor-pointer"
                                   >
                                     <MoreVertical className="w-4 h-4" />
                                   </button>
@@ -2791,7 +2823,7 @@ ${fullTranscriptText}`;
                           openOrFocusTab('chat', 'Tutor');
                           handleSendStudyChat();
                         }}
-                        className={`max-w-2xl mx-auto pointer-events-auto flex items-center justify-between gap-2 pl-4 pr-2 py-2 rounded-2xl border shadow-lg ${
+                        className={`max-w-2xl mx-auto pointer-events-auto flex items-center justify-between gap-2 pl-4 pr-2 py-2 rounded-full border shadow-lg ${
                           isDark
                             ? 'bg-[#121215]/95 border-white/[0.12] text-white'
                             : 'bg-white/95 border-black/[0.12] text-black'
@@ -2806,7 +2838,7 @@ ${fullTranscriptText}`;
                         />
                         <button
                           type="submit"
-                          className={`size-9 rounded-xl flex items-center justify-center cursor-pointer shrink-0 ${
+                          className={`size-9 rounded-full flex items-center justify-center cursor-pointer shrink-0 ${
                             isDark ? 'bg-white text-black' : 'bg-black text-white'
                           }`}
                         >
@@ -2821,20 +2853,20 @@ ${fullTranscriptText}`;
                 {/* TAB 2: SUMMARY (Clean, Simple, Usable + Fetched Videos)     */}
                 {/* =========================================================== */}
                 {activeTabObj?.type === 'summary' && studyBundle && (
-                  <div className="max-w-3xl mx-auto px-4 sm:px-6 py-5 space-y-7 pb-24">
+                  <div className="max-w-3xl mx-auto px-4 sm:px-6 py-5 space-y-6 pb-8">
                     {/* Header & Actions */}
                     <div
                       className={`flex flex-wrap items-center justify-between gap-2 pb-4 border-b ${borderSubtle}`}
                     >
-                      <h2 className="text-lg sm:text-xl font-bold tracking-tight">
+                      <h2 className="text-base sm:text-lg font-semibold tracking-tight">
                         {resolvedTitle}
                       </h2>
 
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5">
                         <button
                           type="button"
                           onClick={handleToggleListenSummary}
-                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-medium cursor-pointer ${borderSubtle}`}
+                          className={`h-8 inline-flex items-center gap-1.5 px-3.5 rounded-full border text-xs font-medium cursor-pointer ${borderSubtle}`}
                         >
                           {isListeningSummary ? (
                             <VolumeX className="w-3.5 h-3.5" />
@@ -2847,7 +2879,7 @@ ${fullTranscriptText}`;
                         <button
                           type="button"
                           onClick={() => setIsEditingSummary((e) => !e)}
-                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-medium cursor-pointer ${borderSubtle}`}
+                          className={`h-8 inline-flex items-center gap-1.5 px-3.5 rounded-full border text-xs font-medium cursor-pointer ${borderSubtle}`}
                         >
                           <Pencil className="w-3.5 h-3.5" />
                           <span>{isEditingSummary ? 'Done' : 'Edit'}</span>
@@ -2856,7 +2888,7 @@ ${fullTranscriptText}`;
                         <button
                           type="button"
                           onClick={handleExportStudyPack}
-                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-medium cursor-pointer ${borderSubtle}`}
+                          className={`h-8 inline-flex items-center gap-1.5 px-3.5 rounded-full border text-xs font-medium cursor-pointer ${borderSubtle}`}
                         >
                           <Download className="w-3.5 h-3.5" />
                           <span>Export</span>
@@ -2869,10 +2901,10 @@ ${fullTranscriptText}`;
                         rows={18}
                         value={editableSummaryText}
                         onChange={(e) => setEditableSummaryText(e.target.value)}
-                        className={`w-full p-4 rounded-2xl border text-sm leading-relaxed outline-none ${bgCard}`}
+                        className={`w-full p-4 rounded-xl border text-sm leading-relaxed outline-none ${bgCard}`}
                       />
                     ) : (
-                      <div className="space-y-7">
+                      <div className="space-y-6">
                         {/* Overview */}
                         <section className="space-y-2.5">
                           <h3 className="text-sm font-semibold">Overview</h3>
@@ -2880,34 +2912,6 @@ ${fullTranscriptText}`;
                             {studyBundle.summary.overview}
                           </p>
                         </section>
-
-                        {/* When studying a direct YouTube link/ID: Show player prompt if drawer is closed, NEVER show 10+ random related videos */}
-                        {sourceType === 'youtube' && activeVideoId && !showSourceViewer && (
-                          <div className={`p-4 rounded-2xl border flex items-center justify-between gap-3 ${bgCard}`}>
-                            <div className="flex items-center gap-3 min-w-0">
-                              <div className="size-9 rounded-xl flex items-center justify-center shrink-0 bg-red-600 text-white">
-                                <Video className="w-4 h-4" />
-                              </div>
-                              <div className="min-w-0">
-                                <div className="text-xs sm:text-sm font-medium truncate">{resolvedTitle}</div>
-                                <div className={`text-[11px] truncate ${textMuted}`}>{resolvedAuthor || 'YouTube Video'}</div>
-                              </div>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setShowSourceViewer(true);
-                                setAutoPlayVideo(true);
-                              }}
-                              className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer ${
-                                isDark ? 'bg-white text-black' : 'bg-black text-white'
-                              }`}
-                            >
-                              <Play className="w-3.5 h-3.5" />
-                              <span>Watch Video</span>
-                            </button>
-                          </div>
-                        )}
 
                         {/* Related YouTube Videos + Live Web Search Backend — ONLY for general topic queries */}
                         {sourceType === 'topic' && (
@@ -4004,7 +4008,7 @@ ${fullTranscriptText}`;
                 {/* TAB 7: TRANSCRIPTS                                          */}
                 {/* =========================================================== */}
                 {activeTabObj?.type === 'transcripts' && (
-                  <div className="max-w-3xl mx-auto px-4 sm:px-6 py-5 space-y-5 pb-20">
+                  <div className="max-w-3xl mx-auto px-4 sm:px-6 py-5 space-y-5 pb-8">
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
                         <h2 className="text-base sm:text-lg font-semibold">Transcript</h2>
@@ -4653,7 +4657,7 @@ ${fullTranscriptText}`;
                               <button
                                 type="button"
                                 onClick={() => setShowAtMenu((s) => !s)}
-                                className={`size-8 rounded-xl border flex items-center justify-center cursor-pointer ${borderSubtle}`}
+                                className={`size-8 rounded-full border flex items-center justify-center cursor-pointer ${borderSubtle}`}
                                 title="Add @Mind Map or @Flow Chart"
                               >
                                 <AtSign className="w-3.5 h-3.5" />
@@ -4662,7 +4666,7 @@ ${fullTranscriptText}`;
                               <button
                                 type="button"
                                 onClick={() => setStudyModeEnabled((s) => !s)}
-                                className={`px-3 py-1 rounded-xl border text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer ${
+                                className={`px-3 py-1 rounded-full border text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer ${
                                   studyModeEnabled
                                     ? isDark
                                       ? 'bg-white/[0.12] border-white/30 text-white'
@@ -4677,7 +4681,7 @@ ${fullTranscriptText}`;
                               <button
                                 type="button"
                                 onClick={() => fileInputRef.current?.click()}
-                                className="size-8 rounded-xl flex items-center justify-center opacity-65 hover:opacity-100 cursor-pointer"
+                                className="size-8 rounded-full flex items-center justify-center opacity-65 hover:opacity-100 cursor-pointer"
                                 title="Attach PDF or file"
                               >
                                 <Paperclip className="w-3.5 h-3.5" />
@@ -4687,7 +4691,7 @@ ${fullTranscriptText}`;
                             <button
                               type="button"
                               onClick={() => handleSendStudyChat()}
-                              className={`size-9 rounded-xl flex items-center justify-center cursor-pointer ${
+                              className={`size-9 rounded-full flex items-center justify-center cursor-pointer ${
                                 isDark ? 'bg-white text-black' : 'bg-black text-white'
                               }`}
                             >

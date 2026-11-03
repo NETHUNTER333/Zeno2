@@ -75,12 +75,19 @@ export function resolveLegalOr404Route(pathname: string): LegalPageRoute | null 
     clean === '/login' ||
     clean === '/signup' ||
     clean === '/chat' ||
+    clean.startsWith('/chat/') ||
     clean === '/study' ||
+    clean.startsWith('/study/') ||
     clean === '/research' ||
+    clean.startsWith('/research/') ||
     clean === '/pricing' ||
+    clean.startsWith('/pricing/') ||
     clean === '/discover' ||
+    clean.startsWith('/discover/') ||
     clean === '/account' ||
+    clean.startsWith('/account/') ||
     clean === '/settings' ||
+    clean.startsWith('/settings/') ||
     clean.startsWith('/r/') ||
     clean.startsWith('/invite/') ||
     clean.startsWith('/share/') ||
@@ -363,83 +370,95 @@ export const CookieConsentBanner: React.FC<{
     <div
       role="region"
       aria-label="Cookie and local storage notice"
-      className="fixed bottom-3 left-3 right-3 sm:left-auto sm:right-5 sm:max-w-md z-50"
+      className="fixed bottom-24 left-3 sm:bottom-4 sm:left-4 max-w-[310px] sm:max-w-xs z-30 pointer-events-auto"
     >
       <div
-        className={`rounded-2xl border p-4 shadow-2xl backdrop-blur-xl transition-all ${
+        className={`rounded-2xl border p-3 shadow-lg backdrop-blur-xl transition-all ${
           isDark
             ? 'bg-[#111114]/95 border-white/15 text-white'
-            : 'bg-white/95 border-black/15 text-[#09090b]'
+            : 'bg-white/98 border-black/15 text-[#09090b]'
         }`}
       >
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <Cookie className="w-4 h-4 text-[#FC4C01] shrink-0" />
-            <span className="text-xs font-semibold tracking-tight">
-              Cookies &amp; Local Storage Notice
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <Cookie className="w-3.5 h-3.5 text-[#FC4C01] shrink-0" />
+            <span className="text-[11.5px] font-semibold tracking-tight truncate">
+              Cookies &amp; Storage
             </span>
           </div>
-          <a
-            href="/cookies"
-            onClick={(e) => {
-              e.preventDefault();
-              navigateToLegalRoute('/cookies', onNavigate);
-            }}
-            className="text-[11px] font-medium text-[#FC4C01] hover:underline"
-          >
-            Cookie Policy
-          </a>
+          <div className="flex items-center gap-2 shrink-0">
+            <a
+              href="/cookies"
+              onClick={(e) => {
+                e.preventDefault();
+                navigateToLegalRoute('/cookies', onNavigate);
+              }}
+              className="text-[10.5px] font-medium text-[#FC4C01] hover:underline"
+            >
+              Policy
+            </a>
+            <button
+              type="button"
+              onClick={() => setCookiePreference('essential')}
+              aria-label="Dismiss cookie notice"
+              className={`p-0.5 rounded-md transition-colors cursor-pointer ${
+                isDark ? 'text-white/55 hover:text-white' : 'text-black/55 hover:text-black'
+              }`}
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
 
-        <p className={`mt-2 text-xs leading-relaxed ${isDark ? 'text-white/70' : 'text-black/70'}`}>
-          We use strictly necessary storage for authentication, workspace history, and security quotas, plus optional functional storage for referral attribution. We use zero advertising trackers.
+        <p className={`mt-1.5 text-[11px] leading-snug ${isDark ? 'text-white/70' : 'text-black/70'}`}>
+          Essential storage powers auth &amp; study history; optional storage tracks referrals. Zero ad trackers.
         </p>
 
         {showManage && (
           <div
-            className={`mt-3 rounded-xl border p-3 space-y-2.5 text-xs ${
+            className={`mt-2.5 rounded-xl border p-2.5 space-y-2 text-[11px] ${
               isDark ? 'border-white/10 bg-white/[0.03]' : 'border-black/10 bg-black/[0.03]'
             }`}
           >
             <div className="flex items-center justify-between gap-2">
               <div>
-                <div className="font-semibold">Strictly Necessary Storage</div>
-                <div className={`text-[11px] ${isDark ? 'text-white/55' : 'text-black/55'}`}>
-                  Auth session, chat/study workspace, consent &amp; quota state
+                <div className="font-semibold">Strictly Necessary</div>
+                <div className={`text-[10px] ${isDark ? 'text-white/55' : 'text-black/55'}`}>
+                  Auth, workspace &amp; quota state
                 </div>
               </div>
-              <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded border border-emerald-500/30 text-emerald-400">
-                Always Active
+              <span className="text-[9.5px] font-mono uppercase px-1.5 py-0.5 rounded border border-emerald-500/30 text-emerald-500">
+                Active
               </span>
             </div>
-            <div className="flex items-center justify-between gap-2 pt-2 border-t border-white/10">
+            <div className={`flex items-center justify-between gap-2 pt-2 border-t ${isDark ? 'border-white/10' : 'border-black/10'}`}>
               <div>
-                <div className="font-semibold">Functional Referral Storage</div>
-                <div className={`text-[11px] ${isDark ? 'text-white/55' : 'text-black/55'}`}>
-                  Remembers referral codes (`zeno_referral_state_v1`)
+                <div className="font-semibold">Referral Storage</div>
+                <div className={`text-[10px] ${isDark ? 'text-white/55' : 'text-black/55'}`}>
+                  Remembers referral codes
                 </div>
               </div>
               <input
                 type="checkbox"
                 checked={functionalEnabled}
                 onChange={(e) => setFunctionalEnabled(e.target.checked)}
-                className="h-4 w-4 accent-[#FC4C01] rounded cursor-pointer"
+                className="h-3.5 w-3.5 accent-[#FC4C01] rounded cursor-pointer"
               />
             </div>
           </div>
         )}
 
-        <div className="mt-3.5 grid grid-cols-3 gap-2">
+        <div className="mt-2.5 grid grid-cols-3 gap-1.5">
           <button
             type="button"
             onClick={() => setCookiePreference('essential')}
-            className={`px-3 py-2 rounded-xl border text-xs font-semibold cursor-pointer transition-colors ${
+            className={`px-2 py-1.5 rounded-lg border text-[11px] font-semibold cursor-pointer transition-colors ${
               isDark
                 ? 'border-white/20 bg-white/5 hover:bg-white/10 text-white'
                 : 'border-black/20 bg-black/5 hover:bg-black/10 text-black'
             }`}
           >
-            Essential Only
+            Essential
           </button>
           <button
             type="button"
@@ -450,18 +469,18 @@ export const CookieConsentBanner: React.FC<{
                 setShowManage(true);
               }
             }}
-            className={`px-3 py-2 rounded-xl border text-xs font-semibold cursor-pointer transition-colors ${
+            className={`px-2 py-1.5 rounded-lg border text-[11px] font-semibold cursor-pointer transition-colors ${
               isDark
                 ? 'border-white/20 bg-white/5 hover:bg-white/10 text-white/85'
                 : 'border-black/20 bg-black/5 hover:bg-black/10 text-black/85'
             }`}
           >
-            {showManage ? 'Save Choice' : 'Manage'}
+            {showManage ? 'Save' : 'Manage'}
           </button>
           <button
             type="button"
             onClick={() => setCookiePreference('all')}
-            className="px-3 py-2 rounded-xl bg-[#FC4C01] hover:bg-[#e04300] text-white text-xs font-semibold cursor-pointer transition-colors"
+            className="px-2 py-1.5 rounded-lg bg-[#FC4C01] hover:bg-[#e04300] text-white text-[11px] font-semibold cursor-pointer transition-colors"
           >
             Accept All
           </button>

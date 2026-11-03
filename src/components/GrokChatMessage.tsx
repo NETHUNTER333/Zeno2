@@ -214,10 +214,15 @@ const preprocessMessageContent = (content: string): string => {
       );
       processed = processed.replace(/\[FETCHED LIVE IMAGES[^\]]*\]:?/gi, '');
 
-      // Convert standalone citations [1], [2], [1, 2], [2][3] into markdown links so ReactMarkdown triggers interactive WebSearchCitation
+      // Convert standalone citations [1], [2], [1, 2], [2][3] into markdown links glued with non-breaking space so a citation chip never wraps onto its own line
       processed = processed.replace(/\[(\d{1,2}(?:\s*,\s*\d{1,2})+)\](?!\()/g, (_, nums) =>
-        nums.split(',').map((n: string) => `[${n.trim()}](#cite-${n.trim()})`).join(' ')
+        nums
+          .split(',')
+          .map((n: string) => `[${n.trim()}](#cite-${n.trim()})`)
+          .join('\u00A0')
       );
+      processed = processed.replace(/\]\s+\[(\d{1,2})\](?!\()/g, ']\u00A0[$1](#cite-$1)');
+      processed = processed.replace(/(\S)[ \t]+\[(\d{1,2})\](?!\()/g, '$1\u00A0[$2](#cite-$2)');
       processed = processed.replace(/\[(\d{1,2})\](?!\()/g, '[$1](#cite-$1)');
       return processed;
     })
@@ -1461,17 +1466,33 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                   rehypePlugins={[rehypeRaw, rehypeKatex]}
                 components={{
                   a: ({ node, href, children, ...props }) => {
-                    const textStr = String(children || '').trim();
-                    const citeMatch =
-                      textStr.match(/^\[?(\d+)\]?$/) ||
-                      (href ? href.match(/^#cite-(\d+)$/) : null);
+                    const flatText = React.Children.toArray(children)
+                      .map((c) => (typeof c === 'string' || typeof c === 'number' ? String(c) : ''))
+                      .join('')
+                      .trim();
+                    const hrefCiteMatch = href ? href.match(/^#cite-(\d+)$/) : null;
+                    const textCiteMatch = flatText.match(/^\[?(\d{1,2})\]?$/);
+                    const citeMatch = hrefCiteMatch || textCiteMatch;
+
+                    const allAvailableSources =
+                      message.sources && message.sources.length > 0
+                        ? message.sources
+                        : (message.arxivPapers || []).map((p, idx) => ({
+                            title: p.title,
+                            url: p.pdfUrl || (p as any).absUrl || (p as any).link || '',
+                            domain: 'arxiv.org',
+                            snippet: p.summary,
+                            position: idx + 1,
+                          }));
+
                     if (citeMatch) {
                       const num = parseInt(citeMatch[1], 10);
-                      if (message.sources && message.sources.length > 0) {
+                      if (allAvailableSources.length > 0) {
                         const src =
-                          message.sources[num - 1] ||
-                          message.sources.find((s) => s.url === href) ||
-                          message.sources[(num - 1) % message.sources.length];
+                          allAvailableSources.find((s, idx) => (s.position || idx + 1) === num) ||
+                          allAvailableSources[num - 1] ||
+                          allAvailableSources.find((s) => s.url === href) ||
+                          allAvailableSources[(num - 1) % allAvailableSources.length];
                         if (src) {
                           return (
                             <WebSearchCitation
@@ -1487,12 +1508,12 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                     }
 
                     // Check if href or cite link matches a known web search source
-                    if (href && message.sources && message.sources.length > 0) {
-                      const matchedIdx = message.sources.findIndex(
+                    if (href && allAvailableSources.length > 0) {
+                      const matchedIdx = allAvailableSources.findIndex(
                         (s, idx) => s.url === href || href === `#cite-${s.position || idx + 1}`
                       );
                       if (matchedIdx !== -1) {
-                        const matched = message.sources[matchedIdx];
+                        const matched = allAvailableSources[matchedIdx];
                         return (
                           <WebSearchCitation
                             source={matched}

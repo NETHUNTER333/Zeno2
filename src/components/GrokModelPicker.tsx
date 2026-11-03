@@ -937,16 +937,8 @@ export const GrokModelPicker: React.FC<GrokModelPickerProps> = ({
         type="button"
         onClick={() => setIsOpen(!isOpen)}
         className={`${triggerClasses} max-w-[155px] sm:max-w-[215px]`}
-        title={`${current.name} • ${currentTheme.name}`}
+        title={current.name}
       >
-        <span
-          className="w-2.5 h-2.5 rounded-full shrink-0 shadow-xs transition-transform duration-300"
-          style={{
-            background: currentTheme.swatchGradient,
-            boxShadow: `0 0 7px ${currentTheme.glowRgba}`,
-          }}
-          aria-hidden="true"
-        />
         <span className="font-medium text-[11px] tracking-tight truncate">{current.name}</span>
         <ChevronDown
           className={`w-3 h-3 shrink-0 transition-transform duration-150 ${
@@ -1044,15 +1036,6 @@ export const GrokModelPicker: React.FC<GrokModelPickerProps> = ({
                     }`}
                   >
                     <div className="flex items-center gap-2 min-w-0 flex-1">
-                      <span
-                        className="w-3 h-3 rounded-full shrink-0 border border-black/10 dark:border-white/20 shadow-2xs transition-transform group-hover:scale-110"
-                        style={{
-                          background: itemTheme.swatchGradient,
-                          boxShadow: isSelected ? `0 0 7px ${itemTheme.glowRgba}` : undefined,
-                        }}
-                        title={itemTheme.name}
-                        aria-hidden="true"
-                      />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5 min-w-0">
                           <span

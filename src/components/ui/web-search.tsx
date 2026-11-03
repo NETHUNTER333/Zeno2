@@ -211,7 +211,33 @@ function WebSearch({
   const reduced = !!useReducedMotion();
   const [openState, setOpenState] = useState(defaultOpen);
   const [expanded, setExpanded] = useState(false);
+  const [highlightedSourceKey, setHighlightedSourceKey] = useState<string | null>(null);
   const [measureRef, labelWidth] = useSize<HTMLSpanElement>("width");
+
+  useEffect(() => {
+    const onHighlight = (e: Event) => {
+      const detail = (e as CustomEvent<{ url?: string; index?: number; active?: boolean }>).detail;
+      if (!detail || detail.active === false) {
+        setHighlightedSourceKey(null);
+        return;
+      }
+      const matchIdx = sources.findIndex(
+        (s, idx) =>
+          (detail.index !== undefined && (s.position ?? idx + 1) === detail.index) ||
+          (detail.url && s.url === detail.url)
+      );
+      if (matchIdx !== -1) {
+        const key = String(sources[matchIdx].position ?? matchIdx + 1);
+        setHighlightedSourceKey(key);
+        if (open === undefined) setOpenState(true);
+        if (matchIdx >= COLUMNS - 1) {
+          setExpanded(true);
+        }
+      }
+    };
+    window.addEventListener("zeno-highlight-source", onHighlight);
+    return () => window.removeEventListener("zeno-highlight-source", onHighlight);
+  }, [sources, open]);
 
   const searching = status === "searching";
   const isOpen = open ?? openState;
@@ -347,6 +373,7 @@ function WebSearch({
                       source={source}
                       index={source.position ?? i + 1}
                       linked={linked}
+                      highlighted={highlightedSourceKey === String(source.position ?? i + 1)}
                       onSelect={onSelectCitation}
                     />,
                   ),
@@ -453,17 +480,21 @@ function SourceCard({
   source,
   index,
   linked,
+  highlighted = false,
   onSelect,
 }: {
   source: WebSource;
   index: number;
   linked: boolean;
+  highlighted?: boolean;
   onSelect?: (source: WebSearchSource) => void;
 }) {
   const isGitHub = Boolean(extractGitHubUsername(source.url));
   return (
     <a
+      id={`source-card-${index}`}
       data-slot="web-search-source"
+      data-source-index={index}
       {...linkTo(source.url, linked && !(isGitHub && onSelect))}
       onClick={(e) => {
         if ((!linked || isGitHub) && onSelect) {
@@ -475,6 +506,8 @@ function SourceCard({
       className={cn(
         CARD_SHELL,
         "group justify-between",
+        highlighted &&
+          "!border-[#FC4C01] ring-2 ring-[#FC4C01]/35 bg-[#FC4C01]/[0.04] dark:bg-[#FC4C01]/[0.08]",
         !linked && !onSelect && "cursor-default",
       )}
     >
@@ -486,7 +519,14 @@ function SourceCard({
         <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-[#71717a]">
           {siteName(source.url, source.domain)}
         </span>
-        <span className="rounded-full bg-[#f4f4f5] px-1.5 py-0.5 text-[10px] font-mono font-semibold tabular-nums text-[#52525b] dark:bg-white/[0.08] dark:text-white/80">
+        <span
+          className={cn(
+            "rounded-full px-1.5 py-0.5 text-[10px] font-mono font-semibold tabular-nums transition-colors",
+            highlighted
+              ? "bg-[#FC4C01] text-white"
+              : "bg-[#f4f4f5] text-[#52525b] dark:bg-white/[0.08] dark:text-white/80",
+          )}
+        >
           {index}
         </span>
       </span>
@@ -794,20 +834,43 @@ function WebSearchCitation({
   const { active: open, set, hover } = useHoverIntent(PREVIEW_DELAY);
   const ghUser = extractGitHubUsername(source.url);
 
+  const notifySourceHighlight = (active: boolean) => {
+    if (typeof window === "undefined") return;
+    window.dispatchEvent(
+      new CustomEvent("zeno-highlight-source", {
+        detail: { url: source.url, index, active },
+      })
+    );
+  };
+
   return (
     <span
       data-slot="web-search-citation"
-      className={cn("relative inline-flex align-baseline mx-0.5", className)}
-      {...hover}
-      onFocus={(event) =>
-        event.target.matches(":focus-visible") && set(true, 0)
-      }
-      onBlur={() => set(false, 0)}
+      className={cn("relative inline-flex align-baseline mx-0.5 whitespace-nowrap", className)}
+      onPointerEnter={(event) => {
+        hover.onPointerEnter(event);
+        notifySourceHighlight(true);
+      }}
+      onPointerLeave={() => {
+        hover.onPointerLeave();
+        notifySourceHighlight(false);
+      }}
+      onFocus={(event) => {
+        if (event.target.matches(":focus-visible")) {
+          set(true, 0);
+          notifySourceHighlight(true);
+        }
+      }}
+      onBlur={() => {
+        set(false, 0);
+        notifySourceHighlight(false);
+      }}
       {...props}
     >
       <a
         {...linkTo(source.url, linked && !(ghUser && onOpenModal))}
         onClick={(e) => {
+          notifySourceHighlight(true);
           if (ghUser && onOpenModal) {
             e.preventDefault();
             e.stopPropagation();
@@ -818,15 +881,15 @@ function WebSearchCitation({
         aria-label={`${source.title}, ${hostOf(source.url)}`}
         className={cn(
           !linked && "cursor-default",
-          "citation-badge inline-flex h-[19px] -translate-y-px items-center gap-1 rounded-full bg-[#F4F4F9] pl-[3px] pr-1.5 font-sans text-[11px] font-semibold leading-none text-[#868593] !no-underline outline-none transition-colors hover:bg-white hover:text-black hover:shadow-[0_1px_3px_rgba(0,0,0,0.1)] dark:hover:shadow-none focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#868593] dark:bg-[#1C1C1C] dark:hover:bg-[#2A2A2A] dark:hover:text-white",
+          "citation-badge whitespace-nowrap inline-flex h-[19px] -translate-y-px items-center gap-1 rounded-full bg-[#F4F4F9] pl-[3px] pr-1.5 font-sans text-[11px] font-semibold leading-none text-[#868593] !no-underline outline-none transition-colors hover:bg-[#FC4C01]/10 hover:text-[#FC4C01] hover:ring-1 hover:ring-[#FC4C01]/40 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FC4C01] dark:bg-[#1C1C1C] dark:hover:bg-[#FC4C01]/15 dark:hover:text-[#FC4C01]",
           open &&
-            "bg-white text-black shadow-[0_1px_3px_rgba(0,0,0,0.1)] dark:bg-[#2A2A2A] dark:text-white dark:shadow-none",
+            "bg-[#FC4C01]/10 text-[#FC4C01] ring-1 ring-[#FC4C01]/40 dark:bg-[#FC4C01]/15 dark:text-[#FC4C01]",
         )}
       >
         <Favicon source={source} size={14} />
-        <span>{siteName(source.url, source.domain)}</span>
+        <span className="whitespace-nowrap">{siteName(source.url, source.domain)}</span>
         {index !== undefined && (
-          <span className="tabular-nums opacity-60">{index}</span>
+          <span className="tabular-nums opacity-75">{index}</span>
         )}
       </a>
 

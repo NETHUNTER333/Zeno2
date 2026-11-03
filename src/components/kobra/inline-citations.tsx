@@ -28,9 +28,38 @@ export const InlineCitation: React.FC<InlineCitationProps> = ({
 
   if (!source) {
     return (
-      <span className="inline-flex text-[10px] font-mono text-muted-foreground align-super px-0.5">
+      <button
+        type="button"
+        onClick={() => {
+          window.dispatchEvent(
+            new CustomEvent('zeno-highlight-source', {
+              detail: { index, active: true },
+            })
+          );
+          const cardEl = document.getElementById(`source-card-${index}`);
+          if (cardEl) {
+            cardEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }
+        }}
+        onMouseEnter={() => {
+          window.dispatchEvent(
+            new CustomEvent('zeno-highlight-source', {
+              detail: { index, active: true },
+            })
+          );
+        }}
+        onMouseLeave={() => {
+          window.dispatchEvent(
+            new CustomEvent('zeno-highlight-source', {
+              detail: { index, active: false },
+            })
+          );
+        }}
+        aria-label={`Highlight source ${index}`}
+        className="inline-flex whitespace-nowrap items-center justify-center h-4.5 min-w-[18px] px-1.5 rounded-full text-[10px] font-mono font-bold align-super mx-0.5 cursor-pointer transition-colors bg-[#FC4C01]/10 text-[#FC4C01] border border-[#FC4C01]/30 hover:bg-[#FC4C01] hover:text-white"
+      >
         [{index}]
-      </span>
+      </button>
     );
   }
 
@@ -45,24 +74,48 @@ export const InlineCitation: React.FC<InlineCitationProps> = ({
   };
 
   return (
-    <span ref={containerRef} className="relative inline-block align-super mx-0.5 select-none">
-      <button
-        type="button"
+    <span
+      ref={containerRef}
+      onMouseEnter={() => {
+        setIsOpen(true);
+        window.dispatchEvent(
+          new CustomEvent('zeno-highlight-source', {
+            detail: { url: source.url, index, active: true },
+          })
+        );
+      }}
+      onMouseLeave={() => {
+        setIsOpen(false);
+        window.dispatchEvent(
+          new CustomEvent('zeno-highlight-source', {
+            detail: { url: source.url, index, active: false },
+          })
+        );
+      }}
+      className="relative inline-block whitespace-nowrap align-super mx-0.5 select-none"
+    >
+      <a
+        href={source.url}
+        target="_blank"
+        rel="noopener noreferrer"
         onClick={(e) => {
-          e.preventDefault();
           e.stopPropagation();
-          setIsOpen(!isOpen);
+          window.dispatchEvent(
+            new CustomEvent('zeno-highlight-source', {
+              detail: { url: source.url, index, active: true },
+            })
+          );
         }}
-        className={`inline-flex items-center justify-center h-4.5 min-w-[18px] px-1.5 rounded-full text-[10px] font-mono font-bold transition-all cursor-pointer border align-super hover:scale-105 shadow-2xs ${
+        className={`inline-flex whitespace-nowrap items-center justify-center h-4.5 min-w-[18px] px-1.5 rounded-full text-[10px] font-mono font-bold transition-all cursor-pointer border align-super hover:scale-105 !no-underline shadow-2xs ${
           isDark
-            ? 'bg-[#1e1e24] border-white/20 text-neutral-100 hover:text-white hover:border-white/40'
-            : 'bg-neutral-100 border-neutral-300 text-neutral-950 hover:bg-neutral-200 hover:border-neutral-400'
+            ? 'bg-[#1e1e24] border-white/20 text-neutral-100 hover:bg-[#FC4C01]/20 hover:text-[#FC4C01] hover:border-[#FC4C01]/50'
+            : 'bg-neutral-100 border-neutral-300 text-neutral-950 hover:bg-[#FC4C01]/15 hover:text-[#FC4C01] hover:border-[#FC4C01]/50'
         }`}
         title={`Citation [${index}]: ${source.title}`}
         aria-label={`Citation ${index}: ${source.title}`}
       >
         {index}
-      </button>
+      </a>
 
       {/* Small floating popover card anchored directly to the citation badge */}
       {isOpen && (

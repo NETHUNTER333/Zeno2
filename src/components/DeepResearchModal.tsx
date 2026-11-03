@@ -725,7 +725,9 @@ ${sourceContext ? `Grounding Sources:\n${sourceContext}\n` : ''}`;
 
   // Render inline text with KaTeX math ($$...$$ only, never single-$ currency), **bold**, and [1] or [1,3] numbered citation chips
   const renderRichLine = (lineText: string, lineKey: string, turnSources: AnswerSource[]) => {
-    const parts = lineText.split(/(\$\$[^\$\n]+\$\$|\*\*[^*]+\*\*|\[\d+(?:,\s*\d+)*\])/g);
+    // Glue spaces before inline citations [1] with a non-breaking space so citation chips never wrap onto their own line
+    const gluedLine = lineText.replace(/(\S)[ \t]+(\[\d+(?:,\s*\d+)*\])/g, '$1\u00A0$2');
+    const parts = gluedLine.split(/(\$\$[^\$\n]+\$\$|\*\*[^*]+\*\*|\[\d+(?:,\s*\d+)*\])/g);
 
     return parts.map((part, idx) => {
       if (!part) return null;
@@ -769,44 +771,50 @@ ${sourceContext ? `Grounding Sources:\n${sourceContext}\n` : ''}`;
         const isPreviewOpen = activeChipPreview?.anchorKey === anchorKey;
 
         return (
-          <span key={anchorKey} className="relative inline-block align-baseline mx-0.5">
-            <button
-              type="button"
-              onMouseEnter={() => setHoveredSourceIds(ids)}
-              onMouseLeave={() => setHoveredSourceIds([])}
+          <span key={anchorKey} className="relative inline-block whitespace-nowrap align-baseline mx-0.5">
+            <a
+              href={primarySource.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              onMouseEnter={(e) => {
+                setHoveredSourceIds(ids);
+                const rect = e.currentTarget.getBoundingClientRect();
+                setActiveChipPreview({
+                  ids,
+                  anchorKey,
+                  rect: {
+                    top: rect.top,
+                    bottom: rect.bottom,
+                    left: rect.left,
+                    right: rect.right,
+                    width: rect.width,
+                  },
+                });
+              }}
+              onMouseLeave={() => {
+                setHoveredSourceIds([]);
+                setActiveChipPreview(null);
+              }}
               onClick={(e) => {
                 e.stopPropagation();
-                const rect = e.currentTarget.getBoundingClientRect();
-                if (isPreviewOpen) {
-                  setActiveChipPreview(null);
-                } else {
-                  setActiveChipPreview({
-                    ids,
-                    anchorKey,
-                    rect: {
-                      top: rect.top,
-                      bottom: rect.bottom,
-                      left: rect.left,
-                      right: rect.right,
-                      width: rect.width,
-                    },
-                  });
+                setHoveredSourceIds(ids);
+                const cardEl = document.getElementById(`dr-source-card-${primarySource.id}`);
+                if (cardEl) {
+                  cardEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
                 }
               }}
               aria-label={`Source ${chipLabel}`}
-              className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10.5px] font-medium leading-tight transition-all cursor-pointer ${
+              className={`inline-flex whitespace-nowrap items-center gap-1 px-1.5 py-0.5 rounded text-[10.5px] font-medium leading-tight transition-all cursor-pointer !no-underline ${
                 isHighlighted || isPreviewOpen
-                  ? isDark
-                    ? 'bg-white text-black font-semibold'
-                    : 'bg-neutral-900 text-white font-semibold'
+                  ? 'bg-[#FC4C01] text-white font-semibold ring-1 ring-[#FC4C01]'
                   : isDark
-                  ? 'bg-white/[0.08] text-neutral-300 hover:bg-white/[0.15] hover:text-white'
-                  : 'bg-black/[0.06] text-neutral-700 hover:bg-black/[0.12] hover:text-black'
+                  ? 'bg-white/[0.08] text-neutral-300 hover:bg-[#FC4C01]/20 hover:text-[#FC4C01]'
+                  : 'bg-black/[0.06] text-neutral-700 hover:bg-[#FC4C01]/15 hover:text-[#FC4C01]'
               }`}
             >
               <span className="font-mono font-bold text-[10px] opacity-85">{numberBadge}</span>
-              <span>{primarySource.name}{extraCount}</span>
-            </button>
+              <span className="whitespace-nowrap">{primarySource.name}{extraCount}</span>
+            </a>
           </span>
         );
       }
@@ -1125,6 +1133,7 @@ ${sourceContext ? `Grounding Sources:\n${sourceContext}\n` : ''}`;
                             return (
                               <a
                                 key={src.id}
+                                id={`dr-source-card-${src.id}`}
                                 href={src.url}
                                 target="_blank"
                                 rel="noopener noreferrer"
@@ -1133,9 +1142,7 @@ ${sourceContext ? `Grounding Sources:\n${sourceContext}\n` : ''}`;
                                 style={{ animationDelay: `${idx * 30}ms` }}
                                 className={`w-36 sm:w-40 shrink-0 rounded-xl border p-2.5 flex flex-col justify-between gap-1.5 transition-all duration-150 animate-in fade-in slide-in-from-bottom-1 ${
                                   isCardHighlighted
-                                    ? isDark
-                                      ? 'bg-white/10 border-white/30'
-                                      : 'bg-black/10 border-black/30'
+                                    ? 'border-[#FC4C01] ring-2 ring-[#FC4C01]/35 bg-[#FC4C01]/10'
                                     : isDark
                                     ? 'bg-[#141418] border-white/[0.08] hover:border-white/[0.18] hover:bg-white/[0.04]'
                                     : 'bg-white border-black/[0.07] hover:border-black/[0.16] hover:bg-neutral-50 shadow-2xs'

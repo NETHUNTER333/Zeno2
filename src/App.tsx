@@ -538,7 +538,16 @@ export default function App() {
   });
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [currentView, setCurrentView] = useState<'chat' | 'account' | 'study'>('chat');
+  const [currentView, setCurrentView] = useState<'chat' | 'account' | 'study'>(() => {
+    if (typeof window !== 'undefined') {
+      const p = window.location.pathname.toLowerCase();
+      if (p === '/study' || p.startsWith('/study/')) return 'study';
+      if (p === '/account' || p.startsWith('/account/') || p === '/settings' || p.startsWith('/settings/')) {
+        return 'account';
+      }
+    }
+    return 'chat';
+  });
   const [activeStudyVideo, setActiveStudyVideo] = useState<YouTubeVideoInfo | null>(null);
   const [accountPageTab, setAccountPageTab] = useState<AccountTab>('profile');
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
@@ -597,7 +606,13 @@ export default function App() {
   }>({ isOpen: false, highlightPlan: 'spark', limitReason: null });
   const [sharedBannerId, setSharedBannerId] = useState<string | null>(null);
 
-  const [isSignedIn, setIsSignedIn] = useState(() => UserAccountStore.isUserSignedIn());
+  const [isSignedIn, setIsSignedIn] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const p = window.location.pathname.toLowerCase();
+      if (p === '/study' || p.startsWith('/study/')) return true;
+    }
+    return UserAccountStore.isUserSignedIn();
+  });
   const [legalOr404Route, setLegalOr404Route] = useState<LegalPageRoute | null>(() =>
     typeof window !== 'undefined' ? resolveLegalOr404Route(window.location.pathname) : null
   );
@@ -607,10 +622,23 @@ export default function App() {
     attachments: any[];
   } | null>(null);
 
+  const syncViewFromPathname = (pathname: string) => {
+    const clean = (pathname || '/').toLowerCase();
+    if (clean === '/study' || clean.startsWith('/study/')) {
+      setIsSignedIn(true);
+      setCurrentView('study');
+    } else if (clean === '/account' || clean.startsWith('/account/') || clean === '/settings' || clean.startsWith('/settings/')) {
+      setCurrentView('account');
+    } else if (clean === '/' || clean === '/chat' || clean.startsWith('/chat/')) {
+      setCurrentView('chat');
+    }
+  };
+
   const navigateRoute = (path: string) => {
     try {
       window.history.pushState({}, '', path);
       setLegalOr404Route(resolveLegalOr404Route(window.location.pathname));
+      syncViewFromPathname(window.location.pathname);
     } catch {
       window.location.href = path;
     }
@@ -619,6 +647,7 @@ export default function App() {
   useEffect(() => {
     const onPopState = () => {
       setLegalOr404Route(resolveLegalOr404Route(window.location.pathname));
+      syncViewFromPathname(window.location.pathname);
     };
     const onLegalNav = (e: Event) => {
       const targetPath = (e as CustomEvent)?.detail?.path;
@@ -1893,7 +1922,12 @@ export default function App() {
           {currentView === 'account' ? (
             <div className="flex-1 min-w-0 flex flex-col h-full overflow-hidden relative z-10">
               <AccountWorkspacePage
-                onBackToChat={() => setCurrentView('chat')}
+                onBackToChat={() => {
+                  if (typeof window !== 'undefined' && window.location.pathname !== '/') {
+                    window.history.pushState({}, '', '/');
+                  }
+                  setCurrentView('chat');
+                }}
                 initialTab={accountPageTab}
                 threads={threads}
                 theme={theme}
@@ -1914,9 +1948,17 @@ export default function App() {
             <div className="flex-1 min-w-0 flex flex-col h-full overflow-hidden relative z-10">
               <StudyWorkspace
                 initialVideo={activeStudyVideo}
-                onBackToChat={() => setCurrentView('chat')}
+                onBackToChat={() => {
+                  if (typeof window !== 'undefined' && window.location.pathname.startsWith('/study')) {
+                    window.history.pushState({}, '', '/');
+                  }
+                  setCurrentView('chat');
+                }}
                 isDark={isDark}
                 onAskZeno={(prompt) => {
+                  if (typeof window !== 'undefined' && window.location.pathname.startsWith('/study')) {
+                    window.history.pushState({}, '', '/');
+                  }
                   setCurrentView('chat');
                   handleSend(prompt);
                 }}
@@ -1993,6 +2035,9 @@ export default function App() {
                       }
                       UserAccountStore.recordPdfStudySession();
                       setActiveStudyVideo(null);
+                      if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/study')) {
+                        window.history.pushState({}, '', '/study');
+                      }
                       setCurrentView('study');
                     }}
                     className={`pointer-events-auto flex items-center gap-1.5 px-3 py-1.5 rounded-full border backdrop-blur-2xl backdrop-saturate-150 text-[11px] font-semibold tracking-tight transition-all cursor-pointer whitespace-nowrap active:scale-95 ${

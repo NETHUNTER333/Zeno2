@@ -5,7 +5,7 @@
  */
 
 export const LEGAL_CONFIG = {
-  OPERATOR_NAME: 'Surya',
+  OPERATOR_NAME: 'Zeno',
   TRADE_NAME: 'Zeno',
   LIVE_SITE_URL: 'https://zeno0x.vercel.app',
   ADDRESS: 'Operated online from India',
@@ -15,7 +15,7 @@ export const LEGAL_CONFIG = {
   GRIEVANCE_EMAIL: 'wakefullfinding62@gmail.com',
   ABUSE_EMAIL: 'wakefullfinding62@gmail.com',
   COPYRIGHT_EMAIL: 'wakefullfinding62@gmail.com',
-  GRIEVANCE_OFFICER_NAME: 'Surya, Grievance Officer',
+  GRIEVANCE_OFFICER_NAME: 'Zeno Grievance Officer',
   EFFECTIVE_DATE: 'November 1, 2026',
   EFFECTIVE_DATE_ISO: '2026-11-01',
   PRICE: '$3/month (Spark) · $7/month (Fire)',

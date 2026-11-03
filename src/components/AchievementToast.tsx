@@ -78,17 +78,19 @@ export const AchievementToast: React.FC<AchievementToastProps> = ({ isDark }) =>
     window.addEventListener('zeno-achievement-unlocked', handleUnlockEvent as EventListener);
     window.addEventListener('zeno-account-updated', syncAccountState);
 
-    // Check once shortly after mount for any newly reached milestones not yet notified
-    const initTimer = setTimeout(() => {
-      UserAccountStore.checkAndDispatchNewAchievements();
-    }, 1600);
-
     return () => {
       window.removeEventListener('zeno-achievement-unlocked', handleUnlockEvent as EventListener);
       window.removeEventListener('zeno-account-updated', syncAccountState);
-      clearTimeout(initTimer);
     };
   }, [syncAccountState]);
+
+  useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent('zeno-achievement-toast-active', {
+        detail: { active: Boolean(activeToast) },
+      })
+    );
+  }, [activeToast]);
 
   // Auto-advance / dismiss after 9 seconds when not hovered
   useEffect(() => {
@@ -209,22 +211,31 @@ export const AchievementToast: React.FC<AchievementToastProps> = ({ isDark }) =>
         }`}
       >
         {/* Top Accent Line */}
-        <div className="h-1 w-full bg-gradient-to-r from-[#FC4C01] via-[#ff7733] to-[#FC4C01]" />
+        <div className="h-1 w-full bg-[#FC4C01]" />
 
         <div className="p-4">
-          {/* Header Row: Kicker + Queue Counter + Close */}
+          {/* Header Row: Kicker + Queue Counter + Close (No truncation on ACHIEVEMENT UNLOCKED) */}
           <div className="flex items-center justify-between gap-2 mb-2.5">
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="inline-block w-2 h-2 rounded-full bg-[#FC4C01] animate-pulse shrink-0" />
-              <span className="text-[10px] font-mono uppercase tracking-[0.12em] font-semibold text-[#FC4C01] truncate">
-                ACHIEVEMENT UNLOCKED · {activeToast.kickerLabel}
+            <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+              <span className="inline-block w-2 h-2 rounded-full bg-[#FC4C01] shrink-0" />
+              <span className="text-[10px] font-mono uppercase tracking-wider font-semibold text-[#FC4C01] whitespace-nowrap">
+                ACHIEVEMENT UNLOCKED
               </span>
+              {activeToast.kickerLabel && (
+                <span
+                  className={`text-[9.5px] font-mono uppercase px-1.5 py-0.5 rounded whitespace-nowrap ${
+                    isDark ? 'bg-white/[0.06] text-neutral-300' : 'bg-black/[0.06] text-neutral-700'
+                  }`}
+                >
+                  {activeToast.kickerLabel}
+                </span>
+              )}
             </div>
 
             <div className="flex items-center gap-1.5 shrink-0">
               {queue.length > 1 && (
                 <span
-                  className={`text-[10px] font-mono tabular-nums px-1.5 py-0.5 rounded border ${
+                  className={`text-[10px] font-mono tabular-nums px-1.5 py-0.5 rounded border whitespace-nowrap ${
                     isDark
                       ? 'bg-white/[0.04] border-white/10 text-neutral-300'
                       : 'bg-neutral-100 border-black/10 text-neutral-600'
@@ -373,42 +384,6 @@ export const AchievementToast: React.FC<AchievementToastProps> = ({ isDark }) =>
               <span>Open Vault</span>
               <ChevronRight className="w-3.5 h-3.5" />
             </button>
-          </div>
-
-          {/* Milestone Quick Switcher when testing/previewing streak milestones (7d / 30d / 100d) */}
-          <div
-            className={`mt-2.5 pt-2 border-t flex items-center justify-between gap-2 ${
-              isDark ? 'border-white/[0.06]' : 'border-black/[0.06]'
-            }`}
-          >
-            <span
-              className={`text-[10px] font-mono ${
-                isDark ? 'text-neutral-500' : 'text-neutral-400'
-              }`}
-            >
-              Preview Milestones:
-            </span>
-            <div className="flex items-center gap-1">
-              {[7, 30, 100].map((mDays) => {
-                const isCurrent = activeToast.days === mDays;
-                return (
-                  <button
-                    key={mDays}
-                    type="button"
-                    onClick={() => UserAccountStore.triggerMilestoneToastPreview(mDays)}
-                    className={`px-2 py-0.5 rounded-md border text-[10px] font-mono tabular-nums transition-colors cursor-pointer ${
-                      isCurrent
-                        ? 'bg-[#FC4C01]/15 border-[#FC4C01] text-[#FC4C01] font-semibold'
-                        : isDark
-                        ? 'border-white/10 hover:border-white/25 text-neutral-400 hover:text-white'
-                        : 'border-black/10 hover:border-black/25 text-neutral-500 hover:text-black'
-                    }`}
-                  >
-                    {mDays}-Day
-                  </button>
-                );
-              })}
-            </div>
           </div>
         </div>
       </div>

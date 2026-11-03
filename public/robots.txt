@@ -1,0 +1,12 @@
+User-agent: *
+Allow: /
+Allow: /legal
+Allow: /terms
+Allow: /privacy
+Allow: /refund
+Allow: /acceptable-use
+Allow: /cookies
+Allow: /contact
+Disallow: /api/
+
+Sitemap: https://zeno0x.vercel.app/sitemap.xml
