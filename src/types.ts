@@ -295,6 +295,7 @@ export interface ChatMessage {
   content: string;
   timestamp: number;
   sources?: SearchSource[];
+  sourcesNotLinked?: boolean;
   images?: ImageResult[];
   personaWiki?: PersonaWiki;
   searchQueries?: string[];

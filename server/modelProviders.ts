@@ -5,6 +5,7 @@ export interface ValidatedChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
   attachments?: any[];
+  sources?: any[];
 }
 
 export function validateChatRequestPayload(body: any): {
@@ -40,14 +41,20 @@ export function validateChatRequestPayload(body: any): {
         ? msg.content.slice(0, SERVER_LIMITS.MAX_MESSAGE_CHARS)
         : String(msg.content ?? '').slice(0, SERVER_LIMITS.MAX_MESSAGE_CHARS);
 
+    const safeSources = Array.isArray(msg.sources)
+      ? msg.sources
+          .filter((s: any) => s && typeof s === 'object' && typeof s.url === 'string')
+          .slice(0, 10)
+      : undefined;
+
     if (msg.attachments !== undefined) {
       const attCheck = validateMessageAttachments(msg.attachments);
       if (!attCheck.valid) {
         return { valid: false, error: attCheck.error };
       }
-      sanitized.push({ role, content, attachments: attCheck.attachments });
+      sanitized.push({ role, content, attachments: attCheck.attachments, ...(safeSources ? { sources: safeSources } : {}) });
     } else {
-      sanitized.push({ role, content });
+      sanitized.push({ role, content, ...(safeSources ? { sources: safeSources } : {}) });
     }
   }
 

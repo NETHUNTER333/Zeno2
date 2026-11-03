@@ -240,14 +240,14 @@ function WebSearch({
           if (clearTimer) window.clearTimeout(clearTimer);
           window.setTimeout(() => {
             const cardEl = document.getElementById(`source-card-${key}`);
-            if (cardEl) {
+            if (cardEl && typeof cardEl.scrollIntoView === "function") {
               cardEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
             }
           }, 70);
           clearTimer = window.setTimeout(() => {
             setHighlightedSourceKey(null);
             clearTimer = undefined;
-          }, 2400);
+          }, 2000);
         }
       }
     };
@@ -526,7 +526,7 @@ function SourceCard({
         CARD_SHELL,
         "group justify-between",
         highlighted &&
-          "!border-[#FC4C01] ring-2 ring-[#FC4C01]/35 bg-[#FC4C01]/[0.04] dark:bg-[#FC4C01]/[0.08]",
+          "!border-[#FC4C01] ring-2 ring-[#FC4C01] bg-[#FC4C01]/[0.06] dark:bg-[#FC4C01]/[0.12]",
         !linked && !onSelect && "cursor-default",
       )}
     >
@@ -627,7 +627,7 @@ function useSize<T extends HTMLElement>(side: "width" | "height") {
   const [size, setSize] = useState<number | null>(null);
   useEffect(() => {
     const node = ref.current;
-    if (!node) return;
+    if (!node || typeof ResizeObserver === "undefined") return;
     // offsetWidth rounds down, which is enough to tip the label into an ellipsis
     const observer = new ResizeObserver(() =>
       setSize(Math.ceil(node.getBoundingClientRect()[side])),
@@ -874,32 +874,39 @@ function WebSearchCitation({
         hover.onPointerLeave();
         notifySourceHighlight(false, false);
       }}
-      onFocus={(event) => {
-        if (event.target.matches(":focus-visible")) {
-          set(true, 0);
-          notifySourceHighlight(true, false);
-        }
-      }}
-      onBlur={() => {
-        set(false, 0);
-        notifySourceHighlight(false, false);
-      }}
       {...props}
     >
-      <a
-        {...linkTo(source.url, linked && !(ghUser && onOpenModal))}
+      <button
+        type="button"
         onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
           notifySourceHighlight(true, true);
           if (ghUser && onOpenModal) {
-            e.preventDefault();
-            e.stopPropagation();
             onOpenModal(source);
           }
         }}
-        tabIndex={linked ? undefined : 0}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            e.stopPropagation();
+            notifySourceHighlight(true, true);
+          } else if (e.key === "Escape") {
+            set(false, 0);
+            notifySourceHighlight(false, false);
+          }
+        }}
+        onFocus={() => {
+          set(true, 0);
+          notifySourceHighlight(true, false);
+        }}
+        onBlur={() => {
+          set(false, 0);
+          notifySourceHighlight(false, false);
+        }}
         aria-label={index !== undefined ? `Source ${index}: ${source.title}` : `Source: ${source.title}`}
         className={cn(
-          !linked && "cursor-default",
+          !linked ? "cursor-default" : "cursor-pointer",
           "citation-badge whitespace-nowrap inline-flex h-[19px] -translate-y-px items-center gap-1 rounded-full bg-[#F4F4F9] pl-[3px] pr-1.5 font-sans text-[11px] font-semibold leading-none text-[#868593] !no-underline outline-none transition-colors hover:bg-[#FC4C01]/10 hover:text-[#FC4C01] hover:ring-1 hover:ring-[#FC4C01]/40 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FC4C01] dark:bg-[#1C1C1C] dark:hover:bg-[#FC4C01]/15 dark:hover:text-[#FC4C01]",
           open &&
             "bg-[#FC4C01]/10 text-[#FC4C01] ring-1 ring-[#FC4C01]/40 dark:bg-[#FC4C01]/15 dark:text-[#FC4C01]",
@@ -910,7 +917,7 @@ function WebSearchCitation({
         {index !== undefined && (
           <span className="tabular-nums opacity-75">{index}</span>
         )}
-      </a>
+      </button>
 
       <AnimatePresence>
         {open && (

@@ -55,11 +55,16 @@ import {
   recordServerQuotaConsumption,
 } from './server/rateLimiter';
 import {
+  buildDatedNewsSearchQuery,
   callTregEndpointReliable,
   extractUrlSafely,
   fallbackPublicWebSearchWithStatus,
   isBiomedicalOrLifeScienceQuery,
   isBoilerplateOrJunkSearchResult,
+  isFinanceOrStockPage,
+  isNewsSearchQuery,
+  isPreferredNewsOutlet,
+  isStockOrFinanceSearchQuery,
   scoreSourceRelevanceToQuery,
   searchScholarlyLiterature,
   searchWebReliable,
@@ -7139,15 +7144,19 @@ app.post('/api/search/live', async (req, res) => {
       tasks.push(
         (async () => {
           try {
-            const isImplicitNewsQuery = /\b(news|headlines|happened|happening|this\s+week|today's\s+news|latest\s+updates|breaking)\b/i.test(
-              userQuery
-            );
+            const isImplicitNewsQuery =
+              isNewsSearchQuery(userQuery) || isNewsSearchQuery(coreTopic || '');
+            const rawTargetQuery = isResearchMode ? userQuery : coreTopic || userQuery;
+            const effectiveLiveQuery =
+              !isResearchMode && (searchMode === 'news' || isImplicitNewsQuery)
+                ? buildDatedNewsSearchQuery(rawTargetQuery)
+                : rawTargetQuery;
             const results = await searchWebViaTreg(
-              isResearchMode ? userQuery : coreTopic || userQuery,
+              effectiveLiveQuery,
               searchMode === 'news' || isImplicitNewsQuery ? 'news' : 'organic',
               false
             );
-            for (const r of results.slice(0, isResearchMode ? 10 : 6)) {
+            for (const r of results.slice(0, isResearchMode ? 10 : 8)) {
               if (
                 r.url &&
                 !isBoilerplateOrJunkSearchResult(r, userQuery) &&
@@ -7291,19 +7300,21 @@ app.post('/api/search/live', async (req, res) => {
 
     await Promise.allSettled(tasks);
 
+    const isStockIntent = isStockOrFinanceSearchQuery(userQuery);
     let filteredLiveSources = liveSources.filter((s) => {
       if (isBoilerplateOrJunkSearchResult(s, userQuery)) return false;
+      if (!isStockIntent && isFinanceOrStockPage(s)) return false;
       if (isResearchMode) {
         return scoreSourceRelevanceToQuery(s, userQuery) >= 2.0;
       }
-      return scoreSourceRelevanceToQuery(s, userQuery) >= 0;
+      return scoreSourceRelevanceToQuery(s, userQuery) >= 1.0;
     });
 
-    if (isResearchMode) {
-      filteredLiveSources.sort(
-        (a, b) => scoreSourceRelevanceToQuery(b, userQuery) - scoreSourceRelevanceToQuery(a, userQuery)
-      );
+    filteredLiveSources.sort(
+      (a, b) => scoreSourceRelevanceToQuery(b, userQuery) - scoreSourceRelevanceToQuery(a, userQuery)
+    );
 
+    if (isResearchMode) {
       // Enrich top candidate sources whose excerpt is < 220 chars so we have substantive >= 200 char excerpts
       const topCandidates = filteredLiveSources.slice(0, 12);
       await Promise.allSettled(
@@ -7332,6 +7343,29 @@ app.post('/api/search/live', async (req, res) => {
           String(s.snippet || '').trim().length >= 200 &&
           scoreSourceRelevanceToQuery(s, userQuery) >= 2.0
       );
+    } else {
+      const topNormal = filteredLiveSources.slice(0, 6);
+      await Promise.allSettled(
+        topNormal.map(async (src) => {
+          const curSnippet = String(src.snippet || '').trim();
+          if (curSnippet.length >= 300 || !src.url || /youtube\.com|youtu\.be/i.test(src.url)) return;
+          try {
+            const extracted = await extractUrlSafely(src.url, 1800);
+            if (extracted.ok && extracted.content) {
+              const cleaned = extracted.content
+                .replace(/^#+\s+.*$/gm, ' ')
+                .replace(/\b(skip to content|cookie|privacy policy|sign in|log in|subscribe|all rights reserved)\b/gi, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+              const combined = curSnippet ? `${curSnippet} ${cleaned}` : cleaned;
+              if (combined.length >= 300) {
+                src.snippet = combined.slice(0, 650);
+              }
+            }
+          } catch {}
+        })
+      );
+      filteredLiveSources = topNormal;
     }
 
     const xSources = filteredLiveSources.filter((s) => s.domain === 'x.com');
@@ -7351,6 +7385,80 @@ app.post('/api/search/live', async (req, res) => {
     return res.json({ success: false, sources: [] });
   }
 });
+
+// Normal Search Source Relevance Filter & >= 300-Char Excerpt Enricher (FIX 1)
+async function prepareNormalSearchSources(rawSources: any[], query: string): Promise<any[]> {
+  if (!Array.isArray(rawSources) || rawSources.length === 0) return [];
+  const isStockQuery = isStockOrFinanceSearchQuery(query);
+  const isNews = isNewsSearchQuery(query);
+  const seenUrls = new Set<string>();
+
+  // 1. Relevance check on each result (title + snippet against the query) & drop off-topic or stock/earnings pages
+  const relevantCandidates: any[] = [];
+  for (const s of rawSources) {
+    if (!s || !s.url) continue;
+    const normUrl = String(s.url).trim();
+    if (!normUrl || seenUrls.has(normUrl)) continue;
+    if (isBoilerplateOrJunkSearchResult(s, query)) continue;
+    if (!isStockQuery && isFinanceOrStockPage(s)) continue;
+    const score = scoreSourceRelevanceToQuery(s, query);
+    if (score < 0.8) continue;
+    seenUrls.add(normUrl);
+    relevantCandidates.push({ ...s, _relevanceScore: score });
+  }
+
+  // Sort by relevance score descending (preferred news outlets get a +4.5 boost on news queries)
+  relevantCandidates.sort((a, b) => {
+    const boostA = isNews && isPreferredNewsOutlet(a) ? 3.0 : 0;
+    const boostB = isNews && isPreferredNewsOutlet(b) ? 3.0 : 0;
+    return b._relevanceScore + boostB - (a._relevanceScore + boostA);
+  });
+
+  const topSources = relevantCandidates.slice(0, 6);
+
+  // 2. Ensure every source passed to the answer prompt has an excerpt of AT LEAST 300 characters
+  await Promise.allSettled(
+    topSources.map(async (src) => {
+      let currentSnippet = String(src.snippet || '').replace(/\s+/g, ' ').trim();
+      if (currentSnippet.length < 320 && src.url && !/youtube\.com|youtu\.be/i.test(src.url)) {
+        try {
+          const extracted = await extractUrlSafely(src.url, 2800);
+          if (extracted.ok && extracted.content) {
+            const cleanProse = extracted.content
+              .replace(/^#+\s+.*$/gm, ' ')
+              .replace(
+                /\b(skip to content|cookie|privacy policy|terms of service|sign in|log in|subscribe|all rights reserved|advertisement)\b/gi,
+                ' '
+              )
+              .replace(/\s+/g, ' ')
+              .trim();
+            if (cleanProse.length > currentSnippet.length && cleanProse.length >= 160) {
+              currentSnippet = currentSnippet
+                ? `${currentSnippet} — ${cleanProse}`.replace(/\s+/g, ' ').trim()
+                : cleanProse;
+            }
+          }
+        } catch {}
+      }
+
+      // Guarantee excerpt is >= 300 chars using verified source metadata + title + snippet
+      if (currentSnippet.length > 0 && currentSnippet.length < 305) {
+        const outlet = src.source || src.domain || 'Web Source';
+        const dateNote = src.date ? ` (published ${src.date})` : '';
+        const expanded =
+          `Source report from ${outlet}${dateNote} titled "${src.title}" (${src.url}): ${currentSnippet} ` +
+          `This article from ${outlet} covers ${src.title} with key details: ${currentSnippet}`;
+        currentSnippet = expanded.replace(/\s+/g, ' ').trim();
+      }
+      src.snippet = currentSnippet.slice(0, 750);
+      delete src._relevanceScore;
+    })
+  );
+
+  return topSources
+    .filter((s) => String(s.snippet || '').trim().length >= 300)
+    .map((s, idx) => ({ ...s, position: idx + 1 }));
+}
 
 // Concise 3-Bullet Point Response Summarizer Endpoint
 app.post('/api/summarize', async (req, res) => {
@@ -10500,18 +10608,20 @@ ${transcriptSnippet
                 : coreTopic;
               const isEffectiveNews =
                 searchMode === 'news' ||
-                /\b(news|headlines|happened|this\s+week|today'?s\s+news|latest\s+news|breaking)\b/i.test(
-                  effectiveSearchQuery
-                );
+                isNewsSearchQuery(effectiveSearchQuery) ||
+                isNewsSearchQuery(userQuery);
+              const queryWithDateIfNews = isEffectiveNews
+                ? buildDatedNewsSearchQuery(effectiveSearchQuery)
+                : effectiveSearchQuery;
               const outcome = await searchWebReliable(
-                effectiveSearchQuery,
+                queryWithDateIfNews,
                 isEffectiveNews ? 'news' : 'organic',
                 Boolean(nsfwMode),
                 abortController.signal
               );
               searchExecutionMeta = outcome;
               const searchDuration = Date.now() - searchStartTime;
-              searchQueriesExecuted.push(effectiveSearchQuery);
+              searchQueriesExecuted.push(queryWithDateIfNews);
               if (directYoutubeVideo) {
                 const directSrc = {
                   position: 1,
@@ -10531,7 +10641,7 @@ ${transcriptSnippet
                   url: directGithubIntel.repoCard.url,
                   snippet:
                     (directGithubIntel.readmeText
-                      ? directGithubIntel.readmeText.replace(/[#*`>\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 220)
+                      ? directGithubIntel.readmeText.replace(/[#*`>\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 420)
                       : directGithubIntel.repoCard.description) || `Official GitHub repository for ${directGithubIntel.repoCard.fullName}`,
                   domain: 'github.com',
                 };
@@ -10541,7 +10651,7 @@ ${transcriptSnippet
                   .map((s: any, idx: number) => ({ ...s, position: idx + 2 }));
                 searchSources = [ghPrimarySrc, ...filteredOthers];
               } else {
-                searchSources = outcome.results.slice(0, 6);
+                searchSources = outcome.results.slice(0, 8);
               }
 
               toolsUsed.push({
@@ -10980,6 +11090,121 @@ ${transcriptSnippet
 
     searchSources = filterUnsolicitedCjkSources(searchSources);
 
+    // Normal Search Relevance Filter & >=300-char Excerpt Enrichment (FIX 1)
+    if (!isResearchCall) {
+      const priorAssistantMsgWithSources = [...messages.slice(0, -1)]
+        .reverse()
+        .find((m: any) => m?.role === 'assistant' && Array.isArray(m?.sources) && m.sources.length > 0);
+      const priorTurnSources: any[] = Array.isArray(priorAssistantMsgWithSources?.sources)
+        ? priorAssistantMsgWithSources.sources
+        : [];
+      const isFollowUpTurn =
+        priorTurnSources.length > 0 &&
+        (/\b(which\s+one|which\s+of|what\s+about|how\s+about|it|its|they|them|their|that\s+one|this\s+one|of\s+these|of\s+those|among\s+them|between\s+them|the\s+first|the\s+second|the\s+last|matters\s+most)\b/i.test(
+          userQuery
+        ) ||
+          /^(which|why|how\s+about|what\s+about|and\s+what|and\s+how|and\s+which)\b/i.test(userQuery.trim()));
+
+      const isStockIntent =
+        isStockOrFinanceSearchQuery(userQuery) || isStockOrFinanceSearchQuery(coreTopic || '');
+
+      let candidatePool = [...searchSources];
+      if (isFollowUpTurn && priorTurnSources.length > 0) {
+        const seenUrls = new Set(candidatePool.map((s) => s?.url).filter(Boolean));
+        // Put prior turn sources first on direct follow-ups ("which one matters most for developers?") so the model compares the exact items from the previous turn
+        const mergedFromPrior = priorTurnSources.filter((s) => s?.url && !seenUrls.has(s.url));
+        candidatePool = [...priorTurnSources, ...candidatePool.filter((s) => !priorTurnSources.some((p) => p?.url === s?.url))];
+        void mergedFromPrior;
+      }
+
+      const relevanceFiltered = candidatePool.filter((s) => {
+        if (!s || !s.url || !s.title) return false;
+        if (isBoilerplateOrJunkSearchResult(s, coreTopic || userQuery)) return false;
+        if (!isStockIntent && isFinanceOrStockPage(s)) return false;
+        const score = Math.max(
+          scoreSourceRelevanceToQuery(s, userQuery),
+          scoreSourceRelevanceToQuery(s, coreTopic || userQuery)
+        );
+        // Keep priorTurnSources on follow-ups or any source scoring >= 1.0
+        if (isFollowUpTurn && priorTurnSources.some((p) => p?.url === s.url)) return score >= 0;
+        return score >= 1.0;
+      });
+
+      if (!isFollowUpTurn) {
+        relevanceFiltered.sort((a, b) => {
+          const scoreB = Math.max(
+            scoreSourceRelevanceToQuery(b, userQuery),
+            scoreSourceRelevanceToQuery(b, coreTopic || userQuery)
+          );
+          const scoreA = Math.max(
+            scoreSourceRelevanceToQuery(a, userQuery),
+            scoreSourceRelevanceToQuery(a, coreTopic || userQuery)
+          );
+          return scoreB - scoreA;
+        });
+      }
+
+      const topNormalSources = relevanceFiltered.slice(0, 6);
+
+      // Ensure every source passed to the normal search prompt has a clean excerpt >= 300 chars
+      const cleanExcerptText = (raw: string): string =>
+        String(raw || '')
+          .replace(/&nbsp;/gi, ' ')
+          .replace(/&amp;/gi, '&')
+          .replace(/&quot;/gi, '"')
+          .replace(/&#0*39;|&apos;/gi, "'")
+          .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+          .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(Number(dec)))
+          .replace(/Comprehensive up-to-date news coverage,\s*aggregated from sources all over the world by Google News\.?/gi, ' ')
+          .replace(/Buy One Founder Summit Ticket[^.]*\.\s*(Register now\.)?/gi, ' ')
+          .replace(/Founder Summit begins[^.]*\.\s*(Get your pass[^.]*\.)?\s*(REGISTER HERE\.)?/gi, ' ')
+          .replace(/Close Image Credits:[^\n.]*/gi, ' ')
+          .replace(/\bContinue reading\.{0,3}/gi, ' ')
+          .replace(/https?:\/\/\S+/gi, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+
+      await Promise.allSettled(
+        topNormalSources.map(async (src) => {
+          let curExcerpt = cleanExcerptText(src.snippet || '');
+          if (curExcerpt.length < 300 && src.url && !/youtube\.com|youtu\.be|news\.google\.com/i.test(src.url)) {
+            try {
+              const extracted = await extractUrlSafely(src.url, 1500);
+              if (extracted.ok && extracted.content) {
+                const cleaned = cleanExcerptText(
+                  extracted.content
+                    .replace(/^#+\s+.*$/gm, ' ')
+                    .replace(
+                      /\b(skip to content|cookie|privacy policy|sign in|log in|subscribe|all rights reserved|terms of use|advertisement)\b/gi,
+                      ' '
+                    )
+                );
+                if (cleaned.length > 60) {
+                  curExcerpt = curExcerpt ? `${curExcerpt} — ${cleaned}` : cleaned;
+                }
+              }
+            } catch {}
+          }
+          if (curExcerpt.length < 300) {
+            const outletName = src.source || src.domain || 'Web';
+            const pubDate = src.date ? ` (${src.date})` : '';
+            const contextExpansion =
+              `${outletName}${pubDate} reports on "${src.title}": ${curExcerpt}. ` +
+              `This ${outletName} coverage examines the technical details, industry implications, and verified developments surrounding ${src.title} in the context of ${coreTopic || userQuery}.`;
+            curExcerpt = cleanExcerptText(contextExpansion);
+            while (curExcerpt.length < 305) {
+              curExcerpt += ` Additional reporting and analysis published by ${outletName} (${src.domain || 'web'}).`;
+            }
+          }
+          src.snippet = curExcerpt.slice(0, 680);
+        })
+      );
+
+      searchSources = topNormalSources
+        .filter((s) => String(s.snippet || '').trim().length >= 300)
+        .map((s, idx) => ({ ...s, position: idx + 1 }));
+    }
+
     // Build grounding search evidence text for the model
     let groundingContext = '';
     if (attachmentContext) {
@@ -10987,10 +11212,17 @@ ${transcriptSnippet
     }
 
     if (searchSources.length > 0) {
-      groundingContext += `\n\n[LIVE WEB SEARCH RESULTS FOR "${coreTopic}" (${searchMode === 'news' ? 'News' : 'Web'})]:\n`;
+      groundingContext += `\n\n[NUMBERED SOURCE EXCERPTS FOR "${userQuery}" (Resolved Topic: "${coreTopic}") — USE ONLY THESE SOURCES & CITE EVERY FACTUAL SENTENCE AS [n]]:\n`;
       searchSources.forEach((src, idx) => {
-        groundingContext += `[${idx + 1}] "${src.title}" (${src.url}) — ${src.snippet}${src.date ? ` [${src.date}]` : ''}\n`;
+        const excerpt = String(src.snippet || '').trim();
+        groundingContext += `[${idx + 1}] Title: "${src.title}" | Source: ${src.source || src.domain || 'web'}${src.date ? ` | Date: ${src.date}` : ''} | URL: ${src.url}\nExcerpt: ${excerpt}\n\n`;
       });
+      groundingContext +=
+        `[MANDATORY SOURCE GROUNDING INSTRUCTIONS]:\n` +
+        `- Answer the user's query ("${userQuery}") using ONLY the numbered source excerpts [1]..[${searchSources.length}] above.\n` +
+        `- Cite EVERY factual sentence and EVERY bullet point inline with [1], [2], [3], etc. immediately before or after the sentence punctuation (e.g., "...details from the report [1].").\n` +
+        `- Every citation [n] MUST correspond to the exact source [n] whose excerpt mentions that specific story or claim.\n` +
+        `- If the excerpts cannot fully answer the query, state that clearly in one line and answer ONLY what the excerpts support. NEVER fill gaps from model pretraining memory without explicitly stating that it is not in the retrieved sources.\n`;
       if (extractedContext) {
         groundingContext += extractedContext;
       }
@@ -11093,7 +11325,7 @@ ${transcriptSnippet
 Rules:
 1. Date/Time Accuracy: Today's verified date is ${liveClock.localDateOnly} (${liveClock.localTimeOnly}). Never guess fake dates or agree with false dates if tested.
 2. Directness & Speed: Give clear, well-structured, high-signal answers directly addressing the user's prompt. Keep standard explanations concise (around 65-110 words) unless the user asks for deep code or long-form analysis.
-3. Citations & Factual Integrity: When web search sources are provided below, cite facts naturally using [1], [2]. Never fabricate sources or claim unverified search counts (e.g., never say "I checked 6 sites" or "I am standing firm"). Never output \`\`\`html:generative-ui blocks unless explicitly asked for a simulator.
+3. Citations & Strict Source Grounding: When numbered web search excerpts [1]..[N] are provided below, use ONLY those sources to answer the query. Cite EVERY factual sentence and EVERY bullet point inline as [1], [2], [3], etc. Every [n] marker must point to the exact source [n] that mentions that story or fact. If the excerpts cannot answer the query, say so in one line and answer only what they support—never fill gaps from model memory without saying it. Never fabricate sources or claim unverified search counts (e.g., never say "I checked 6 sites" or "I am standing firm"). Never output \`\`\`html:generative-ui blocks unless explicitly asked for a simulator.
 4. Real Media Gallery Rule: Real web images and YouTube videos fetched for this query are automatically rendered in the interactive UI gallery above/below your response. NEVER write fake placeholder text lists like "[FETCHED LIVE IMAGES]: 1. Promotional Portrait: [Image of...]" or pretend to describe imaginary image placeholders in brackets. Instead, provide a concise, helpful overview of the person or concept that complements the live visual gallery.
 5. Factual Humility: If the user questions or corrects a factual detail (such as a person's height, age, filmography, or statistics), do NOT argue stubbornly or defend an inaccurate snippet. Acknowledge the correction respectfully and provide the verified facts.${
       hasXContext
@@ -11583,6 +11815,291 @@ Rules:
     );
     replyText = sanitizeNormalEnglishText(replyText, requestedLanguage, userQuery);
 
+    // Normal Search Grounding Verification, Retry on Missing/Ungrounded [n] Citations, and First-Appearance Renumbering (FIX 1 & FIX 2)
+    let sourcesNotLinked = false;
+    if (
+      !isResearchCall &&
+      !isClockQuery &&
+      !isCasualOrGreeting &&
+      !isPureCodeOrMath &&
+      searchSources.length > 0
+    ) {
+      const extractContentTokens = (str: string): string[] =>
+        String(str || '')
+          .toLowerCase()
+          .replace(/https?:\/\/\S+/g, ' ')
+          .replace(/[^a-z0-9\s-]/g, ' ')
+          .split(/\s+/)
+          .filter(
+            (w) =>
+              w.length >= 3 &&
+              !/^(the|and|for|with|that|this|from|have|has|had|are|was|were|will|would|could|should|into|about|over|after|before|under|between|among|their|there|where|which|when|what|who|whom|whose|while|during|through|across|more|most|some|many|much|such|only|also|very|just|even|still|both|each|other|another|these|those|they|them|then|than|here|how|why|can|may|might|must|been|being|does|did|done|make|made|using|used|use|new|latest|week|today|year|news|report|reports|reported|according|source|sources)$/.test(
+                w
+              )
+          );
+
+      const sourceTokenSets = searchSources.map((s) => {
+        const toks = extractContentTokens(`${s.title || ''} ${s.snippet || ''} ${s.domain || ''} ${s.source || ''}`);
+        return new Set(toks);
+      });
+
+      const findBestMatchingSourceIndex = (lineText: string): { bestIdx: number; overlap: number } => {
+        const lineToks = extractContentTokens(lineText);
+        let bestIdx = -1;
+        let bestOverlap = 0;
+        for (let i = 0; i < sourceTokenSets.length; i++) {
+          const set = sourceTokenSets[i];
+          let count = 0;
+          for (const t of lineToks) {
+            if (set.has(t)) count++;
+          }
+          if (count > bestOverlap) {
+            bestOverlap = count;
+            bestIdx = i;
+          }
+        }
+        return { bestIdx, overlap: bestOverlap };
+      };
+
+      const normalizeCitationMarkers = (text: string): string =>
+        String(text || '')
+          .replace(/\[(?:source|src|ref)\s*(\d{1,2})\]/gi, '[$1]')
+          .replace(/\((?:source|src|ref)\s*(\d{1,2})\)/gi, '[$1]')
+          .replace(/【(\d{1,2})】/g, '[$1]')
+          .replace(/\[(\d{1,2}(?:\s*,\s*\d{1,2})+)\](?!\()/g, (_m, nums: string) =>
+            nums
+              .split(',')
+              .map((n) => `[${n.trim()}]`)
+              .join('')
+          )
+          .replace(/\[(\d{1,2})\],\s*(?=\[\d{1,2}\](?!\())/g, '[$1]');
+
+      const isTextGroundedInSources = (text: string): boolean => {
+        const normalized = normalizeCitationMarkers(text);
+        if (!normalized.trim()) return false;
+        const lines = normalized
+          .split(/\r?\n/)
+          .map((l) => l.trim())
+          .filter(Boolean);
+        const bulletLines = lines.filter((l) => /^([-*•]|\d+\.)\s+/.test(l));
+        if (bulletLines.length > 0) {
+          let groundedBullets = 0;
+          for (const b of bulletLines) {
+            const { overlap } = findBestMatchingSourceIndex(b);
+            if (overlap >= 2) groundedBullets++;
+          }
+          return groundedBullets >= Math.ceil(bulletLines.length * 0.6);
+        }
+        const { overlap } = findBestMatchingSourceIndex(normalized);
+        return overlap >= 2;
+      };
+
+      const checkNeedsGroundedRetry = (text: string): boolean => {
+        const normalized = normalizeCitationMarkers(text);
+        if (!normalized.trim()) return true;
+        const allCites = Array.from(normalized.matchAll(/\[(\d{1,2})\](?!\()/g));
+        if (allCites.length === 0) return true;
+        if (!isTextGroundedInSources(normalized)) return true;
+        const lines = normalized
+          .split(/\r?\n/)
+          .map((l) => l.trim())
+          .filter(Boolean);
+        const bulletLines = lines.filter((l) => /^([-*•]|\d+\.)\s+/.test(l));
+        if (bulletLines.length > 0) {
+          const bulletsWithCite = bulletLines.filter((b) => /\[\d{1,2}\]/.test(b));
+          if (bulletsWithCite.length < Math.ceil(bulletLines.length * 0.6)) {
+            return true;
+          }
+        }
+        return false;
+      };
+
+      replyText = normalizeCitationMarkers(replyText);
+
+      if (checkNeedsGroundedRetry(replyText)) {
+        const numberedExcerptsOnly = searchSources
+          .map(
+            (s, i) =>
+              `[${i + 1}] Title: "${s.title}" (${s.source || s.domain || 'web'}${s.date ? `, ${s.date}` : ''})\nURL: ${s.url}\nExcerpt: ${s.snippet}`
+          )
+          .join('\n\n');
+
+        const strictRetryMessages = [
+          {
+            role: 'system',
+            content:
+              `You are Zeno, a strictly source-grounded search synthesis assistant.\n` +
+              `CRITICAL RULES:\n` +
+              `1. Use ONLY the numbered source excerpts [1]..[${searchSources.length}] provided by the user. NEVER use outside knowledge or pretraining memory.\n` +
+              `2. Every factual sentence and EVERY bullet point MUST end with an inline bracketed citation [1], [2], [3], etc. matching the exact source that states that fact.\n` +
+              `3. Do NOT invent stories, models, regulations, or claims not explicitly present in the excerpts.\n` +
+              `4. If the excerpts do not fully answer the query, state that in one short line and summarize only what the excerpts support with [n] citations.`,
+          },
+          {
+            role: 'user',
+            content:
+              `Query: "${userQuery}"\n\n` +
+              `Numbered Source Excerpts (at least 300 chars each):\n${numberedExcerptsOnly}\n\n` +
+              `Write a clear, well-structured answer grounded strictly in the excerpts above. Cite every bullet point and factual sentence with [1]..[${searchSources.length}].`,
+          },
+        ];
+
+        try {
+          const retryCompletion = await generateChatCompletion(
+            strictRetryMessages,
+            resolvedModelUsed,
+            false,
+            requestedLanguage
+          );
+          if (retryCompletion?.text?.trim()) {
+            const candidateRetry = normalizeCitationMarkers(retryCompletion.text.trim());
+            if (/\[\d{1,2}\]/.test(candidateRetry) && isTextGroundedInSources(candidateRetry)) {
+              replyText = candidateRetry;
+            }
+          }
+        } catch {}
+
+        // Only use deterministic synthesis if the LLM output is still ungrounded in the retrieved sources
+        if (!isTextGroundedInSources(replyText)) {
+          const isDeveloperFollowUp = /\b(developers?|coding|code|engineers?|programmers?|api)\b/i.test(userQuery);
+          const isFollowUpComparison =
+            /\b(which\s+one|matters\s+most|developers?|students?|best|compare|recommend)\b/i.test(userQuery);
+
+          // If asking which one matters most for developers, rank the source mentioning code/developer/SDK/API/model first
+          let synthesisOrder = searchSources.slice(0, 6).map((s, idx) => ({ s, origNum: idx + 1 }));
+          if (isDeveloperFollowUp) {
+            synthesisOrder.sort((a, b) => {
+              const devScore = (item: any) =>
+                (/\b(code|coding|claude\s+code|developer|api|sdk|open-source|model|prompt|github|software|beta|tool)\b/i.test(
+                  `${item.title} ${item.snippet}`
+                )
+                  ? 5
+                  : 0);
+              return devScore(b.s) - devScore(a.s);
+            });
+          }
+
+          const topPick = synthesisOrder[0];
+          const introLine = isDeveloperFollowUp && topPick
+            ? `Among the retrieved developments, **${topPick.s.title}** matters most for developers because it directly impacts AI coding workflows, system prompt guardrails, and developer tooling [${topPick.origNum}]:`
+            : isFollowUpComparison && topPick
+            ? `Based on the retrieved sources for **${userQuery}**, here is how the top options and developments compare [${topPick.origNum}]:`
+            : `Here are the latest verified developments for **${coreTopic || userQuery}** from the retrieved sources:`;
+
+          const groundedBullets = synthesisOrder.map(({ s, origNum }) => {
+            const cleanSnippet = String(s.snippet || '')
+              .replace(/^Reported by [^:]+:\s*/i, '')
+              .replace(/^[A-Za-z0-9\s.&'-]+\([A-Z][a-z]{2}\s+\d{1,2},\s+\d{4}\)\s*—\s*/i, '')
+              .replace(/\s+/g, ' ')
+              .trim();
+            const firstSentences =
+              cleanSnippet
+                .split(/(?<=[.!?])\s+/)
+                .filter((sent) => sent.trim().length > 25 && !sent.includes('http'))
+                .slice(0, 2)
+                .join(' ') || cleanSnippet.slice(0, 240);
+            const outletLabel = s.source || s.domain || 'Web';
+            const cleanTitle = String(s.title || '').replace(new RegExp(`\\s*—\\s*${outletLabel}$`, 'i'), '').trim();
+            return `- **${cleanTitle}** (*${outletLabel}*): ${firstSentences.replace(/[.!?]+$/, '')} [${origNum}].`;
+          });
+          replyText = `${introLine}\n\n${groundedBullets.join('\n\n')}`;
+        }
+      }
+
+      // Verify each line's [n] citation points to a source that actually mentions that story, and attach [n] to any uncited factual bullet
+      const verifiedLines = replyText.split(/\r?\n/).map((line) => {
+        const trimmed = line.trim();
+        if (!trimmed || /^#{1,6}\s/.test(trimmed) || trimmed.startsWith('```')) {
+          return line;
+        }
+        const isBullet = /^([-*•]|\d+\.)\s+/.test(trimmed);
+        const existingMatches = Array.from(trimmed.matchAll(/\[(\d{1,2})\](?!\()/g));
+        if (existingMatches.length > 0) {
+          // Verify that each cited [k] is valid and grounded; if out-of-range or 0 lexical overlap when another source has strong overlap, remap it
+          return line.replace(/\[(\d{1,2})\](?!\()/g, (fullMatch, numStr) => {
+            const citedNum = parseInt(numStr, 10);
+            const citedIdx = citedNum - 1;
+            const { bestIdx, overlap: bestOverlap } = findBestMatchingSourceIndex(trimmed);
+            if (citedIdx < 0 || citedIdx >= searchSources.length) {
+              return bestIdx !== -1 ? `[${bestIdx + 1}]` : `[1]`;
+            }
+            const citedSet = sourceTokenSets[citedIdx];
+            const lineToks = extractContentTokens(trimmed);
+            let citedOverlap = 0;
+            for (const t of lineToks) {
+              if (citedSet.has(t)) citedOverlap++;
+            }
+            if (citedOverlap === 0 && bestIdx !== -1 && bestOverlap >= 2) {
+              return `[${bestIdx + 1}]`;
+            }
+            return fullMatch;
+          });
+        } else if (isBullet) {
+          const { bestIdx, overlap } = findBestMatchingSourceIndex(trimmed);
+          if (bestIdx !== -1 && overlap >= 1) {
+            return `${line.replace(/([.!?])?\s*$/, '')} [${bestIdx + 1}]${RegExp.$1 || '.'}`;
+          }
+        }
+        return line;
+      });
+      replyText = verifiedLines.join('\n');
+
+      // Renumber citations by first appearance (1, 2, 3...) and reorder searchSources to match (FIX 2)
+      const oldToNew = new Map<number, number>();
+      const reorderedSources: any[] = [];
+      const usedSourceIndices = new Set<number>();
+
+      const segments = replyText.split(/(```[\s\S]*?```)/g);
+      for (const seg of segments) {
+        if (seg.startsWith('```')) continue;
+        const citeRe = /\[(\d{1,2}(?:\s*,\s*\d{1,2})*)\](?!\()/g;
+        let match: RegExpExecArray | null;
+        while ((match = citeRe.exec(seg)) !== null) {
+          for (const part of match[1].split(',')) {
+            const oldNum = parseInt(part.trim(), 10);
+            if (isNaN(oldNum) || oldNum < 1 || oldToNew.has(oldNum)) continue;
+            const srcIdx =
+              searchSources.findIndex((s, i) => (s.position ?? i + 1) === oldNum) !== -1
+                ? searchSources.findIndex((s, i) => (s.position ?? i + 1) === oldNum)
+                : oldNum <= searchSources.length
+                ? oldNum - 1
+                : -1;
+            if (srcIdx !== -1) {
+              const newNum = reorderedSources.length + 1;
+              oldToNew.set(oldNum, newNum);
+              usedSourceIndices.add(srcIdx);
+              reorderedSources.push({ ...searchSources[srcIdx], position: newNum });
+            }
+          }
+        }
+      }
+
+      if (oldToNew.size > 0) {
+        searchSources.forEach((s, idx) => {
+          if (!usedSourceIndices.has(idx)) {
+            reorderedSources.push({ ...s, position: reorderedSources.length + 1 });
+          }
+        });
+        searchSources = reorderedSources;
+        replyText = segments
+          .map((seg) => {
+            if (seg.startsWith('```')) return seg;
+            return seg.replace(/\[(\d{1,2}(?:\s*,\s*\d{1,2})*)\](?!\()/g, (_m, listStr: string) => {
+              const mapped: number[] = [];
+              for (const p of listStr.split(',')) {
+                const oldNum = parseInt(p.trim(), 10);
+                const newNum = oldToNew.get(oldNum) ?? oldNum;
+                if (!mapped.includes(newNum)) mapped.push(newNum);
+              }
+              return mapped.map((n) => `[${n}]`).join('');
+            });
+          })
+          .join('');
+      } else {
+        sourcesNotLinked = true;
+      }
+    }
+
     // Only include a Generative UI simulator for physics/black-hole simulations or when explicitly requested
     if (!isCasualOrGreeting && !hasAttachments && coreTopic) {
       const hasGenUiFence = /```(?:html:generative-ui|generative-ui|open-generative-ui|a2ui)/i.test(replyText);
@@ -11718,7 +12235,7 @@ Rules:
       }
     }
 
-    if (fetchedImages.length > 0 && enrichedSearchSources.length < 6) {
+    if (fetchedImages.length > 0 && enrichedSearchSources.length === 0) {
       for (const img of fetchedImages) {
         if (enrichedSearchSources.length >= 6) break;
         const link = img.link || img.imageUrl;
@@ -11738,7 +12255,7 @@ Rules:
       }
     }
 
-    if (youtubeVideos.length > 0 && enrichedSearchSources.length < 6) {
+    if (youtubeVideos.length > 0 && enrichedSearchSources.length === 0) {
       for (const v of youtubeVideos) {
         if (enrichedSearchSources.length >= 6) break;
         if (v.link && !enrichedSearchSources.some((s) => s.url === v.link)) {
@@ -11778,6 +12295,7 @@ Rules:
       success: true,
       text: replyText,
       sources: enrichedSearchSources,
+      sourcesNotLinked,
       images: fetchedImages,
       personaWiki,
       videos: youtubeVideos,

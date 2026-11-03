@@ -94,15 +94,30 @@ export const InlineCitation: React.FC<InlineCitationProps> = ({
       }}
       className="relative inline-block whitespace-nowrap align-super mx-0.5 select-none"
     >
-      <a
-        href={source.url}
-        target="_blank"
-        rel="noopener noreferrer"
+      <button
+        type="button"
         onClick={(e) => {
+          e.preventDefault();
           e.stopPropagation();
           window.dispatchEvent(
             new CustomEvent('zeno-highlight-source', {
-              detail: { url: source.url, index, active: true, scroll: true },
+              detail: { url: source?.url, index, active: true, scroll: true },
+            })
+          );
+        }}
+        onFocus={() => {
+          setIsOpen(true);
+          window.dispatchEvent(
+            new CustomEvent('zeno-highlight-source', {
+              detail: { url: source?.url, index, active: true },
+            })
+          );
+        }}
+        onBlur={() => {
+          setIsOpen(false);
+          window.dispatchEvent(
+            new CustomEvent('zeno-highlight-source', {
+              detail: { url: source?.url, index, active: false },
             })
           );
         }}
@@ -111,11 +126,11 @@ export const InlineCitation: React.FC<InlineCitationProps> = ({
             ? 'bg-[#1e1e24] border-white/20 text-neutral-100 hover:bg-[#FC4C01]/20 hover:text-[#FC4C01] hover:border-[#FC4C01]/50'
             : 'bg-neutral-100 border-neutral-300 text-neutral-950 hover:bg-[#FC4C01]/15 hover:text-[#FC4C01] hover:border-[#FC4C01]/50'
         }`}
-        title={`Source ${index}: ${source.title}`}
-        aria-label={`Source ${index}: ${source.title}`}
+        title={source?.title ? `Source ${index}: ${source.title}` : `Source ${index}`}
+        aria-label={source?.title ? `Source ${index}: ${source.title}` : `Source ${index}`}
       >
         {index}
-      </a>
+      </button>
 
       {/* Small floating popover card anchored directly to the citation badge */}
       {isOpen && (

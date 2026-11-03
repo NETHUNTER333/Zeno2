@@ -1105,14 +1105,7 @@ export default function App() {
                 const incomingSources = Array.isArray(data.sources) ? data.sources : [];
 
                 // Prioritize incomingSources from /api/chat because the answer's [1]..[N] citations were generated against incomingSources
-                let baseSources = incomingSources.length > 0 ? incomingSources : existingSources;
-                if (incomingSources.length > 0 && existingSources.length > 0) {
-                  const seenUrls = new Set(incomingSources.map((s: any) => s?.url).filter(Boolean));
-                  const extras = existingSources.filter(
-                    (s: any) => s?.url && !seenUrls.has(s.url)
-                  );
-                  baseSources = [...incomingSources, ...extras].slice(0, 12);
-                }
+                const baseSources = incomingSources.length > 0 ? incomingSources : existingSources;
 
                 // Renumber inline citations in rawFullText by order of first appearance and reorder baseSources to match
                 let finalText = rawFullText;
@@ -1177,6 +1170,7 @@ export default function App() {
                   ...m,
                   content: finalText,
                   sources: finalSources.length > 0 ? finalSources : undefined,
+                  sourcesNotLinked: Boolean(data.sourcesNotLinked),
                   images: data.images,
                   personaWiki: data.personaWiki,
                   videos: data.videos,
@@ -1543,6 +1537,7 @@ export default function App() {
                   ? `${cleanContent} (regarding: ${standaloneSearchQuery})`
                   : cleanContent,
               attachments: m.attachments,
+              sources: m.role === 'assistant' && Array.isArray(m.sources) ? m.sources.slice(0, 6) : undefined,
             };
           }),
           searchQuery: standaloneSearchQuery,

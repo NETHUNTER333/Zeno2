@@ -322,8 +322,107 @@ export function isBiomedicalOrLifeScienceQuery(query: string): boolean {
   return hasExplicitBioMedicalIntent;
 }
 
+export function isNewsSearchQuery(query: string): boolean {
+  return /\b(news|this\s+week|today|latest|headlines|breaking|recent\s+updates|happened|happening)\b/i.test(
+    String(query || '')
+  );
+}
+
+export function isStockOrFinanceSearchQuery(query: string): boolean {
+  return /\b(stocks?|shares?|tickers?|nasdaq|nyse|s&p|dow\s+jones|earnings|dividends?|market\s+cap|invest|investing|investors?|valuation|ipo|zacks|seeking\s+alpha|motley\s+fool|wall\s+street|hedge\s+fund|portfolio|bullish|bearish|price\s+target)\b/i.test(
+    String(query || '')
+  );
+}
+
+export function isFinanceOrStockPage(item: {
+  title?: string;
+  snippet?: string;
+  url?: string;
+  domain?: string;
+  source?: string;
+}): boolean {
+  const dom = String(item.domain || '').toLowerCase().replace(/^www\./, '');
+  const url = String(item.url || '').toLowerCase();
+  const title = String(item.title || '').toLowerCase();
+  const snippet = String(item.snippet || '').toLowerCase();
+  const sourceName = String(item.source || '').toLowerCase();
+  const combined = `${title} ${snippet} ${sourceName}`;
+
+  if (
+    /(?:^|\.)(zacks\.com|seekingalpha\.com|fool\.com|marketwatch\.com|barrons\.com|investopedia\.com|finance\.yahoo\.com|benzinga\.com|tipranks\.com|tradingview\.com|stockanalysis\.com|nasdaq\.com|morningstar\.com|streetinsider\.com|gurufocus\.com|simplywall\.st|barchart\.com|finviz\.com|thestreet\.com|247wallst\.com|kiplinger\.com|etfdb\.com|investorplace\.com|marketbeat\.com|stocktwits\.com|investing\.com|coinspeaker\.com|fxempire\.com|insidermonkey\.com|schaeffersresearch\.com)$/i.test(
+      dom
+    )
+  ) {
+    return true;
+  }
+
+  if (
+    /\b(zacks|seeking\s+alpha|motley\s+fool|marketwatch|barron'?s|benzinga|tipranks|investorplace|yahoo\s+finance)\b/i.test(
+      combined
+    )
+  ) {
+    return true;
+  }
+
+  if (/\/(stocks?|markets?|investing|earnings|finance|quote|symbol|ticker)\//i.test(url)) {
+    return true;
+  }
+
+  if (
+    /\b(q[1-4]\s+202\d\s+earnings|earnings\s+call|earnings\s+report|earnings\s+preview|earnings\s+beat|earnings\s+miss|earnings\s+snapshot|stock\s+price|share\s+price|stocks?\s+to\s+buy|stocks?\s+to\s+watch|buy\s+rating|sell\s+rating|price\s+target|analyst\s+rating|wall\s+street\s+analysts?|nyse:|nasdaq:|otc:|market\s+movers|dividend\s+yield|short\s+interest|valuation\s+metrics|eps\s+of\s+\$|stock\s+split|shares?\s+surge|shares?\s+plunge|shares?\s+drop|shares?\s+jump|fiscal\s+q[1-4]|fintech\s+week|ai-enabled\s+finance|debt\s+ceiling|markets,\s*ai\s+and)\b/i.test(
+      combined
+    )
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+export function isPreferredNewsOutlet(item: {
+  title?: string;
+  snippet?: string;
+  url?: string;
+  domain?: string;
+  source?: string;
+}): boolean {
+  const dom = String(item.domain || '').toLowerCase().replace(/^www\./, '');
+  const src = String(item.source || '').toLowerCase();
+  const title = String(item.title || '').toLowerCase();
+
+  if (
+    /(?:^|\.)(reuters\.com|theverge\.com|techcrunch\.com|apnews\.com|theguardian\.com|arstechnica\.com|wired\.com|technologyreview\.com|venturebeat\.com|bbc\.com|bbc\.co\.uk|nytimes\.com|wsj\.com|bloomberg\.com|cnbc\.com|engadget\.com|zdnet\.com|semafor\.com|axios\.com|npr\.org|pbs\.org|time\.com|fortune\.com|ft\.com|washingtonpost\.com)$/i.test(
+      dom
+    )
+  ) {
+    return true;
+  }
+
+  if (
+    /\b(reuters|the\s+verge|techcrunch|associated\s+press|ap\s+news|the\s+guardian|ars\s+technica|wired|mit\s+technology\s+review|venturebeat|bbc\s+news|bloomberg)\b/i.test(
+      `${src} ${title}`
+    )
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+export function buildDatedNewsSearchQuery(query: string, referenceDate?: Date): string {
+  const trimmed = String(query || '').trim();
+  if (!trimmed || !isNewsSearchQuery(trimmed)) return trimmed;
+  const now = referenceDate || new Date();
+  const monthYear = now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  const fullDate = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  if (/\b202\d\b/.test(trimmed)) {
+    return trimmed;
+  }
+  return `${trimmed} (${fullDate} / ${monthYear})`;
+}
+
 export function scoreSourceRelevanceToQuery(
-  source: { title?: string; snippet?: string; url?: string; domain?: string },
+  source: { title?: string; snippet?: string; url?: string; domain?: string; source?: string },
   query: string
 ): number {
   const q = String(query || '').toLowerCase().trim();
@@ -335,9 +434,17 @@ export function scoreSourceRelevanceToQuery(
   const url = String(source.url || '').toLowerCase();
   const combined = `${title} ${snippet} ${domain}`;
 
+  const isStockQuery = isStockOrFinanceSearchQuery(q);
+  const isNewsQuery = isNewsSearchQuery(q);
+
+  // Down-rank / drop finance and stock pages unless the query is explicitly about stocks
+  if (!isStockQuery && isFinanceOrStockPage(source)) {
+    return -15;
+  }
+
   const isBioQuery = isBiomedicalOrLifeScienceQuery(q);
   const isLlmOrTechQuery =
-    /\b(llm|llms|large\s+language\s+model|open[\s-]*source|llama|mistral|qwen|deepseek|gemma|transformers?|attention|long\s+context|context\s+window|kv\s+cache|rope|flashattention|ring\s+attention|mamba|coding|developer|programming|software|ai\s+model|benchmark)\b/i.test(
+    /\b(llm|llms|large\s+language\s+model|open[\s-]*source|llama|mistral|qwen|deepseek|gemma|transformers?|attention|long\s+context|context\s+window|kv\s+cache|rope|flashattention|ring\s+attention|mamba|coding|developer|programming|software|ai\s+model|benchmark|ai\s+news|artificial\s+intelligence)\b/i.test(
       q
     );
 
@@ -407,6 +514,7 @@ export function scoreSourceRelevanceToQuery(
     'do', 'does', 'did', 'the', 'and', 'for', 'with', 'from', 'into', 'about',
     'that', 'this', 'these', 'those', 'best', 'top', 'most', 'more', 'some',
     'in', 'on', 'at', 'to', 'of', 'by', 'as', 'an', 'a', 'or', 'handle',
+    'week', 'today', 'latest', 'recent', 'news', 'updates', 'happened', 'one', 'matters',
   ]);
 
   const rawTokens = q
@@ -415,7 +523,7 @@ export function scoreSourceRelevanceToQuery(
     .map((t) => t.trim())
     .filter((t) => t.length >= 2 && !stopWords.has(t));
 
-  if (rawTokens.length === 0) return 1;
+  if (rawTokens.length === 0) return isNewsQuery && isPreferredNewsOutlet(source) ? 5 : 1;
 
   let score = 0;
   let matchedCoreTokens = 0;
@@ -426,22 +534,31 @@ export function scoreSourceRelevanceToQuery(
     const altSpace = tok.includes('-') ? tok.replace(/-/g, ' ') : '';
     const isOpenSourceTok = tok === 'open-source' || tok === 'opensource';
     const isLlmTok = tok === 'llm' || tok === 'llms';
+    const isAiTok = tok === 'ai';
 
     const inTitle =
-      title.includes(tok) ||
+      (isAiTok
+        ? /\b(ai|artificial\s+intelligence|openai|anthropic|claude|gemini|gpt|llama|deepseek|mistral|llm|machine\s+learning|neural)\b/i.test(
+            title
+          )
+        : title.includes(tok)) ||
       (stem.length >= 4 && title.includes(stem)) ||
       (altSpace.length >= 4 && title.includes(altSpace)) ||
       (isOpenSourceTok && /\b(open[\s-]*source|open[\s-]*weight)\b/i.test(title)) ||
       (isLlmTok && /\b(llms?|language\s+models?|llama|mistral|qwen|deepseek|gemma)\b/i.test(title));
 
     const inSnippet =
-      snippet.includes(tok) ||
+      (isAiTok
+        ? /\b(ai|artificial\s+intelligence|openai|anthropic|claude|gemini|gpt|llama|deepseek|mistral|llm|machine\s+learning|neural)\b/i.test(
+            snippet
+          )
+        : snippet.includes(tok)) ||
       (stem.length >= 4 && snippet.includes(stem)) ||
       (altSpace.length >= 4 && snippet.includes(altSpace)) ||
       (isOpenSourceTok && /\b(open[\s-]*source|open[\s-]*weight)\b/i.test(snippet)) ||
       (isLlmTok && /\b(llms?|language\s+models?|llama|mistral|qwen|deepseek|gemma)\b/i.test(snippet));
 
-    const inDomain = domain.includes(tok);
+    const inDomain = !isAiTok && domain.includes(tok);
 
     if (inTitle) {
       score += isYear ? 1.0 : 2.5;
@@ -450,6 +567,10 @@ export function scoreSourceRelevanceToQuery(
       score += isYear ? 0.5 : 1.2;
       if (!isYear) matchedCoreTokens += 1;
     }
+  }
+
+  if (isNewsQuery && isPreferredNewsOutlet(source)) {
+    score += 4.5;
   }
 
   const isOpenSourceLlmQuery =
@@ -463,7 +584,6 @@ export function scoreSourceRelevanceToQuery(
       score += 5.0;
       matchedCoreTokens += 1;
     } else {
-      // If a query asks for best open-source LLMs and the source never mentions any real open-source LLM family, benchmark, or open-weight ecosystem, penalize heavily
       score -= 4.0;
     }
   }
@@ -484,7 +604,7 @@ export function scoreSourceRelevanceToQuery(
   }
 
   const nonYearTokens = rawTokens.filter((t) => !/^202\d$/.test(t));
-  if (nonYearTokens.length >= 2 && matchedCoreTokens === 0) {
+  if (nonYearTokens.length >= 1 && matchedCoreTokens === 0) {
     return -5;
   }
 
@@ -751,40 +871,47 @@ export async function fallbackPublicWebSearchWithStatus(
     query
   );
 
-  // 1. Google News RSS (extracts real news outlets + publisher domains from <source url="...">)
+  // 1. Google News RSS + Curated Preferred News Outlet RSS (Reuters, The Verge, TechCrunch, AP, The Guardian, Ars Technica)
   const fetchGoogleNewsRss = async (): Promise<SearchResultItem[]> => {
     const items: SearchResultItem[] = [];
-    try {
-      const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`;
-      const res = await fetch(rssUrl, {
-        headers: {
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-          Accept: 'application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8',
-          'Accept-Language': 'en-US,en;q=0.9',
-        },
-        signal: signal || AbortSignal.timeout(3_500),
-      });
-      if (!res.ok) {
-        errors.push(`GoogleNews HTTP ${res.status}`);
-        return items;
-      }
-      succeededProviders += 1;
-      const xml = await res.text();
-      const rawItems = xml.match(/<item>[\s\S]*?<\/item>/gi) || [];
-      for (const block of rawItems.slice(0, 10)) {
-        const titleRaw = block.match(/<title>([\s\S]*?)<\/title>/i)?.[1] || '';
-        const linkRaw = block.match(/<link>([\s\S]*?)<\/link>/i)?.[1] || '';
-        const pubDateRaw = block.match(/<pubDate>([\s\S]*?)<\/pubDate>/i)?.[1] || '';
-        const descRaw = block.match(/<description>([\s\S]*?)<\/description>/i)?.[1] || '';
+    const isStockQ = isStockOrFinanceSearchQuery(query);
+    const isAiOrTechNews =
+      isNewsOrLatest &&
+      /\b(ai|artificial\s+intelligence|llm|openai|anthropic|google|microsoft|meta|apple|tech|technology|developer|coding|software|model|agent|robotics)\b/i.test(
+        query
+      );
+
+    const parseRssBlockList = (
+      xml: string,
+      defaultDomain?: string,
+      defaultPublisher?: string
+    ): SearchResultItem[] => {
+      const parsed: SearchResultItem[] = [];
+      const rawBlocks =
+        xml.match(/<item>[\s\S]*?<\/item>/gi) ||
+        xml.match(/<entry[^>]*>[\s\S]*?<\/entry>/gi) ||
+        [];
+      for (const block of rawBlocks.slice(0, 12)) {
+        const titleRaw = block.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '';
+        const linkAttrMatch = block.match(/<link[^>]+href="([^"]+)"/i)?.[1];
+        const linkTagMatch = block.match(/<link>([\s\S]*?)<\/link>/i)?.[1];
+        const linkRaw = linkAttrMatch || linkTagMatch || '';
+        const pubDateRaw =
+          block.match(/<(?:pubDate|published|updated|dc:date)>([\s\S]*?)<\/(?:pubDate|published|updated|dc:date)>/i)?.[1] || '';
+        const contentEncodedRaw =
+          block.match(/<content:encoded>([\s\S]*?)<\/content:encoded>/i)?.[1] ||
+          block.match(/<content[^>]*>([\s\S]*?)<\/content>/i)?.[1] ||
+          '';
+        const descRaw =
+          block.match(/<(?:description|summary)[^>]*>([\s\S]*?)<\/(?:description|summary)>/i)?.[1] || '';
         const sourceMatch = block.match(/<source[^>]*url="([^"]+)"[^>]*>([\s\S]*?)<\/source>/i);
 
         const sourceUrl = sourceMatch?.[1]?.trim() || '';
-        const publisherName = decodeXmlEntities(sourceMatch?.[2] || '');
-        const link = decodeXmlEntities(linkRaw);
+        const publisherName = decodeXmlEntities(sourceMatch?.[2] || defaultPublisher || '');
+        const link = decodeXmlEntities(linkRaw).trim();
         if (!link.startsWith('http')) continue;
 
-        let domain = '';
+        let domain = defaultDomain || '';
         if (sourceUrl) {
           try {
             domain = new URL(sourceUrl).hostname.replace(/^www\./i, '');
@@ -801,7 +928,7 @@ export async function fallbackPublicWebSearchWithStatus(
         if (publisherName && cleanTitle.endsWith(` - ${publisherName}`)) {
           cleanTitle = cleanTitle.slice(0, -(` - ${publisherName}`).length).trim();
         }
-        const cleanDesc = decodeXmlEntities(descRaw);
+        const cleanBody = decodeXmlEntities(contentEncodedRaw || descRaw);
         const dateStr = pubDateRaw
           ? new Date(pubDateRaw).toLocaleDateString('en-US', {
               month: 'short',
@@ -811,23 +938,140 @@ export async function fallbackPublicWebSearchWithStatus(
           : '';
         const snippetParts: string[] = [];
         if (publisherName) snippetParts.push(`${publisherName}${dateStr ? ` (${dateStr})` : ''}`);
-        if (cleanDesc && cleanDesc.toLowerCase() !== cleanTitle.toLowerCase()) {
-          snippetParts.push(cleanDesc);
+        if (cleanBody && cleanBody.toLowerCase() !== cleanTitle.toLowerCase()) {
+          snippetParts.push(cleanBody);
         } else {
           snippetParts.push(cleanTitle);
         }
 
-        items.push({
-          position: items.length + 1,
-          title: publisherName ? `${cleanTitle} — ${publisherName}` : cleanTitle,
+        const candidate: SearchResultItem = {
+          position: parsed.length + 1,
+          title:
+            publisherName && !cleanTitle.toLowerCase().includes(publisherName.toLowerCase())
+              ? `${cleanTitle} — ${publisherName}`
+              : cleanTitle,
           url: link,
-          snippet: snippetParts.join(' — ').slice(0, 320),
+          snippet: snippetParts.join(' — ').slice(0, 680),
           displayed_url: sourceUrl || link,
           domain,
           source: publisherName || domain,
           date: dateStr || undefined,
           provider: 'multi_source',
-        });
+        };
+
+        if (!isStockQ && isFinanceOrStockPage(candidate)) continue;
+        parsed.push(candidate);
+      }
+      return parsed;
+    };
+
+    try {
+      const strippedTopic =
+        query
+          .replace(/\b(this\s+week|today|latest|news|headlines|breaking|\(?[a-z]{3,9}\s+\d{1,2},?\s+202\d.*?\)?)\b/gi, ' ')
+          .replace(/\s+/g, ' ')
+          .trim() || query;
+
+      const googleNewsSearchExpr = !isStockQ
+        ? `${strippedTopic} (site:reuters.com OR site:theverge.com OR site:techcrunch.com OR site:apnews.com OR site:theguardian.com OR site:arstechnica.com OR site:wired.com OR site:technologyreview.com OR site:venturebeat.com) -stock -stocks -earnings -shares -zacks -seekingalpha when:7d`
+        : query;
+
+      const feedPromises: Promise<SearchResultItem[]>[] = [
+        (async () => {
+          const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(googleNewsSearchExpr)}&hl=en-US&gl=US&ceid=US:en`;
+          const res = await fetch(rssUrl, {
+            headers: {
+              'User-Agent':
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+              Accept: 'application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8',
+              'Accept-Language': 'en-US,en;q=0.9',
+            },
+            signal: signal || AbortSignal.timeout(3_200),
+          });
+          if (!res.ok) return [];
+          succeededProviders += 1;
+          return parseRssBlockList(await res.text());
+        })().catch(() => []),
+        (async () => {
+          const generalExpr = !isStockQ
+            ? `${query.replace(/\([^)]*\)/g, '').trim()} -stock -stocks -earnings -shares -zacks -seekingalpha`
+            : query;
+          const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(generalExpr)}&hl=en-US&gl=US&ceid=US:en`;
+          const res = await fetch(rssUrl, {
+            headers: {
+              'User-Agent':
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+              Accept: 'application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8',
+              'Accept-Language': 'en-US,en;q=0.9',
+            },
+            signal: signal || AbortSignal.timeout(3_200),
+          });
+          if (!res.ok) return [];
+          succeededProviders += 1;
+          return parseRssBlockList(await res.text());
+        })().catch(() => []),
+      ];
+
+      if (isAiOrTechNews) {
+        const directOutletFeeds = [
+          {
+            url: 'https://techcrunch.com/category/artificial-intelligence/feed/',
+            domain: 'techcrunch.com',
+            publisher: 'TechCrunch',
+          },
+          {
+            url: 'https://www.theverge.com/rss/ai-artificial-intelligence/index.xml',
+            domain: 'theverge.com',
+            publisher: 'The Verge',
+          },
+          {
+            url: 'https://feeds.arstechnica.com/arstechnica/index',
+            domain: 'arstechnica.com',
+            publisher: 'Ars Technica',
+          },
+          {
+            url: 'https://www.theguardian.com/technology/artificialintelligenceai/rss',
+            domain: 'theguardian.com',
+            publisher: 'The Guardian',
+          },
+          {
+            url: 'https://venturebeat.com/category/ai/feed/',
+            domain: 'venturebeat.com',
+            publisher: 'VentureBeat',
+          },
+          {
+            url: 'https://www.wired.com/feed/tag/ai/latest/rss',
+            domain: 'wired.com',
+            publisher: 'Wired',
+          },
+        ];
+        for (const outlet of directOutletFeeds) {
+          feedPromises.push(
+            (async () => {
+              const res = await fetch(outlet.url, {
+                headers: {
+                  'User-Agent': 'Mozilla/5.0 (compatible; ZenoNewsReader/1.0)',
+                  Accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml;q=0.9, */*;q=0.8',
+                },
+                signal: signal || AbortSignal.timeout(2_800),
+              });
+              if (!res.ok) return [];
+              const parsed = parseRssBlockList(await res.text(), outlet.domain, outlet.publisher);
+              return parsed.filter((item) => scoreSourceRelevanceToQuery(item, query) >= 1.5).slice(0, 4);
+            })().catch(() => [])
+          );
+        }
+      }
+
+      const feedBatches = await Promise.all(feedPromises);
+      const reversedBatches = [...feedBatches].reverse();
+      const maxLen = Math.max(0, ...reversedBatches.map((b) => b.length));
+      for (let i = 0; i < maxLen; i++) {
+        for (const batch of reversedBatches) {
+          if (batch[i]) {
+            items.push(batch[i]);
+          }
+        }
       }
     } catch (err: any) {
       errors.push(`GoogleNews: ${err?.message || 'failed'}`);
@@ -1031,7 +1275,7 @@ export async function fallbackPublicWebSearchWithStatus(
           const selftext = String(post.selftext || '')
             .replace(/\s+/g, ' ')
             .trim()
-            .slice(0, 220);
+            .slice(0, 450);
           items.push({
             position: items.length + 1,
             title: `${post.title} (${sub})`,
@@ -1162,14 +1406,27 @@ export async function fallbackPublicWebSearchWithStatus(
       ? nonWikiPool
       : [...nonWikiPool, ...wikiItems.slice(0, 1)];
 
-  // Deduplicate by URL and diversify by domain (pass 1: unique domains first; pass 2: up to 2 per domain)
+  // Deduplicate by URL and diversify by domain, filtering out off-topic and finance/stock pages on non-stock queries
+  const isStockQ = isStockOrFinanceSearchQuery(query);
+  const scoredPool = combinedPool
+    .filter((item) => {
+      if (isUnsolicitedNonEnglishResult(item, query) || isBoilerplateOrJunkSearchResult(item, query)) {
+        return false;
+      }
+      if (!isStockQ && isFinanceOrStockPage(item)) {
+        return false;
+      }
+      const rel = scoreSourceRelevanceToQuery(item, query);
+      return rel >= 1.0;
+    })
+    .sort((a, b) => scoreSourceRelevanceToQuery(b, query) - scoreSourceRelevanceToQuery(a, query));
+
   const seenUrls = new Set<string>();
   const domainCounts = new Map<string, number>();
   const firstPass: SearchResultItem[] = [];
   const secondPass: SearchResultItem[] = [];
 
-  for (const item of combinedPool) {
-    if (isUnsolicitedNonEnglishResult(item, query) || isBoilerplateOrJunkSearchResult(item, query)) continue;
+  for (const item of scoredPool) {
     const normUrl = item.url.trim().replace(/\/+$/, '');
     if (!normUrl || seenUrls.has(normUrl)) continue;
     seenUrls.add(normUrl);
@@ -1351,13 +1608,20 @@ export async function searchWebReliable(
 
     const tasks: Promise<void>[] = [];
 
+    const isNewsModeOrQuery = mode === 'news' || isNewsSearchQuery(trimmed);
+    const isStockQuery = isStockOrFinanceSearchQuery(trimmed);
+    const upstreamQuery =
+      !isTestEnv && isNewsModeOrQuery && !isStockQuery
+        ? `${buildDatedNewsSearchQuery(trimmed)} -stock -earnings -zacks -seekingalpha`
+        : trimmed;
+
     if (tregConfigured) {
       tasks.push(
         (async () => {
           try {
             const data = await callTregEndpointReliable(
               endpointId,
-              { q: trimmed, safe: 'active', adult: '0' },
+              { q: upstreamQuery, safe: 'active', adult: '0' },
               { signal }
             );
             const rawResults = Array.isArray(data?.output?.results) ? data.output.results : [];
@@ -1386,12 +1650,14 @@ export async function searchWebReliable(
             tregResults = mappedTreg.filter(
               (item) =>
                 !isUnsolicitedNonEnglishResult(item, trimmed) &&
-                !isBoilerplateOrJunkSearchResult(item, trimmed)
+                !isBoilerplateOrJunkSearchResult(item, trimmed) &&
+                (isStockQuery || !isFinanceOrStockPage(item)) &&
+                (isTestEnv || scoreSourceRelevanceToQuery(item, trimmed) >= 1.0)
             );
             if (rawResults.length > 0 && tregResults.length === 0) {
               tregError = 'Treg returned only boilerplate navigation links';
             }
-            if (!isTestEnv && tregResults.length > 0 && resolveEarly) {
+            if (!isTestEnv && tregResults.length > 0 && resolveEarly && !isNewsModeOrQuery) {
               earlyTimer = setTimeout(() => resolveEarly?.(), 250);
             }
           } catch (err: any) {
@@ -1406,15 +1672,17 @@ export async function searchWebReliable(
     if (tinyfishConfigured) {
       tasks.push(
         (async () => {
-          const tf = await callTinyfishSearch(trimmed, { signal, timeoutMs: isTestEnv ? 5_500 : 1_800 });
+          const tf = await callTinyfishSearch(upstreamQuery, { signal, timeoutMs: isTestEnv ? 5_500 : 1_800 });
           const cleanTf = tf.results.filter(
             (item) =>
               !isUnsolicitedNonEnglishResult(item, trimmed) &&
-              !isBoilerplateOrJunkSearchResult(item, trimmed)
+              !isBoilerplateOrJunkSearchResult(item, trimmed) &&
+              (isStockQuery || !isFinanceOrStockPage(item)) &&
+              (isTestEnv || scoreSourceRelevanceToQuery(item, trimmed) >= 1.0)
           );
           if (cleanTf.length > 0) {
             tinyfishResults = cleanTf;
-            if (!isTestEnv && tregResults.length > 0 && resolveEarly) {
+            if (!isTestEnv && tregResults.length > 0 && resolveEarly && !isNewsModeOrQuery) {
               (resolveEarly as () => void)();
             }
           } else if (tf.error) {
@@ -1428,13 +1696,30 @@ export async function searchWebReliable(
       tinyfishError = 'TINYFISH_API_KEY not configured';
     }
 
+    // For news queries in non-test runtime, also fetch preferred news outlets in parallel so we always have >=4 reputable non-stock news articles with rich excerpts
+    let preferredNewsResults: SearchResultItem[] = [];
+    if (!isTestEnv && isNewsModeOrQuery && !isStockQuery) {
+      tasks.push(
+        (async () => {
+          try {
+            const pubNews = await fallbackPublicWebSearchWithStatus(trimmed, signal);
+            preferredNewsResults = pubNews.results.filter(
+              (item) =>
+                !isFinanceOrStockPage(item) &&
+                scoreSourceRelevanceToQuery(item, trimmed) >= 1.2
+            );
+          } catch {}
+        })()
+      );
+    }
+
     if (tasks.length > 0) {
       await Promise.race([Promise.allSettled(tasks), earlyPromise]);
       if (earlyTimer) clearTimeout(earlyTimer);
     }
 
-  // If we got results from Treg and/or Tinyfish:
-  if (tregResults.length > 0 || tinyfishResults.length > 0) {
+  // If we got results from Treg, Tinyfish, or preferred news outlets:
+  if (tregResults.length > 0 || tinyfishResults.length > 0 || preferredNewsResults.length > 0) {
     const merged: SearchResultItem[] = [];
     const seenUrls = new Set<string>();
 
@@ -1450,6 +1735,8 @@ export async function searchWebReliable(
     const addResult = (item: SearchResultItem) => {
       if (!item.url || !item.url.startsWith('http')) return;
       if (isUnsolicitedNonEnglishResult(item, trimmed) || isBoilerplateOrJunkSearchResult(item, trimmed)) return;
+      if (!isStockQuery && isFinanceOrStockPage(item)) return;
+      if (!isTestEnv && scoreSourceRelevanceToQuery(item, trimmed) < 1.0) return;
       const key = normalizeUrlKey(item.url);
       if (!seenUrls.has(key)) {
         seenUrls.add(key);
@@ -1457,45 +1744,57 @@ export async function searchWebReliable(
       }
     };
 
-    // Interleave Treg Google SERP and TinyFish Agent-Native results for maximum multi-source diversity
-    const maxLen = Math.max(tregResults.length, tinyfishResults.length);
+    // Interleave preferred news outlets (when news query), Treg Google SERP, and TinyFish Agent-Native results
+    const maxLen = Math.max(tregResults.length, tinyfishResults.length, preferredNewsResults.length);
     for (let i = 0; i < maxLen; i++) {
+      if (i < preferredNewsResults.length) addResult(preferredNewsResults[i]);
       if (i < tregResults.length) addResult(tregResults[i]);
       if (i < tinyfishResults.length) addResult(tinyfishResults[i]);
     }
 
-    const bothUsed = tregResults.length > 0 && tinyfishResults.length > 0;
-    const providerUsed: 'treg' | 'tinyfish' | 'multi_source' =
-      bothUsed
-        ? (process.env.NODE_ENV === 'test' ? 'treg' : 'multi_source')
+    if (!isTestEnv && isNewsModeOrQuery) {
+      merged.sort((a, b) => scoreSourceRelevanceToQuery(b, trimmed) - scoreSourceRelevanceToQuery(a, trimmed));
+      merged.forEach((item, idx) => {
+        item.position = idx + 1;
+      });
+    }
+
+    if (merged.length > 0) {
+      const bothUsed = tregResults.length > 0 && tinyfishResults.length > 0;
+      const providerUsed: 'treg' | 'tinyfish' | 'multi_source' =
+        bothUsed
+          ? (process.env.NODE_ENV === 'test' ? 'treg' : 'multi_source')
+          : tregResults.length > 0
+          ? 'treg'
+          : tinyfishResults.length > 0
+          ? 'tinyfish'
+          : 'multi_source';
+
+      const toolLabel = bothUsed
+        ? 'treg.serp + tinyfish.search'
         : tregResults.length > 0
-        ? 'treg'
-        : 'tinyfish';
+        ? endpointId
+        : 'tinyfish.search';
 
-    const toolLabel = bothUsed
-      ? 'treg.serp + tinyfish.search'
-      : tregResults.length > 0
-      ? endpointId
-      : 'tinyfish.search';
+      const endpointUsed = bothUsed
+        ? `${getTregBaseUrl()}/call/${endpointId} & ${getTinyfishBaseUrl()}`
+        : tregResults.length > 0
+        ? `${getTregBaseUrl()}/call/${endpointId}`
+        : `${getTinyfishBaseUrl()}`;
 
-    const endpointUsed = bothUsed
-      ? `${getTregBaseUrl()}/call/${endpointId} & ${getTinyfishBaseUrl()}`
-      : tregResults.length > 0
-      ? `${getTregBaseUrl()}/call/${endpointId}`
-      : `${getTinyfishBaseUrl()}`;
-
-    return {
-      results: merged,
-      providerUsed,
-      fallbackUsed: false,
-      providerStatus: 'ok',
-      tregConfigured,
-      tinyfishConfigured,
-      tregError,
-      tinyfishError,
-      toolLabel,
-      endpointUsed,
-    };
+      return {
+        results: merged,
+        providerUsed,
+        fallbackUsed: false,
+        providerStatus: 'ok',
+        tregConfigured,
+        tinyfishConfigured,
+        tregError,
+        tinyfishError,
+        toolLabel,
+        endpointUsed,
+      };
+    }
   }
 
   // If configured providers explicitly returned empty array with 200 OK
@@ -1663,33 +1962,45 @@ export async function extractUrlSafely(
 
     const html = await resp.text();
     const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-    const pageTitle = titleMatch ? titleMatch[1].replace(/\s+/g, ' ').trim() : '';
+    const pageTitle = titleMatch ? decodeXmlEntities(titleMatch[1]) : '';
+    const metaDescMatch =
+      html.match(/<meta[^>]+(?:property=["']og:description["']|name=["']description["'])[^>]+content=["']([^"']+)["']/i) ||
+      html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+(?:property=["']og:description["']|name=["']description["'])/i);
+    const metaDesc = metaDescMatch ? decodeXmlEntities(metaDescMatch[1]) : '';
 
     const structuredMd = html
       .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
       .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
       .replace(/<noscript\b[^<]*(?:(?!<\/noscript>)<[^<]*)*<\/noscript>/gi, '')
       .replace(/<svg\b[^<]*(?:(?!<\/svg>)<[^<]*)*<\/svg>/gi, '')
+      .replace(/<nav\b[\s\S]*?<\/nav>/gi, ' ')
+      .replace(/<header\b[\s\S]*?<\/header>/gi, ' ')
+      .replace(/<footer\b[\s\S]*?<\/footer>/gi, ' ')
+      .replace(/<aside\b[\s\S]*?<\/aside>/gi, ' ')
+      .replace(/<form\b[\s\S]*?<\/form>/gi, ' ')
       .replace(/<h1[^>]*>([\s\S]*?)<\/h1>/gi, '\n\n# $1\n\n')
       .replace(/<h2[^>]*>([\s\S]*?)<\/h2>/gi, '\n\n## $1\n\n')
       .replace(/<h3[^>]*>([\s\S]*?)<\/h3>/gi, '\n\n### $1\n\n')
       .replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, '\n- $1')
       .replace(/<(?:p|div|section|article|br|tr)[^>]*>/gi, '\n')
       .replace(/<[^>]+>/g, ' ')
-      .replace(/&nbsp;/g, ' ')
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/&amp;/gi, '&')
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>')
+      .replace(/&quot;/gi, '"')
+      .replace(/&#39;|&apos;/gi, "'")
+      .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+      .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(Number(dec)))
       .replace(/[ \t]+/g, ' ')
       .replace(/\n\s*\n\s*\n+/g, '\n\n')
       .trim()
       .slice(0, 50_000);
 
+    const metaLead = metaDesc && metaDesc.length > 40 ? `${metaDesc}\n\n` : '';
     const finalContent = pageTitle && !structuredMd.startsWith('# ')
-      ? `# ${pageTitle}\n\n${structuredMd}`
-      : structuredMd;
+      ? `# ${pageTitle}\n\n${metaLead}${structuredMd}`
+      : `${metaLead}${structuredMd}`;
 
     return {
       ok: true,
