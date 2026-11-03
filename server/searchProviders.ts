@@ -323,13 +323,13 @@ export function isBiomedicalOrLifeScienceQuery(query: string): boolean {
 }
 
 export function isNewsSearchQuery(query: string): boolean {
-  return /\b(news|this\s+week|today|latest|headlines|breaking|recent\s+updates|happened|happening)\b/i.test(
+  return /\b(news|this\s+week|today|latest|headlines|announced|breaking|recent\s+updates|happened|happening)\b/i.test(
     String(query || '')
   );
 }
 
 export function isStockOrFinanceSearchQuery(query: string): boolean {
-  return /\b(stocks?|shares?|tickers?|nasdaq|nyse|s&p|dow\s+jones|earnings|dividends?|market\s+cap|invest|investing|investors?|valuation|ipo|zacks|seeking\s+alpha|motley\s+fool|wall\s+street|hedge\s+fund|portfolio|bullish|bearish|price\s+target)\b/i.test(
+  return /\b(stocks?|shares?|earnings|investing|investors?|invest|tickers?|nasdaq|nyse|s&p|dow\s+jones|dividends?|market\s+cap|valuation|ipo|zacks|seeking\s+alpha|motley\s+fool|wall\s+street|hedge\s+fund|portfolio|bullish|bearish|price\s+target)\b/i.test(
     String(query || '')
   );
 }
@@ -349,7 +349,7 @@ export function isFinanceOrStockPage(item: {
   const combined = `${title} ${snippet} ${sourceName}`;
 
   if (
-    /(?:^|\.)(zacks\.com|seekingalpha\.com|fool\.com|marketwatch\.com|barrons\.com|investopedia\.com|finance\.yahoo\.com|benzinga\.com|tipranks\.com|tradingview\.com|stockanalysis\.com|nasdaq\.com|morningstar\.com|streetinsider\.com|gurufocus\.com|simplywall\.st|barchart\.com|finviz\.com|thestreet\.com|247wallst\.com|kiplinger\.com|etfdb\.com|investorplace\.com|marketbeat\.com|stocktwits\.com|investing\.com|coinspeaker\.com|fxempire\.com|insidermonkey\.com|schaeffersresearch\.com)$/i.test(
+    /(?:^|\.)(zacks\.com|seekingalpha\.com|finance\.yahoo\.com|investors\.com|fool\.com|marketbeat\.com|benzinga\.com|marketwatch\.com|barrons\.com|investopedia\.com|tipranks\.com|tradingview\.com|stockanalysis\.com|nasdaq\.com|morningstar\.com|streetinsider\.com|gurufocus\.com|simplywall\.st|barchart\.com|finviz\.com|thestreet\.com|247wallst\.com|kiplinger\.com|etfdb\.com|investorplace\.com|stocktwits\.com|investing\.com|coinspeaker\.com|fxempire\.com|insidermonkey\.com|schaeffersresearch\.com)$/i.test(
       dom
     )
   ) {
@@ -357,7 +357,14 @@ export function isFinanceOrStockPage(item: {
   }
 
   if (
-    /\b(zacks|seeking\s+alpha|motley\s+fool|marketwatch|barron'?s|benzinga|tipranks|investorplace|yahoo\s+finance)\b/i.test(
+    dom.includes('yahoo.com') &&
+    (dom.includes('finance') || url.includes('/finance') || url.includes('/quote') || url.includes('/m/'))
+  ) {
+    return true;
+  }
+
+  if (
+    /\b(zacks|seeking\s+alpha|motley\s+fool|marketwatch|barron'?s|benzinga|tipranks|investorplace|yahoo\s+finance|investor'?s\s+business\s+daily|ibd)\b/i.test(
       combined
     )
   ) {
@@ -391,7 +398,7 @@ export function isPreferredNewsOutlet(item: {
   const title = String(item.title || '').toLowerCase();
 
   if (
-    /(?:^|\.)(reuters\.com|theverge\.com|techcrunch\.com|apnews\.com|theguardian\.com|arstechnica\.com|wired\.com|technologyreview\.com|venturebeat\.com|bbc\.com|bbc\.co\.uk|nytimes\.com|wsj\.com|bloomberg\.com|cnbc\.com|engadget\.com|zdnet\.com|semafor\.com|axios\.com|npr\.org|pbs\.org|time\.com|fortune\.com|ft\.com|washingtonpost\.com)$/i.test(
+    /(?:^|\.)(reuters\.com|apnews\.com|theverge\.com|techcrunch\.com|arstechnica\.com|wired\.com|theguardian\.com|bbc\.com|bbc\.co\.uk|technologyreview\.com|venturebeat\.com|nytimes\.com|wsj\.com|bloomberg\.com|cnbc\.com|engadget\.com|zdnet\.com|semafor\.com|axios\.com|npr\.org|pbs\.org|time\.com|fortune\.com|ft\.com|washingtonpost\.com)$/i.test(
       dom
     )
   ) {
@@ -399,7 +406,7 @@ export function isPreferredNewsOutlet(item: {
   }
 
   if (
-    /\b(reuters|the\s+verge|techcrunch|associated\s+press|ap\s+news|the\s+guardian|ars\s+technica|wired|mit\s+technology\s+review|venturebeat|bbc\s+news|bloomberg)\b/i.test(
+    /\b(reuters|associated\s+press|ap\s+news|the\s+verge|techcrunch|ars\s+technica|wired|the\s+guardian|bbc|bbc\s+news|mit\s+technology\s+review|technology\s+review|venturebeat|bloomberg)\b/i.test(
       `${src} ${title}`
     )
   ) {
@@ -409,16 +416,28 @@ export function isPreferredNewsOutlet(item: {
   return false;
 }
 
+export function rewriteNewsQuery(query: string, referenceDate?: Date): string {
+  let q = String(query || '').trim();
+  if (!isNewsSearchQuery(q)) return q;
+  const now = referenceDate || new Date();
+  const monthYear = now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  // Expand standalone "AI" or "ai" to "artificial intelligence"
+  q = q.replace(/\bAI\b/gi, 'artificial intelligence');
+  if (/\b(this\s+week|today|latest)\b/i.test(q)) {
+    q = q.replace(/\b(this\s+week|today|latest)\b/gi, monthYear);
+  } else if (!q.toLowerCase().includes(monthYear.toLowerCase())) {
+    q = `${q} ${monthYear}`;
+  }
+  if (!/\bnews\b/i.test(q)) {
+    q = `${q} news`;
+  }
+  return q.replace(/\s+/g, ' ').trim();
+}
+
 export function buildDatedNewsSearchQuery(query: string, referenceDate?: Date): string {
   const trimmed = String(query || '').trim();
   if (!trimmed || !isNewsSearchQuery(trimmed)) return trimmed;
-  const now = referenceDate || new Date();
-  const monthYear = now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-  const fullDate = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  if (/\b202\d\b/.test(trimmed)) {
-    return trimmed;
-  }
-  return `${trimmed} (${fullDate} / ${monthYear})`;
+  return rewriteNewsQuery(trimmed, referenceDate);
 }
 
 export function scoreSourceRelevanceToQuery(
@@ -437,9 +456,9 @@ export function scoreSourceRelevanceToQuery(
   const isStockQuery = isStockOrFinanceSearchQuery(q);
   const isNewsQuery = isNewsSearchQuery(q);
 
-  // Down-rank / drop finance and stock pages unless the query is explicitly about stocks
+  // Down-rank finance and stock domains unless the query mentions stocks, shares, earnings or investing
   if (!isStockQuery && isFinanceOrStockPage(source)) {
-    return -15;
+    return -25;
   }
 
   const isBioQuery = isBiomedicalOrLifeScienceQuery(q);
@@ -570,7 +589,7 @@ export function scoreSourceRelevanceToQuery(
   }
 
   if (isNewsQuery && isPreferredNewsOutlet(source)) {
-    score += 4.5;
+    score += 12.0;
   }
 
   const isOpenSourceLlmQuery =

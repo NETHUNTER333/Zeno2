@@ -88,7 +88,7 @@ describe('Normal Search Fixes (FIX 1, FIX 2, FIX 3)', () => {
     expect(result.sources.map((s) => s.position)).toEqual([1, 2, 3]);
   });
 
-  it('FIX 3: Clicking chip 2 scrolls to card 2, expands hidden sources when needed, and highlights card 2 in #FC4C01 for 2 seconds', async () => {
+  it('FIX 1: Clicking chip 2 targets src-{messageId}-2 in the same message, expands if collapsed, scrolls to center, and highlights for 2s', async () => {
     const dom = new JSDOM('<!DOCTYPE html><html><body><div id="root"></div></body></html>', {
       url: 'http://localhost:3000/',
     });
@@ -129,24 +129,35 @@ describe('Normal Search Fixes (FIX 1, FIX 2, FIX 3)', () => {
           domain: 'techcrunch.com',
           snippet: 'Lightweight OLED laptop with all-day battery for college workloads.',
         },
+        {
+          id: 's4',
+          position: 4,
+          title: 'Dell XPS 13 Copilot+ PC Review',
+          url: 'https://wired.com/dell-xps-13',
+          domain: 'wired.com',
+          snippet: 'Snapdragon X Elite laptop tested for student software and battery life.',
+        },
       ];
 
       const container = dom.window.document.getElementById('root')!;
       const root = createRoot(container);
+      const testMsgId = 'msg-qa-123';
 
       await act(async () => {
         root.render(
           <div>
-            <WebSearch sources={sources} status="done" defaultOpen={true} />
+            <WebSearch messageId={testMsgId} sources={sources} status="done" defaultOpen={true} />
             <p>
-              Best laptops include MacBook Air <WebSearchCitation source={sources[0]} index={1} /> and
-              Framework 13 <WebSearchCitation source={sources[1]} index={2} />.
+              Best laptops include MacBook Air <WebSearchCitation messageId={testMsgId} source={sources[0]} index={1} /> and
+              Framework 13 <WebSearchCitation messageId={testMsgId} source={sources[1]} index={2} /> and
+              Dell XPS 13 <WebSearchCitation messageId={testMsgId} source={sources[3]} index={4} />.
             </p>
           </div>
         );
       });
 
-      const card2 = dom.window.document.getElementById('source-card-2') as HTMLAnchorElement;
+      // Card 2 must have id="src-{messageId}-2"
+      const card2 = dom.window.document.getElementById(`src-${testMsgId}-2`) as HTMLAnchorElement;
       expect(card2).toBeTruthy();
       expect(card2.tagName).toBe('A');
       expect(card2.getAttribute('target')).toBe('_blank');
@@ -157,7 +168,7 @@ describe('Normal Search Fixes (FIX 1, FIX 2, FIX 3)', () => {
       const chipButtons = Array.from(
         dom.window.document.querySelectorAll('button.citation-badge')
       );
-      expect(chipButtons.length).toBe(2);
+      expect(chipButtons.length).toBe(3);
       const chip2 = chipButtons[1] as HTMLButtonElement;
       expect(chip2.getAttribute('aria-label')).toBe(
         'Source 2: Framework Laptop 13 Student Guide 2026'
@@ -168,7 +179,9 @@ describe('Normal Search Fixes (FIX 1, FIX 2, FIX 3)', () => {
         vi.advanceTimersByTime(100);
       });
 
-      expect(scrollSpy).toHaveBeenCalled();
+      expect(scrollSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ block: 'center' })
+      );
       expect(card2.className).toContain('!border-[#FC4C01]');
       expect(card2.className).toContain('ring-[#FC4C01]');
 
@@ -190,10 +203,12 @@ describe('Normal Search Fixes (FIX 1, FIX 2, FIX 3)', () => {
     }
   });
 
-  it('FIX 1: Filters out finance/stock pages on news queries, prefers reputable news outlets, and adds current date', () => {
+  it('FIX 2: News queries rewrite query with current month/year and down-rank finance domains unless query mentions earnings/stocks', () => {
     expect(isNewsSearchQuery('AI news this week')).toBe(true);
+    expect(isNewsSearchQuery('OpenAI announced new model')).toBe(true);
     const datedQuery = buildDatedNewsSearchQuery('AI news this week');
-    expect(datedQuery).toMatch(/\b202\d\b/);
+    expect(datedQuery).toContain('artificial intelligence news');
+    expect(datedQuery).toMatch(/202\d/);
 
     const zacksCard = {
       title: 'Zacks Earnings Preview: Top AI Stocks to Buy Now (NVDA)',
@@ -207,6 +222,12 @@ describe('Normal Search Fixes (FIX 1, FIX 2, FIX 3)', () => {
       snippet: 'Dividend yield and P/E ratio analysis for AI stock investors.',
       domain: 'seekingalpha.com',
     };
+    const ibdCard = {
+      title: 'Investor\'s Business Daily: Nvidia Stock Rallies as AI Demand Surges',
+      url: 'https://www.investors.com/news/technology/nvidia-stock-ai-earnings/',
+      snippet: 'IBD stock rating and price target analysis for semiconductor leaders.',
+      domain: 'investors.com',
+    };
     const vergeNewsCard = {
       title: 'OpenAI and Anthropic announce new developer tooling this week',
       url: 'https://www.theverge.com/ai-artificial-intelligence/2026/11/ai-news-roundup',
@@ -216,11 +237,18 @@ describe('Normal Search Fixes (FIX 1, FIX 2, FIX 3)', () => {
 
     expect(isFinanceOrStockPage(zacksCard)).toBe(true);
     expect(isFinanceOrStockPage(seekingAlphaCard)).toBe(true);
+    expect(isFinanceOrStockPage(ibdCard)).toBe(true);
     expect(isFinanceOrStockPage(vergeNewsCard)).toBe(false);
     expect(isPreferredNewsOutlet(vergeNewsCard)).toBe(true);
 
+    // On non-finance query "AI news this week", finance domains are down-ranked
     expect(scoreSourceRelevanceToQuery(zacksCard, 'AI news this week')).toBeLessThan(0);
     expect(scoreSourceRelevanceToQuery(seekingAlphaCard, 'AI news this week')).toBeLessThan(0);
-    expect(scoreSourceRelevanceToQuery(vergeNewsCard, 'AI news this week')).toBeGreaterThan(5);
+    expect(scoreSourceRelevanceToQuery(ibdCard, 'AI news this week')).toBeLessThan(0);
+    expect(scoreSourceRelevanceToQuery(vergeNewsCard, 'AI news this week')).toBeGreaterThan(10);
+
+    // On finance query "Nvidia earnings this week", finance sources are allowed (NOT down-ranked)
+    expect(scoreSourceRelevanceToQuery(ibdCard, 'Nvidia earnings this week')).toBeGreaterThanOrEqual(1.0);
+    expect(scoreSourceRelevanceToQuery(zacksCard, 'Nvidia earnings this week')).toBeGreaterThanOrEqual(1.0);
   });
 });

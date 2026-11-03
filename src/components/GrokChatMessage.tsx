@@ -997,6 +997,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
           {((orderedMessageSources && orderedMessageSources.length > 0) ||
             (message.isStreaming && !cleanedContent && message.loadingMode === 'search')) && (
             <WebSearch
+              messageId={message.id}
               sources={(orderedMessageSources || []).map((s, idx) => ({
                 id: s.url || `source-${idx}`,
                 title: s.title,
@@ -1468,13 +1469,14 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                             <WebSearchCitation
                               source={src}
                               index={num}
+                              messageId={message.id}
                               isDark={isDark}
                               onOpenModal={(s) => setSelectedCitation(s)}
                             />
                           );
                         }
                       }
-                      return <InlineCitation index={num} isDark={isDark} />;
+                      return <InlineCitation index={num} messageId={message.id} isDark={isDark} />;
                     }
 
                     // Check if href or cite link matches a known web search source
@@ -1488,6 +1490,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                           <WebSearchCitation
                             source={matched}
                             index={matched.position || matchedIdx + 1}
+                            messageId={message.id}
                             isDark={isDark}
                             onOpenModal={(s) => setSelectedCitation(s)}
                           />

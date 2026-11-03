@@ -270,6 +270,16 @@ html.light .prose-grok a:not(.citation-badge) {
   text-decoration: none !important;
 }
 
+.zeno-source-highlight,
+[data-slot="web-search-source"].zeno-source-highlight,
+a[id^="src-"].zeno-source-highlight {
+  outline: none !important;
+  border-color: #FC4C01 !important;
+  box-shadow: 0 0 0 2px #FC4C01 !important;
+  background-color: rgba(252, 76, 1, 0.12) !important;
+  transition: all 0.2s ease !important;
+}
+
 .prose-grok code:not(pre code) {
   font-family: var(--font-mono);
   padding: 0.15rem 0.35rem;

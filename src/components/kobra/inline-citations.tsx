@@ -6,12 +6,14 @@ interface InlineCitationProps {
   index: number;
   source?: SearchSource;
   isDark?: boolean;
+  messageId?: string;
 }
 
 export const InlineCitation: React.FC<InlineCitationProps> = ({
   index,
   source,
   isDark = true,
+  messageId,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLSpanElement>(null);
@@ -26,32 +28,52 @@ export const InlineCitation: React.FC<InlineCitationProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  const triggerHighlight = () => {
+    window.dispatchEvent(
+      new CustomEvent('zeno-highlight-source', {
+        detail: { index, active: true, scroll: true, messageId },
+      })
+    );
+    window.dispatchEvent(
+      new CustomEvent('zeno:highlight-source-card', {
+        detail: { index, scroll: true, messageId },
+      })
+    );
+    if (typeof window !== 'undefined') {
+      const prefersReduced =
+        window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+      const behavior: ScrollBehavior = prefersReduced ? 'auto' : 'smooth';
+      const cardId = messageId ? `src-${messageId}-${index}` : `src-${index}`;
+      const cardEl =
+        document.getElementById(cardId) ||
+        document.getElementById(`src-${index}`) ||
+        document.getElementById(`source-card-${index}`);
+      if (cardEl) {
+        cardEl.scrollIntoView({ behavior, block: 'center' });
+        cardEl.classList.add('zeno-source-highlight');
+        setTimeout(() => {
+          cardEl.classList.remove('zeno-source-highlight');
+        }, 2000);
+      }
+    }
+  };
+
   if (!source) {
     return (
       <button
         type="button"
-        onClick={() => {
-          window.dispatchEvent(
-            new CustomEvent('zeno-highlight-source', {
-              detail: { index, active: true, scroll: true },
-            })
-          );
-          const cardEl = document.getElementById(`source-card-${index}`);
-          if (cardEl) {
-            cardEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-          }
-        }}
+        onClick={triggerHighlight}
         onMouseEnter={() => {
           window.dispatchEvent(
             new CustomEvent('zeno-highlight-source', {
-              detail: { index, active: true },
+              detail: { index, active: true, messageId },
             })
           );
         }}
         onMouseLeave={() => {
           window.dispatchEvent(
             new CustomEvent('zeno-highlight-source', {
-              detail: { index, active: false },
+              detail: { index, active: false, messageId },
             })
           );
         }}
@@ -80,7 +102,7 @@ export const InlineCitation: React.FC<InlineCitationProps> = ({
         setIsOpen(true);
         window.dispatchEvent(
           new CustomEvent('zeno-highlight-source', {
-            detail: { url: source.url, index, active: true },
+            detail: { url: source.url, index, active: true, messageId },
           })
         );
       }}
@@ -88,7 +110,7 @@ export const InlineCitation: React.FC<InlineCitationProps> = ({
         setIsOpen(false);
         window.dispatchEvent(
           new CustomEvent('zeno-highlight-source', {
-            detail: { url: source.url, index, active: false },
+            detail: { url: source.url, index, active: false, messageId },
           })
         );
       }}
@@ -99,17 +121,14 @@ export const InlineCitation: React.FC<InlineCitationProps> = ({
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
-          window.dispatchEvent(
-            new CustomEvent('zeno-highlight-source', {
-              detail: { url: source?.url, index, active: true, scroll: true },
-            })
-          );
+          setIsOpen(true);
+          triggerHighlight();
         }}
         onFocus={() => {
           setIsOpen(true);
           window.dispatchEvent(
             new CustomEvent('zeno-highlight-source', {
-              detail: { url: source?.url, index, active: true },
+              detail: { url: source?.url, index, active: true, messageId },
             })
           );
         }}
@@ -117,7 +136,7 @@ export const InlineCitation: React.FC<InlineCitationProps> = ({
           setIsOpen(false);
           window.dispatchEvent(
             new CustomEvent('zeno-highlight-source', {
-              detail: { url: source?.url, index, active: false },
+              detail: { url: source?.url, index, active: false, messageId },
             })
           );
         }}

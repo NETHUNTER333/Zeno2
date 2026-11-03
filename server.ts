@@ -7301,18 +7301,44 @@ app.post('/api/search/live', async (req, res) => {
     await Promise.allSettled(tasks);
 
     const isStockIntent = isStockOrFinanceSearchQuery(userQuery);
+    const isNews = isNewsSearchQuery(userQuery);
     let filteredLiveSources = liveSources.filter((s) => {
       if (isBoilerplateOrJunkSearchResult(s, userQuery)) return false;
-      if (!isStockIntent && isFinanceOrStockPage(s)) return false;
       if (isResearchMode) {
+        if (!isStockIntent && isFinanceOrStockPage(s)) return false;
         return scoreSourceRelevanceToQuery(s, userQuery) >= 2.0;
       }
-      return scoreSourceRelevanceToQuery(s, userQuery) >= 1.0;
+      return scoreSourceRelevanceToQuery(s, userQuery) >= (isStockIntent ? 1.0 : -20);
     });
 
     filteredLiveSources.sort(
       (a, b) => scoreSourceRelevanceToQuery(b, userQuery) - scoreSourceRelevanceToQuery(a, userQuery)
     );
+
+    // For non-finance news queries: boost news & tech outlets and cap finance domains at 1 of 6 cards
+    if (isNews && !isStockIntent && !isResearchMode) {
+      const preferredOutlets: any[] = [];
+      const standardNonFinance: any[] = [];
+      const financeSources: any[] = [];
+
+      for (const s of filteredLiveSources) {
+        if (isFinanceOrStockPage(s)) {
+          financeSources.push(s);
+        } else if (isPreferredNewsOutlet(s)) {
+          preferredOutlets.push(s);
+        } else {
+          standardNonFinance.push(s);
+        }
+      }
+
+      const targetNonFinance = [...preferredOutlets, ...standardNonFinance];
+      const maxNonFinance = financeSources.length > 0 ? 5 : 6;
+      const finalChosen = targetNonFinance.slice(0, maxNonFinance);
+      if (financeSources.length > 0 && finalChosen.length < 6) {
+        finalChosen.push(financeSources[0]); // Cap finance domains at 1 of 6 cards
+      }
+      filteredLiveSources = finalChosen;
+    }
 
     if (isResearchMode) {
       // Enrich top candidate sources whose excerpt is < 220 chars so we have substantive >= 200 char excerpts
@@ -11117,17 +11143,16 @@ ${transcriptSnippet
         void mergedFromPrior;
       }
 
-      const relevanceFiltered = candidatePool.filter((s) => {
+      let relevanceFiltered = candidatePool.filter((s) => {
         if (!s || !s.url || !s.title) return false;
         if (isBoilerplateOrJunkSearchResult(s, coreTopic || userQuery)) return false;
-        if (!isStockIntent && isFinanceOrStockPage(s)) return false;
         const score = Math.max(
           scoreSourceRelevanceToQuery(s, userQuery),
           scoreSourceRelevanceToQuery(s, coreTopic || userQuery)
         );
         // Keep priorTurnSources on follow-ups or any source scoring >= 1.0
         if (isFollowUpTurn && priorTurnSources.some((p) => p?.url === s.url)) return score >= 0;
-        return score >= 1.0;
+        return isStockIntent ? score >= 1.0 : score >= -20;
       });
 
       if (!isFollowUpTurn) {
@@ -11142,6 +11167,35 @@ ${transcriptSnippet
           );
           return scoreB - scoreA;
         });
+
+        // For non-finance news queries: boost news & tech outlets and cap finance domains at 1 of 6 cards
+        const isNewsQuery =
+          searchMode === 'news' ||
+          isNewsSearchQuery(userQuery) ||
+          isNewsSearchQuery(coreTopic || '');
+        if (isNewsQuery && !isStockIntent) {
+          const preferredOutlets: any[] = [];
+          const standardNonFinance: any[] = [];
+          const financeSources: any[] = [];
+
+          for (const s of relevanceFiltered) {
+            if (isFinanceOrStockPage(s)) {
+              financeSources.push(s);
+            } else if (isPreferredNewsOutlet(s)) {
+              preferredOutlets.push(s);
+            } else {
+              standardNonFinance.push(s);
+            }
+          }
+
+          const targetNonFinance = [...preferredOutlets, ...standardNonFinance];
+          const maxNonFinance = financeSources.length > 0 ? 5 : 6;
+          const finalChosen = targetNonFinance.slice(0, maxNonFinance);
+          if (financeSources.length > 0 && finalChosen.length < 6) {
+            finalChosen.push(financeSources[0]); // Cap finance domains at 1 of 6 cards
+          }
+          relevanceFiltered = finalChosen;
+        }
       }
 
       const topNormalSources = relevanceFiltered.slice(0, 6);
