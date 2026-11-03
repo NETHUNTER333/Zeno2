@@ -910,7 +910,7 @@ ${fullTranscriptText}`;
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ videoId: targetVidId }),
-            signal: AbortSignal.timeout(10000),
+            signal: AbortSignal.timeout(30000),
           });
           if (res.ok) {
             const data = await res.json();
