@@ -309,7 +309,7 @@ export function isBoilerplateOrJunkSearchResult(
 export function isBiomedicalOrLifeScienceQuery(query: string): boolean {
   const q = String(query || '').toLowerCase();
   const hasTechAiIntent =
-    /\b(open[\s-]*source\s+llms?|large\s+language\s+models?|llms?\s+in\s+202\d|llama|mistral|qwen|deepseek|gemma|claude|gpt|coding|programming|react|typescript|javascript|python|rust|kubernetes|docker|nextjs|vercel|benchmark|mmlu|humaneval|gsm8k|huggingface|ollama|vllm|gguf)\b/i.test(
+    /\b(open[\s-]*source\s+llms?|large\s+language\s+models?|llms?\s+in\s+202\d|llama|mistral|qwen|deepseek|gemma|claude|gpt|transformers?|attention|long\s+context|context\s+window|kv\s+cache|rope|flashattention|ring\s+attention|mamba|coding|programming|react|typescript|javascript|python|rust|kubernetes|docker|nextjs|vercel|benchmark|mmlu|humaneval|gsm8k|huggingface|ollama|vllm|gguf)\b/i.test(
       q
     );
   const hasExplicitBioMedicalIntent =
@@ -337,11 +337,11 @@ export function scoreSourceRelevanceToQuery(
 
   const isBioQuery = isBiomedicalOrLifeScienceQuery(q);
   const isLlmOrTechQuery =
-    /\b(llm|llms|large\s+language\s+model|open[\s-]*source|llama|mistral|qwen|deepseek|gemma|coding|developer|programming|software|ai\s+model|benchmark)\b/i.test(
+    /\b(llm|llms|large\s+language\s+model|open[\s-]*source|llama|mistral|qwen|deepseek|gemma|transformers?|attention|long\s+context|context\s+window|kv\s+cache|rope|flashattention|ring\s+attention|mamba|coding|developer|programming|software|ai\s+model|benchmark)\b/i.test(
       q
     );
 
-  // Hard reject off-topic biomedical/clinical/prenatal papers when the query is not biomedical
+  // Hard reject off-topic biomedical/clinical/prenatal/dietary papers when the query is not biomedical
   if (!isBioQuery) {
     if (
       /\b(pubmed\.ncbi\.nlm\.nih\.gov|pmc\.ncbi\.nlm\.nih\.gov|europepmc\.org|medline)\b/i.test(
@@ -351,7 +351,7 @@ export function scoreSourceRelevanceToQuery(
       return -10;
     }
     if (
-      /\b(prenatal\s+diagnosis|clinical\s+data|clinical\s+trial|patients?\s+with|medical\s+records|electronic\s+health\s+records|ehr|oncology|cardiovascular|maternal|fetal|pathology|disease\s+prognosis|hospitalized)\b/i.test(
+      /\b(prenatal\s+diagnosis|clinical|mediqa|nursing|patients?\s+with|medical\s+records|electronic\s+health\s+records|ehr|oncology|cardiovascular|maternal|fetal|pathology|disease\s+prognosis|hospitalized|healthcare|biomedical|pharmacol|epidemiolog|histopatholog|radiolog|dietary\s+recalls?|macronutrients?|shared[-\s]decision\s+making|option12)\b/i.test(
         combined
       )
     ) {
@@ -359,27 +359,45 @@ export function scoreSourceRelevanceToQuery(
     }
   }
 
-  // Hard reject ultra-narrow unrelated academic workshop tasks for general LLM queries
+  // Hard reject ultra-narrow unrelated academic workshop shared tasks & non-AI transformer meanings for LLM/Transformer queries
   if (isLlmOrTechQuery) {
     if (
       !/\b(sparql|rdf|knowledge\s+graph)\b/i.test(q) &&
       /\b(sparql|text2sparql|rdf\s+triple)\b/i.test(combined)
     ) {
-      return -8;
+      return -10;
     }
     if (
-      !/\b(semeval|narrative\s+similarity)\b/i.test(q) &&
-      /\b(semeval[\s-]*202\d|narrative\s+similarity)\b/i.test(combined)
-    ) {
-      return -8;
-    }
-    if (
-      !/\b(financial|finance|stock|forex|time[\s-]*series\s+forecasting|trading)\b/i.test(q) &&
-      /\b(financial\s+time[\s-]*series|stock\s+price\s+forecasting|portfolio\s+optimization)\b/i.test(
+      !/\b(semeval|narrative\s+similarity|shared\s+task|bea\s+202\d)\b/i.test(q) &&
+      /\b(semeval[\s-]*202\d|narrative\s+similarity|shared\s+task|bea\s+202\d|mediqa|blunt[-\s]edge\s+models|francis\s+galton|creative\s+writing\s+in\s+llms|system\s+identification)\b/i.test(
         combined
       )
     ) {
-      return -8;
+      return -10;
+    }
+    if (
+      !/\b(financial|finance|stock|forex|time[\s-]*series\s+forecasting|trading|portfolio)\b/i.test(q) &&
+      /\b(financial\s+time[\s-]*series|stock\s+price\s+forecasting|portfolio\s+optimization|financial\s+market|forex|cryptocurrency\s+price)\b/i.test(
+        combined
+      )
+    ) {
+      return -10;
+    }
+    if (
+      !/\b(power\s+grid|voltage|electrical|substation|dielectric)\b/i.test(q) &&
+      /\b(power\s+transformer|distribution\s+transformer|oil[\s-]*immersed\s+transformer|high[\s-]*voltage\s+winding|substation|dielectric\s+breakdown|three[\s-]*phase\s+transformer)\b/i.test(
+        combined
+      )
+    ) {
+      return -10;
+    }
+    if (
+      !/\b(hasbro|optimus|megatron|cybertron|movie)\b/i.test(q) &&
+      /\b(optimus\s+prime|megatron|cybertron|autobots|decepticons|hasbro|michael\s+bay)\b/i.test(
+        combined
+      )
+    ) {
+      return -10;
     }
   }
 
@@ -388,7 +406,7 @@ export function scoreSourceRelevanceToQuery(
     'are', 'is', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had',
     'do', 'does', 'did', 'the', 'and', 'for', 'with', 'from', 'into', 'about',
     'that', 'this', 'these', 'those', 'best', 'top', 'most', 'more', 'some',
-    'in', 'on', 'at', 'to', 'of', 'by', 'as', 'an', 'a', 'or',
+    'in', 'on', 'at', 'to', 'of', 'by', 'as', 'an', 'a', 'or', 'handle',
   ]);
 
   const rawTokens = q
@@ -404,8 +422,25 @@ export function scoreSourceRelevanceToQuery(
 
   for (const tok of rawTokens) {
     const isYear = /^202\d$/.test(tok);
-    const inTitle = title.includes(tok);
-    const inSnippet = snippet.includes(tok);
+    const stem = tok.endsWith('s') && tok.length > 4 ? tok.slice(0, -1) : tok;
+    const altSpace = tok.includes('-') ? tok.replace(/-/g, ' ') : '';
+    const isOpenSourceTok = tok === 'open-source' || tok === 'opensource';
+    const isLlmTok = tok === 'llm' || tok === 'llms';
+
+    const inTitle =
+      title.includes(tok) ||
+      (stem.length >= 4 && title.includes(stem)) ||
+      (altSpace.length >= 4 && title.includes(altSpace)) ||
+      (isOpenSourceTok && /\b(open[\s-]*source|open[\s-]*weight)\b/i.test(title)) ||
+      (isLlmTok && /\b(llms?|language\s+models?|llama|mistral|qwen|deepseek|gemma)\b/i.test(title));
+
+    const inSnippet =
+      snippet.includes(tok) ||
+      (stem.length >= 4 && snippet.includes(stem)) ||
+      (altSpace.length >= 4 && snippet.includes(altSpace)) ||
+      (isOpenSourceTok && /\b(open[\s-]*source|open[\s-]*weight)\b/i.test(snippet)) ||
+      (isLlmTok && /\b(llms?|language\s+models?|llama|mistral|qwen|deepseek|gemma)\b/i.test(snippet));
+
     const inDomain = domain.includes(tok);
 
     if (inTitle) {
@@ -417,16 +452,34 @@ export function scoreSourceRelevanceToQuery(
     }
   }
 
-  if (/\b(open[\s-]*source)\b/i.test(q) && /\b(llm|llms|language\s+model)\b/i.test(q)) {
-    if (/\b(open[\s-]*source|open[\s-]*weight|local\s+llm)\b/i.test(combined)) {
-      score += 3.0;
-    }
-    if (
-      /\b(llama|mistral|mixtral|qwen|deepseek|gemma|phi[\s-]*[34]|yi|falcon|ollama|huggingface|vllm|mmlu|gsm8k|humaneval)\b/i.test(
+  const isOpenSourceLlmQuery =
+    /\b(open[\s-]*source)\b/i.test(q) && /\b(llm|llms|language\s+model)\b/i.test(q);
+  if (isOpenSourceLlmQuery) {
+    const mentionsRealModelsOrBenchmarks =
+      /\b(llama|mistral|mixtral|qwen|deepseek|gemma|phi[\s-]*[34]|yi|falcon|ollama|huggingface|vllm|mmlu|gsm8k|humaneval|open[\s-]*weight|leaderboard)\b/i.test(
         combined
-      )
-    ) {
-      score += 2.5;
+      );
+    if (mentionsRealModelsOrBenchmarks) {
+      score += 5.0;
+      matchedCoreTokens += 1;
+    } else {
+      // If a query asks for best open-source LLMs and the source never mentions any real open-source LLM family, benchmark, or open-weight ecosystem, penalize heavily
+      score -= 4.0;
+    }
+  }
+
+  const isLongContextTransformerQuery =
+    /\b(transformers?)\b/i.test(q) && /\b(long[\s-]*context|context)\b/i.test(q);
+  if (isLongContextTransformerQuery) {
+    const mentionsLongContextMechanisms =
+      /\b(long[\s-]*context|context\s+window|context\s+length|kv\s+cache|flashattention|ring\s+attention|rope|rotary\s+position|sparse\s+attention|linear\s+attention|sliding\s+window|mamba|state\s+space|alibi|yarn|inattention|collaborative\s+memory|sequence\s+length)\b/i.test(
+        combined
+      );
+    if (mentionsLongContextMechanisms) {
+      score += 5.0;
+      matchedCoreTokens += 1;
+    } else {
+      score -= 4.5;
     }
   }
 
@@ -450,6 +503,14 @@ export async function searchScholarlyLiterature(
   if (!cleanQ) return [];
 
   const allowBioMedical = isBiomedicalOrLifeScienceQuery(cleanQ);
+  const isAiOrCsQuery =
+    /\b(llm|llms|large\s+language\s+model|open[\s-]*source|llama|mistral|qwen|deepseek|gemma|transformers?|attention|long\s+context|context\s+window|kv\s+cache|rope|flashattention|ring\s+attention|mamba|neural|machine\s+learning|deep\s+learning)\b/i.test(
+      cleanQ
+    );
+  const isOpenSourceLlmQuery =
+    /\b(open[\s-]*source)\b/i.test(cleanQ) && /\b(llm|llms|language\s+model)\b/i.test(cleanQ);
+  const isLongContextTransformerQuery =
+    /\b(transformers?)\b/i.test(cleanQ) && /\b(long[\s-]*context|context)\b/i.test(cleanQ);
 
   const fetchEuropePmc = async (): Promise<SearchResultItem[]> => {
     const items: SearchResultItem[] = [];
@@ -491,7 +552,7 @@ export async function searchScholarlyLiterature(
           .filter(Boolean)
           .join(' · ');
         const snippet = rawAbstract
-          ? `${citationPrefix ? `[${citationPrefix}] ` : ''}${rawAbstract.slice(0, 380)}`
+          ? `${citationPrefix ? `[${citationPrefix}] ` : ''}${rawAbstract.slice(0, 620)}`
           : `${citationPrefix || 'Peer-reviewed study'} — ${title}`;
 
         items.push({
@@ -510,12 +571,73 @@ export async function searchScholarlyLiterature(
     return items;
   };
 
+  const fetchArxivCs = async (): Promise<SearchResultItem[]> => {
+    const items: SearchResultItem[] = [];
+    if (!isAiOrCsQuery) return items;
+    try {
+      let arxivRawExpr = '';
+      if (isOpenSourceLlmQuery) {
+        arxivRawExpr = `(all:Llama OR all:Mistral OR all:Qwen OR all:DeepSeek OR all:Gemma) AND (all:open OR all:benchmark OR all:MMLU) AND (cat:cs.CL OR cat:cs.AI)`;
+      } else if (isLongContextTransformerQuery) {
+        arxivRawExpr = `(ti:transformer OR ti:attention OR ti:context) AND (all:RoPE OR all:FlashAttention OR all:KV) AND (cat:cs.CL OR cat:cs.AI)`;
+      } else {
+        const stopWords = new Set(['how', 'what', 'which', 'are', 'the', 'best', 'top', 'in', 'do', 'does', 'for', 'with', 'and', 'to', 'of', 'handle']);
+        const terms = cleanQ
+          .toLowerCase()
+          .split(/\s+/)
+          .filter((w) => w.length >= 3 && !stopWords.has(w) && !/^202\d$/.test(w))
+          .slice(0, 5);
+        if (terms.length === 0) return items;
+        const termQuery = terms.map((t) => `all:${t}`).join(' AND ');
+        arxivRawExpr = `(${termQuery}) AND (cat:cs.CL OR cat:cs.AI)`;
+      }
+
+      const arxivUrl = `https://export.arxiv.org/api/query?search_query=${encodeURIComponent(arxivRawExpr)}&sortBy=relevance&sortOrder=descending&max_results=10`;
+      const res = await fetch(arxivUrl, {
+        headers: { 'User-Agent': 'ZenoResearch/1.0' },
+        signal: signal || AbortSignal.timeout(4000),
+      });
+      if (!res.ok) return items;
+      const xml = await res.text();
+      const entries = xml.match(/<entry>[\s\S]*?<\/entry>/gi) || [];
+      for (const entry of entries) {
+        const title = decodeXmlEntities(entry.match(/<title>([\s\S]*?)<\/title>/i)?.[1] || '').replace(/\s+/g, ' ').trim();
+        const summary = decodeXmlEntities(entry.match(/<summary>([\s\S]*?)<\/summary>/i)?.[1] || '').replace(/\s+/g, ' ').trim();
+        const idUrl = (entry.match(/<id>([\s\S]*?)<\/id>/i)?.[1] || '').trim().replace(/^http:\/\//i, 'https://');
+        const published = (entry.match(/<published>([\s\S]*?)<\/published>/i)?.[1] || '').trim();
+        const year = published ? published.slice(0, 4) : '';
+        const firstAuthor = decodeXmlEntities(entry.match(/<author>\s*<name>([\s\S]*?)<\/name>/i)?.[1] || '').trim();
+        if (!title || !idUrl || summary.length < 180) continue;
+        const candidate: SearchResultItem = {
+          position: items.length + 1,
+          title: `${title}${year ? ` (${year})` : ''} — arXiv`,
+          url: idUrl,
+          snippet: `${firstAuthor ? `[${firstAuthor} et al. · arXiv ${year}] ` : ''}${summary.slice(0, 620)}`,
+          displayed_url: idUrl,
+          domain: 'arxiv.org',
+          source: 'arXiv CS.CL / CS.AI',
+          date: year || undefined,
+          provider: 'multi_source',
+        };
+        if (scoreSourceRelevanceToQuery(candidate, cleanQ) >= 3.0) {
+          items.push(candidate);
+        }
+      }
+    } catch {}
+    return items;
+  };
+
   const fetchOpenAlex = async (): Promise<SearchResultItem[]> => {
     const items: SearchResultItem[] = [];
     try {
+      const searchStr = isOpenSourceLlmQuery
+        ? 'open-source LLM Llama Mistral Qwen DeepSeek Gemma benchmark evaluation'
+        : isLongContextTransformerQuery
+        ? 'transformer long context attention KV cache RoPE FlashAttention sequence length'
+        : cleanQ;
       const oaUrl = `https://api.openalex.org/works?search=${encodeURIComponent(
-        cleanQ
-      )}&per-page=${Math.min(8, maxResults)}&filter=has_abstract:true`;
+        searchStr
+      )}&per-page=${Math.min(10, maxResults + 2)}&filter=has_abstract:true`;
       const res = await fetch(oaUrl, {
         headers: { Accept: 'application/json', 'User-Agent': 'ZenoResearch/1.0 (mailto:research@zeno.ai)' },
         signal: signal || AbortSignal.timeout(4000),
@@ -542,9 +664,10 @@ export async function searchScholarlyLiterature(
           }
           abstractText = wordsByPos.filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
         }
+        if (abstractText.length < 180) continue;
         const doiUrl = work?.doi ? String(work.doi) : '';
         const landingUrl =
-           work?.primary_location?.landing_page_url ||
+          work?.primary_location?.landing_page_url ||
           doiUrl ||
           work?.id ||
           '';
@@ -569,33 +692,38 @@ export async function searchScholarlyLiterature(
           .filter(Boolean)
           .join(' · ');
 
-        items.push({
+        const candidate: SearchResultItem = {
           position: items.length + 1,
           title: `${title}${year ? ` (${year})` : ''} — ${venue}`,
           url: landingUrl,
-          snippet: abstractText
-            ? `${metaPrefix ? `[${metaPrefix}] ` : ''}${abstractText.slice(0, 380)}`
-            : `${metaPrefix} — ${title}`,
+          snippet: `${metaPrefix ? `[${metaPrefix}] ` : ''}${abstractText.slice(0, 620)}`,
           displayed_url: landingUrl,
           domain,
           source: venue || domain,
           date: year || undefined,
           provider: 'multi_source',
-        });
+        };
+        if (scoreSourceRelevanceToQuery(candidate, cleanQ) >= 3.0) {
+          items.push(candidate);
+        }
       }
     } catch {}
     return items;
   };
 
-  const [epmcItems, oaItems] = await Promise.all([fetchEuropePmc(), fetchOpenAlex()]);
+  const [epmcItems, arxivItems, oaItems] = await Promise.all([
+    fetchEuropePmc(),
+    fetchArxivCs(),
+    fetchOpenAlex(),
+  ]);
   const combined: SearchResultItem[] = [];
   const seenTitles = new Set<string>();
-  const maxLen = Math.max(epmcItems.length, oaItems.length);
+  const maxLen = Math.max(epmcItems.length, arxivItems.length, oaItems.length);
   for (let i = 0; i < maxLen; i++) {
-    for (const candidate of [epmcItems[i], oaItems[i]]) {
+    for (const candidate of [arxivItems[i], oaItems[i], epmcItems[i]]) {
       if (!candidate) continue;
       if (isUnsolicitedNonEnglishResult(candidate, cleanQ)) continue;
-      if (scoreSourceRelevanceToQuery(candidate, cleanQ) < 2.0) continue;
+      if (scoreSourceRelevanceToQuery(candidate, cleanQ) < 3.0) continue;
       const normTitle = candidate.title.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 55);
       if (seenTitles.has(normTitle)) continue;
       seenTitles.add(normTitle);

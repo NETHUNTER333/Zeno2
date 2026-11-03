@@ -7096,12 +7096,12 @@ app.post('/api/search/live', async (req, res) => {
         /\b(tweets?|x\s+posts?|posts?\s+on\s+x|twitter|x\.com|trending\s+on\s+x)\b/i.test(userQuery);
       const explicitHandle = detectXHandleFromText(userQuery) || detectXHandleFromText(coreTopic);
 
-      // When in Research Mode, fetch peer-reviewed scholarly literature (PubMed / Europe PMC + OpenAlex) first
+      // When in Research Mode, fetch peer-reviewed scholarly literature (PubMed / Europe PMC + OpenAlex + ArXiv) first
       if (isResearchMode) {
         tasks.push(
           (async () => {
             try {
-              const scholarResults = await searchScholarlyLiterature(coreTopic || userQuery, 8);
+              const scholarResults = await searchScholarlyLiterature(userQuery, 8);
               for (const r of scholarResults) {
                 if (
                   r.url &&
@@ -7121,7 +7121,7 @@ app.post('/api/search/live', async (req, res) => {
         tasks.push(
           (async () => {
             try {
-              const exaResults = await searchWebViaFloviaExa(coreTopic || userQuery, 5);
+              const exaResults = await searchWebViaFloviaExa(userQuery, 5);
               for (const r of exaResults) {
                 if (
                   r.url &&
@@ -7143,7 +7143,7 @@ app.post('/api/search/live', async (req, res) => {
               userQuery
             );
             const results = await searchWebViaTreg(
-              coreTopic || userQuery,
+              isResearchMode ? userQuery : coreTopic || userQuery,
               searchMode === 'news' || isImplicitNewsQuery ? 'news' : 'organic',
               false
             );
@@ -7291,10 +7291,10 @@ app.post('/api/search/live', async (req, res) => {
 
     await Promise.allSettled(tasks);
 
-    const filteredLiveSources = liveSources.filter((s) => {
+    let filteredLiveSources = liveSources.filter((s) => {
       if (isBoilerplateOrJunkSearchResult(s, userQuery)) return false;
       if (isResearchMode) {
-        return scoreSourceRelevanceToQuery(s, userQuery) >= 1.5;
+        return scoreSourceRelevanceToQuery(s, userQuery) >= 2.0;
       }
       return scoreSourceRelevanceToQuery(s, userQuery) >= 0;
     });
@@ -7302,6 +7302,35 @@ app.post('/api/search/live', async (req, res) => {
     if (isResearchMode) {
       filteredLiveSources.sort(
         (a, b) => scoreSourceRelevanceToQuery(b, userQuery) - scoreSourceRelevanceToQuery(a, userQuery)
+      );
+
+      // Enrich top candidate sources whose excerpt is < 220 chars so we have substantive >= 200 char excerpts
+      const topCandidates = filteredLiveSources.slice(0, 12);
+      await Promise.allSettled(
+        topCandidates.map(async (src) => {
+          const curSnippet = String(src.snippet || '').trim();
+          if (curSnippet.length >= 220 || !src.url || /youtube\.com|youtu\.be/i.test(src.url)) return;
+          try {
+            const extracted = await extractUrlSafely(src.url, 2600);
+            if (extracted.ok && extracted.content) {
+              const cleaned = extracted.content
+                .replace(/^#+\s+.*$/gm, ' ')
+                .replace(/\b(skip to content|cookie|privacy policy|sign in|log in|subscribe|all rights reserved)\b/gi, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+              if (cleaned.length >= 220) {
+                src.snippet = cleaned.slice(0, 650);
+              }
+            }
+          } catch {}
+        })
+      );
+
+      // Strictly drop any source whose excerpt is empty or under 200 chars in research mode
+      filteredLiveSources = topCandidates.filter(
+        (s) =>
+          String(s.snippet || '').trim().length >= 200 &&
+          scoreSourceRelevanceToQuery(s, userQuery) >= 2.0
       );
     }
 
@@ -7315,7 +7344,7 @@ app.post('/api/search/live', async (req, res) => {
     return res.json({
       success: true,
       sources: balancedSources
-        .slice(0, isResearchMode ? 10 : 6)
+        .slice(0, isResearchMode ? 8 : 6)
         .map((s, i) => ({ ...s, position: i + 1 })),
     });
   } catch (err: any) {
@@ -10105,7 +10134,9 @@ app.post('/api/chat', async (req, res) => {
     let directYoutubeVideo: any = null;
 
     // Robust Direct URL Extractor: handle YouTube URLs via Subclip transcript extractor, or fetch website content directly
-    const urlMatch = userQuery.match(/https?:\/\/[^\s]+/);
+    // Never run direct URL extraction when isResearchMode is true or webSearch is false
+    const isResearchCall = Boolean(req.body?.isResearchMode) || Boolean(req.body?.isResearch);
+    const urlMatch = !isResearchCall && webSearch ? userQuery.match(/https?:\/\/[^\s]+/) : null;
     if (urlMatch) {
       const directUrl = urlMatch[0].replace(/[.,;:!?)]$/, '');
       const directYtId = extractYouTubeId(directUrl);
@@ -11074,13 +11105,19 @@ Rules:
         : ''
     }${contentSafetyDirective}${personalizationDirective}${languageDirective}${pinnedDirective}`;
 
+    const callerSystemPrompt =
+      (typeof systemPrompt === 'string' && systemPrompt.trim()) ||
+      (typeof req.body?.systemInstruction === 'string' && req.body.systemInstruction.trim()) ||
+      '';
     const isRedundantClockPrompt =
-      typeof systemPrompt === 'string' &&
-      systemPrompt.includes('[REAL-TIME DEVICE CLOCK') &&
-      systemPrompt.length < 700;
+      Boolean(callerSystemPrompt) &&
+      callerSystemPrompt.includes('[REAL-TIME DEVICE CLOCK') &&
+      callerSystemPrompt.length < 700;
     const effectiveSystemPrompt =
-      systemPrompt && !isRedundantClockPrompt
-        ? `${defaultSystem}\n\nAdditional instructions: ${systemPrompt}`
+      isResearchCall && callerSystemPrompt
+        ? callerSystemPrompt
+        : callerSystemPrompt && !isRedundantClockPrompt
+        ? `${defaultSystem}\n\nAdditional instructions: ${callerSystemPrompt}`
         : defaultSystem;
 
     // Convert conversation history into OpenAI format for Apinex / FLM
@@ -11088,8 +11125,8 @@ Rules:
       { role: 'system', content: effectiveSystemPrompt },
     ];
 
-    // Add prior conversation messages (keep last 6 turns and cap length so large prior pastes never slow down follow-up turns)
-    const history = messages.slice(0, -1).slice(-6);
+    // Add prior conversation messages (never include prior chat history when isResearchCall is true — FIX 1)
+    const history = isResearchCall ? [] : messages.slice(0, -1).slice(-6);
     for (const msg of history) {
       let histText = stripInjectedClockNote(msg.content || '').slice(0, 1200);
       if (
@@ -11125,19 +11162,20 @@ Rules:
       ? `\n\n[LANGUAGE DIRECTIVE: Respond in ${requestedLanguage} as requested by the user.]`
       : `\n\n[LANGUAGE DIRECTIVE: Respond strictly in English only. Never output Chinese characters.]`;
 
-    // Add latest user prompt with grounding context (and multimodal image_url parts if images were attached)
+    // Add latest user prompt with grounding context (for Deep Research writer, pass ONLY userQuery with numbered source excerpts — FIX 1)
     const normalizedUserQueryForPrompt = isPureCodeOrMath
       ? normalizeCodingPromptText(userQuery)
       : userQuery;
-    const finalUserContent =
-      (shouldSkipSearchForConversational || isClockQuery || isPureCodeOrMath || !coreTopic
-        ? normalizedUserQueryForPrompt
-        : `User Request: ${normalizedUserQueryForPrompt}\nResolved Core Subject: "${coreTopic}"`) +
-      clockTurnReminder +
-      turnLanguageReminder +
-      (groundingContext ? `\n\n--- LIVE FETCHED CONTEXT & ATTACHMENTS ---\n${groundingContext}` : '');
+    const finalUserContent = isResearchCall
+      ? userQuery
+      : (shouldSkipSearchForConversational || isClockQuery || isPureCodeOrMath || !coreTopic
+          ? normalizedUserQueryForPrompt
+          : `User Request: ${normalizedUserQueryForPrompt}\nResolved Core Subject: "${coreTopic}"`) +
+        clockTurnReminder +
+        turnLanguageReminder +
+        (groundingContext ? `\n\n--- LIVE FETCHED CONTEXT & ATTACHMENTS ---\n${groundingContext}` : '');
 
-    if (attachedImageUrls.length > 0) {
+    if (attachedImageUrls.length > 0 && !isResearchCall) {
       openAiMessages.push({
         role: 'user',
         content: [
@@ -11381,28 +11419,28 @@ Rules:
       replyText = '';
     }
 
-    // Safeguard: If user provided a YouTube video and LLM generated a refusal, replace with rich video breakdown
+    // Safeguard: If user provided a YouTube video and LLM generated a refusal, summarize using actual extracted transcript segments only
     if (
       directYoutubeVideo &&
+      !req.body?.isResearchMode &&
+      !req.body?.isResearch &&
       (/\b(can'?t|cannot)\s+(directly\s+)?(open|watch|access|view|play)\s+(youtube|videos?|links?)\b/i.test(replyText) ||
         /share the title of the video/i.test(replyText) ||
         !replyText.trim())
     ) {
       const vTitle = directYoutubeVideo.title;
       const vAuthor = directYoutubeVideo.author;
+      const segs = Array.isArray(directYoutubeVideo.transcript) ? directYoutubeVideo.transcript : [];
+      const previewLines = segs
+        .slice(0, 5)
+        .map((s: any) => `- ${s.text}`)
+        .join('\n');
       replyText =
         `### "${vTitle}" by ${vAuthor}\n\n` +
-        `Here is a full breakdown and explanation of this video:\n\n` +
-        `#### 1. Core Thesis & Perspective\n` +
-        `The video centers on mindful living and intentional presence. It challenges the conventional hustle mindset, urging viewers to reflect on whether they are truly savoring their existence or simply moving through routine obligations.\n\n` +
-        `#### 2. Key Themes & Philosophy\n` +
-        `- **Mindful Presence**: Prioritizing the present moment rather than postponing happiness to distant milestones.\n` +
-        `- **Authentic Values**: Stripping away societal noise and focusing on activities, connections, and peace that genuinely matter.\n` +
-        `- **Perspective Shift**: Reframing daily life with intentional gratitude and self-awareness.\n\n` +
-        `#### 3. Practical Takeaways\n` +
-        `- Take deliberate pauses throughout the day to connect with what brings real fulfillment.\n` +
-        `- Evaluate routines to ensure time is allocated to personal well-being and joy.\n\n` +
-        `*(You can play this video directly in the inline player above, or click **Study Workspace** to explore flashcards, quizzes, and study concepts.)*`;
+        (previewLines
+          ? `Key transcript excerpts from **${vTitle}**:\n\n${previewLines}\n\n`
+          : `Video by **${vAuthor}**: **${vTitle}**.\n\n`) +
+        `*(You can play this video directly in the inline player above, or open **Study Workspace** to explore the full interactive transcript, flashcards, and quiz.)*`;
     }
 
     // Fallback synthesis if response was empty
@@ -11441,97 +11479,31 @@ Rules:
                 .join('\n')
             : '');
       } else if (isResearchModeRequest) {
-        const cleanTopic = (coreTopic || userQuery || 'Scientific Inquiry')
-          .replace(/\s+/g, ' ')
-          .trim()
-          .slice(0, 90);
-        if (searchSources.length === 0) {
-          try {
-            const sch = await searchScholarlyLiterature(cleanTopic, 8);
-            if (sch.length > 0) searchSources = sch;
-          } catch {}
+        // Parse [S1]..[Sn] excerpts from userQuery if present so we never hallucinate off-topic text
+        const sBlocks = Array.from(
+          userQuery.matchAll(/\[(S\d+)\]\s*([^\n]+)\nExcerpt:\s*([^\n]+(?:\n(?!\[S\d+\])[^\n]+)*)/g)
+        );
+        if (sBlocks.length > 0) {
+          const qLineMatch = userQuery.match(/USER QUERY:\s*([^\n]+)/i);
+          const cleanTopic = (qLineMatch ? qLineMatch[1] : coreTopic || 'Research Analysis').trim();
+          const findings = sBlocks
+            .map((m) => {
+              const sid = m[1];
+              const stitle = m[2].trim();
+              const sexcerpt = m[3].replace(/\s+/g, ' ').trim();
+              return `### ${stitle} [${sid}]\n${sexcerpt} [${sid}].`;
+            })
+            .join('\n\n');
+          replyText = `## Executive Summary: ${cleanTopic}\n\nBased on the indexed research excerpts, here is a synthesis of the findings for **${cleanTopic}** [${sBlocks[0][1]}]:\n\n${findings}`;
+        } else if (searchSources.length > 0) {
+          const cleanTopic = (coreTopic || userQuery || 'Research Analysis').replace(/\s+/g, ' ').trim().slice(0, 90);
+          replyText =
+            `## Executive Summary: ${cleanTopic}\n\n` +
+            searchSources
+              .slice(0, 6)
+              .map((s, idx) => `### ${s.title} [${idx + 1}]\n${s.snippet} [${idx + 1}].`)
+              .join('\n\n');
         }
-        const srcList = searchSources.slice(0, 10);
-        const cite1 = srcList.length >= 1 ? '[1]' : '';
-        const cite2 = srcList.length >= 2 ? '[2]' : cite1;
-        const cite3 = srcList.length >= 3 ? '[3]' : cite2;
-        const tableRows =
-          srcList.length > 0
-            ? srcList
-                .slice(0, 6)
-                .map((s, idx) => {
-                  const dom = s.domain || 'Peer-Reviewed Source';
-                  const shortTitle = String(s.title || cleanTopic)
-                    .replace(/\|/g, '·')
-                    .slice(0, 68);
-                  const snip = String(s.snippet || 'Empirical evaluation and mechanistic analysis.')
-                    .replace(/\|/g, '·')
-                    .replace(/\s+/g, ' ')
-                    .slice(0, 130);
-                  return `| **${shortTitle}** | ${dom} | ${snip} | Peer-Reviewed / Primary | [${idx + 1}] |`;
-                })
-                .join('\n')
-            : `| **${cleanTopic} — Primary Cohort** | Endocrine & Physiological Pathway | Statistically significant modulation of target biomarkers ($p < 0.01$) | Systematic Review | [1] |`;
-
-        const findingsParagraphs =
-          srcList.length > 0
-            ? srcList
-                .slice(0, 6)
-                .map(
-                  (s, idx) =>
-                    `- **${s.title}** (*${s.domain || 'Scientific Literature'}*): ${s.snippet} [${idx + 1}]`
-                )
-                .join('\n\n')
-            : `- Empirical literature on **${cleanTopic}** demonstrates tightly regulated physiological feedback loops, receptor-mediated signaling cascades, and dose-dependent clinical outcomes.`;
-
-        const referencesList =
-          srcList.length > 0
-            ? srcList
-                .map(
-                  (s, idx) =>
-                    `[${idx + 1}] **${s.title}** — *${s.domain || 'Academic Source'}*. ${s.url}`
-                )
-                .join('\n\n')
-            : `[1] Primary Systematic Review Literature on ${cleanTopic}.`;
-
-        replyText =
-          `# Comprehensive Systematic Review & Mechanistic Analysis: ${cleanTopic}\n` +
-          `*Biomedical, Endocrine & Empirical Research Synthesis | Peer-Reviewed Standard*\n\n` +
-          `> **Structured Abstract**\n` +
-          `> - **Background & Theoretical Rationale**: **${cleanTopic}** encompasses complex physiological, endocrine, and molecular signaling pathways that regulate cellular proliferation, tissue remodeling, and systemic homeostasis ${cite1}.\n` +
-          `> - **Core Objectives**: To evaluate the primary biochemical mechanisms, receptor kinetics, empirical clinical trial outcomes, dose-response thresholds, and physiological constraints governing **${cleanTopic}** ${cite2}.\n` +
-          `> - **Synthesis of Findings**: Across clinical and experimental literature, longitudinal outcomes depend strongly on developmental timing (such as epiphyseal growth plate chondrocyte status vs. fused skeletal maturity), endocrine feedback axes (GH/IGF-1, hypothalamic-pituitary-gonadal and adrenal axes), and receptor sensitivity ${cite1}${cite3}.\n` +
-          `> - **Scientific & Clinical Conclusion**: While targeted hormonal or pharmacological interventions demonstrate measurable effects in clinically deficient cohorts, supraphysiological or unmonitored administration carries significant risks—including premature epiphyseal closure, endocrine axis suppression, and cardiometabolic toxicity ${cite2}${cite3}.\n\n` +
-          `## 1. Introduction & Theoretical Foundations\n` +
-          `Research into **${cleanTopic}** examines how systemic hormones, steroid receptor superfamily transcription factors, and local autocrine/paracrine growth factors coordinate human tissue development and longitudinal skeletal growth ${cite1}. In human physiology, vertical statural growth is driven primarily by endochondral ossification within the epiphyseal growth plates of long bones prior to epiphyseal fusion ${cite2}. Once the cartilaginous growth plate undergoes terminal ossification under the influence of pubertal sex steroids (principally estrogen via aromatase conversion in both males and females), further longitudinal bone elongation ceases biologically ${cite1}${cite2}.\n\n` +
-          `## 2. Molecular, Biochemical & Physiological Pathways\n` +
-          `At the cellular level, longitudinal growth and tissue anabolism are governed by the interplay of the **Growth Hormone / Insulin-like Growth Factor-1 (GH/IGF-1) axis**, thyroid hormones ($T_3/T_4$), glucocorticoids, and sex steroids (androgens and estrogens) ${cite1}${cite3}:\n\n` +
-          `- **Somatotropic Axis (GH / IGF-1)**: Pulsatile pituitary GH secretion stimulates hepatic and local chondrocyte production of IGF-1, activating MAPK/ERK and PI3K/Akt signaling cascades to drive chondrocyte hypertrophy and clonal expansion ${cite1}.\n` +
-          `- **Androgenic & Estrogenic Steroid Signaling**: Anabolic-androgenic steroids bind intracellular Androgen Receptors (AR) to increase nitrogen retention, protein synthesis, and periosteal bone apposition. However, aromatizable steroids convert via cytochrome P450 aromatase ($CYP19A1$) into estradiol ($E_2$), which binds Estrogen Receptor alpha ($ER\\alpha$) on growth plate chondrocytes—accelerating chondrocyte senescence and irreversible **epiphyseal plate fusion** ${cite2}.\n` +
-          `- **Glucocorticoid Inhibition**: Conversely, chronic corticosteroid exposure (e.g., prednisone, dexamethasone) suppresses longitudinal growth by inhibiting GH pulsatility, downregulating local IGF-1 receptors, and inducing chondrocyte apoptosis ${cite3}.\n\n` +
-          `## 3. Systematic Evidence Matrix & Comparative Analysis\n\n` +
-          `| Study / Literature Source | Domain / Journal | Empirical Findings & Mechanistic Summary | Evidence Tier | Citation |\n` +
-          `| :--- | :--- | :--- | :--- | :--- |\n` +
-          `${tableRows}\n\n` +
-          `## 4. Clinical Trials, Empirical Cohorts & Longitudinal Studies\n` +
-          `Primary findings synthesized from the retrieved scientific and clinical literature include:\n\n` +
-          `${findingsParagraphs}\n\n` +
-          `## 5. Dose-Response Dynamics, Biomarkers & Synergistic Co-Factors\n` +
-          `Clinical evaluation of growth and endocrine modulation requires monitoring key serum biomarkers—including **Serum IGF-1**, **IGFBP-3**, **Free & Total Testosterone**, **Ultra-sensitive Estradiol ($E_2$)**, **LH/FSH**, **Bone Age Radiography (Greulich & Pyle atlas)**, and **25-Hydroxyvitamin D [25(OH)D]** ${cite1}${cite2}. Nutritional and biochemical co-factors essential for physiological bone mineralization include adequate dietary protein, calcium, vitamin $D_3$, vitamin $K_2$ (menaquinone-7), magnesium, and zinc ${cite3}.\n\n` +
-          `## 6. Critical Discussion, Confounding Variables & Biological Limits\n` +
-          `- **Pre-Pubertal / Adolescent Epiphyseal Closure Risk**: Exogenous anabolic steroids or aromatizable androgens administered before full skeletal maturity paradoxically **stunt final adult height** by accelerating bone age maturation and prematurely fusing the epiphyseal growth plates ${cite1}${cite2}.\n` +
-          `- **Post-Pubertal Skeletal Ceiling**: After epiphyseal closure (typically ages 15–17 in females and 17–21 in males), neither exogenous steroids nor recombinant human growth hormone (rhGH) can increase vertical bone length; excess exposure instead causes acromegalic cortical thickening, visceral cardiomegaly, and insulin resistance ${cite2}${cite3}.\n` +
-          `- **Endocrine & Systemic Adverse Effects**: Exogenous steroid administration suppresses endogenous hypothalamic-pituitary-gonadal (HPG) axis signaling, alters lipid profiles (reducing HDL-C and elevating LDL-C), and elevates hematocrit and hepatic strain ${cite3}.\n\n` +
-          `## 7. Conclusions & Actionable Clinical / Practical Guidelines\n` +
-          `1. **Clinical Assessment First**: Any evaluation of statural growth velocity must begin with a pediatric endocrinologist assessing bone age X-rays, serum IGF-1, thyroid function, and karyotype/genetic potential ${cite1}.\n` +
-          `2. **Avoid Unsupervised Anabolic Steroids**: Anabolic-androgenic steroids do not increase adult vertical height and carry a high risk of premature growth plate closure in adolescents and severe endocrine/cardiovascular toxicity in adults ${cite2}${cite3}.\n` +
-          `3. **Evidence-Based Endocrine Therapy**: Only FDA/EMA-approved recombinant human growth hormone (rhGH) or aromatase inhibitors prescribed under strict specialist supervision prior to epiphyseal fusion have demonstrated validated increases in final adult height ${cite1}${cite2}.\n\n` +
-          `## References\n\n` +
-          `${referencesList}\n\n` +
-          `---FOLLOWUPS---\n` +
-          `What is the mechanism by which aromatase conversion of androgens into estradiol triggers epiphyseal growth plate fusion?\n` +
-          `What is the clinical difference between recombinant human growth hormone (rhGH) and anabolic steroids on longitudinal bone growth?\n` +
-          `What protocol do endocrinologists use with bone age radiography and IGF-1 levels to evaluate remaining growth potential?`;
       } else if (isPureCodeOrMath) {
         try {
           const codeFallbackPrompt =

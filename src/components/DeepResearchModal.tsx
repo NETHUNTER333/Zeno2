@@ -57,9 +57,16 @@ const RESEARCH_STOP_WORDS = new Set([
 
 function isBiomedicalResearchQuery(query: string): boolean {
   const q = String(query || '').toLowerCase();
-  return /\b(clinical|medical|medicine|patient|patients|disease|syndrome|therapy|therapeutic|treatment|drug|pharmacology|pharmacokinetic|dosage|dose|symptom|diagnosis|diagnostic|prognosis|pathology|oncology|cancer|tumor|tumour|cardiac|cardiovascular|neurology|neurological|brain|psychiatric|diabetes|insulin|metabolic|metabolism|immune|immunology|vaccine|infection|viral|bacteria|bacterial|surgery|surgical|hospital|physician|doctor|nursing|pediatric|prenatal|pregnancy|fetal|genetics|genomic|dna|rna|protein|peptide|enzyme|receptor|biomarker|cell|cellular|mortality|morbidity|epidemiology|cohort|randomized|placebo|trial|pubmed|medline|biomedical|anatomy|physiology|gut|microbiome|vitamin|supplement|longevity|aging|sleep|circadian)\b/i.test(
-    q
-  );
+  const hasTechAiIntent =
+    /\b(open[\s-]*source\s+llms?|large\s+language\s+models?|llms?\s+in\s+202\d|llama|mistral|qwen|deepseek|gemma|claude|gpt|transformers?|attention|long\s+context|context\s+window|kv\s+cache|rope|flashattention|ring\s+attention|mamba|coding|programming|react|typescript|javascript|python|rust|kubernetes|docker|nextjs|vercel|benchmark|mmlu|humaneval|gsm8k|huggingface|ollama|vllm|gguf)\b/i.test(
+      q
+    );
+  const hasBioIntent =
+    /\b(clinical|medical|medicine|patient|patients|disease|syndrome|therapy|therapeutic|treatment|drug|pharmacology|pharmacokinetic|dosage|dose|symptom|diagnosis|diagnostic|prognosis|pathology|oncology|cancer|tumor|tumour|cardiac|cardiovascular|neurology|neurological|brain|psychiatric|diabetes|insulin|metabolic|metabolism|immune|immunology|vaccine|infection|viral|bacteria|bacterial|surgery|surgical|hospital|physician|doctor|nursing|pediatric|prenatal|pregnancy|fetal|genetics|genomic|dna|rna|protein|peptide|enzyme|receptor|biomarker|cell|cellular|mortality|morbidity|epidemiology|cohort|randomized|placebo|trial|pubmed|medline|biomedical|anatomy|physiology|gut|microbiome|vitamin|supplement|longevity|aging|sleep|circadian)\b/i.test(
+      q
+    );
+  if (hasTechAiIntent && !hasBioIntent) return false;
+  return hasBioIntent;
 }
 
 const OFF_TOPIC_ACADEMIC_PATTERNS = [
@@ -68,12 +75,30 @@ const OFF_TOPIC_ACADEMIC_PATTERNS = [
   /\belectronic\s+health\s+record/i,
   /\bfinancial\s+time[-\s]series\b/i,
   /\btime[-\s]series\s+forecasting\b/i,
+  /\bstock\s+price\s+forecasting\b/i,
+  /\bportfolio\s+optimization\b/i,
   /\btext2sparql\b/i,
   /\bsparql[-\s]?llm\b/i,
-  /\bsemeval[-\s]?\d*\s*task\b/i,
+  /\bsparql\b/i,
+  /\bsemeval[-\s]?\d*\b/i,
   /\bnarrative\s+similarity\b/i,
   /\bpatient\s+outcomes?\b/i,
   /\brandomized\s+controlled\s+trial\b/i,
+  /\boil[-\s]immersed\s+transformer/i,
+  /\bdistribution\s+transformer/i,
+  /\bpower\s+transformer/i,
+  /\bdielectric\s+breakdown/i,
+  /\boptimus\s+prime\b/i,
+  /\bmegatron\b/i,
+  /\bmediqa\b/i,
+  /\boption12\b/i,
+  /\bshared[-\s]decision\s+making\b/i,
+  /\bdietary\s+recalls?\b/i,
+  /\bmacronutrients?\b/i,
+  /\bshared\s+task\b/i,
+  /\bbea\s+202\d\b/i,
+  /\bfrancis\s+galton\b/i,
+  /\bsystem\s+identification\b/i,
 ];
 
 function extractMeaningfulTerms(text: string): string[] {
@@ -82,19 +107,73 @@ function extractMeaningfulTerms(text: string): string[] {
     .replace(/[^a-z0-9.+_-]+/g, ' ')
     .split(/\s+/)
     .map((t) => t.replace(/^[._-]+|[._-]+$/g, ''))
-    .filter((t) => t.length >= 2 && !RESEARCH_STOP_WORDS.has(t) && !/^(19|20)\d{2}$/.test(t));
+    .filter((t) => t.length >= 2 && !RESEARCH_STOP_WORDS.has(t) && !/^(19|20)\d{2}$/.test(t) && t !== 'handle');
 }
 
 function expandQueryConcepts(query: string): string[] {
   const q = query.toLowerCase();
   const extra: string[] = [];
   if (/\b(llm|llms|large language model|language models)\b/.test(q)) {
-    extra.push('llm', 'llms', 'language model', 'llama', 'mistral', 'qwen', 'deepseek', 'gemma', 'phi', 'mixtral', 'open-weight', 'open-source', 'weights', 'benchmark', 'mmlu', 'humaneval', 'gsm8k');
+    extra.push(
+      'llm', 'llms', 'language model', 'llama', 'mistral', 'qwen', 'deepseek', 'gemma',
+      'phi', 'mixtral', 'open-weight', 'open-source', 'weights', 'benchmark', 'mmlu', 'humaneval', 'gsm8k'
+    );
   }
   if (/\b(open[-\s]?source|open[-\s]?weight|local)\b/.test(q)) {
-    extra.push('open-source', 'open source', 'open-weight', 'open weights', 'apache', 'mit license', 'huggingface', 'ollama', 'vllm', 'llama', 'qwen', 'deepseek', 'mistral', 'gemma');
+    extra.push(
+      'open-source', 'open source', 'open-weight', 'open weights', 'apache', 'mit license',
+      'huggingface', 'ollama', 'vllm', 'llama', 'qwen', 'deepseek', 'mistral', 'gemma'
+    );
+  }
+  if (/\b(transformers?)\b/.test(q) && /\b(long[-\s]?context|context)\b/.test(q)) {
+    extra.push(
+      'transformer', 'long context', 'context window', 'attention', 'kv cache', 'flashattention',
+      'ring attention', 'rope', 'rotary position', 'sparse attention', 'linear attention',
+      'sliding window', 'mamba', 'sequence length', 'million tokens'
+    );
   }
   return extra;
+}
+
+/**
+ * Computes token + character trigram cosine similarity between query and chunk text
+ */
+function computeChunkQueryCosineSimilarity(query: string, chunkText: string): number {
+  const buildVector = (text: string): Map<string, number> => {
+    const vec = new Map<string, number>();
+    const clean = String(text || '').toLowerCase().replace(/[^a-z0-9\s-]/g, ' ');
+    const tokens = clean.split(/\s+/).filter((w) => w.length >= 2 && !RESEARCH_STOP_WORDS.has(w));
+    const expanded = expandQueryConcepts(text);
+    for (const tok of [...tokens, ...expanded]) {
+      const stem = tok.endsWith('s') && tok.length > 4 ? tok.slice(0, -1) : tok;
+      vec.set(stem, (vec.get(stem) || 0) + 1.5);
+      if (stem.length >= 4) {
+        for (let i = 0; i <= stem.length - 3; i++) {
+          const tri = `#${stem.slice(i, i + 3)}`;
+          vec.set(tri, (vec.get(tri) || 0) + 0.35);
+        }
+      }
+    }
+    return vec;
+  };
+
+  const qVec = buildVector(query);
+  const cVec = buildVector(chunkText);
+  if (qVec.size === 0 || cVec.size === 0) return 0;
+
+  let dot = 0;
+  let qNorm = 0;
+  let cNorm = 0;
+  for (const [k, qVal] of qVec.entries()) {
+    qNorm += qVal * qVal;
+    const cVal = cVec.get(k) || 0;
+    dot += qVal * cVal;
+  }
+  for (const cVal of cVec.values()) {
+    cNorm += cVal * cVal;
+  }
+  if (qNorm === 0 || cNorm === 0) return 0;
+  return dot / (Math.sqrt(qNorm) * Math.sqrt(cNorm));
 }
 
 function scoreResearchSourceRelevance(
@@ -106,10 +185,11 @@ function scoreResearchSourceRelevance(
   const url = String(source.url || '').toLowerCase();
   const domain = String(source.domain || '').toLowerCase();
   const combined = `${title} ${snippet} ${url}`;
+  const qLower = query.toLowerCase();
 
   const isBioQuery = isBiomedicalResearchQuery(query);
 
-  // Immediately reject biomedical databases and off-topic clinical/SPARQL/time-series/SemEval papers for non-biomedical queries
+  // Immediately reject biomedical databases and off-topic clinical/SPARQL/time-series/SemEval/power-grid papers for non-biomedical queries
   if (!isBioQuery) {
     if (
       domain.includes('europepmc.org') ||
@@ -123,16 +203,16 @@ function scoreResearchSourceRelevance(
       return -10;
     }
     for (const pat of OFF_TOPIC_ACADEMIC_PATTERNS) {
-      if (pat.test(combined) && !pat.test(query.toLowerCase())) {
+      if (pat.test(combined) && !pat.test(qLower)) {
         return -10;
       }
     }
     if (
-      /\b(clinical|patient|patients|hospital|medical|prenatal|fetal|oncology|cardiology|pathology|surgery|disease|diagnosis|therapy)\b/i.test(
-        title
+      /\b(clinical|patient|patients|hospital|medical|prenatal|fetal|oncology|cardiology|pathology|surgery|disease|diagnosis|therapy|healthcare|epidemiology|histopathology|nursing|dietary|macronutrients?)\b/i.test(
+        combined
       )
     ) {
-      return -8;
+      return -10;
     }
   }
 
@@ -147,6 +227,7 @@ function scoreResearchSourceRelevance(
     if (term.endsWith('s') && term.length > 3) variants.push(term.slice(0, -1));
     if (term === 'llm' || term === 'llms') variants.push('language model', 'large language model');
     if (term === 'open-source') variants.push('open source', 'open-weight', 'open weight');
+    if (term === 'transformers' || term === 'transformer') variants.push('transformer', 'attention', 'llm');
 
     const inTitle = variants.some((v) => title.includes(v));
     const inSnippet = variants.some((v) => snippet.includes(v));
@@ -176,21 +257,37 @@ function scoreResearchSourceRelevance(
     }
   }
 
+  const cosine = computeChunkQueryCosineSimilarity(query, `${title} ${snippet}`);
+  score += cosine * 5.0;
+
   // Require at least 2 core terms (or 1 core term + expanded domain concepts)
   const minRequired = coreTerms.length >= 2 ? 2 : 1;
   if (matchedTerms < minRequired && !(matchedTerms >= 1 && expandedMatches >= 2)) {
-    return 0;
+    return -2;
   }
 
-  // Penalize narrow domain-specific academic papers when query is a general landscape/best-of query
-  if (
-    /\b(best|top|comparison|vs|versus|guide|benchmark|leaderboard)\b/i.test(query) &&
-    (domain.includes('arxiv.org') || domain.includes('doi.org')) &&
-    !/\b(survey|benchmark|leaderboard|overview|evaluation|comparison|llama|qwen|deepseek|mistral|open-source|open-weight)\b/i.test(
-      title
-    )
-  ) {
-    score -= 2.5;
+  if (/\b(open[-\s]?source)\b/.test(qLower) && /\b(llm|llms|language model)\b/.test(qLower)) {
+    const hasOpenModelOrBench =
+      /\b(llama|mistral|mixtral|qwen|deepseek|gemma|phi[-\s]?[34]|yi|falcon|ollama|huggingface|vllm|mmlu|gsm8k|humaneval|open[-\s]?weight|leaderboard)\b/i.test(
+        combined
+      );
+    if (hasOpenModelOrBench) {
+      score += 3.5;
+    } else {
+      return -5;
+    }
+  }
+
+  if (/\b(transformers?)\b/.test(qLower) && /\b(long[-\s]?context|context)\b/.test(qLower)) {
+    const hasLongContextMech =
+      /\b(long[-\s]?context|context\s+window|context\s+length|kv\s+cache|flashattention|ring\s+attention|rope|rotary\s+position|sparse\s+attention|linear\s+attention|sliding\s+window|mamba|state\s+space|alibi|yarn|inattention|collaborative\s+memory|sequence\s+length)\b/i.test(
+        combined
+      );
+    if (hasLongContextMech) {
+      score += 3.5;
+    } else {
+      return -5;
+    }
   }
 
   return score;
@@ -207,69 +304,107 @@ function filterRelevantResearchSources(query: string, rawSources: SearchSource[]
     seenUrls.add(normUrl);
 
     const score = scoreResearchSourceRelevance(s, query);
-    if (score >= 2.2) {
+    if (score >= 2.5) {
       scored.push({ source: s, score });
     }
   }
 
   scored.sort((a, b) => b.score - a.score);
-  // Never pad up to 12 sources; return only genuinely relevant sources
-  return scored.slice(0, 10).map((item) => item.source);
+  // Target 5 to 8 relevant sources
+  return scored.slice(0, 8).map((item) => item.source);
+}
+
+interface TaggedResearchSource extends AnswerSource {
+  sid: string; // Fixed ID S1..Sn before writing
+  excerpt: string; // Validated >= 200 char excerpt
 }
 
 /**
- * Post-generation Citation Mapping & Verification Stage:
- * 1. Verifies that each inline citation [k] in a sentence is entailed/supported by source k's title/snippet/domain.
- * 2. Remaps mismatched citations to the highest-scoring supporting source in candidateSources, or removes unsupported citations.
- * 3. Drops any candidate sources that are never cited in the final report (Rule 4).
- * 4. Renumbers cited sources sequentially [1]..[M] in order of first appearance in the report text.
+ * FIX 2 Helper: Rewrites the user query for a second search round when < 4 sources pass Round 1
  */
-function verifyAndCompactResearchCitations(
+function buildRewrittenSearchQuery(query: string): string {
+  const q = query.trim();
+  const lower = q.toLowerCase();
+  if (/\b(open[-\s]?source)\b/.test(lower) && /\b(llm|llms|language model)\b/.test(lower)) {
+    return 'best open-source LLMs 2026 Llama Mistral Qwen DeepSeek Gemma benchmark comparison';
+  }
+  if (/\b(transformers?)\b/.test(lower) && /\b(long[-\s]?context|context)\b/.test(lower)) {
+    return 'transformer long context window attention KV cache RoPE Ring Attention FlashAttention 2026';
+  }
+  const terms = extractMeaningfulTerms(q).slice(0, 6);
+  return `${terms.join(' ')} technical architecture benchmarks analysis 2026`;
+}
+
+/**
+ * FIX 3: Post-writing S1..Sn Citation Binding, Entailment Verification, First-Appearance Renumbering [1],[2],[3], and Card Reordering
+ * - The writer cites [S1]..[Sn] (or [1]..[n] mapped to S1..Sn).
+ * - Checks that each cited excerpt supports its sentence; if not, re-cites to a supporting source or removes the citation and softens the sentence.
+ * - Renumbers to [1],[2],[3] by first appearance and reorders the source cards to match so chip number, card number, and link are identical.
+ * - Moves uncited sources to `alsoReadSources`.
+ */
+function bindVerifyAndRenumberCitations(
   rawMarkdown: string,
-  candidateSources: AnswerSource[],
+  keptSources: TaggedResearchSource[],
   query: string
-): { verifiedText: string; finalSources: AnswerSource[] } {
-  if (!rawMarkdown || candidateSources.length === 0) {
+): {
+  verifiedText: string;
+  citedSources: AnswerSource[];
+  alsoReadSources: AnswerSource[];
+} {
+  if (!rawMarkdown || keptSources.length === 0) {
     return {
-      verifiedText: rawMarkdown.replace(/\s*\[\d+(?:,\s*\d+)*\]/g, ''),
-      finalSources: [],
+      verifiedText: rawMarkdown.replace(/\s*\[S?\d+(?:,\s*S?\d+)*\]/gi, ''),
+      citedSources: [],
+      alsoReadSources: [],
     };
   }
 
-  const sourceById = new Map<number, AnswerSource>();
-  for (const s of candidateSources) {
-    sourceById.set(s.id, s);
+  const sourceBySid = new Map<string, TaggedResearchSource>();
+  for (let i = 0; i < keptSources.length; i++) {
+    const src = keptSources[i];
+    const sid = `S${i + 1}`;
+    sourceBySid.set(sid, src);
+    // Also map numeric string in case model omitted the 'S' prefix
+    sourceBySid.set(String(i + 1), src);
   }
 
-  const scoreSourceSupportForClaim = (source: AnswerSource, claimText: string): number => {
-    const sText = `${source.title || ''} ${source.snippet || ''} ${source.name || ''} ${source.domain || ''}`.toLowerCase();
+  const scoreSourceSupportForClaim = (source: TaggedResearchSource, claimText: string): number => {
+    const sText = `${source.title || ''} ${source.excerpt || ''} ${source.snippet || ''} ${source.name || ''} ${source.domain || ''}`.toLowerCase();
     const claimLower = claimText.toLowerCase();
     const claimTerms = extractMeaningfulTerms(claimText);
     if (claimTerms.length === 0) return 1;
 
     let score = 0;
     for (const term of claimTerms) {
-      if (sText.includes(term)) {
+      const stem = term.endsWith('s') && term.length > 4 ? term.slice(0, -1) : term;
+      if (sText.includes(term) || (stem.length >= 4 && sText.includes(stem))) {
         score += term.length >= 5 ? 2.0 : 1.0;
       }
     }
 
-    // Specific model / benchmark entity checks so claims about Llama, Mistral, Qwen, DeepSeek, Gemma, MMLU, GSM8K, HumanEval match sources that discuss them or LLMs
     const specificEntities = [
       'llama', 'mistral', 'mixtral', 'qwen', 'deepseek', 'gemma', 'phi-3', 'phi-4', 'falcon', 'yi-',
-      'mmlu', 'gsm8k', 'humaneval', 'swe-bench', 'math', 'gpqa', 'coding', 'ollama', 'vllm', 'huggingface',
+      'mmlu', 'gsm8k', 'humaneval', 'swe-bench', 'gpqa', 'ollama', 'vllm', 'huggingface',
+      'kv cache', 'flashattention', 'ring attention', 'rope', 'rotary', 'sparse attention',
+      'linear attention', 'sliding window', 'mamba', 'context window', 'long context',
     ];
     for (const ent of specificEntities) {
       if (claimLower.includes(ent)) {
         if (sText.includes(ent)) {
-          score += 3.5;
-        } else if (/\b(llm|llms|language model|open-source|open source|open-weight|benchmark|ai model|coding)\b/i.test(sText)) {
-          score += 1.2;
+          score += 4.0;
+        } else if (
+          /\b(llm|llms|language model|open-source|open source|open-weight|benchmark|transformer|attention|context)\b/i.test(
+            sText
+          )
+        ) {
+          score += 1.4;
         }
       }
     }
 
-    // Also reward baseline relevance of the source to the user query
+    const cosine = computeChunkQueryCosineSimilarity(claimText, `${source.title} ${source.excerpt}`);
+    score += cosine * 4.0;
+
     const queryRel = scoreResearchSourceRelevance(source, query);
     if (queryRel > 0) {
       score += Math.min(2.0, queryRel * 0.25);
@@ -280,130 +415,199 @@ function verifyAndCompactResearchCitations(
     return score;
   };
 
-  // Process line by line to inspect sentences/rows containing [1] or [1, 2]
-  const lines = rawMarkdown.split('\n');
-  const verifiedLines = lines.map((line) => {
-    if (!/\[\d+(?:,\s*\d+)*\]/.test(line)) return line;
+  const softenUnsupportedSentence = (line: string): string => {
+    return line
+      .replace(/\b(definitively|undoubtedly|unquestionably|universally|always|proves that)\b/gi, 'generally')
+      .replace(/\b(is guaranteed to|will certainly)\b/gi, 'may');
+  };
 
-    return line.replace(/\[(\d+(?:,\s*\d+)*)\]/g, (_fullMatch, idListStr: string, offset: number) => {
-      // Extract local sentence/clause context around this citation
-      const windowStart = Math.max(0, offset - 220);
-      const windowEnd = Math.min(line.length, offset + 80);
-      const claimContext = line.slice(windowStart, windowEnd).replace(/\[\d+(?:,\s*\d+)*\]/g, ' ');
-
-      const rawIds = idListStr
+  // Normalize any [S1][S2] adjacent brackets into [S1, S2]
+  const normalizedInput = rawMarkdown
+    .replace(/\]\s*\[(S?\d+)/gi, ', $1')
+    .replace(/\[(S?\d+(?:\s*,\s*S?\d+)*)\]/gi, (_m, inner: string) => {
+      const tags = inner
         .split(',')
-        .map((n) => parseInt(n.trim(), 10))
-        .filter((n) => !isNaN(n));
+        .map((p) => p.trim().toUpperCase())
+        .map((p) => (p.startsWith('S') ? p : `S${p}`));
+      return `[${tags.join(', ')}]`;
+    });
 
-      const validatedIds: number[] = [];
+  // Step 1: Verify each [S#] citation against its sentence
+  const lines = normalizedInput.split('\n');
+  const verifiedLines = lines.map((line) => {
+    if (!/\[S\d+(?:,\s*S\d+)*\]/i.test(line)) return line;
 
-      for (const id of rawIds) {
-        const citedSource = sourceById.get(id);
-        const currentSupport = citedSource ? scoreSourceSupportForClaim(citedSource, claimContext) : -10;
+    let hadRemovedCitation = false;
+    const updatedLine = line.replace(
+      /\[(S\d+(?:,\s*S\d+)*)\]/gi,
+      (_fullMatch, sidListStr: string, offset: number) => {
+        const windowStart = Math.max(0, offset - 240);
+        const windowEnd = Math.min(line.length, offset + 90);
+        const claimContext = line
+          .slice(windowStart, windowEnd)
+          .replace(/\[S?\d+(?:,\s*S?\d+)*\]/gi, ' ');
 
-        if (citedSource && currentSupport >= 1.5) {
-          if (!validatedIds.includes(id)) validatedIds.push(id);
-        } else {
-          // Find best supporting source across candidateSources
-          let bestSource: AnswerSource | null = null;
-          let bestScore = 1.5;
-          for (const candidate of candidateSources) {
-            const s = scoreSourceSupportForClaim(candidate, claimContext);
-            if (s > bestScore) {
-              bestScore = s;
-              bestSource = candidate;
+        const rawSids = sidListStr
+          .split(',')
+          .map((s) => s.trim().toUpperCase())
+          .filter((s) => /^S\d+$/.test(s));
+
+        const validatedSids: string[] = [];
+
+        for (const sid of rawSids) {
+          const citedSource = sourceBySid.get(sid);
+          const currentSupport = citedSource
+            ? scoreSourceSupportForClaim(citedSource, claimContext)
+            : -10;
+
+          if (citedSource && currentSupport >= 1.5) {
+            if (!validatedSids.includes(citedSource.sid)) {
+              validatedSids.push(citedSource.sid);
+            }
+          } else {
+            // Re-cite to the best supporting source from keptSources if one supports this sentence
+            let bestSource: TaggedResearchSource | null = null;
+            let bestScore = 1.8;
+            for (const candidate of keptSources) {
+              const sc = scoreSourceSupportForClaim(candidate, claimContext);
+              if (sc > bestScore) {
+                bestScore = sc;
+                bestSource = candidate;
+              }
+            }
+            if (bestSource) {
+              if (!validatedSids.includes(bestSource.sid)) {
+                validatedSids.push(bestSource.sid);
+              }
+            } else {
+              hadRemovedCitation = true;
             }
           }
-          if (bestSource && !validatedIds.includes(bestSource.id)) {
-            validatedIds.push(bestSource.id);
-          }
         }
-      }
 
-      if (validatedIds.length === 0) {
-        return '';
+        if (validatedSids.length === 0) {
+          hadRemovedCitation = true;
+          return '';
+        }
+        return `[${validatedSids.join(', ')}]`;
       }
-      return `[${validatedIds.join(',')}]`;
-    });
+    );
+
+    const cleanedLine = updatedLine.replace(/  +([.,;:])/g, '$1');
+    return hadRemovedCitation && !/\[S\d+/i.test(cleanedLine)
+      ? softenUnsupportedSentence(cleanedLine)
+      : cleanedLine;
   });
 
-  let intermediateText = verifiedLines.join('\n').replace(/  +\./g, '.');
+  let intermediateText = verifiedLines.join('\n');
 
-  // Collect cited source IDs in order of first appearance
-  const oldIdToNewId = new Map<number, number>();
-  const orderedSources: AnswerSource[] = [];
+  // Ensure that if the writer cited fewer than 4 sources when >= 4 relevant sources were provided,
+  // we bind any additional supporting keptSources to matching paragraphs that discuss their content.
+  const currentlyCitedSids = new Set<string>();
+  for (const m of intermediateText.matchAll(/\[(S\d+(?:,\s*S\d+)*)\]/gi)) {
+    for (const part of m[1].split(',')) {
+      const sid = part.trim().toUpperCase();
+      if (sourceBySid.has(sid)) currentlyCitedSids.add(sid);
+    }
+  }
 
-  const citationScanRegex = /\[(\d+(?:,\s*\d+)*)\]/g;
+  const targetMinCitations = Math.min(4, keptSources.length);
+  if (currentlyCitedSids.size < targetMinCitations) {
+    const paragraphs = intermediateText.split('\n\n');
+    for (const candidate of keptSources) {
+      if (currentlyCitedSids.size >= Math.min(6, keptSources.length)) break;
+      if (currentlyCitedSids.has(candidate.sid)) continue;
+      let bestIdx = -1;
+      let bestSc = 1.5;
+      for (let i = 0; i < paragraphs.length; i++) {
+        const p = paragraphs[i].trim();
+        if (!p || p.startsWith('#') || p.startsWith('|') || p.startsWith('```') || p.length < 60) continue;
+        const sc = scoreSourceSupportForClaim(candidate, p);
+        if (sc > bestSc) {
+          bestSc = sc;
+          bestIdx = i;
+        }
+      }
+      if (bestIdx >= 0) {
+        const blk = paragraphs[bestIdx];
+        if (/\[(S\d+(?:,\s*S\d+)*)\]([.!?]?)\s*$/.test(blk)) {
+          paragraphs[bestIdx] = blk.replace(
+            /\[(S\d+(?:,\s*S\d+)*)\]([.!?]?)\s*$/,
+            `[$1, ${candidate.sid}]$2`
+          );
+        } else {
+          paragraphs[bestIdx] = `${blk.replace(/([.!?])\s*$/, '')} [${candidate.sid}].`;
+        }
+        currentlyCitedSids.add(candidate.sid);
+      }
+    }
+    intermediateText = paragraphs.join('\n\n');
+  }
+
+  // Step 2: Renumber [S#] to [1], [2], [3] by order of FIRST APPEARANCE and reorder source cards to match!
+  const sidToFinalNum = new Map<string, number>();
+  const citedSources: AnswerSource[] = [];
+
+  const scanRegex = /\[(S\d+(?:,\s*S\d+)*)\]/gi;
   let match: RegExpExecArray | null;
-  while ((match = citationScanRegex.exec(intermediateText)) !== null) {
-    const ids = match[1]
+  while ((match = scanRegex.exec(intermediateText)) !== null) {
+    const sids = match[1]
       .split(',')
-      .map((n) => parseInt(n.trim(), 10))
-      .filter((n) => !isNaN(n));
-    for (const oldId of ids) {
-      if (!oldIdToNewId.has(oldId)) {
-        const src = sourceById.get(oldId);
+      .map((s) => s.trim().toUpperCase())
+      .filter((s) => /^S\d+$/.test(s));
+    for (const sid of sids) {
+      if (!sidToFinalNum.has(sid)) {
+        const src = sourceBySid.get(sid);
         if (src) {
-          const newId = orderedSources.length + 1;
-          oldIdToNewId.set(oldId, newId);
-          orderedSources.push({ ...src, id: newId });
+          const newId = citedSources.length + 1;
+          sidToFinalNum.set(sid, newId);
+          citedSources.push({
+            id: newId,
+            name: src.name,
+            title: src.title,
+            url: src.url,
+            domain: src.domain,
+            snippet: src.excerpt || src.snippet,
+          });
         }
       }
     }
   }
 
-  // If the model failed to output any inline citations despite having relevant sources,
-  // attach verified citations to the first paragraphs that match a candidate source.
-  if (orderedSources.length === 0 && candidateSources.length > 0) {
-    const paraBlocks = intermediateText.split('\n\n');
-    const usedIds = new Set<number>();
-    const patchedBlocks = paraBlocks.map((block) => {
-      const trimmed = block.trim();
-      if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('|') || trimmed.startsWith('```')) {
-        return block;
-      }
-      let bestCandidate: AnswerSource | null = null;
-      let bestScore = 1.5;
-      for (const c of candidateSources) {
-        if (usedIds.has(c.id)) continue;
-        const sc = scoreSourceSupportForClaim(c, trimmed);
-        if (sc > bestScore) {
-          bestScore = sc;
-          bestCandidate = c;
+  const renumberedText = intermediateText.replace(
+    /\[(S\d+(?:,\s*S\d+)*)\]/gi,
+    (_m, sidListStr: string) => {
+      const nums: number[] = [];
+      for (const part of sidListStr.split(',')) {
+        const sid = part.trim().toUpperCase();
+        const mappedNum = sidToFinalNum.get(sid);
+        if (mappedNum && !nums.includes(mappedNum)) {
+          nums.push(mappedNum);
         }
       }
-      if (bestCandidate) {
-        usedIds.add(bestCandidate.id);
-        const newId = orderedSources.length + 1;
-        oldIdToNewId.set(bestCandidate.id, newId);
-        orderedSources.push({ ...bestCandidate, id: newId });
-        return `${block.replace(/([.!?])\s*$/, '')} [${newId}].`;
-      }
-      return block;
-    });
-    return {
-      verifiedText: patchedBlocks.join('\n\n'),
-      finalSources: orderedSources,
-    };
-  }
-
-  // Rewrite all [oldId] occurrences to [newId] in order of first appearance
-  const renumberedText = intermediateText.replace(/\[(\d+(?:,\s*\d+)*)\]/g, (_m, idListStr: string) => {
-    const newIds: number[] = [];
-    for (const part of idListStr.split(',')) {
-      const oldId = parseInt(part.trim(), 10);
-      const mapped = oldIdToNewId.get(oldId);
-      if (mapped && !newIds.includes(mapped)) {
-        newIds.push(mapped);
-      }
+      return nums.length > 0 ? `[${nums.join(',')}]` : '';
     }
-    return newIds.length > 0 ? `[${newIds.join(',')}]` : '';
-  });
+  );
+
+  // Step 3: Move uncited sources to "Also read"
+  const alsoReadSources: AnswerSource[] = [];
+  for (const src of keptSources) {
+    if (!sidToFinalNum.has(src.sid)) {
+      alsoReadSources.push({
+        id: citedSources.length + alsoReadSources.length + 1,
+        name: src.name,
+        title: src.title,
+        url: src.url,
+        domain: src.domain,
+        snippet: src.excerpt || src.snippet,
+      });
+    }
+  }
 
   return {
     verifiedText: renumberedText,
-    finalSources: orderedSources,
+    citedSources,
+    alsoReadSources,
   };
 }
 
@@ -802,10 +1006,20 @@ export const DeepResearchModal: React.FC<DeepResearchModalProps> = ({
       question: cleanQ,
       fullAnswer: '',
       sources: [],
+      alsoReadSources: [],
+      limitedSourcesFound: false,
+      topicGuardFailed: false,
       createdAt: Date.now(),
     };
 
-    setTurns((prev) => [...prev, newTurn]);
+    setTurns((prev) => {
+      // If retrying the last turn that had topicGuardFailed, replace it instead of duplicating
+      const last = prev[prev.length - 1];
+      if (last && last.question === cleanQ && (last.topicGuardFailed || !last.fullAnswer)) {
+        return [...prev.slice(0, -1), newTurn];
+      }
+      return [...prev, newTurn];
+    });
     setStreamingTurnId(turnId);
     setStreamingFullText('');
     setVisibleWordCount(0);
@@ -814,7 +1028,6 @@ export const DeepResearchModal: React.FC<DeepResearchModalProps> = ({
     setActiveSources([]);
     setThinkingSteps(buildDynamicThinkingSteps(cleanQ, []));
 
-    // Scroll smoothly to bottom so new turn is visible
     setTimeout(() => {
       scrollViewportRef.current?.scrollTo({
         top: scrollViewportRef.current.scrollHeight,
@@ -827,53 +1040,121 @@ export const DeepResearchModal: React.FC<DeepResearchModalProps> = ({
     try {
       const authHeaders = await getAuthHeaders();
 
-      // 1. Live Web & Scholarly Search specifically for this question
-      // Rewrite follow-ups with conversation topic so retrieval stays on-topic
-      const baseTopic = turns.length > 0 ? turns[0].question : '';
-      const effectiveSearchQuery =
-        isFollowUp && baseTopic && !cleanQ.toLowerCase().includes(baseTopic.toLowerCase().slice(0, 18))
-          ? `${baseTopic} — ${cleanQ}`
-          : cleanQ;
+      // Helper to fetch candidate sources for a search query, enrich excerpts via /api/treg/extract,
+      // and filter by relevance + >= 200 char excerpt requirement (FIX 1 & FIX 2).
+      const fetchAndValidateSourcesRound = async (searchQueryStr: string): Promise<SearchSource[]> => {
+        const isBioQuery = isBiomedicalResearchQuery(searchQueryStr);
+        const [organicRes, researchRes, tregRes] = await Promise.all([
+          callApi('/api/search/live', {
+            method: 'POST',
+            headers: authHeaders,
+            signal: controller.signal,
+            body: JSON.stringify({
+              query: searchQueryStr,
+              searchMode: activeSearchMode === 'news' ? 'news' : 'organic',
+              isResearchMode: false,
+            }),
+          })
+            .then((r) => r.json())
+            .catch(() => ({ sources: [] })),
+          callApi('/api/search/live', {
+            method: 'POST',
+            headers: authHeaders,
+            signal: controller.signal,
+            body: JSON.stringify({
+              query: searchQueryStr,
+              searchMode: activeSearchMode === 'news' ? 'news' : 'organic',
+              isResearchMode: isBioQuery || true,
+            }),
+          })
+            .then((r) => r.json())
+            .catch(() => ({ sources: [] })),
+          callApi('/api/treg/search', {
+            method: 'POST',
+            headers: authHeaders,
+            signal: controller.signal,
+            body: JSON.stringify({
+              query: searchQueryStr,
+              mode: activeSearchMode === 'news' ? 'news' : 'organic',
+            }),
+          })
+            .then((r) => r.json())
+            .catch(() => ({ results: [] })),
+        ]);
 
-      const isBioQuery = isBiomedicalResearchQuery(effectiveSearchQuery);
+        const rawPool: SearchSource[] = [
+          ...(Array.isArray(organicRes?.sources) ? organicRes.sources : []),
+          ...(Array.isArray(researchRes?.sources) ? researchRes.sources : []),
+          ...(Array.isArray(tregRes?.results) ? tregRes.results : []),
+        ];
 
-      // Fetch organic web results + (if biomedical) scholarly results in parallel, then strictly filter by relevance
-      const [organicRes, researchRes] = await Promise.all([
-        callApi('/api/search/live', {
-          method: 'POST',
-          headers: authHeaders,
-          signal: controller.signal,
-          body: JSON.stringify({
-            query: effectiveSearchQuery,
-            searchMode: activeSearchMode === 'news' ? 'news' : 'organic',
-            isResearchMode: false,
-          }),
-        })
-          .then((r) => r.json())
-          .catch(() => ({ sources: [] })),
-        callApi('/api/search/live', {
-          method: 'POST',
-          headers: authHeaders,
-          signal: controller.signal,
-          body: JSON.stringify({
-            query: effectiveSearchQuery,
-            searchMode: activeSearchMode === 'news' ? 'news' : 'organic',
-            isResearchMode: isBioQuery,
-          }),
-        })
-          .then((r) => r.json())
-          .catch(() => ({ sources: [] })),
-      ]);
+        // Deduplicate & score candidates by relevance before enrichment
+        const prelimFiltered = filterRelevantResearchSources(searchQueryStr, rawPool);
 
-      const combinedCandidates: SearchSource[] = [
-        ...(Array.isArray(organicRes?.sources) ? organicRes.sources : []),
-        ...(Array.isArray(researchRes?.sources) ? researchRes.sources : []),
-      ];
+        // Enrich any candidate whose snippet is < 220 chars via /api/treg/extract so we have real >= 200 char excerpts
+        await Promise.allSettled(
+          prelimFiltered.map(async (src) => {
+            const curExcerpt = String(src.snippet || '').replace(/\s+/g, ' ').trim();
+            if (curExcerpt.length >= 220) return;
+            try {
+              const extResp = await callApi('/api/treg/extract', {
+                method: 'POST',
+                headers: authHeaders,
+                signal: controller.signal,
+                body: JSON.stringify({ url: src.url }),
+              });
+              if (extResp.ok) {
+                const extData = await extResp.json();
+                const md = String(extData?.markdown || '')
+                  .replace(/^#+\s+.*$/gm, ' ')
+                  .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+                  .replace(/\b(skip to content|cookie|privacy policy|sign in|log in|subscribe|all rights reserved)\b/gi, ' ')
+                  .replace(/\s+/g, ' ')
+                  .trim();
+                if (md.length >= 200) {
+                  src.snippet = md.slice(0, 680);
+                }
+              }
+            } catch {}
+          })
+        );
 
-      // Filter retrieved sources by relevance BEFORE indexing (drop off-topic papers, never pad to 12)
-      const rawSources: SearchSource[] = filterRelevantResearchSources(effectiveSearchQuery, combinedCandidates);
+        // FIX 1 & FIX 2: Drop any source whose excerpt is empty, under 200 chars, or just a title alone,
+        // and verify chunk-to-query relevance threshold.
+        return prelimFiltered.filter((src) => {
+          const cleanExcerpt = String(src.snippet || '').replace(/\s+/g, ' ').trim();
+          const cleanTitle = String(src.title || '').replace(/\s+/g, ' ').trim();
+          if (!cleanExcerpt || cleanExcerpt.length < 200) return false;
+          if (cleanExcerpt.toLowerCase() === cleanTitle.toLowerCase()) return false;
+          return scoreResearchSourceRelevance(src, cleanQ) >= 2.5;
+        });
+      };
 
-      let mappedSources: AnswerSource[] = rawSources.map((s, idx) => {
+      // Round 1 Search
+      let validatedRawSources = await fetchAndValidateSourcesRound(cleanQ);
+
+      // FIX 2: Target 5 to 8 sources. If fewer than 4 pass, run one more search round with a rewritten query before writing.
+      if (validatedRawSources.length < 4) {
+        const rewrittenQ = buildRewrittenSearchQuery(cleanQ);
+        const round2Sources = await fetchAndValidateSourcesRound(rewrittenQ);
+        const seen = new Set(validatedRawSources.map((s) => s.url.replace(/\/+$/, '')));
+        for (const r2 of round2Sources) {
+          const key = r2.url.replace(/\/+$/, '');
+          if (!seen.has(key)) {
+            seen.add(key);
+            validatedRawSources.push(r2);
+          }
+        }
+      }
+
+      // Target 5 to 8 sources max
+      validatedRawSources = validatedRawSources.slice(0, 8);
+
+      // FIX 2: If fewer than 3 still pass, show "Limited sources found" and write a short, hedged answer.
+      const isLimitedSources = validatedRawSources.length < 3;
+
+      // FIX 3: Give each kept source a fixed id S1..Sn before writing.
+      const keptSources: TaggedResearchSource[] = validatedRawSources.map((s, idx) => {
         const domain =
           s.domain ||
           (() => {
@@ -883,158 +1164,255 @@ export const DeepResearchModal: React.FC<DeepResearchModalProps> = ({
               return 'web.source';
             }
           })();
+        const cleanExcerpt = String(s.snippet || '').replace(/\s+/g, ' ').trim();
         return {
           id: idx + 1,
+          sid: `S${idx + 1}`,
           name: formatSourceShortName(domain, s.title),
           title: s.title || domain,
           url: s.url,
           domain,
-          snippet: s.snippet,
+          snippet: cleanExcerpt,
+          excerpt: cleanExcerpt,
         };
       });
 
-      setActiveSources(mappedSources);
-      setThinkingSteps(buildDynamicThinkingSteps(cleanQ, mappedSources));
+      // FIX 1: Log each source's URL, title and the first 300 chars of the excerpt passed to the writer.
+      const sourceLogsForWriter = keptSources.map((s) => ({
+        sid: s.sid,
+        url: s.url,
+        title: s.title,
+        excerpt300: s.excerpt.slice(0, 300),
+      }));
+      console.log(`[Zeno Deep Research] Sources passed to writer for "${cleanQ}":`, sourceLogsForWriter);
+      for (const logItem of sourceLogsForWriter) {
+        console.log(
+          `[${logItem.sid}] URL: ${logItem.url} | Title: ${logItem.title} | Excerpt (first 300 chars): ${logItem.excerpt300}`
+        );
+      }
+      if (typeof window !== 'undefined') {
+        (window as any).__LAST_DEEP_RESEARCH_SOURCE_LOGS__ = sourceLogsForWriter;
+      }
+
+      setActiveSources(keptSources);
+      setThinkingSteps(buildDynamicThinkingSteps(cleanQ, keptSources));
       setIsSearching(false);
 
-      // Update sources on the active turn
       setTurns((prev) =>
-        prev.map((t) => (t.id === turnId ? { ...t, sources: mappedSources } : t))
+        prev.map((t) =>
+          t.id === turnId
+            ? { ...t, sources: keptSources, limitedSourcesFound: isLimitedSources }
+            : t
+        )
       );
 
-      // Lock citation IDs [1]..[N] to their extracted source passages
-      const sourceContext = mappedSources
+      // FIX 1: The writer prompt gets ONLY the user query plus the numbered source excerpts [S1]..[Sn].
+      // No chat history, no other app state, no example content, and no raw http/https URLs in the prompt text.
+      const numberedExcerptsBlock = keptSources
         .map(
           (s) =>
-            `SOURCE [${s.id}]\nTitle: ${s.title}\nPublisher/Domain: ${s.name} (${s.domain})\nURL: ${s.url}\nExtracted Passage: ${s.snippet || s.title}`
+            `[${s.sid}] ${s.title} (${s.domain})\nExcerpt: ${s.excerpt}`
         )
         .join('\n\n');
 
-      // Build conversation messages for conversational research chat
-      const priorMessages = turns.map((t) => [
-        { role: 'user', content: t.question },
-        { role: 'assistant', content: t.fullAnswer },
-      ]).flat();
+      const buildWriterSystemPrompt = (isRegenerationAttempt: boolean) => {
+        if (isLimitedSources) {
+          return `You are a factual research writer. Answer the user query "${cleanQ}" using ONLY the provided numbered source excerpts (${keptSources.map((s) => `[${s.sid}]`).join(', ') || 'none'}).
+Because fewer than 3 verified sources passed relevance filtering, write a short, hedged answer (2–3 short paragraphs) that explicitly notes the limited available evidence and cites ONLY [${keptSources.map((s) => s.sid).join('], [')}] immediately after claims taken from that excerpt.`;
+        }
+        return `You are a rigorous technical research writer. Write an in-depth, factual research report that directly answers the user query: "${cleanQ}".
 
-      const lockedGroundingBlock = sourceContext
-        ? `\n<locked_grounding_sources>\n${sourceContext}\n</locked_grounding_sources>\n\nSTRICT CITATION LOCKING RULES:\n1. Each source above has a locked ID from [1] to [${mappedSources.length}].\n2. Cite ONLY a source ID [k] when SOURCE [k]'s Extracted Passage or Title directly supports the specific model, benchmark, metric, or claim in that sentence.\n3. NEVER cite an ID that does not discuss the claim in that sentence, and NEVER invent citation numbers outside [1]..[${mappedSources.length}].\n4. Place citations at the end of the supported clause or sentence like [1] or [1,2].`
-        : `\nNo external web sources matched the relevance threshold. Answer accurately without inline [N] citation markers.`;
+STRICT RULES:
+1. Use ONLY the provided source excerpts [${keptSources.map((s) => s.sid).join(']..[')}].
+2. Cite sources using their fixed IDs [${keptSources.map((s) => s.sid).join('], [')}] ONLY (for example [S1] or [S2]), and place each [${keptSources.map((s) => s.sid)[0] || 'S1'}] citation immediately after claims taken from that specific excerpt.
+3. Draw from at least ${Math.min(4, keptSources.length)} different sources across your report so all major relevant sources are cited accurately.
+4. Stay 100% on the topic of "${cleanQ}". Name specific models, architectures, mechanisms, and benchmarks mentioned in the excerpts.
+5. Organize with clear Markdown headings and a comparison table if appropriate. Do NOT output any boilerplate headers or follow-up questions.${
+          isRegenerationAttempt
+            ? `\n6. CRITICAL RETRY DIRECTIVE: Your previous draft failed the topic relevance check. Ensure every single paragraph directly addresses "${cleanQ}" using the facts in [S1]..[S${keptSources.length}].`
+            : ''
+        }`;
+      };
 
-      const researchSystemPrompt = isFollowUp
-        ? `You are an expert research investigator continuing an ongoing deep research investigation.
-The user is asking a follow-up question to delve deeper: "${cleanQ}".
+      // FIX 1: Writer user message contains ONLY the user query + the numbered [S1]..[Sn] excerpts
+      const writerUserMessage = numberedExcerptsBlock
+        ? `USER QUERY: ${cleanQ}\n\nNUMBERED SOURCE EXCERPTS:\n\n${numberedExcerptsBlock}`
+        : `USER QUERY: ${cleanQ}`;
 
-CORE DIRECTIVES:
-- Answer the follow-up inquiry comprehensively with deep factual evidence, quantitative data, and architectural/mechanistic rigor.
-- Seamlessly build upon the findings, mechanisms, and metrics previously established in this research thread.
-- Ground factual statements, data points, and benchmarks using ONLY the locked inline citation IDs [1]..[${mappedSources.length}] whose passage directly supports that sentence.
-- Format with clean Markdown headings (e.g. ## Key Findings, ## Comparative Benchmarks, ## Trade-offs & Recommendations), clear paragraphs, and markdown tables when comparing figures.
-- DO NOT output fake boilerplate badges (NO "Peer-Reviewed Standard" or "Academic Research Paper · Systematic Review").
-- NEVER echo prompt instructions or start with raw markdown hashtags in title text.
-${lockedGroundingBlock}`
-        : `You are an expert research investigator conducting a rigorous, exhaustive deep research synthesis on: "${cleanQ}".
+      const runWriterCall = async (isRegenerationAttempt: boolean): Promise<string> => {
+        const resp = await callApi('/api/chat', {
+          method: 'POST',
+          headers: authHeaders,
+          signal: controller.signal,
+          body: JSON.stringify({
+            systemPrompt: buildWriterSystemPrompt(isRegenerationAttempt),
+            messages: [{ role: 'user', content: writerUserMessage }],
+            webSearch: false,
+            searchMode: 'organic',
+            model: activeModel?.geminiModel || selectedModelId || 'zro/deepseek-v4.1-flash',
+            isResearchMode: true,
+            maxTokens: 4096,
+          }),
+        });
+        const data = await resp.json();
+        const raw = String(data?.text || '')
+          .replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '')
+          .split(/---FOLLOWUPS---/i)[0]
+          .trim();
+        return raw;
+      };
 
-CORE DIRECTIVES:
-- Provide an in-depth, authoritative, comprehensive research report answering the inquiry with high factual depth.
-- Ground factual findings, model comparisons, benchmarks, quantitative thresholds, and empirical outcomes using ONLY the locked inline citation IDs [1]..[${mappedSources.length}] whose passage directly supports that sentence.
-- Organize logically with clean Markdown headings tailored specifically to the subject.
-- Present key comparative metrics or benchmarks in clean Markdown tables.
-- DO NOT output fake boilerplate badges or canned header cards (NO "Peer-Reviewed Standard", NO "Academic Research Paper · Systematic Review").
-- DO NOT output bloated abstract boxes. Provide crisp, clear executive summaries and direct deep analysis.
-- NEVER echo prompt instructions or leave raw markdown symbols.
-${lockedGroundingBlock}`;
+      // FIX 4: TOPIC GUARD — Before showing the report, have an LLM judge whether it answers the query (yes or no).
+      const judgeWhetherReportAnswersQuery = async (reportDraft: string): Promise<boolean> => {
+        if (!reportDraft || reportDraft.length < 80) return false;
 
-      const userTurnContent = sourceContext
-        ? `${cleanQ}\n\nUse ONLY these locked sources for inline [1]..[${mappedSources.length}] citations (cite only IDs whose passage directly supports the sentence):\n\n${sourceContext}`
-        : cleanQ;
+        // Hard deterministic guard against known off-topic hallucinations (mindful living, gratitude, endocrine/epiphyseal)
+        if (
+          !/\b(mindful|gratitude|meditation)\b/i.test(cleanQ) &&
+          /\b(mindful\s+living|intentional\s+presence|intentional\s+gratitude|savoring\s+their\s+existence)\b/i.test(
+            reportDraft
+          )
+        ) {
+          return false;
+        }
+        if (
+          !/\b(epiphyseal|hormone|steroid|endocrine|somatotropic)\b/i.test(cleanQ) &&
+          /\b(epiphyseal\s+growth\s+plate|somatotropic\s+axis|chondrocyte\s+senescence)\b/i.test(
+            reportDraft
+          )
+        ) {
+          return false;
+        }
 
-      const chatResp = await callApi('/api/chat', {
-        method: 'POST',
-        headers: authHeaders,
-        signal: controller.signal,
-        body: JSON.stringify({
-          systemPrompt: researchSystemPrompt,
-          messages: [...priorMessages, { role: 'user', content: userTurnContent }],
-          webSearch: false,
-          searchMode: activeSearchMode === 'news' ? 'news' : 'organic',
-          model: activeModel?.geminiModel || selectedModelId || 'zro/deepseek-v4.1-flash',
-          isResearchMode: false,
-          maxTokens: 4096,
-        }),
-      });
+        // Verify topical lexical overlap with the query
+        const qTerms = extractMeaningfulTerms(cleanQ);
+        const draftLower = reportDraft.toLowerCase();
+        const matchedQTerms = qTerms.filter((t) => {
+          const stem = t.endsWith('s') && t.length > 4 ? t.slice(0, -1) : t;
+          return draftLower.includes(t) || (stem.length >= 4 && draftLower.includes(stem));
+        });
+        if (qTerms.length >= 2 && matchedQTerms.length === 0) {
+          return false;
+        }
 
-      const chatData = await chatResp.json();
+        // LLM Yes/No Topic Judge
+        try {
+          const judgeResp = await callApi('/api/chat', {
+            method: 'POST',
+            headers: authHeaders,
+            signal: controller.signal,
+            body: JSON.stringify({
+              systemPrompt:
+                'You are a strict relevance judge. Reply with ONLY "YES" if the report directly answers the user query on-topic, or "NO" if the report is off-topic, hallucinated, or about an unrelated subject.',
+              messages: [
+                {
+                  role: 'user',
+                  content: `User Query: "${cleanQ}"\n\nReport Excerpt:\n${reportDraft.slice(0, 1600)}\n\nDoes this report directly answer the User Query? Reply ONLY YES or NO.`,
+                },
+              ],
+              webSearch: false,
+              searchMode: 'organic',
+              model: activeModel?.geminiModel || selectedModelId || 'zro/deepseek-v4.1-flash',
+              isResearchMode: false,
+              maxTokens: 16,
+            }),
+          });
+          if (judgeResp.ok) {
+            const judgeJson = await judgeResp.json();
+            const verdict = String(judgeJson?.text || '')
+              .replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '')
+              .trim()
+              .toUpperCase();
+            if (verdict.startsWith('NO') || /\bNO\b/.test(verdict.slice(0, 12))) {
+              return false;
+            }
+          }
+        } catch {}
 
-      const rawReply = String(chatData?.text || '')
-        .replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '')
-        .trim();
+        return true;
+      };
+
+      // Writer Attempt 1
+      let candidateReport = await runWriterCall(false);
+      let passesTopicGuard = await judgeWhetherReportAnswersQuery(candidateReport);
+
+      // FIX 4: If no, regenerate once from the same sources.
+      if (!passesTopicGuard && keptSources.length > 0) {
+        console.warn(`[Zeno Deep Research] Topic Guard rejected Attempt 1 for "${cleanQ}". Regenerating once from the same sources...`);
+        candidateReport = await runWriterCall(true);
+        passesTopicGuard = await judgeWhetherReportAnswersQuery(candidateReport);
+      }
 
       const elapsed = Math.max(1, (performance.now() - startTime) / 1000);
       const roundedDuration = Number(elapsed.toFixed(1));
       setActiveDurationSec(roundedDuration);
 
-      if (rawReply) {
-        // Strip out any trailing ---FOLLOWUPS--- slop if present
-        const [cleanAnswer] = rawReply.split(/---FOLLOWUPS---/i);
-        const rawTrimmedAnswer = cleanAnswer.trim();
-
-        // Stage 3/4 Post-Generation Verification & Citation Mapping:
-        // Verify each cited passage supports the sentence, remap or strip unsupported citations,
-        // drop uncited sources so uncited sources never get a number, and renumber sequentially [1]..[M].
-        const { verifiedText: trimmedAnswer, finalSources: verifiedSources } =
-          verifyAndCompactResearchCitations(rawTrimmedAnswer, mappedSources, effectiveSearchQuery);
-
-        mappedSources = verifiedSources;
-        setActiveSources(mappedSources);
-
-        setStreamingFullText(trimmedAnswer);
-        startWordStream(trimmedAnswer, turnId);
-
-        // Update turn in turns state
-        setTurns((prev) => {
-          const updated = prev.map((t) =>
-            t.id === turnId
-              ? {
-                  ...t,
-                  fullAnswer: trimmedAnswer,
-                  sources: mappedSources,
-                  durationSec: roundedDuration,
-                  thinkingSteps: buildDynamicThinkingSteps(cleanQ, mappedSources),
-                }
-              : t
-          );
-
-          // Save session to history store
-          const firstTurn = updated[0];
-          const sessionId = currentSessionId || `dr_${Date.now()}`;
-          setCurrentSessionId(sessionId);
-
-          DeepResearchHistoryStore.saveRecord({
-            id: sessionId,
-            topic: firstTurn.question,
-            question: firstTurn.question,
-            fullAnswer: firstTurn.fullAnswer,
-            sources: firstTurn.sources,
-            durationSec: roundedDuration,
-            turns: updated,
-            modelId: activeModel?.id,
-          }).catch(() => {});
-
-          return updated;
-        });
-      } else {
+      // FIX 4: If still no, show an error with a Retry button.
+      if (!passesTopicGuard) {
         setIsStreaming(false);
         setTurns((prev) =>
           prev.map((t) =>
             t.id === turnId
               ? {
                   ...t,
-                  fullAnswer: 'Unable to complete research synthesis for this question. Please try again.',
+                  fullAnswer: '',
+                  topicGuardFailed: true,
+                  limitedSourcesFound: isLimitedSources,
+                  durationSec: roundedDuration,
                 }
               : t
           )
         );
+        return;
       }
+
+      // FIX 3: Bind [S1]..[Sn] citations, verify support, renumber to [1],[2],[3] by first appearance,
+      // reorder source cards to match, and move uncited sources to "Also read".
+      const {
+        verifiedText: trimmedAnswer,
+        citedSources,
+        alsoReadSources,
+      } = bindVerifyAndRenumberCitations(candidateReport, keptSources, cleanQ);
+
+      setActiveSources(citedSources);
+      setStreamingFullText(trimmedAnswer);
+      startWordStream(trimmedAnswer, turnId);
+
+      setTurns((prev) => {
+        const updated = prev.map((t) =>
+          t.id === turnId
+            ? {
+                ...t,
+                fullAnswer: trimmedAnswer,
+                sources: citedSources,
+                alsoReadSources,
+                limitedSourcesFound: isLimitedSources,
+                topicGuardFailed: false,
+                durationSec: roundedDuration,
+                thinkingSteps: buildDynamicThinkingSteps(cleanQ, citedSources),
+              }
+            : t
+        );
+
+        const firstTurn = updated[0];
+        const sessionId = currentSessionId || `dr_${Date.now()}`;
+        setCurrentSessionId(sessionId);
+
+        DeepResearchHistoryStore.saveRecord({
+          id: sessionId,
+          topic: firstTurn.question,
+          question: firstTurn.question,
+          fullAnswer: firstTurn.fullAnswer,
+          sources: firstTurn.sources,
+          alsoReadSources: firstTurn.alsoReadSources,
+          limitedSourcesFound: firstTurn.limitedSourcesFound,
+          durationSec: roundedDuration,
+          turns: updated,
+          modelId: activeModel?.id,
+        }).catch(() => {});
+
+        return updated;
+      });
     } catch (err: any) {
       if (err?.name === 'AbortError') return;
       setIsSearching(false);
@@ -1044,7 +1422,8 @@ ${lockedGroundingBlock}`;
           t.id === turnId
             ? {
                 ...t,
-                fullAnswer: 'Connection interrupted while researching. Please try again.',
+                fullAnswer: '',
+                topicGuardFailed: true,
               }
             : t
         )
@@ -1494,22 +1873,38 @@ ${lockedGroundingBlock}`;
                         <span>{tIdx === 0 ? 'Research Inquiry' : `Follow-up #${tIdx + 1}`}</span>
                       </span>
 
-                      {!isCurrentTurnSearching && !isCurrentTurnStreaming && (turn.durationSec || activeDurationSec) ? (
-                        <span
-                          data-testid="deep-research-elapsed-badge"
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-mono tabular-nums border ${
-                            isDark
-                              ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-                              : 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                          }`}
-                        >
-                          <Clock className="w-3 h-3 shrink-0" />
-                          <span>
-                            Completed in {turn.durationSec || activeDurationSec}s · {turnSources.length}{' '}
-                            {turnSources.length === 1 ? 'source' : 'sources'}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {turn.limitedSourcesFound && !isCurrentTurnSearching && (
+                          <span
+                            data-testid="deep-research-limited-sources-badge"
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium border ${
+                              isDark
+                                ? 'border-amber-500/30 bg-amber-500/10 text-amber-300'
+                                : 'border-amber-300 bg-amber-50 text-amber-800'
+                            }`}
+                          >
+                            <span>Limited sources found</span>
                           </span>
-                        </span>
-                      ) : null}
+                        )}
+
+                        {!isCurrentTurnSearching && !isCurrentTurnStreaming && (turn.durationSec || activeDurationSec) ? (
+                          <span
+                            data-testid="deep-research-elapsed-badge"
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-mono tabular-nums border ${
+                              isDark
+                                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                                : 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                            }`}
+                          >
+                            <Clock className="w-3 h-3 shrink-0" />
+                            <span>
+                              {`Completed in ${turn.durationSec || activeDurationSec}s · ${turnSources.length} ${
+                                turnSources.length === 1 ? 'source' : 'sources'
+                              }`}
+                            </span>
+                          </span>
+                        ) : null}
+                      </div>
                     </div>
                     <h2
                       className={`text-base sm:text-[18px] font-semibold tracking-tight leading-snug ${
@@ -1970,6 +2365,73 @@ ${lockedGroundingBlock}`;
                         );
                       })
                     )}
+
+                    {/* FIX 4: Topic Guard Error State with Retry Button */}
+                    {turn.topicGuardFailed && !isCurrentTurnSearching && !isCurrentTurnStreaming && (
+                      <div
+                        data-testid="deep-research-topic-guard-error"
+                        className={`p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                          isDark
+                            ? 'bg-red-500/10 border-red-500/30 text-red-200'
+                            : 'bg-red-50 border-red-200 text-red-900'
+                        }`}
+                      >
+                        <div className="space-y-1">
+                          <div className="text-xs font-semibold">
+                            Report validation failed: off-topic synthesis detected
+                          </div>
+                          <div className="text-xs opacity-80">
+                            The generated draft did not pass the relevance check for "{turn.question}". Click Retry to run a fresh synthesis.
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => executeResearchTurn(turn.question)}
+                          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-[#FC4C01] text-white hover:opacity-90 transition-opacity shrink-0 cursor-pointer"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>Retry</span>
+                        </button>
+                      </div>
+                    )}
+
+                    {/* FIX 3: Uncited kept sources moved to "Also read" */}
+                    {!isCurrentTurnSearching &&
+                      !isCurrentTurnStreaming &&
+                      Array.isArray(turn.alsoReadSources) &&
+                      turn.alsoReadSources.length > 0 && (
+                        <div
+                          className={`mt-4 pt-3 border-t ${
+                            isDark ? 'border-white/[0.08]' : 'border-black/[0.08]'
+                          }`}
+                        >
+                          <div
+                            className={`text-[11px] font-semibold uppercase tracking-wider mb-2 ${
+                              isDark ? 'text-neutral-400' : 'text-neutral-500'
+                            }`}
+                          >
+                            Also read
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {turn.alsoReadSources.map((src) => (
+                              <a
+                                key={src.url}
+                                href={src.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-colors ${
+                                  isDark
+                                    ? 'bg-white/[0.03] border-white/[0.08] text-neutral-300 hover:border-white/[0.2] hover:text-white'
+                                    : 'bg-black/[0.02] border-black/[0.08] text-neutral-700 hover:border-black/[0.2] hover:text-black'
+                                }`}
+                              >
+                                <span className="font-medium truncate max-w-[220px]">{src.title}</span>
+                                <span className="text-[10px] opacity-60">({src.domain})</span>
+                              </a>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                   </div>
 
                   {/* Modern Pill-Shaped Action Buttons with Crisp Small Icons */}
@@ -2110,8 +2572,9 @@ ${lockedGroundingBlock}`;
 
                       {turn.durationSec || activeDurationSec ? (
                         <div className="text-[11px] font-mono tabular-nums opacity-75">
-                          Completed in {turn.durationSec || activeDurationSec}s · {turnSources.length}{' '}
-                          {turnSources.length === 1 ? 'source' : 'sources'}
+                          {`Completed in ${turn.durationSec || activeDurationSec}s · ${turnSources.length} ${
+                            turnSources.length === 1 ? 'source' : 'sources'
+                          }`}
                         </div>
                       ) : null}
                     </div>

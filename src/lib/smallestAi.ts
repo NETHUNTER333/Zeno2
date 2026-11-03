@@ -3,6 +3,9 @@ import { getAuthHeaders } from './firebase';
 import { isPhononSupported, speakWithPhonon, stopPhononSpeech } from './phononTTS';
 
 export type TtsVoiceGender = 'female' | 'male';
+export type TtsPlaybackSpeed = 0.5 | 1 | 1.5 | 2;
+
+export const TTS_PLAYBACK_SPEEDS: TtsPlaybackSpeed[] = [0.5, 1, 1.5, 2];
 
 export interface TtsLanguageOption {
   code: string;
@@ -32,6 +35,7 @@ export const TTS_LANGUAGES: TtsLanguageOption[] = [
 
 const LANG_STORAGE_KEY = 'zeno_tts_lang';
 const GENDER_STORAGE_KEY = 'zeno_tts_gender';
+const SPEED_STORAGE_KEY = 'zeno_tts_speed';
 
 export function getSavedTtsLanguage(): string {
   try {
@@ -65,8 +69,35 @@ export function setSavedTtsGender(gender: TtsVoiceGender) {
   } catch {}
 }
 
+export function getSavedTtsSpeed(): TtsPlaybackSpeed {
+  try {
+    const raw = Number(localStorage.getItem(SPEED_STORAGE_KEY));
+    if (raw === 0.5 || raw === 1 || raw === 1.5 || raw === 2) {
+      return raw;
+    }
+  } catch {}
+  return 1;
+}
+
 let activeAudioElement: HTMLAudioElement | null = null;
+let activeAudioBaseRate = 1;
 let activeAbortController: AbortController | null = null;
+
+export function setSavedTtsSpeed(speed: TtsPlaybackSpeed) {
+  try {
+    localStorage.setItem(SPEED_STORAGE_KEY, String(speed));
+    window.dispatchEvent(new CustomEvent('zeno-tts-prefs-changed'));
+  } catch {}
+  setActiveTtsPlaybackSpeed(speed);
+}
+
+export function setActiveTtsPlaybackSpeed(speed: TtsPlaybackSpeed) {
+  if (activeAudioElement) {
+    try {
+      activeAudioElement.playbackRate = Number((activeAudioBaseRate * speed).toFixed(2));
+    } catch {}
+  }
+}
 
 export function stopSmallestSpeech() {
   stopPhononSpeech();
@@ -83,6 +114,7 @@ export function stopSmallestSpeech() {
     } catch {}
     activeAudioElement = null;
   }
+  activeAudioBaseRate = 1;
   if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
     window.speechSynthesis.cancel();
   }
@@ -174,7 +206,8 @@ export async function speakTextWithSmallestAi(
   onEnd?: () => void,
   onError?: (err: any) => void,
   selectedGender?: TtsVoiceGender,
-  onAudioUrlReady?: (audioUrl: string) => void
+  onAudioUrlReady?: (audioUrl: string) => void,
+  selectedSpeed?: TtsPlaybackSpeed
 ): Promise<void> {
   stopSmallestSpeech();
 
@@ -196,6 +229,7 @@ export async function speakTextWithSmallestAi(
       ? selectedLangCode
       : getSavedTtsLanguage();
   const gender: TtsVoiceGender = selectedGender === 'male' || (!selectedGender && getSavedTtsGender() === 'male') ? 'male' : 'female';
+  const speed: TtsPlaybackSpeed = selectedSpeed || getSavedTtsSpeed();
   const bcp47 = TTS_LANGUAGES.find((l) => l.code === language)?.bcp47 || 'en-US';
 
   const controller = new AbortController();
@@ -211,6 +245,7 @@ export async function speakTextWithSmallestAi(
         text: cleanText,
         language,
         gender,
+        speed,
       }),
     });
 
@@ -231,25 +266,32 @@ export async function speakTextWithSmallestAi(
       }
 
       const audio = new Audio(audioUrl);
+      let baseRate = 1;
       if (needsMaleShift && audioBlob === rawAudioBlob) {
         try {
           (audio as any).preservesPitch = false;
           (audio as any).mozPreservesPitch = false;
           (audio as any).webkitPreservesPitch = false;
-          audio.playbackRate = 0.82;
+          baseRate = 0.82;
         } catch {}
       }
+      activeAudioBaseRate = baseRate;
+      try {
+        audio.playbackRate = Number((baseRate * speed).toFixed(2));
+      } catch {}
       activeAudioElement = audio;
 
       audio.onended = () => {
         URL.revokeObjectURL(audioUrl);
         activeAudioElement = null;
+        activeAudioBaseRate = 1;
         onEnd?.();
       };
       audio.onerror = () => {
         URL.revokeObjectURL(audioUrl);
         activeAudioElement = null;
-        fallbackWebSpeech(cleanText, bcp47, gender, onStart, onEnd, onError);
+        activeAudioBaseRate = 1;
+        fallbackWebSpeech(cleanText, bcp47, gender, onStart, onEnd, onError, speed);
       };
 
       onStart?.();
@@ -270,7 +312,7 @@ export async function speakTextWithSmallestAi(
     if (handled) return;
   }
 
-  fallbackWebSpeech(cleanText, bcp47, gender, onStart, onEnd, onError);
+  fallbackWebSpeech(cleanText, bcp47, gender, onStart, onEnd, onError, speed);
 }
 
 function fallbackWebSpeech(
@@ -279,7 +321,8 @@ function fallbackWebSpeech(
   gender: TtsVoiceGender,
   onStart?: () => void,
   onEnd?: () => void,
-  onError?: (err: any) => void
+  onError?: (err: any) => void,
+  speed: TtsPlaybackSpeed = 1
 ) {
   if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
     window.speechSynthesis.cancel();
@@ -299,7 +342,7 @@ function fallbackWebSpeech(
       );
       if (maleVoice) utterance.voice = maleVoice;
       utterance.pitch = 0.68;
-      utterance.rate = 0.96;
+      utterance.rate = Math.max(0.45, Math.min(2.2, Number((0.96 * speed).toFixed(2))));
     } else {
       const femaleVoice = voicePool.find((v) =>
         /\b(female|zira|samantha|victoria|karen|moira|tessa|veena|swara|neerja|heera|kalpana|salli|joanna|amy| #female)\b/i.test(
@@ -308,7 +351,7 @@ function fallbackWebSpeech(
       );
       if (femaleVoice) utterance.voice = femaleVoice;
       utterance.pitch = 1.08;
-      utterance.rate = 1.0;
+      utterance.rate = Math.max(0.5, Math.min(2.2, Number((1.0 * speed).toFixed(2))));
     }
 
     utterance.onstart = () => onStart?.();

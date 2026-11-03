@@ -1,14 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, Pause, X, Loader2, Volume2, ChevronDown, Check } from 'lucide-react';
+import { Play, Pause, X, Loader2, Volume2, ChevronDown, Check, Gauge } from 'lucide-react';
 import {
   speakTextWithSmallestAi,
   stopSmallestSpeech,
   TTS_LANGUAGES,
+  TTS_PLAYBACK_SPEEDS,
   TtsVoiceGender,
+  TtsPlaybackSpeed,
   getSavedTtsLanguage,
   setSavedTtsLanguage,
   getSavedTtsGender,
   setSavedTtsGender,
+  getSavedTtsSpeed,
+  setSavedTtsSpeed,
+  setActiveTtsPlaybackSpeed,
 } from '../lib/smallestAi';
 
 interface TtsPopupProps {
@@ -22,6 +27,7 @@ export const TtsPopup: React.FC<TtsPopupProps> = ({ text, onClose, isDark = true
   const [loading, setLoading] = useState(false);
   const [ttsLang, setTtsLang] = useState<string>(() => getSavedTtsLanguage());
   const [ttsGender, setTtsGender] = useState<TtsVoiceGender>(() => getSavedTtsGender());
+  const [ttsSpeed, setTtsSpeed] = useState<TtsPlaybackSpeed>(() => getSavedTtsSpeed());
   const [isLangMenuOpen, setIsLangMenuOpen] = useState(false);
   const langMenuRef = useRef<HTMLDivElement>(null);
 
@@ -58,7 +64,11 @@ export const TtsPopup: React.FC<TtsPopupProps> = ({ text, onClose, isDark = true
   const selectedLanguageObj =
     TTS_LANGUAGES.find((l) => l.code === ttsLang) || TTS_LANGUAGES[0];
 
-  const startSpeech = (langOverride?: string, genderOverride?: TtsVoiceGender) => {
+  const startSpeech = (
+    langOverride?: string,
+    genderOverride?: TtsVoiceGender,
+    speedOverride?: TtsPlaybackSpeed
+  ) => {
     stopSmallestSpeech();
     setIsPlaying(false);
     setLoading(true);
@@ -77,8 +87,25 @@ export const TtsPopup: React.FC<TtsPopupProps> = ({ text, onClose, isDark = true
         setLoading(false);
         setIsPlaying(false);
       },
-      genderOverride ?? ttsGender
+      genderOverride ?? ttsGender,
+      undefined,
+      speedOverride ?? ttsSpeed
     );
+  };
+
+  const handleSpeedChange = (newSpeed: TtsPlaybackSpeed) => {
+    setTtsSpeed(newSpeed);
+    setSavedTtsSpeed(newSpeed);
+    setActiveTtsPlaybackSpeed(newSpeed);
+    // If browser speechSynthesis fallback is currently speaking, restart at the new speed
+    if (
+      isPlaying &&
+      typeof window !== 'undefined' &&
+      'speechSynthesis' in window &&
+      window.speechSynthesis.speaking
+    ) {
+      startSpeech(ttsLang, ttsGender, newSpeed);
+    }
   };
 
   const handlePlayToggle = () => {
@@ -88,7 +115,7 @@ export const TtsPopup: React.FC<TtsPopupProps> = ({ text, onClose, isDark = true
       setLoading(false);
       return;
     }
-    startSpeech(ttsLang, ttsGender);
+    startSpeech(ttsLang, ttsGender, ttsSpeed);
   };
 
   return (
@@ -136,7 +163,7 @@ export const TtsPopup: React.FC<TtsPopupProps> = ({ text, onClose, isDark = true
         </div>
 
         {/* Voice Gender & Padded Custom Language Selector */}
-        <div className="grid grid-cols-2 gap-2.5 mb-4">
+        <div className="grid grid-cols-2 gap-2.5 mb-3.5">
           {/* Segmented Gender Control */}
           <div
             className={`grid grid-cols-2 gap-1 p-1 rounded-xl border ${
@@ -153,7 +180,7 @@ export const TtsPopup: React.FC<TtsPopupProps> = ({ text, onClose, isDark = true
                     setTtsGender(g);
                     setSavedTtsGender(g);
                     if (isPlaying || loading) {
-                      startSpeech(ttsLang, g);
+                      startSpeech(ttsLang, g, ttsSpeed);
                     }
                   }}
                   className={`py-1.5 px-2.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
@@ -216,7 +243,7 @@ export const TtsPopup: React.FC<TtsPopupProps> = ({ text, onClose, isDark = true
                           setSavedTtsLanguage(lang.code);
                           setIsLangMenuOpen(false);
                           if (isPlaying || loading) {
-                            startSpeech(lang.code, ttsGender);
+                            startSpeech(lang.code, ttsGender, ttsSpeed);
                           }
                         }}
                         className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-xs transition-colors cursor-pointer ${
@@ -252,6 +279,69 @@ export const TtsPopup: React.FC<TtsPopupProps> = ({ text, onClose, isDark = true
                 </div>
               </div>
             )}
+          </div>
+        </div>
+
+        {/* Playback Speed Control Slider (0.5x, 1x, 1.5x, 2x) */}
+        <div
+          className={`p-3 rounded-xl border mb-3.5 ${
+            isDark ? 'bg-[#18181c] border-white/[0.08]' : 'bg-[#f8f8f9] border-black/[0.08]'
+          }`}
+        >
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-1.5">
+              <Gauge
+                className={`w-3.5 h-3.5 ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}
+              />
+              <span
+                className={`text-xs font-medium ${
+                  isDark ? 'text-neutral-300' : 'text-neutral-700'
+                }`}
+              >
+                Playback Speed
+              </span>
+            </div>
+            <span className="text-xs font-mono font-semibold text-[#FC4C01]">{ttsSpeed}x</span>
+          </div>
+
+          <input
+            type="range"
+            min={0.5}
+            max={2}
+            step={0.5}
+            value={ttsSpeed}
+            aria-label="Playback speed"
+            onChange={(e) => {
+              const val = Number(e.target.value);
+              const snapped: TtsPlaybackSpeed =
+                val <= 0.6 ? 0.5 : val <= 1.2 ? 1 : val <= 1.7 ? 1.5 : 2;
+              handleSpeedChange(snapped);
+            }}
+            className="w-full h-1.5 rounded-lg appearance-none cursor-pointer accent-[#FC4C01] bg-neutral-700/40 mb-2.5"
+          />
+
+          <div className="grid grid-cols-4 gap-1.5">
+            {TTS_PLAYBACK_SPEEDS.map((spd) => {
+              const active = ttsSpeed === spd;
+              return (
+                <button
+                  key={spd}
+                  type="button"
+                  onClick={() => handleSpeedChange(spd)}
+                  className={`py-1 rounded-lg text-[11px] font-mono font-medium transition-colors cursor-pointer ${
+                    active
+                      ? isDark
+                        ? 'bg-white text-black shadow-xs'
+                        : 'bg-[#0d0d0d] text-white shadow-xs'
+                      : isDark
+                      ? 'bg-white/[0.04] text-neutral-400 hover:text-white hover:bg-white/[0.08]'
+                      : 'bg-black/[0.04] text-neutral-600 hover:text-black hover:bg-black/[0.08]'
+                  }`}
+                >
+                  {spd}x
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -292,7 +382,7 @@ export const TtsPopup: React.FC<TtsPopupProps> = ({ text, onClose, isDark = true
                   isDark ? 'text-neutral-500' : 'text-neutral-400'
                 }`}
               >
-                {selectedLanguageObj.label} · {ttsGender}
+                {selectedLanguageObj.label} · {ttsGender} · {ttsSpeed}x
               </span>
             </div>
             <span

@@ -25,6 +25,9 @@ export interface DeepResearchTurn {
   question: string;
   fullAnswer: string;
   sources: AnswerSource[];
+  alsoReadSources?: AnswerSource[];
+  limitedSourcesFound?: boolean;
+  topicGuardFailed?: boolean;
   thinkingSteps?: ThinkingStep[];
   durationSec?: number;
   thinkingDuration?: number;
@@ -37,6 +40,9 @@ export interface DeepResearchRecord {
   question: string;
   fullAnswer: string;
   sources: AnswerSource[];
+  alsoReadSources?: AnswerSource[];
+  limitedSourcesFound?: boolean;
+  topicGuardFailed?: boolean;
   thinkingSteps?: ThinkingStep[];
   durationSec: number;
   thinkingDuration?: number;
