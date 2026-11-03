@@ -171,6 +171,92 @@ function getUniversalClientEmbedUrl(url?: string, ytId?: string, existingEmbed?:
   return existingEmbed || `/api/media/embed-proxy?url=${encodeURIComponent(url)}`;
 }
 
+function renumberCitationsByFirstAppearance<T extends { position?: number; url?: string; title?: string }>(
+  rawContent: string,
+  rawSources: T[]
+): { content: string; sources: T[] } {
+  if (!rawContent || !rawSources || rawSources.length === 0) {
+    return { content: rawContent, sources: rawSources || [] };
+  }
+
+  const oldToNew = new Map<number, number>();
+  const reordered: T[] = [];
+  const usedIndices = new Set<number>();
+
+  const resolveOldSourceIndex = (oldNum: number): number => {
+    const byPos = rawSources.findIndex((s, i) => (s.position ?? i + 1) === oldNum);
+    if (byPos !== -1) return byPos;
+    if (oldNum >= 1 && oldNum <= rawSources.length) return oldNum - 1;
+    return -1;
+  };
+
+  const registerOldNum = (oldNum: number): number | null => {
+    if (isNaN(oldNum) || oldNum < 1) return null;
+    const existing = oldToNew.get(oldNum);
+    if (existing) return existing;
+    const srcIdx = resolveOldSourceIndex(oldNum);
+    if (srcIdx === -1) return null;
+    const newNum = reordered.length + 1;
+    oldToNew.set(oldNum, newNum);
+    usedIndices.add(srcIdx);
+    reordered.push({ ...rawSources[srcIdx], position: newNum });
+    return newNum;
+  };
+
+  // Scan outside fenced code blocks in order of first appearance
+  const segments = rawContent.split(/(```[\s\S]*?```)/g);
+  for (const seg of segments) {
+    if (seg.startsWith('```')) continue;
+    const citeRegex = /\[(\d{1,2}(?:\s*,\s*\d{1,2})*)\](?:\(#cite-\d+\))?(?!\()/g;
+    let match: RegExpExecArray | null;
+    while ((match = citeRegex.exec(seg)) !== null) {
+      const nums = match[1].split(',').map((n) => parseInt(n.trim(), 10));
+      for (const n of nums) {
+        registerOldNum(n);
+      }
+    }
+  }
+
+  if (oldToNew.size === 0) {
+    return {
+      content: rawContent,
+      sources: rawSources.map((s, idx) => ({ ...s, position: idx + 1 })),
+    };
+  }
+
+  // Append any uncited sources after the cited ones so source count stays consistent
+  rawSources.forEach((s, idx) => {
+    if (!usedIndices.has(idx)) {
+      const nextPos = reordered.length + 1;
+      reordered.push({ ...s, position: nextPos });
+    }
+  });
+
+  // Rewrite citations in non-code segments to their new sequential numbers
+  const rewrittenContent = segments
+    .map((seg) => {
+      if (seg.startsWith('```')) return seg;
+      return seg.replace(
+        /\[(\d{1,2}(?:\s*,\s*\d{1,2})*)\](?:\(#cite-\d+\))?(?!\()/g,
+        (full, numListStr: string) => {
+          const mappedNums: number[] = [];
+          for (const part of numListStr.split(',')) {
+            const oldNum = parseInt(part.trim(), 10);
+            const newNum = oldToNew.get(oldNum) ?? oldNum;
+            if (!mappedNums.includes(newNum)) {
+              mappedNums.push(newNum);
+            }
+          }
+          if (mappedNums.length === 0) return full;
+          return mappedNums.map((n) => `[${n}]`).join('');
+        }
+      );
+    })
+    .join('');
+
+  return { content: rewrittenContent, sources: reordered };
+}
+
 const preprocessMessageContent = (content: string): string => {
   if (!content) return '';
   const normalizedMath = normalizeMathDelimiters(content);
@@ -214,15 +300,27 @@ const preprocessMessageContent = (content: string): string => {
       );
       processed = processed.replace(/\[FETCHED LIVE IMAGES[^\]]*\]:?/gi, '');
 
-      // Convert standalone citations [1], [2], [1, 2], [2][3] into markdown links glued with non-breaking space so a citation chip never wraps onto its own line
+      // Normalize comma-separated citations [1, 2] into consecutive [1][2]
       processed = processed.replace(/\[(\d{1,2}(?:\s*,\s*\d{1,2})+)\](?!\()/g, (_, nums) =>
         nums
           .split(',')
-          .map((n: string) => `[${n.trim()}](#cite-${n.trim()})`)
-          .join('\u00A0')
+          .map((n: string) => `[${n.trim()}]`)
+          .join('')
       );
-      processed = processed.replace(/\]\s+\[(\d{1,2})\](?!\()/g, ']\u00A0[$1](#cite-$1)');
-      processed = processed.replace(/(\S)[ \t]+\[(\d{1,2})\](?!\()/g, '$1\u00A0[$2](#cite-$2)');
+      // Normalize whitespace between adjacent citations [1] [2] -> [1][2]
+      processed = processed.replace(/\[(\d{1,2})\]\s+(?=\[\d{1,2}\](?!\())/g, '[$1]');
+
+      // Wrap the word immediately preceding a citation group + the citation chip(s) + trailing punctuation
+      // inside a non-breaking <span class="whitespace-nowrap"> so a lone citation chip NEVER wraps onto its own line
+      processed = processed.replace(
+        /([^\s[\]()<>]+)[ \t]+((?:\[\d{1,2}\](?!\())+)([.,;:]?)/g,
+        (_m, word: string, cites: string, punct: string) => {
+          const linkedCites = cites.replace(/\[(\d{1,2})\]/g, '[$1](#cite-$1)');
+          return `<span class="whitespace-nowrap">${word}\u00A0${linkedCites}${punct}</span>`;
+        }
+      );
+
+      // Convert any remaining standalone [1] into markdown citation links
       processed = processed.replace(/\[(\d{1,2})\](?!\()/g, '[$1](#cite-$1)');
       return processed;
     })
@@ -714,9 +812,14 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
     }
   };
 
+  const { content: renumberedCleanedContent, sources: orderedMessageSources } = React.useMemo(
+    () => renumberCitationsByFirstAppearance(cleanedContent, message.sources || []),
+    [cleanedContent, message.sources]
+  );
+
   const processedContent = React.useMemo(
-    () => preprocessMessageContent(cleanedContent),
-    [cleanedContent]
+    () => preprocessMessageContent(renumberedCleanedContent),
+    [renumberedCleanedContent]
   );
 
   const copyText = () => {
@@ -1041,10 +1144,10 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
         /* Assistant Message Layout */
         <div className="w-full">
           {/* Live Rare UI WebSearch Component showing actual sites being searched in real-time */}
-          {((message.sources && message.sources.length > 0) ||
+          {((orderedMessageSources && orderedMessageSources.length > 0) ||
             (message.isStreaming && !cleanedContent && message.loadingMode === 'search')) && (
             <WebSearch
-              sources={(message.sources || []).map((s, idx) => ({
+              sources={(orderedMessageSources || []).map((s, idx) => ({
                 id: s.url || `source-${idx}`,
                 title: s.title,
                 url: s.url,
@@ -1057,7 +1160,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
               status={
                 message.isStreaming &&
                 !cleanedContent &&
-                (!message.sources || message.sources.length === 0)
+                (!orderedMessageSources || orderedMessageSources.length === 0)
                   ? 'searching'
                   : 'done'
               }
@@ -1475,8 +1578,8 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                     const citeMatch = hrefCiteMatch || textCiteMatch;
 
                     const allAvailableSources =
-                      message.sources && message.sources.length > 0
-                        ? message.sources
+                      orderedMessageSources && orderedMessageSources.length > 0
+                        ? orderedMessageSources
                         : (message.arxivPapers || []).map((p, idx) => ({
                             title: p.title,
                             url: p.pdfUrl || (p as any).absUrl || (p as any).link || '',

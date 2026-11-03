@@ -189,7 +189,7 @@ export const LEGAL_DOCUMENTS: Record<LegalDocId, PolicyDocument> = {
         number: '02',
         title: 'Eligibility & Minimum Age',
         paragraphs: [
-          `You must be at least ${LEGAL_CONFIG.MIN_AGE} years of age to create an account and access or use ${LEGAL_CONFIG.TRADE_NAME}. The Service is strictly intended for adults and is not directed to individuals under ${LEGAL_CONFIG.MIN_AGE}. By using the Service, you represent and warrant that you are at least ${LEGAL_CONFIG.MIN_AGE} years old.`,
+          `You must be at least ${LEGAL_CONFIG.MIN_AGE} years of age to create an account and access or use ${LEGAL_CONFIG.TRADE_NAME}. The Service is strictly intended for adults and is not directed to individuals under ${LEGAL_CONFIG.MIN_AGE}. By checking the consent box ("I confirm I am at least 18 years old and agree to the Terms of Service, Privacy Policy, and Acceptable Use Policy.") or using the Service, you represent and warrant that you are at least ${LEGAL_CONFIG.MIN_AGE} years old.`,
         ],
       },
       {
@@ -235,7 +235,7 @@ export const LEGAL_DOCUMENTS: Record<LegalDocId, PolicyDocument> = {
         paragraphs: [
           `As between you and ${LEGAL_CONFIG.OPERATOR_NAME}, you retain all ownership rights in the text prompts, questions, PDFs, study notes, and files you submit to the Service ("User Input"), and, to the fullest extent permitted by applicable law, you own the specific syntheses, study guides, and outputs generated for you in response to your User Input ("Output"). Due to the nature of machine learning, similar or identical Outputs may be generated for other users asking similar questions.`,
           `Limited License to Operate the Service: By submitting User Input, you grant ${LEGAL_CONFIG.OPERATOR_NAME} a worldwide, non-exclusive, royalty-free license to host, cache, transmit, display, and process your User Input solely as necessary to provide, secure, and maintain the Service for you (and, only when you explicitly click "Share" or "Publish to Discover", to display that shared thread or page to others).`,
-          `No Foundation Model Training: ${LEGAL_CONFIG.OPERATOR_NAME} does NOT use your private prompts, uploaded PDFs, or conversation history to train foundation AI models, and we do not sell your content to third parties. Your prompts and attachments are transmitted to our third-party AI inference providers (such as Google Gemini, DeepSeek, and OpenRouter-routed gateways) strictly to generate your requested output under their respective API data-processing terms.`,
+          `No Foundation Model Training: Zeno does not use your data to train its own models. Third-party AI providers process prompts under their respective API terms, which do not use paid API traffic for model training; free-tier or fallback endpoints may be subject to the provider's standard terms.`,
         ],
       },
       {
@@ -361,9 +361,9 @@ export const LEGAL_DOCUMENTS: Record<LegalDocId, PolicyDocument> = {
       {
         id: 'contact',
         number: '19',
-        title: 'Contact Information',
+        title: 'Contact Information & Grievance Officer SLA',
         paragraphs: [
-          `Questions about these Terms may be directed to ${LEGAL_CONFIG.OPERATOR_NAME} at ${LEGAL_CONFIG.SUPPORT_EMAIL}, or through our Contact & Support page (/contact).`,
+          `Questions about these Terms may be directed to ${LEGAL_CONFIG.OPERATOR_NAME} at ${LEGAL_CONFIG.SUPPORT_EMAIL}, or through our Contact & Support page (/contact). Formal grievances submitted to our Grievance Officer (${LEGAL_CONFIG.GRIEVANCE_EMAIL}) are acknowledged within ${LEGAL_CONFIG.GRIEVANCE_ACK_HOURS} hours and resolved within ${LEGAL_CONFIG.GRIEVANCE_RESOLUTION_DAYS} days.`,
         ],
       },
     ],
@@ -469,7 +469,7 @@ export const LEGAL_DOCUMENTS: Record<LegalDocId, PolicyDocument> = {
         title: 'AI Model Processing & Third-Party Inference Providers',
         paragraphs: [
           `When you submit a prompt, document, or study request, ${LEGAL_CONFIG.TRADE_NAME} sends the relevant prompt context to third-party AI model providers (such as Google Gemini API, DeepSeek, and OpenRouter/TokenHarbor/MoonMath/IteraCompute API gateways) to generate your answer, quiz, or summary. When you use the YouTube Study workspace, we retrieve publicly available captions/transcripts for the video ID you specify.`,
-          `Your Content Is Not Used to Train Models: ${LEGAL_CONFIG.OPERATOR_NAME} does not train foundation models on your personal data or private workspace content, and we configure our enterprise/API integrations so that commercial API payloads are not used to train third-party foundation models. Each provider processes inference requests under its published API privacy terms (linked in Section 5 below).`,
+          `Zeno does not use your data to train its own models. Third-party AI providers process prompts under their respective API terms, which do not use paid API traffic for model training; free-tier or fallback endpoints may be subject to the provider's standard terms. Each provider processes inference requests under its published API privacy terms (linked in Section 5 below).`,
         ],
       },
       {
@@ -581,7 +581,7 @@ export const LEGAL_DOCUMENTS: Record<LegalDocId, PolicyDocument> = {
         number: '10',
         title: 'Age Requirement & Children’s Privacy',
         paragraphs: [
-          `${LEGAL_CONFIG.TRADE_NAME} is strictly intended for individuals ${LEGAL_CONFIG.MIN_AGE} years of age and older. We do not knowingly collect or process personal data from individuals under ${LEGAL_CONFIG.MIN_AGE}. If you believe an individual under 18 has registered an account, please contact ${LEGAL_CONFIG.PRIVACY_EMAIL} and we will promptly delete the account and associated records.`,
+          `${LEGAL_CONFIG.TRADE_NAME} is strictly intended for individuals ${LEGAL_CONFIG.MIN_AGE} years of age and older. At registration and before first guest use, users must affirm: "I confirm I am at least 18 years old and agree to the Terms of Service, Privacy Policy, and Acceptable Use Policy." We do not knowingly collect or process personal data from individuals under ${LEGAL_CONFIG.MIN_AGE}. If you believe an individual under 18 has registered an account, please contact ${LEGAL_CONFIG.PRIVACY_EMAIL} and we will promptly delete the account and associated records.`,
         ],
       },
       {
@@ -789,7 +789,7 @@ export const LEGAL_DOCUMENTS: Record<LegalDocId, PolicyDocument> = {
           body: `Do not upload images of people. ${LEGAL_CONFIG.TRADE_NAME} is for documents, notes, study material, diagrams, code screenshots, and educational media. Uploads containing human faces, selfies, or explicit content are prohibited.`,
         },
         bullets: [
-          `Child Sexual Abuse Material (CSAM) & Child Sexual Exploitation and Abuse (CSAE): Absolute zero tolerance. Any attempt to upload, request, generate, or share content that depicts, encourages, or sexualizes minors results in immediate permanent account termination, preservation of forensic metadata, and mandatory reporting to the National Center for Missing & Exploited Children (NCMEC) and Indian cybercrime authorities (CERT-In / MHA Cyber Crime Portal) under the POCSO Act and IT Act Section 67B.`,
+          `Child Sexual Abuse Material (CSAM) & Child Sexual Exploitation and Abuse (CSAE): Absolute zero tolerance. We will report apparent CSAM to NCMEC and/or Indian cybercrime authorities (cybercrime.gov.in) as required by applicable law and terminate the offending account.`,
           `18+ / NSFW / Sexually Explicit Content & Nudity: You may not upload, prompt for, or generate pornography, sexually explicit text or imagery, nudity, or erotic roleplay.`,
           `Non-Consensual Intimate Imagery (NCII) & Deepfakes: You may not upload intimate images of any person or attempt to generate synthetic, undressed, or manipulated likenesses of any person.`,
           `Photos, Selfies & Videos of Real Identifiable People: You may not upload photographs, portraits, selfies, or videos depicting real identifiable living individuals (whether yourself, classmates, teachers, or public figures). Allowed uploads are limited to textbook pages, lecture slides, handwritten notes, scientific diagrams, charts, equations, and software UI screenshots.`,
@@ -836,7 +836,7 @@ export const LEGAL_DOCUMENTS: Record<LegalDocId, PolicyDocument> = {
         title: 'Category D — Enforcement Ladder & Appeals',
         paragraphs: [
           `When safety checks or user reports identify a policy violation, we apply a proportionate enforcement approach:`,
-          `Right to Appeal: If you believe an upload rejection or account action was applied in error, you may email ${LEGAL_CONFIG.SUPPORT_EMAIL} with the subject "Safety Appeal" and your account email. Appeals are evaluated in good faith, typically within 7 to 14 business days.`,
+          `Right to Appeal: If you believe an upload rejection or account action was applied in error, you may email ${LEGAL_CONFIG.SUPPORT_EMAIL} with the subject "Safety Appeal" and your account email. Appeals are evaluated in good faith within 7 business days.`,
         ],
         table: {
           headers: ['Step', 'Action Taken', 'Triggering Condition'],
@@ -853,7 +853,7 @@ export const LEGAL_DOCUMENTS: Record<LegalDocId, PolicyDocument> = {
             ],
             [
               'Step 3: Content Removal & Account Suspension',
-              'Publicly shared artifacts are removed and the account is temporarily suspended pending investigation.',
+              'Publicly shared artifacts are removed and the account is temporarily suspended pending investigation (appeals reviewed within 7 business days).',
               'Repeated Category B/C violations, referral abuse, or valid copyright/abuse reports.',
             ],
             [
@@ -869,7 +869,7 @@ export const LEGAL_DOCUMENTS: Record<LegalDocId, PolicyDocument> = {
         number: '05',
         title: 'Category E — How to Report Violations or Unsafe Content',
         paragraphs: [
-          `Every AI response, YouTube Study set, Deep Research report, and Zeno Discover page includes a built-in "Report" button allowing you to flag inaccurate, harmful, or infringing content directly to our Trust & Safety queue. You may also report abuse, safety issues, or illegal content at any time via ${LEGAL_CONFIG.ABUSE_EMAIL} or through our Contact & Support page (/contact).`,
+          `Every AI response, YouTube Study set, Deep Research report, and Zeno Discover page includes a built-in "Report" button allowing you to flag inaccurate, harmful, or infringing content directly to our Trust & Safety queue. You may also report abuse, safety issues, or illegal content at any time via ${LEGAL_CONFIG.ABUSE_EMAIL} or through our Contact & Support page (/contact). Formal grievances are acknowledged within ${LEGAL_CONFIG.GRIEVANCE_ACK_HOURS} hours and resolved within ${LEGAL_CONFIG.GRIEVANCE_RESOLUTION_DAYS} days.`,
         ],
       },
     ],

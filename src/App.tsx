@@ -603,13 +603,32 @@ export default function App() {
     isOpen: boolean;
     highlightPlan?: 'free' | 'spark' | 'fire';
     limitReason?: string | null;
-  }>({ isOpen: false, highlightPlan: 'spark', limitReason: null });
+  }>(() => {
+    const isPricingRoute =
+      typeof window !== 'undefined' &&
+      (window.location.pathname.toLowerCase() === '/pricing' ||
+        window.location.pathname.toLowerCase().startsWith('/pricing/'));
+    return { isOpen: isPricingRoute, highlightPlan: undefined, limitReason: null };
+  });
   const [sharedBannerId, setSharedBannerId] = useState<string | null>(null);
 
   const [isSignedIn, setIsSignedIn] = useState(() => {
     if (typeof window !== 'undefined') {
       const p = window.location.pathname.toLowerCase();
-      if (p === '/study' || p.startsWith('/study/')) return true;
+      if (
+        p === '/study' ||
+        p.startsWith('/study/') ||
+        p === '/pricing' ||
+        p.startsWith('/pricing/') ||
+        p === '/research' ||
+        p.startsWith('/research/') ||
+        p === '/discover' ||
+        p.startsWith('/discover/') ||
+        p.startsWith('/share/') ||
+        p.startsWith('/p/')
+      ) {
+        return true;
+      }
     }
     return UserAccountStore.isUserSignedIn();
   });
@@ -627,12 +646,45 @@ export default function App() {
     if (clean === '/study' || clean.startsWith('/study/')) {
       setIsSignedIn(true);
       setCurrentView('study');
+      document.title = 'YouTube Study Workspace · Zeno';
     } else if (clean === '/account' || clean.startsWith('/account/') || clean === '/settings' || clean.startsWith('/settings/')) {
       setCurrentView('account');
+      document.title = 'Account & Settings · Zeno';
+    } else if (clean === '/pricing' || clean.startsWith('/pricing/')) {
+      setIsSignedIn(true);
+      setPricingModalState({ isOpen: true, highlightPlan: undefined, limitReason: null });
+      document.title = 'Plans & Pricing · Zeno';
+    } else if (clean === '/research' || clean.startsWith('/research/')) {
+      setIsSignedIn(true);
+      setDeepResearchState({ isOpen: true });
+      document.title = 'Deep Research · Zeno';
+    } else if (clean === '/discover' || clean.startsWith('/discover/')) {
+      setIsSignedIn(true);
+      setGrowthHubState({ isOpen: true, initialTab: 'discover' });
+      document.title = 'Discover Public Research · Zeno';
     } else if (clean === '/' || clean === '/chat' || clean.startsWith('/chat/')) {
       setCurrentView('chat');
+      document.title = 'Zeno — Deep Research, Real-Time Web Search & YouTube Study Workspace';
     }
   };
+
+  useEffect(() => {
+    if (legalOr404Route) return;
+    const clean = typeof window !== 'undefined' ? window.location.pathname.toLowerCase() : '/';
+    if (currentView === 'study' || clean === '/study' || clean.startsWith('/study/')) {
+      document.title = 'YouTube Study Workspace · Zeno';
+    } else if (currentView === 'account' || clean === '/account' || clean === '/settings') {
+      document.title = 'Account & Settings · Zeno';
+    } else if (clean === '/pricing' || clean.startsWith('/pricing/')) {
+      document.title = 'Plans & Pricing · Zeno';
+    } else if (clean === '/research' || clean.startsWith('/research/')) {
+      document.title = 'Deep Research · Zeno';
+    } else if (clean === '/discover' || clean.startsWith('/discover/')) {
+      document.title = 'Discover Public Research · Zeno';
+    } else {
+      document.title = 'Zeno — Deep Research, Real-Time Web Search & YouTube Study Workspace';
+    }
+  }, [currentView, legalOr404Route]);
 
   const navigateRoute = (path: string) => {
     try {
@@ -669,7 +721,7 @@ export default function App() {
       const detail = (e as CustomEvent)?.detail || {};
       setPricingModalState({
         isOpen: true,
-        highlightPlan: detail.highlightPlan || 'spark',
+        highlightPlan: detail.highlightPlan,
         limitReason: detail.reason || null,
       });
     };
@@ -1040,7 +1092,7 @@ export default function App() {
     data: any,
     _signal?: AbortSignal
   ) => {
-    const fullText = (data.text || '').replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '').trim();
+    const rawFullText = (data.text || '').replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '').trim();
 
     setThreads((prev) =>
       prev.map((t) =>
@@ -1051,23 +1103,80 @@ export default function App() {
                 if (m.id !== messageId) return m;
                 const existingSources = Array.isArray(m.sources) ? m.sources : [];
                 const incomingSources = Array.isArray(data.sources) ? data.sources : [];
-                // Preserve existing live sources in their original order so source cards never flip mid-stream,
-                // and append any new non-duplicate sources from the completed chat response.
-                let mergedSources = existingSources;
-                if (existingSources.length === 0) {
-                  mergedSources = incomingSources;
-                } else if (incomingSources.length > 0) {
-                  const seenUrls = new Set(existingSources.map((s: any) => s?.url).filter(Boolean));
-                  const extras = incomingSources.filter(
+
+                // Prioritize incomingSources from /api/chat because the answer's [1]..[N] citations were generated against incomingSources
+                let baseSources = incomingSources.length > 0 ? incomingSources : existingSources;
+                if (incomingSources.length > 0 && existingSources.length > 0) {
+                  const seenUrls = new Set(incomingSources.map((s: any) => s?.url).filter(Boolean));
+                  const extras = existingSources.filter(
                     (s: any) => s?.url && !seenUrls.has(s.url)
                   );
-                  mergedSources = [...existingSources, ...extras].slice(0, 12);
+                  baseSources = [...incomingSources, ...extras].slice(0, 12);
+                }
+
+                // Renumber inline citations in rawFullText by order of first appearance and reorder baseSources to match
+                let finalText = rawFullText;
+                let finalSources = baseSources;
+                if (finalText && baseSources.length > 0) {
+                  const oldToNew = new Map<number, number>();
+                  const ordered: any[] = [];
+                  const usedIdx = new Set<number>();
+
+                  const segments = finalText.split(/(```[\s\S]*?```)/g);
+                  for (const seg of segments) {
+                    if (seg.startsWith('```')) continue;
+                    const citeRe = /\[(\d{1,2}(?:\s*,\s*\d{1,2})*)\](?!\()/g;
+                    let match: RegExpExecArray | null;
+                    while ((match = citeRe.exec(seg)) !== null) {
+                      for (const part of match[1].split(',')) {
+                        const oldNum = parseInt(part.trim(), 10);
+                        if (isNaN(oldNum) || oldNum < 1 || oldToNew.has(oldNum)) continue;
+                        const idx =
+                          baseSources.findIndex((s: any, i: number) => (s?.position ?? i + 1) === oldNum) !== -1
+                            ? baseSources.findIndex((s: any, i: number) => (s?.position ?? i + 1) === oldNum)
+                            : oldNum <= baseSources.length
+                            ? oldNum - 1
+                            : -1;
+                        if (idx !== -1) {
+                          const newNum = ordered.length + 1;
+                          oldToNew.set(oldNum, newNum);
+                          usedIdx.add(idx);
+                          ordered.push({ ...baseSources[idx], position: newNum });
+                        }
+                      }
+                    }
+                  }
+
+                  if (oldToNew.size > 0) {
+                    baseSources.forEach((s: any, idx: number) => {
+                      if (!usedIdx.has(idx)) {
+                        ordered.push({ ...s, position: ordered.length + 1 });
+                      }
+                    });
+                    finalSources = ordered;
+                    finalText = segments
+                      .map((seg: string) => {
+                        if (seg.startsWith('```')) return seg;
+                        return seg.replace(/\[(\d{1,2}(?:\s*,\s*\d{1,2})*)\](?!\()/g, (_m: string, listStr: string) => {
+                          const mapped: number[] = [];
+                          for (const p of listStr.split(',')) {
+                            const oldNum = parseInt(p.trim(), 10);
+                            const newNum = oldToNew.get(oldNum) ?? oldNum;
+                            if (!mapped.includes(newNum)) mapped.push(newNum);
+                          }
+                          return mapped.map((n) => `[${n}]`).join('');
+                        });
+                      })
+                      .join('');
+                  } else {
+                    finalSources = baseSources.map((s: any, idx: number) => ({ ...s, position: idx + 1 }));
+                  }
                 }
 
                 return {
                   ...m,
-                  content: fullText,
-                  sources: mergedSources.length > 0 ? mergedSources : undefined,
+                  content: finalText,
+                  sources: finalSources.length > 0 ? finalSources : undefined,
                   images: data.images,
                   personaWiki: data.personaWiki,
                   videos: data.videos,
@@ -1218,10 +1327,71 @@ export default function App() {
       /^[\p{Extended_Pictographic}\p{Emoji}\s\u200d\ufe0f👋✋✌️🙌🤝✨💌🎉❤️]+$/u.test(query.trim()) ||
       /^(hi+|hey+|hello+|yo+|sup|wassup|whats up|howdy|greetings|good (morning|afternoon|evening|night)|how are you|thanks|thank you|thx|ty|ok|okay|k|cool|nice|great|awesome|got it|wave|hand wave|waving|bye|cya)$/i.test(query.trim().toLowerCase());
 
+    const allPriorMessages = activeThread ? activeThread.messages : [];
+
+    // Rewrite follow-up questions into a standalone search query using conversation context
+    const rewriteFollowUpIntoStandaloneQuery = (
+      rawQ: string,
+      priorMsgs: ChatMessageType[]
+    ): string => {
+      if (!priorMsgs || priorMsgs.length === 0) return rawQ;
+      const priorUserMsgs = priorMsgs
+        .filter((m) => m.role === 'user' && m.content && m.content.trim().length > 2)
+        .map((m) => stripInjectedClockNote(m.content).trim());
+      if (priorUserMsgs.length === 0) return rawQ;
+
+      const lastUserTopic = priorUserMsgs[priorUserMsgs.length - 1]
+        .replace(/[?!.]+$/g, '')
+        .trim();
+      if (!lastUserTopic) return rawQ;
+
+      const qNoTemporal = rawQ.replace(
+        /\b(this|these|that|those)\s+(week|month|year|morning|afternoon|evening|night|weekend|quarter|season|days?)\b/gi,
+        ' '
+      );
+      const isReferentialFollowUp =
+        /\b(which\s+one|which\s+of|what\s+about|how\s+about|why\s+is\s+that|why\s+does|how\s+does\s+it|how\s+do\s+they|it|its|they|them|their|these|those|that\s+one|this\s+one|same\s+one|of\s+these|of\s+those|among\s+them|between\s+them|the\s+first|the\s+second|the\s+third|compare\s+them|for\s+developers)\b/i.test(
+          qNoTemporal
+        ) || /^(which|why|what\s+about|how\s+about|and\s+|so\s+|also\s+)/i.test(rawQ.trim());
+
+      const topicWords = lastUserTopic
+        .toLowerCase()
+        .split(/\W+/)
+        .filter((w) => w.length >= 2 && !/^(what|which|when|where|who|how|why|the|and|for|from|with|this|that)$/.test(w));
+      const alreadyHasTopic =
+        topicWords.length > 0 &&
+        topicWords.some((w) => new RegExp(`\\b${w}\\b`, 'i').test(rawQ));
+
+      if (!isReferentialFollowUp || alreadyHasTopic) {
+        return rawQ;
+      }
+
+      // E.g. "which one matters most for developers?" after "AI news this week" -> "most important AI news this week for developers"
+      if (/\bwhich\s+one\s+matters\s+most\b/i.test(rawQ)) {
+        const remainder = rawQ
+          .replace(/^.*?\bwhich\s+one\s+matters\s+most\b/i, '')
+          .replace(/[?!.]+$/g, '')
+          .trim();
+        return `most important ${lastUserTopic} ${remainder}`.replace(/\s+/g, ' ').trim();
+      }
+
+      const cleanedFollowUp = rawQ
+        .replace(/\b(which\s+one|that\s+one|this\s+one|of\s+these|of\s+those|among\s+them)\b/gi, lastUserTopic)
+        .replace(/[?!.]+$/g, '')
+        .trim();
+
+      if (cleanedFollowUp.toLowerCase().includes(lastUserTopic.toLowerCase())) {
+        return cleanedFollowUp;
+      }
+      return `${lastUserTopic} ${cleanedFollowUp}`.replace(/\s+/g, ' ').slice(0, 120).trim();
+    };
+
+    const standaloneSearchQuery = rewriteFollowUpIntoStandaloneQuery(query, allPriorMessages);
+
     const isClockQuery = isDateOrTimeClockQuery(query);
     const isNewsQuery =
       /\b(news|headlines|happened|update|updates|this\s+week|today'?s\s+news|latest\s+news|breaking)\b/i.test(
-        query
+        standaloneSearchQuery
       );
     const effectiveMode: SearchMode = isResearchMode
       ? 'organic'
@@ -1256,7 +1426,7 @@ export default function App() {
       isStreaming: true,
       loadingMode: computedLoadingMode,
       modelUsed: activeModel.name,
-      searchQueries: computedLoadingMode === 'search' ? [query] : undefined,
+      searchQueries: computedLoadingMode === 'search' ? [standaloneSearchQuery] : undefined,
     };
 
     // If no active thread, create one
@@ -1295,7 +1465,7 @@ export default function App() {
           headers: authHeaders,
           signal: controller.signal,
           body: JSON.stringify({
-            query,
+            query: standaloneSearchQuery,
             searchMode: effectiveMode,
             nsfwMode,
             isResearchMode,
@@ -1343,7 +1513,6 @@ export default function App() {
     }
 
     try {
-      const allPriorMessages = activeThread ? activeThread.messages : [];
       const authHeaders = await getAuthHeaders();
       const clientClock = getClientRealTimeClock();
       const userPersonalization = UserAccountStore.getPersonalization();
@@ -1364,15 +1533,19 @@ export default function App() {
                 .replace(/sunday,?\s+october\s+18,?\s+2026/gi, clientClock.localDateOnly)
                 .replace(/october\s+18,?\s+2026/gi, `${clientClock.monthName} ${clientClock.day}, ${clientClock.year}`);
             }
+            const isLastUserMsg = idx === arr.length - 1 && m.role === 'user';
             return {
               role: m.role,
               content:
-                idx === arr.length - 1 && m.role === 'user' && isClockQuery
+                isLastUserMsg && isClockQuery
                   ? `${cleanContent}\n\n[VERIFIED REAL-TIME DEVICE CLOCK: Today is ${clientClock.localDateOnly} and the current local time is ${clientClock.localTimeOnly} / UTC: ${clientClock.utcFull}. State BOTH this exact real-time date and time, and do NOT agree if the user claims today is a different date.]`
+                  : isLastUserMsg && standaloneSearchQuery !== query
+                  ? `${cleanContent} (regarding: ${standaloneSearchQuery})`
                   : cleanContent,
               attachments: m.attachments,
             };
           }),
+          searchQuery: standaloneSearchQuery,
           webSearch: isClockQuery ? false : true,
           searchMode: effectiveMode,
           model: activeModel.geminiModel,
@@ -1866,7 +2039,7 @@ export default function App() {
           />
         </div>
       ) : !isSignedIn ? (
-        <Signup1 onSuccess={() => setIsSignedIn(true)} />
+        <Signup1 isDark={isDark} onSuccess={() => setIsSignedIn(true)} />
       ) : (
         <>
           {/* Collapsible Sidebar */}
@@ -1893,7 +2066,7 @@ export default function App() {
             onOpenPricing={(highlightPlan) =>
               setPricingModalState({
                 isOpen: true,
-                highlightPlan: highlightPlan || 'spark',
+                highlightPlan,
                 limitReason: null,
               })
             }

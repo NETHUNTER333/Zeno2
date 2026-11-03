@@ -1,8 +1,23 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover, interactive-widget=resizes-content" />
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('zeno_theme');
+          var d = document.documentElement;
+          if (t === 'light') {
+            d.classList.remove('dark');
+            d.classList.add('light');
+          } else {
+            d.classList.remove('light');
+            d.classList.add('dark');
+          }
+        } catch (e) {}
+      })();
+    </script>
     <title>Zeno · AI Search, Deep Research &amp; YouTube Study Workspace</title>
     <meta name="description" content="Zeno is an AI search, Deep Research, and YouTube &amp; PDF Study workspace featuring cited web synthesis, interactive flashcards, quizzes, and academic paper tools." />
     <link rel="canonical" href="https://zeno0x.vercel.app/" />

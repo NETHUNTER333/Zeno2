@@ -289,16 +289,45 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden relative">
         {/* Mobile Tab Switcher */}
         <div
+          role="tablist"
+          aria-label="Account and settings sections"
           className={`md:hidden flex items-center gap-1.5 p-3 border-b shrink-0 overflow-x-auto scrollbar-none ${
             isDark ? 'border-white/10 bg-[#121215]' : 'border-black/10 bg-neutral-50'
           }`}
         >
-          {navItems.map((item) => {
+          {navItems.map((item, idx) => {
             const isActive = activeTab === item.id;
             return (
               <button
                 key={item.id}
+                id={`account-mobile-tab-${item.id}`}
+                role="tab"
+                aria-selected={isActive}
+                aria-controls={`account-tabpanel-${item.id}`}
+                tabIndex={isActive ? 0 : -1}
                 onClick={() => setActiveTab(item.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    const next = navItems[(idx + 1) % navItems.length];
+                    setActiveTab(next.id);
+                    document.getElementById(`account-mobile-tab-${next.id}`)?.focus();
+                  } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    const prev = navItems[(idx - 1 + navItems.length) % navItems.length];
+                    setActiveTab(prev.id);
+                    document.getElementById(`account-mobile-tab-${prev.id}`)?.focus();
+                  } else if (e.key === 'Home') {
+                    e.preventDefault();
+                    setActiveTab(navItems[0].id);
+                    document.getElementById(`account-mobile-tab-${navItems[0].id}`)?.focus();
+                  } else if (e.key === 'End') {
+                    e.preventDefault();
+                    const last = navItems[navItems.length - 1];
+                    setActiveTab(last.id);
+                    document.getElementById(`account-mobile-tab-${last.id}`)?.focus();
+                  }
+                }}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
                   isActive
                     ? isDark
@@ -344,13 +373,40 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
               </div>
             </div>
 
-            <nav className="space-y-1">
-              {navItems.map((item) => {
+            <nav role="tablist" aria-label="Account and settings navigation" className="space-y-1">
+              {navItems.map((item, idx) => {
                 const isActive = activeTab === item.id;
                 return (
                   <button
                     key={item.id}
+                    id={`account-desktop-tab-${item.id}`}
+                    role="tab"
+                    aria-selected={isActive}
+                    aria-controls={`account-tabpanel-${item.id}`}
+                    tabIndex={isActive ? 0 : -1}
                     onClick={() => setActiveTab(item.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        const next = navItems[(idx + 1) % navItems.length];
+                        setActiveTab(next.id);
+                        document.getElementById(`account-desktop-tab-${next.id}`)?.focus();
+                      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        const prev = navItems[(idx - 1 + navItems.length) % navItems.length];
+                        setActiveTab(prev.id);
+                        document.getElementById(`account-desktop-tab-${prev.id}`)?.focus();
+                      } else if (e.key === 'Home') {
+                        e.preventDefault();
+                        setActiveTab(navItems[0].id);
+                        document.getElementById(`account-desktop-tab-${navItems[0].id}`)?.focus();
+                      } else if (e.key === 'End') {
+                        e.preventDefault();
+                        const last = navItems[navItems.length - 1];
+                        setActiveTab(last.id);
+                        document.getElementById(`account-desktop-tab-${last.id}`)?.focus();
+                      }
+                    }}
                     className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-all cursor-pointer ${
                       isActive
                         ? isDark
@@ -385,7 +441,12 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
         </aside>
 
         {/* Right Main Content Canvas */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 lg:p-10 slim-scrollbar">
+        <main
+          id={`account-tabpanel-${activeTab}`}
+          role="tabpanel"
+          aria-labelledby={`account-desktop-tab-${activeTab}`}
+          className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 lg:p-10 slim-scrollbar"
+        >
           <div className={`${activeTab === 'pricing' ? 'max-w-6xl' : 'max-w-3xl'} mx-auto space-y-6 pb-16`}>
             {/* Tab: Plans & Pricing ($1 Spark / $5 Fire) */}
             {activeTab === 'pricing' && (
@@ -593,6 +654,7 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
                       })}
                       <input
                         type="time"
+                        aria-label="Daily reminder time"
                         value={streak.reminderTime || '18:00'}
                         onChange={(e) => {
                           const updated = UserAccountStore.updateStreakReminderSettings({
@@ -1190,6 +1252,10 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
                       </div>
                     </div>
                     <button
+                      type="button"
+                      role="switch"
+                      aria-checked={webSearchDefault}
+                      aria-label="Web Search Grounding"
                       onClick={() => onToggleWebSearchDefault(!webSearchDefault)}
                       className={`w-11 h-6 rounded-full transition-colors relative cursor-pointer ${
                         webSearchDefault
@@ -1242,7 +1308,7 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
                     {[
                       { title: 'Terms of Service', path: '/terms', desc: 'Acceptable use, subscriptions & accounts' },
                       { title: 'Privacy Policy', path: '/privacy', desc: 'Data handling, DPDP & subprocessors' },
-                      { title: 'Refund Policy', path: '/refund', desc: '7-day guarantee & Dodo Payments MoR' },
+                      { title: 'Refund Policy', path: '/refund', desc: '7-day refund guarantee' },
                       { title: 'Acceptable Use Policy', path: '/acceptable-use', desc: 'Safety rules & upload guidelines' },
                       { title: 'Cookie Notice', path: '/cookies', desc: 'Essential storage & preference cookies' },
                       { title: 'Contact & Grievance', path: '/contact', desc: 'Support & Grievance Officer SLA' },

@@ -272,17 +272,17 @@ export const SiteFooter: React.FC<SiteFooterProps> = ({
     return (
       <footer
         className={`w-full text-[11px] leading-relaxed ${
-          isDark ? 'text-white/45' : 'text-black/50'
+          isDark ? 'text-zinc-400' : 'text-zinc-600'
         } ${className}`}
       >
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
           {links.map((item, idx) => (
             <React.Fragment key={item.path}>
               <a
                 href={item.path}
                 onClick={(e) => handleClick(e, item.path)}
                 className={`transition-colors hover:underline ${
-                  isDark ? 'hover:text-white/85' : 'hover:text-black/85'
+                  isDark ? 'hover:text-white' : 'hover:text-black'
                 }`}
               >
                 {item.label}
@@ -291,8 +291,8 @@ export const SiteFooter: React.FC<SiteFooterProps> = ({
             </React.Fragment>
           ))}
         </div>
-        <div className="mt-1 text-[10.5px] opacity-80">
-          © {year} {OPERATOR_NAME}
+        <div className="mt-1 text-[10.5px]">
+          {`© ${year} ${OPERATOR_NAME}. All rights reserved.`}
         </div>
       </footer>
     );
@@ -302,8 +302,8 @@ export const SiteFooter: React.FC<SiteFooterProps> = ({
     <footer
       className={`w-full border-t px-4 sm:px-8 py-6 pb-28 sm:pb-24 text-xs ${
         isDark
-          ? 'border-white/10 bg-[#09090b] text-white/55'
-          : 'border-black/10 bg-[#fafafa] text-black/60'
+          ? 'border-white/10 bg-[#09090b] text-zinc-400'
+          : 'border-black/10 bg-[#fafafa] text-zinc-600'
       } ${className}`}
     >
       <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
@@ -340,7 +340,7 @@ export const SiteFooter: React.FC<SiteFooterProps> = ({
           </a>
         </div>
         <div className="text-center sm:text-right">
-          © {year} {OPERATOR_NAME}. All rights reserved.
+          {`© ${year} ${OPERATOR_NAME}. All rights reserved.`}
         </div>
       </div>
     </footer>
@@ -370,13 +370,13 @@ export const CookieConsentBanner: React.FC<{
     <div
       role="region"
       aria-label="Cookie and local storage notice"
-      className="fixed bottom-24 left-3 sm:bottom-4 sm:left-4 max-w-[310px] sm:max-w-xs z-30 pointer-events-auto"
+      className="fixed top-14 inset-x-3 sm:top-auto sm:bottom-4 sm:left-4 sm:right-auto sm:max-w-[300px] z-30 pointer-events-auto"
     >
       <div
-        className={`rounded-2xl border p-3 shadow-lg backdrop-blur-xl transition-all ${
+        className={`rounded-2xl border p-2.5 sm:p-3 shadow-xl transition-all ${
           isDark
-            ? 'bg-[#111114]/95 border-white/15 text-white'
-            : 'bg-white/98 border-black/15 text-[#09090b]'
+            ? 'bg-[#111114] border-zinc-800 text-white'
+            : 'bg-white border-zinc-200 text-zinc-900 shadow-[0_8px_30px_rgba(0,0,0,0.12)]'
         }`}
       >
         <div className="flex items-center justify-between gap-2">
@@ -402,7 +402,7 @@ export const CookieConsentBanner: React.FC<{
               onClick={() => setCookiePreference('essential')}
               aria-label="Dismiss cookie notice"
               className={`p-0.5 rounded-md transition-colors cursor-pointer ${
-                isDark ? 'text-white/55 hover:text-white' : 'text-black/55 hover:text-black'
+                isDark ? 'text-zinc-400 hover:text-white' : 'text-zinc-500 hover:text-black'
               }`}
             >
               <X className="w-3.5 h-3.5" />
@@ -410,20 +410,20 @@ export const CookieConsentBanner: React.FC<{
           </div>
         </div>
 
-        <p className={`mt-1.5 text-[11px] leading-snug ${isDark ? 'text-white/70' : 'text-black/70'}`}>
+        <p className={`mt-1 text-[11px] leading-snug ${isDark ? 'text-zinc-300' : 'text-zinc-600'}`}>
           Essential storage powers auth &amp; study history; optional storage tracks referrals. Zero ad trackers.
         </p>
 
         {showManage && (
           <div
-            className={`mt-2.5 rounded-xl border p-2.5 space-y-2 text-[11px] ${
-              isDark ? 'border-white/10 bg-white/[0.03]' : 'border-black/10 bg-black/[0.03]'
+            className={`mt-2 rounded-xl border p-2.5 space-y-2 text-[11px] ${
+              isDark ? 'border-zinc-800 bg-zinc-900' : 'border-zinc-200 bg-zinc-50'
             }`}
           >
             <div className="flex items-center justify-between gap-2">
               <div>
                 <div className="font-semibold">Strictly Necessary</div>
-                <div className={`text-[10px] ${isDark ? 'text-white/55' : 'text-black/55'}`}>
+                <div className={`text-[10px] ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
                   Auth, workspace &amp; quota state
                 </div>
               </div>
@@ -431,10 +431,10 @@ export const CookieConsentBanner: React.FC<{
                 Active
               </span>
             </div>
-            <div className={`flex items-center justify-between gap-2 pt-2 border-t ${isDark ? 'border-white/10' : 'border-black/10'}`}>
+            <div className={`flex items-center justify-between gap-2 pt-2 border-t ${isDark ? 'border-zinc-800' : 'border-zinc-200'}`}>
               <div>
                 <div className="font-semibold">Referral Storage</div>
-                <div className={`text-[10px] ${isDark ? 'text-white/55' : 'text-black/55'}`}>
+                <div className={`text-[10px] ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
                   Remembers referral codes
                 </div>
               </div>
@@ -442,20 +442,21 @@ export const CookieConsentBanner: React.FC<{
                 type="checkbox"
                 checked={functionalEnabled}
                 onChange={(e) => setFunctionalEnabled(e.target.checked)}
+                aria-label="Enable referral storage"
                 className="h-3.5 w-3.5 accent-[#FC4C01] rounded cursor-pointer"
               />
             </div>
           </div>
         )}
 
-        <div className="mt-2.5 grid grid-cols-3 gap-1.5">
+        <div className="mt-2 grid grid-cols-3 gap-1.5">
           <button
             type="button"
             onClick={() => setCookiePreference('essential')}
             className={`px-2 py-1.5 rounded-lg border text-[11px] font-semibold cursor-pointer transition-colors ${
               isDark
-                ? 'border-white/20 bg-white/5 hover:bg-white/10 text-white'
-                : 'border-black/20 bg-black/5 hover:bg-black/10 text-black'
+                ? 'border-zinc-700 bg-zinc-800/80 hover:bg-zinc-800 text-white'
+                : 'border-zinc-300 bg-zinc-100 hover:bg-zinc-200 text-zinc-900'
             }`}
           >
             Essential
@@ -471,8 +472,8 @@ export const CookieConsentBanner: React.FC<{
             }}
             className={`px-2 py-1.5 rounded-lg border text-[11px] font-semibold cursor-pointer transition-colors ${
               isDark
-                ? 'border-white/20 bg-white/5 hover:bg-white/10 text-white/85'
-                : 'border-black/20 bg-black/5 hover:bg-black/10 text-black/85'
+                ? 'border-zinc-700 bg-zinc-800/80 hover:bg-zinc-800 text-zinc-200'
+                : 'border-zinc-300 bg-zinc-100 hover:bg-zinc-200 text-zinc-800'
             }`}
           >
             {showManage ? 'Save' : 'Manage'}
@@ -524,13 +525,13 @@ export const GuestFirstPromptConsentModal: React.FC<{
           </div>
           <div>
             <h2 className="text-base font-bold tracking-tight">Before You Continue on {TRADE_NAME}</h2>
-            <p className={`text-xs ${isDark ? 'text-white/55' : 'text-black/55'}`}>
+            <p className={`text-xs ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
               Policy Version {CONSENT_VERSION} · Effective {EFFECTIVE_DATE}
             </p>
           </div>
         </div>
 
-        <div className={`mt-4 space-y-2.5 text-xs leading-relaxed ${isDark ? 'text-white/75' : 'text-black/75'}`}>
+        <div className={`mt-4 space-y-2.5 text-xs leading-relaxed ${isDark ? 'text-zinc-300' : 'text-zinc-700'}`}>
           <p>
             {TRADE_NAME} provides AI search, Deep Research reports, and YouTube/PDF study tools powered by third-party AI models. Outputs may contain inaccuracies and are not professional medical, legal, financial, or tax advice.
           </p>
@@ -555,7 +556,7 @@ export const GuestFirstPromptConsentModal: React.FC<{
             className="mt-0.5 h-4 w-4 accent-[#FC4C01] rounded cursor-pointer shrink-0"
           />
           <span className="text-xs leading-relaxed">
-            I am {MIN_AGE} or older and agree to the{' '}
+            I confirm I am at least 18 years old and agree to the{' '}
             <a
               href="/terms"
               onClick={(e) => handleLink(e, '/terms')}
@@ -685,6 +686,7 @@ export const ReportContentModal: React.FC<{ isDark?: boolean }> = ({ isDark = tr
           <button
             type="button"
             onClick={() => setPayload(null)}
+            aria-label="Close report modal"
             className="p-1 rounded-lg opacity-60 hover:opacity-100 cursor-pointer"
           >
             <X className="w-4 h-4" />
@@ -1131,7 +1133,7 @@ export const LegalAndInfoPages: React.FC<LegalAndInfoPagesProps> = ({
                           id: 'refund',
                           title: 'Refund & Cancellation Policy',
                           path: '/refund',
-                          desc: `${REFUND_WINDOW_DAYS}-day refund window on first purchase, instant cancellation, and Dodo Payments MoR workflow.`,
+                          desc: `${REFUND_WINDOW_DAYS}-day refund window on first purchase, instant cancellation, and Dodo Payments Merchant of Record workflow.`,
                         },
                         {
                           id: 'acceptable-use',

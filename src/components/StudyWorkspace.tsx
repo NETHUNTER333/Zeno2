@@ -2853,7 +2853,7 @@ ${fullTranscriptText}`;
                 {/* TAB 2: SUMMARY (Clean, Simple, Usable + Fetched Videos)     */}
                 {/* =========================================================== */}
                 {activeTabObj?.type === 'summary' && studyBundle && (
-                  <div className="max-w-3xl mx-auto px-4 sm:px-6 py-5 space-y-6 pb-8">
+                  <div className="max-w-3xl mx-auto px-4 sm:px-6 pt-5 pb-4 space-y-5">
                     {/* Header & Actions */}
                     <div
                       className={`flex flex-wrap items-center justify-between gap-2 pb-4 border-b ${borderSubtle}`}
@@ -4158,7 +4158,7 @@ ${fullTranscriptText}`;
                         </div>
                       </div>
                     ) : (
-                      <div className="space-y-3">
+                      <div className="space-y-3 pb-4 overflow-visible">
                         {activeTranscriptList.map((seg, idx) => {
                           const nextSeg = activeTranscriptList[idx + 1];
                           const segDuration =
@@ -4180,7 +4180,7 @@ ${fullTranscriptText}`;
                             <div
                               key={idx}
                               onClick={() => triggerJump(seg.start_s)}
-                              className={`p-4 rounded-2xl border flex items-start gap-3.5 group/seg transition-all duration-200 cursor-pointer ${bgCard} hover:border-[#FC4C01]/30 hover:shadow-xs`}
+                              className={`p-4 rounded-2xl border flex items-start gap-3.5 overflow-visible group/seg transition-all duration-200 cursor-pointer ${bgCard} hover:border-[#FC4C01]/30 hover:shadow-xs`}
                               title="Click to jump YouTube player to this segment"
                             >
                               {activeVideoId && (

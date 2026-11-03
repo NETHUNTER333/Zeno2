@@ -1,5 +1,12 @@
 User-agent: *
 Allow: /
+Allow: /study
+Allow: /discover
+Allow: /research
+Allow: /pricing
+Allow: /r/
+Allow: /share/
+Allow: /p/
 Allow: /legal
 Allow: /terms
 Allow: /privacy

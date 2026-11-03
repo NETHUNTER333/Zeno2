@@ -27,6 +27,7 @@ interface Signup1Props {
   googleText?: string;
   loginText?: string;
   loginUrl?: string;
+  isDark?: boolean;
   onSuccess?: () => void;
 }
 
@@ -42,6 +43,7 @@ const Signup1 = ({
   signupText = "Create an account",
   loginText = "Already have an account?",
   loginUrl = "#",
+  isDark = true,
   onSuccess,
 }: Signup1Props) => {
   const [email, setEmail] = useState("");
@@ -124,7 +126,7 @@ const Signup1 = ({
     if (!cleanEmail || !password) return;
     if (!consentAccepted) {
       setError(
-        `Please confirm you are 18 or older and agree to the Terms, Privacy Policy, and Acceptable Use Policy.`
+        `Please confirm you are at least ${MIN_AGE} years old and agree to the Terms of Service, Privacy Policy, and Acceptable Use Policy.`
       );
       return;
     }
@@ -192,7 +194,7 @@ const Signup1 = ({
   const handleGoogleSignup = async () => {
     if (!consentAccepted) {
       setError(
-        `Please check the box below to confirm you are 18 or older and agree to the Terms, Privacy Policy, and Acceptable Use Policy.`
+        `Please check the box below to confirm you are at least ${MIN_AGE} years old and agree to the Terms of Service, Privacy Policy, and Acceptable Use Policy.`
       );
       return;
     }
@@ -224,10 +226,20 @@ const Signup1 = ({
   };
 
   return (
-    <section className="bg-muted h-screen w-full flex items-center justify-center p-4">
-      <div className="flex h-full items-center justify-center w-full">
-        <div className="border-muted bg-background flex w-full max-w-md flex-col items-center gap-y-6 rounded-2xl border px-6 sm:px-8 py-8 sm:py-10 shadow-xl">
-          <div className="flex flex-col items-center gap-y-2 text-center">
+    <section
+      className={`min-h-screen w-full flex items-center justify-center p-4 relative z-10 overflow-y-auto ${
+        isDark ? "text-zinc-100" : "text-zinc-900"
+      }`}
+    >
+      <div className="flex items-center justify-center w-full my-auto py-4">
+        <div
+          className={`flex w-full max-w-md flex-col items-center gap-y-5 rounded-2xl border px-6 sm:px-8 py-7 sm:py-9 shadow-xl opacity-100 ${
+            isDark
+              ? "bg-[#09090b] border-zinc-800 text-zinc-100"
+              : "bg-white border-zinc-200 text-zinc-900"
+          }`}
+        >
+          <div className="flex flex-col items-center gap-y-2 text-center opacity-100">
             {/* Logo */}
             <div className="flex items-center justify-center mb-1">
               <a href={logo.url} className="flex items-center justify-center">
@@ -235,23 +247,31 @@ const Signup1 = ({
                   src={logo.src}
                   alt={logo.alt}
                   title={logo.title}
-                  className="h-14 w-14 dark:invert drop-shadow-sm"
+                  className={`h-14 w-14 drop-shadow-sm ${isDark ? "invert" : ""}`}
                 />
               </a>
             </div>
             {heading && (
-              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
+              <h1
+                className={`text-2xl sm:text-3xl font-bold tracking-tight opacity-100 ${
+                  isDark ? "text-white" : "text-zinc-900"
+                }`}
+              >
                 {isLoginMode ? "Welcome back to Zeno" : heading}
               </h1>
             )}
-            <p className="text-xs text-muted-foreground max-w-xs">
+            <p
+              className={`text-xs max-w-xs opacity-100 ${
+                isDark ? "text-zinc-400" : "text-zinc-600"
+              }`}
+            >
               AI-powered web search, agent tools, and YouTube study workspace.
             </p>
           </div>
 
           {/* Promotional Referral Banner */}
           {pendingReferral?.code && (
-            <div className="w-full rounded-2xl border border-emerald-500/30 bg-gradient-to-br from-emerald-500/[0.14] via-emerald-500/[0.06] to-teal-500/[0.10] p-4 text-left shadow-lg backdrop-blur-sm animate-in fade-in slide-in-from-top-2 duration-300">
+            <div className="w-full rounded-2xl border border-emerald-500/30 bg-emerald-500/[0.08] p-4 text-left shadow-lg">
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-2.5">
                   <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shadow-sm shrink-0">
@@ -263,19 +283,19 @@ const Signup1 = ({
                         Promotional Pass Active
                       </span>
                       {isValidatingReferral && (
-                        <span className="text-[10px] text-emerald-400/70 animate-pulse">
+                        <span className="text-[10px] text-emerald-400/70">
                           (verifying...)
                         </span>
                       )}
                     </div>
-                    <div className="text-xs sm:text-sm font-semibold text-emerald-200 leading-tight mt-0.5">
+                    <div className={`text-xs sm:text-sm font-semibold leading-tight mt-0.5 ${isDark ? "text-emerald-200" : "text-emerald-900"}`}>
                       {pendingReferral.referrerName ? (
                         <>
-                          Invited by <span className="text-white font-bold">{pendingReferral.referrerName}</span>, you both get <span className="text-white font-bold">10 Pro searches + 7 days Pro access</span>!
+                          Invited by <span className="font-bold">{pendingReferral.referrerName}</span>, you both get <span className="font-bold">10 Pro searches + 7 days Pro access</span>!
                         </>
                       ) : (
                         <>
-                          Invited via <span className="font-mono text-white font-bold">{pendingReferral.code}</span>, you both get <span className="text-white font-bold">10 Pro searches + 7 days Pro access</span>!
+                          Invited via <span className="font-mono font-bold">{pendingReferral.code}</span>, you both get <span className="font-bold">10 Pro searches + 7 days Pro access</span>!
                         </>
                       )}
                     </div>
@@ -283,7 +303,7 @@ const Signup1 = ({
                 </div>
 
                 <div className="flex flex-col items-end gap-1 shrink-0">
-                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-300 border border-emerald-500/40">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-400 border border-emerald-500/40">
                     <CheckCircle2 className="h-3 w-3" />
                     Verified
                   </span>
@@ -295,26 +315,26 @@ const Signup1 = ({
 
               {/* Potential Rewards Breakdown */}
               <div className="mt-3.5 pt-3 border-t border-emerald-500/20 space-y-2">
-                <div className="text-[11px] font-semibold text-neutral-300 flex items-center gap-1.5">
+                <div className={`text-[11px] font-semibold flex items-center gap-1.5 ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>
                   <Sparkles className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
                   <span>Rewards Unlocked Upon Registration:</span>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
-                  <div className="flex flex-col justify-center rounded-xl bg-black/30 border border-emerald-500/20 p-2.5">
+                  <div className="flex flex-col justify-center rounded-xl bg-black/25 border border-emerald-500/20 p-2.5">
                     <div className="text-xs font-bold text-emerald-300">
                       +10 Pro Searches
                     </div>
-                    <div className="text-[10px] text-neutral-400 leading-snug mt-0.5">
+                    <div className="text-[10px] text-zinc-300 leading-snug mt-0.5">
                       Multi-source synthesis, PubMed & arXiv
                     </div>
                   </div>
 
-                  <div className="flex flex-col justify-center rounded-xl bg-black/30 border border-emerald-500/20 p-2.5">
+                  <div className="flex flex-col justify-center rounded-xl bg-black/25 border border-emerald-500/20 p-2.5">
                     <div className="text-xs font-bold text-emerald-300">
                       +7 Days Pro Access
                     </div>
-                    <div className="text-[10px] text-neutral-400 leading-snug mt-0.5">
+                    <div className="text-[10px] text-zinc-300 leading-snug mt-0.5">
                       Full study workspace, quizzes & cards
                     </div>
                   </div>
@@ -346,7 +366,7 @@ const Signup1 = ({
             </div>
           )}
 
-          <form onSubmit={handleEmailAuth} className="flex w-full flex-col gap-4">
+          <form onSubmit={handleEmailAuth} className="flex w-full flex-col gap-4 opacity-100">
             {error && (
               <div className="text-xs text-red-500 font-medium text-center bg-red-500/10 p-3 rounded-xl border border-red-500/20">
                 <div>{error}</div>
@@ -360,41 +380,55 @@ const Signup1 = ({
             <div className="flex flex-col gap-2">
               <Input
                 type="email"
+                aria-label="Email address"
                 placeholder="Email address"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="text-xs sm:text-sm"
+                className={`text-xs sm:text-sm ${
+                  isDark
+                    ? "bg-zinc-900/90 border-zinc-700 text-white placeholder:text-zinc-400"
+                    : "bg-white border-zinc-300 text-zinc-900 placeholder:text-zinc-500"
+                }`}
               />
             </div>
             <div className="flex flex-col gap-1.5">
               <Input
                 type="password"
+                aria-label="Password"
                 placeholder="Password (6+ chars)"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 minLength={6}
                 required
-                className="text-xs sm:text-sm"
+                className={`text-xs sm:text-sm ${
+                  isDark
+                    ? "bg-zinc-900/90 border-zinc-700 text-white placeholder:text-zinc-400"
+                    : "bg-white border-zinc-300 text-zinc-900 placeholder:text-zinc-500"
+                }`}
               />
               <div className="flex justify-end">
                 <button
                   type="button"
                   onClick={handleForgotPassword}
                   disabled={resetLoading || loading}
-                  className="text-[11px] text-muted-foreground hover:text-primary hover:underline cursor-pointer transition-colors"
+                  className={`text-[11px] hover:underline cursor-pointer transition-colors ${
+                    isDark ? "text-zinc-400 hover:text-white" : "text-zinc-600 hover:text-zinc-900"
+                  }`}
                 >
                   {resetLoading ? "Sending reset link..." : "Forgot Password?"}
                 </button>
               </div>
             </div>
 
-            {/* Clean, Non-AI-Slop Terms & Policies Consent Checkbox */}
+            {/* Unified 18+ Terms, Privacy & Acceptable Use Consent Checkbox */}
             <label
-              className={`flex items-start gap-2.5 rounded-xl border p-3 text-left text-xs leading-snug cursor-pointer transition-all ${
+              className={`flex items-start gap-2.5 rounded-xl border p-3 text-left text-xs leading-snug cursor-pointer transition-colors ${
                 !consentAccepted
-                  ? "border-border/80 bg-neutral-500/[0.03] hover:border-border"
-                  : "border-primary/40 bg-primary/[0.03]"
+                  ? isDark
+                    ? "border-zinc-800 bg-zinc-900/50 hover:border-zinc-700"
+                    : "border-zinc-300 bg-zinc-50 hover:border-zinc-400"
+                  : "border-[#FC4C01]/50 bg-[#FC4C01]/[0.05]"
               }`}
             >
               <input
@@ -408,8 +442,8 @@ const Signup1 = ({
                 }}
                 className="mt-0.5 h-4 w-4 accent-[#FC4C01] rounded cursor-pointer shrink-0"
               />
-              <span className="text-muted-foreground select-none">
-                By logging in or signing up, you confirm you are 18+ and accept our{" "}
+              <span className={`select-none ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
+                I confirm I am at least 18 years old and agree to the{" "}
                 <a
                   href="/terms"
                   onClick={(e) => {
@@ -418,11 +452,13 @@ const Signup1 = ({
                       new CustomEvent("zeno-navigate-route", { detail: { path: "/terms" } })
                     );
                   }}
-                  className="text-foreground font-semibold underline hover:text-primary transition-colors"
+                  className={`font-semibold underline transition-colors ${
+                    isDark ? "text-white hover:text-[#FC4C01]" : "text-zinc-900 hover:text-[#FC4C01]"
+                  }`}
                 >
-                  Terms
-                </a>{" "}
-                and{" "}
+                  Terms of Service
+                </a>
+                ,{" "}
                 <a
                   href="/privacy"
                   onClick={(e) => {
@@ -431,9 +467,26 @@ const Signup1 = ({
                       new CustomEvent("zeno-navigate-route", { detail: { path: "/privacy" } })
                     );
                   }}
-                  className="text-foreground font-semibold underline hover:text-primary transition-colors"
+                  className={`font-semibold underline transition-colors ${
+                    isDark ? "text-white hover:text-[#FC4C01]" : "text-zinc-900 hover:text-[#FC4C01]"
+                  }`}
                 >
-                  Policies
+                  Privacy Policy
+                </a>
+                , and{" "}
+                <a
+                  href="/acceptable-use"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    window.dispatchEvent(
+                      new CustomEvent("zeno-navigate-route", { detail: { path: "/acceptable-use" } })
+                    );
+                  }}
+                  className={`font-semibold underline transition-colors ${
+                    isDark ? "text-white hover:text-[#FC4C01]" : "text-zinc-900 hover:text-[#FC4C01]"
+                  }`}
+                >
+                  Acceptable Use Policy
                 </a>
                 .
               </span>
@@ -443,9 +496,13 @@ const Signup1 = ({
               <Button
                 type="submit"
                 className={`w-full h-10 font-semibold transition-all ${
+                  isDark
+                    ? "bg-white text-zinc-950 hover:bg-zinc-200"
+                    : "bg-zinc-900 text-white hover:bg-zinc-800"
+                } ${
                   !consentAccepted || loading || resetLoading
                     ? "opacity-50 cursor-not-allowed"
-                    : "cursor-pointer hover:opacity-90"
+                    : "cursor-pointer"
                 }`}
                 disabled={loading || resetLoading || !consentAccepted}
               >
@@ -463,6 +520,10 @@ const Signup1 = ({
                 type="button"
                 variant="outline"
                 className={`w-full h-10 transition-all ${
+                  isDark
+                    ? "border-zinc-700 bg-zinc-900/60 text-zinc-100 hover:bg-zinc-800"
+                    : "border-zinc-300 bg-white text-zinc-900 hover:bg-zinc-100"
+                } ${
                   !consentAccepted || loading || resetLoading
                     ? "opacity-50 cursor-not-allowed"
                     : "cursor-pointer"
@@ -483,6 +544,10 @@ const Signup1 = ({
                 type="button"
                 variant="outline"
                 className={`w-full h-10 border-dashed transition-all ${
+                  isDark
+                    ? "border-zinc-700 bg-transparent text-zinc-200 hover:bg-zinc-800/60"
+                    : "border-zinc-300 bg-transparent text-zinc-800 hover:bg-zinc-100"
+                } ${
                   !consentAccepted || loading || resetLoading
                     ? "opacity-50 cursor-not-allowed"
                     : "cursor-pointer"
@@ -505,7 +570,11 @@ const Signup1 = ({
             </div>
           </form>
 
-          <div className="text-muted-foreground flex items-center justify-between w-full text-xs pt-1 border-t border-border">
+          <div
+            className={`flex items-center justify-between w-full text-xs pt-2 border-t ${
+              isDark ? "border-zinc-800 text-zinc-400" : "border-zinc-200 text-zinc-600"
+            }`}
+          >
             <span>{isLoginMode ? "Don't have an account?" : loginText}</span>
             <button
               type="button"
@@ -514,16 +583,22 @@ const Signup1 = ({
                 setResetSuccess(null);
                 setIsLoginMode(!isLoginMode);
               }}
-              className="text-primary font-bold hover:underline cursor-pointer"
+              className={`font-bold hover:underline cursor-pointer ${
+                isDark ? "text-white" : "text-zinc-900"
+              }`}
             >
               {isLoginMode ? "Create an account" : "Sign In"}
             </button>
           </div>
 
-          <div className="w-full pt-2 border-t border-border/50 flex justify-center text-center">
+          <div
+            className={`w-full pt-2 border-t flex justify-center text-center ${
+              isDark ? "border-zinc-800/70" : "border-zinc-200"
+            }`}
+          >
             <SiteFooter
               compact
-              isDark
+              isDark={isDark}
               onNavigate={(path) =>
                 window.dispatchEvent(new CustomEvent("zeno-navigate-route", { detail: { path } }))
               }

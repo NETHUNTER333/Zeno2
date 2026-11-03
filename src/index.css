@@ -35,7 +35,7 @@
     --secondary-color: #f4f4f5;
     --secondary-fg-color: #18181b;
     --muted-color: #f4f4f5;
-    --muted-fg-color: #71717a;
+    --muted-fg-color: #52525b;
     --accent-color: #f4f4f5;
     --accent-fg-color: #18181b;
     --destructive-color: #ef4444;
@@ -73,7 +73,7 @@
     --secondary-color: #f4f4f5;
     --secondary-fg-color: #18181b;
     --muted-color: #f4f4f5;
-    --muted-fg-color: #71717a;
+    --muted-fg-color: #52525b;
     --accent-color: #f4f4f5;
     --accent-fg-color: #18181b;
     --destructive-color: #ef4444;
@@ -94,6 +94,16 @@
   }
   * {
     @apply border-border outline-ring/50;
+  }
+  button:focus-visible,
+  a:focus-visible,
+  [role="tab"]:focus-visible,
+  [role="switch"]:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    outline: 2px solid #FC4C01;
+    outline-offset: 2px;
   }
   body {
     @apply bg-background text-foreground;

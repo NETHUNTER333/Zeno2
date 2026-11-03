@@ -215,10 +215,13 @@ function WebSearch({
   const [measureRef, labelWidth] = useSize<HTMLSpanElement>("width");
 
   useEffect(() => {
+    let clearTimer: number | undefined;
     const onHighlight = (e: Event) => {
-      const detail = (e as CustomEvent<{ url?: string; index?: number; active?: boolean }>).detail;
+      const detail = (
+        e as CustomEvent<{ url?: string; index?: number; active?: boolean; scroll?: boolean }>
+      ).detail;
       if (!detail || detail.active === false) {
-        setHighlightedSourceKey(null);
+        if (!clearTimer) setHighlightedSourceKey(null);
         return;
       }
       const matchIdx = sources.findIndex(
@@ -233,10 +236,26 @@ function WebSearch({
         if (matchIdx >= COLUMNS - 1) {
           setExpanded(true);
         }
+        if (detail.scroll) {
+          if (clearTimer) window.clearTimeout(clearTimer);
+          window.setTimeout(() => {
+            const cardEl = document.getElementById(`source-card-${key}`);
+            if (cardEl) {
+              cardEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+            }
+          }, 70);
+          clearTimer = window.setTimeout(() => {
+            setHighlightedSourceKey(null);
+            clearTimer = undefined;
+          }, 2400);
+        }
       }
     };
     window.addEventListener("zeno-highlight-source", onHighlight);
-    return () => window.removeEventListener("zeno-highlight-source", onHighlight);
+    return () => {
+      window.removeEventListener("zeno-highlight-source", onHighlight);
+      if (clearTimer) window.clearTimeout(clearTimer);
+    };
   }, [sources, open]);
 
   const searching = status === "searching";
@@ -834,11 +853,11 @@ function WebSearchCitation({
   const { active: open, set, hover } = useHoverIntent(PREVIEW_DELAY);
   const ghUser = extractGitHubUsername(source.url);
 
-  const notifySourceHighlight = (active: boolean) => {
+  const notifySourceHighlight = (active: boolean, scroll = false) => {
     if (typeof window === "undefined") return;
     window.dispatchEvent(
       new CustomEvent("zeno-highlight-source", {
-        detail: { url: source.url, index, active },
+        detail: { url: source.url, index, active, scroll },
       })
     );
   };
@@ -849,28 +868,28 @@ function WebSearchCitation({
       className={cn("relative inline-flex align-baseline mx-0.5 whitespace-nowrap", className)}
       onPointerEnter={(event) => {
         hover.onPointerEnter(event);
-        notifySourceHighlight(true);
+        notifySourceHighlight(true, false);
       }}
       onPointerLeave={() => {
         hover.onPointerLeave();
-        notifySourceHighlight(false);
+        notifySourceHighlight(false, false);
       }}
       onFocus={(event) => {
         if (event.target.matches(":focus-visible")) {
           set(true, 0);
-          notifySourceHighlight(true);
+          notifySourceHighlight(true, false);
         }
       }}
       onBlur={() => {
         set(false, 0);
-        notifySourceHighlight(false);
+        notifySourceHighlight(false, false);
       }}
       {...props}
     >
       <a
         {...linkTo(source.url, linked && !(ghUser && onOpenModal))}
         onClick={(e) => {
-          notifySourceHighlight(true);
+          notifySourceHighlight(true, true);
           if (ghUser && onOpenModal) {
             e.preventDefault();
             e.stopPropagation();
@@ -878,7 +897,7 @@ function WebSearchCitation({
           }
         }}
         tabIndex={linked ? undefined : 0}
-        aria-label={`${source.title}, ${hostOf(source.url)}`}
+        aria-label={index !== undefined ? `Source ${index}: ${source.title}` : `Source: ${source.title}`}
         className={cn(
           !linked && "cursor-default",
           "citation-badge whitespace-nowrap inline-flex h-[19px] -translate-y-px items-center gap-1 rounded-full bg-[#F4F4F9] pl-[3px] pr-1.5 font-sans text-[11px] font-semibold leading-none text-[#868593] !no-underline outline-none transition-colors hover:bg-[#FC4C01]/10 hover:text-[#FC4C01] hover:ring-1 hover:ring-[#FC4C01]/40 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FC4C01] dark:bg-[#1C1C1C] dark:hover:bg-[#FC4C01]/15 dark:hover:text-[#FC4C01]",

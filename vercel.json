@@ -59,11 +59,63 @@
       "destination": "/cookies.html"
     },
     {
-      "source": "/r/:code",
-      "destination": "/?ref=:code"
+      "source": "/study",
+      "destination": "/study.html"
     },
     {
-      "source": "/(discover|study|research|pricing|settings|account|login|signup)",
+      "source": "/study/:path*",
+      "destination": "/study.html"
+    },
+    {
+      "source": "/discover",
+      "destination": "/discover.html"
+    },
+    {
+      "source": "/research",
+      "destination": "/research.html"
+    },
+    {
+      "source": "/pricing",
+      "destination": "/pricing.html"
+    },
+    {
+      "source": "/settings",
+      "destination": "/settings.html"
+    },
+    {
+      "source": "/account",
+      "destination": "/account.html"
+    },
+    {
+      "source": "/login",
+      "destination": "/login.html"
+    },
+    {
+      "source": "/signup",
+      "destination": "/signup.html"
+    },
+    {
+      "source": "/chat",
+      "destination": "/chat.html"
+    },
+    {
+      "source": "/chat/:path*",
+      "destination": "/chat.html"
+    },
+    {
+      "source": "/r/:code",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/invite/:code",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/share/:id",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/p/:id",
       "destination": "/index.html"
     }
   ],

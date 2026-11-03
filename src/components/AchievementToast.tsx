@@ -199,15 +199,15 @@ export const AchievementToast: React.FC<AchievementToastProps> = ({ isDark }) =>
     <div
       onMouseEnter={() => setIsPaused(true)}
       onMouseLeave={() => setIsPaused(false)}
-      className="fixed bottom-5 right-5 z-[115] max-w-md w-[calc(100vw-2rem)] animate-in fade-in slide-in-from-bottom-4 duration-200"
+      className="fixed top-14 right-3 sm:top-auto sm:bottom-5 sm:right-5 z-[115] max-w-sm sm:max-w-md w-[calc(100vw-1.5rem)] animate-in fade-in slide-in-from-top-3 sm:slide-in-from-bottom-4 duration-200"
       role="status"
       aria-live="polite"
     >
       <div
         className={`relative overflow-hidden rounded-2xl border shadow-2xl transition-colors ${
           isDark
-            ? 'bg-[#0a0a0a]/95 border-[#FC4C01]/45 text-white backdrop-blur-md'
-            : 'bg-white/95 border-[#FC4C01]/40 text-neutral-900 backdrop-blur-md'
+            ? 'bg-[#0a0a0a] border-[#FC4C01]/45 text-white'
+            : 'bg-white border-[#FC4C01]/40 text-neutral-900'
         }`}
       >
         {/* Top Accent Line */}

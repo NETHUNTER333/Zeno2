@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { UserAccountStore, PLAN_LIMITS } from '../lib/userAccountStore';
 import { UsageQuota } from '../types';
+import { LEGAL_CONFIG } from '../legal/config';
 
 export interface PricingModalProps {
   isOpen: boolean;
@@ -80,14 +81,21 @@ export const PricingModal: React.FC<PricingModalProps> = ({
       setActiveCardIndex(1);
     } else if (initialHighlightPlan === 'free') {
       setActiveCardIndex(0);
+    } else {
+      const plan = UserAccountStore.getNormalizedPlan();
+      setActiveCardIndex(plan === 'fire' ? 2 : plan === 'spark' ? 1 : 0);
     }
-  }, [initialHighlightPlan]);
+  }, [initialHighlightPlan, isOpen]);
 
   useEffect(() => {
     UserAccountStore.syncQuotaWithServerAndFirestore();
     const sync = () => {
-      setCurrentPlan(UserAccountStore.getNormalizedPlan());
+      const nextPlan = UserAccountStore.getNormalizedPlan();
+      setCurrentPlan(nextPlan);
       setUsage(UserAccountStore.getUsage());
+      if (!initialHighlightPlan) {
+        setActiveCardIndex(nextPlan === 'fire' ? 2 : nextPlan === 'spark' ? 1 : 0);
+      }
     };
     window.addEventListener('zeno-account-updated', sync);
     const timer = window.setInterval(() => {
@@ -97,7 +105,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
       window.removeEventListener('zeno-account-updated', sync);
       window.clearInterval(timer);
     };
-  }, []);
+  }, [initialHighlightPlan]);
 
   if (!isOpen && !embedded) return null;
 
@@ -168,6 +176,11 @@ export const PricingModal: React.FC<PricingModalProps> = ({
     if (isUnlimitedPlan && limit >= 999999) return `${used} / Unlimited`;
     return `${used} / ${limit}`;
   };
+
+  const neutralBadgeClass = isDark
+    ? 'bg-white/[0.08] text-zinc-300 border border-white/10'
+    : 'bg-zinc-100 text-zinc-700 border border-zinc-200';
+  const activeBadgeClass = 'bg-[#FC4C01] text-white border border-[#FC4C01]';
 
   const freeFeatures: PlanFeatureRow[] = [
     { text: '3 File Uploads / day (up to 2 files/msg)', included: true },
@@ -347,6 +360,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
                 : 'bg-white hover:bg-neutral-100 border-black/10 text-[#18181b] shadow-2xs'
             }`}
             title="Return to workspace"
+            aria-label="Return to workspace"
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
@@ -405,15 +419,15 @@ export const PricingModal: React.FC<PricingModalProps> = ({
           <div className="flex flex-wrap items-center gap-2.5 mb-1">
             <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight">Plans & Access</h1>
             {currentPlan === 'free' ? (
-              <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30">
+              <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${neutralBadgeClass}`}>
                 Free Tier · 5 Chats & 3 Uploads
               </span>
             ) : currentPlan === 'spark' ? (
-              <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+              <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${activeBadgeClass}`}>
                 10x Limits Active · Spark
               </span>
             ) : (
-              <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-orange-500/15 text-orange-400 border border-orange-500/30">
+              <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${activeBadgeClass}`}>
                 Unlimited Frontier Active · Fire
               </span>
             )}
@@ -436,9 +450,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
               onClick={() => setActiveCardIndex(item.idx)}
               className={`h-1.5 rounded-full transition-all cursor-pointer ${
                 activeCardIndex === item.idx
-                  ? isDark
-                    ? 'bg-white w-6'
-                    : 'bg-[#18181b] w-6'
+                  ? 'bg-[#FC4C01] w-6'
                   : isDark
                   ? 'bg-white/25 hover:bg-white/40 w-3.5'
                   : 'bg-[#18181b]/25 hover:bg-[#18181b]/50 w-3.5'
@@ -471,7 +483,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
             <button
               type="button"
               onClick={() => handleSelectPlan('spark')}
-              className="px-4 py-2 rounded-full text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-black shrink-0 cursor-pointer transition-all"
+              className="px-4 py-2 rounded-full text-xs font-bold bg-[#FC4C01] hover:bg-[#e04300] text-white shrink-0 cursor-pointer transition-all"
             >
               Unlock Spark ($3/mo)
             </button>
@@ -518,14 +530,10 @@ export const PricingModal: React.FC<PricingModalProps> = ({
               Active Plan & Daily Allowance
             </span>
             <span
-              className={`text-xs font-semibold px-3 py-1 rounded-full border ${
-                currentPlan === 'fire'
-                  ? 'bg-orange-500/15 text-orange-300 border-orange-500/30'
-                  : currentPlan === 'spark'
-                  ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
-                  : isDark
-                  ? 'bg-white/10 text-white border-white/15'
-                  : 'bg-[#f4f4f5] text-[#18181b] border-black/10'
+              className={`text-xs font-semibold px-3 py-1 rounded-full ${
+                currentPlan === 'fire' || currentPlan === 'spark'
+                  ? activeBadgeClass
+                  : neutralBadgeClass
               }`}
             >
               {currentPlan === 'fire'
@@ -556,7 +564,8 @@ export const PricingModal: React.FC<PricingModalProps> = ({
                   ? 'border-white/15 bg-white/[0.04] hover:bg-white/10 text-neutral-300'
                   : 'border-black/10 bg-[#fafafa] hover:bg-neutral-200 text-neutral-700'
               }`}
-              title="Sync quota ledger with server"
+              title="Refresh usage"
+              aria-label="Refresh usage"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isSyncingQuota ? 'animate-spin' : ''}`} />
             </button>
@@ -716,7 +725,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
               <button
                 type="button"
                 onClick={() => handleSelectPlan('fire')}
-                className="px-3.5 py-1.5 rounded-full text-xs font-bold bg-orange-500 text-white hover:bg-orange-400 cursor-pointer transition-all"
+                className="px-3.5 py-1.5 rounded-full text-xs font-bold bg-[#FC4C01] text-white hover:bg-[#e04300] cursor-pointer transition-all"
               >
                 Go Unlimited ($7)
               </button>
@@ -725,12 +734,12 @@ export const PricingModal: React.FC<PricingModalProps> = ({
         )}
       </div>
 
-      {/* 3 Pricing Cards: Free ($0), Spark ($3), Fire ($7) */}
+      {/* 3 Pricing Cards: Free ($0), Spark ($3), Fire ($7) — Uniform 2-badge system & flex-1 aligned layout */}
       <div className="grid grid-cols-1 md:grid-cols-3 max-w-6xl mx-auto gap-6 items-stretch mb-10">
         {/* ==================== CARD 0: FREE PLAN ($0) ==================== */}
         <div
           onClick={() => setActiveCardIndex(0)}
-          className={`relative rounded-[28px] p-6 sm:p-7 flex flex-col justify-between transition-all border-[2px] shadow-xl ${
+          className={`relative rounded-[28px] p-6 sm:p-7 flex flex-col transition-all border-[2px] shadow-xl ${
             isDark ? 'bg-[#141418] text-white' : 'bg-white text-[#18181b]'
           } ${
             currentPlan === 'free'
@@ -740,104 +749,85 @@ export const PricingModal: React.FC<PricingModalProps> = ({
               : 'border-black/10 hover:border-black/20'
           }`}
         >
-          <div className="flex items-start justify-between gap-2 mb-3">
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-xl font-bold tracking-tight">Free Tier</h2>
-                <span
-                  className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border uppercase tracking-wider ${
-                    isDark
-                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                      : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                  }`}
-                >
-                  Starter
-                </span>
-              </div>
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl font-bold tracking-tight">Free Tier</h2>
+              <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider ${neutralBadgeClass}`}>
+                Starter
+              </span>
             </div>
             <div
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold ${
-                currentPlan === 'free'
-                  ? 'bg-[#FC4C01] text-white'
-                  : isDark
-                  ? 'bg-white/10 text-white'
-                  : 'bg-neutral-100 text-[#18181b] border border-black/10'
+              className={`inline-flex items-center px-3 py-1 rounded-full text-[11px] font-bold ${
+                currentPlan === 'free' ? activeBadgeClass : neutralBadgeClass
               }`}
             >
               <span>{currentPlan === 'free' ? 'Active Plan' : 'Free'}</span>
             </div>
           </div>
 
-          <div>
-            <div className="flex items-baseline gap-2.5 mt-1 mb-3">
-              <span className="text-4xl sm:text-5xl font-bold tracking-tight tabular-nums">
-                $0
-              </span>
-              <div
-                className={`text-[11px] leading-tight ${
-                  isDark ? 'text-neutral-400' : 'text-neutral-500'
-                }`}
-              >
-                <div>forever free</div>
-                <div>no credit card</div>
-              </div>
-            </div>
-
-            <p
-              className={`text-xs leading-relaxed mb-5 ${
-                isDark ? 'text-neutral-400' : 'text-neutral-600'
-              }`}
-            >
-              Get started with <strong>5 daily chats</strong>, <strong>3 file uploads</strong>,{' '}
-              <strong>3 deep research runs</strong>, and <strong>5 PDF study sessions</strong> on
-              our free default and MoonMath vision models.
-            </p>
-
-            <div
-              className={`border-b border-dashed mb-5 ${
-                isDark ? 'border-white/15' : 'border-black/15'
-              }`}
-            />
-
-            <ul className="space-y-3 mb-7">
-              {freeFeatures.map((feat, i) => (
-                <li key={i} className="flex items-center gap-3 text-xs">
-                  {feat.included ? (
-                    <span
-                      className={`size-5 rounded-full flex items-center justify-center shrink-0 ${
-                        isDark
-                          ? 'bg-white/20 text-white'
-                          : 'bg-neutral-900 text-white'
-                      }`}
-                    >
-                      <Check className="w-3 h-3 stroke-[2.5]" />
-                    </span>
-                  ) : (
-                    <span
-                      className={`size-5 flex items-center justify-center shrink-0 ${
-                        isDark ? 'text-neutral-600' : 'text-neutral-400'
-                      }`}
-                    >
-                      <X className="w-3.5 h-3.5 stroke-[2]" />
-                    </span>
-                  )}
-                  <span
-                    className={
-                      feat.included
-                        ? 'font-medium'
-                        : isDark
-                        ? 'text-neutral-500'
-                        : 'text-neutral-400'
-                    }
-                  >
-                    {feat.text}
-                  </span>
-                </li>
-              ))}
-            </ul>
+          <div className="flex items-baseline gap-2.5 mt-1 mb-3 min-h-[48px]">
+            <span className="text-4xl sm:text-5xl font-bold tracking-tight tabular-nums">
+              $0
+            </span>
+            <span className={`text-xs font-medium ${isDark ? 'text-neutral-400' : 'text-neutral-600'}`}>
+              forever free · no credit card
+            </span>
           </div>
 
-          <div className="pt-2 flex justify-center">
+          <p
+            className={`text-xs leading-relaxed mb-5 min-h-[38px] ${
+              isDark ? 'text-neutral-400' : 'text-neutral-600'
+            }`}
+          >
+            Get started with <strong>5 daily chats</strong>, <strong>3 file uploads</strong>,{' '}
+            <strong>3 deep research runs</strong>, and <strong>5 PDF study sessions</strong> on
+            our free default and MoonMath vision models.
+          </p>
+
+          <div
+            className={`border-b border-dashed mb-5 ${
+              isDark ? 'border-white/15' : 'border-black/15'
+            }`}
+          />
+
+          <ul className="space-y-3 mb-7 flex-1">
+            {freeFeatures.map((feat, i) => (
+              <li key={i} className="flex items-center gap-3 text-xs">
+                {feat.included ? (
+                  <span
+                    className={`size-5 rounded-full flex items-center justify-center shrink-0 ${
+                      isDark
+                        ? 'bg-white/20 text-white'
+                        : 'bg-neutral-900 text-white'
+                    }`}
+                  >
+                    <Check className="w-3 h-3 stroke-[2.5]" />
+                  </span>
+                ) : (
+                  <span
+                    className={`size-5 flex items-center justify-center shrink-0 ${
+                      isDark ? 'text-neutral-600' : 'text-neutral-400'
+                    }`}
+                  >
+                    <X className="w-3.5 h-3.5 stroke-[2]" />
+                  </span>
+                )}
+                <span
+                  className={
+                    feat.included
+                      ? 'font-medium'
+                      : isDark
+                      ? 'text-neutral-500'
+                      : 'text-neutral-500'
+                  }
+                >
+                  {feat.text}
+                </span>
+              </li>
+            ))}
+          </ul>
+
+          <div className="pt-2 mt-auto flex justify-center">
             <button
               type="button"
               onClick={(e) => {
@@ -861,7 +851,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
         {/* ==================== CARD 1: SPARK PLAN ($3 USD) ==================== */}
         <div
           onClick={() => setActiveCardIndex(1)}
-          className={`relative rounded-[28px] p-6 sm:p-7 flex flex-col justify-between transition-all border-[2px] shadow-xl ${
+          className={`relative rounded-[28px] p-6 sm:p-7 flex flex-col transition-all border-[2px] shadow-xl ${
             isDark ? 'bg-[#18181b] text-white' : 'bg-white text-[#18181b]'
           } ${
             currentPlan === 'spark'
@@ -871,124 +861,86 @@ export const PricingModal: React.FC<PricingModalProps> = ({
               : 'border-black/15 hover:border-black/25'
           }`}
         >
-          {/* Top-Right Status Badge */}
-          <div className="flex items-start justify-between gap-2 mb-3">
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-xl font-bold tracking-tight">Spark</h2>
-                <span
-                  className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border uppercase tracking-wider ${
-                    isDark
-                      ? 'bg-amber-400/20 text-amber-300 border-amber-400/30'
-                      : 'bg-amber-50 text-amber-800 border-amber-200'
-                  }`}
-                >
-                  10x Limits
-                </span>
-              </div>
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl font-bold tracking-tight">Spark</h2>
+              <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider ${neutralBadgeClass}`}>
+                10x Limits
+              </span>
             </div>
             <div
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold ${
-                currentPlan === 'spark'
-                  ? 'bg-[#FC4C01] text-white'
-                  : isDark
-                  ? 'bg-white text-[#18181b]'
-                  : 'bg-[#18181b] text-white'
+              className={`inline-flex items-center px-3 py-1 rounded-full text-[11px] font-bold ${
+                currentPlan === 'spark' ? activeBadgeClass : neutralBadgeClass
               }`}
             >
               <span>{currentPlan === 'spark' ? 'Active Plan' : 'Most Popular'}</span>
-              <span
-                className={`size-1.5 rounded-full ${
-                  currentPlan === 'spark'
-                    ? 'bg-white'
-                    : isDark
-                    ? 'bg-[#18181b]'
-                    : 'bg-white'
-                }`}
-              />
             </div>
           </div>
 
-          <div>
-            {/* Price Block */}
-            <div className="flex items-baseline gap-2.5 mt-1 mb-3">
-              <span
-                className={`text-3xl sm:text-4xl font-semibold line-through decoration-2 tabular-nums ${
-                  isDark ? 'text-neutral-500' : 'text-neutral-400'
-                }`}
-              >
-                $7
-              </span>
-              <span className="text-4xl sm:text-5xl font-bold tracking-tight tabular-nums">
-                {billingCycle === 'annual' ? '$2.40' : '$3'}
-              </span>
-              <div
-                className={`text-[11px] leading-tight ${
-                  isDark ? 'text-neutral-300' : 'text-neutral-500'
-                }`}
-              >
-                <div>/ month (USD)</div>
-                <div>{billingCycle === 'annual' ? '$29 billed yearly' : '$36 billed monthly'}</div>
-              </div>
-            </div>
+          <div className="flex items-baseline gap-2.5 mt-1 mb-3 min-h-[48px]">
+            <span className="text-4xl sm:text-5xl font-bold tracking-tight tabular-nums">
+              {billingCycle === 'annual' ? `$${LEGAL_CONFIG.SPARK_YEARLY_PRICE_USD}/yr` : '$3/mo'}
+            </span>
+            <span className={`text-xs font-medium ${isDark ? 'text-neutral-300' : 'text-neutral-600'}`}>
+              {billingCycle === 'annual'
+                ? `(≈$${LEGAL_CONFIG.SPARK_YEARLY_MONTHLY_EQUIV_USD}/mo)`
+                : '· billed monthly'}
+            </span>
+          </div>
 
-            <p
-              className={`text-xs leading-relaxed mb-5 ${
-                isDark ? 'text-neutral-300' : 'text-neutral-600'
-              }`}
-            >
-              The high-volume daily research plan with <strong>10x increased quotas</strong> across
-              file uploads, prompts, and autonomous research.
-            </p>
+          <p
+            className={`text-xs leading-relaxed mb-5 min-h-[38px] ${
+              isDark ? 'text-neutral-300' : 'text-neutral-600'
+            }`}
+          >
+            The high-volume daily research plan with <strong>10x increased quotas</strong> across
+            file uploads, prompts, and autonomous research.
+          </p>
 
-            {/* Separator */}
-            <div
-              className={`border-b border-dashed mb-5 ${
-                isDark ? 'border-white/20' : 'border-black/15'
-              }`}
-            />
+          <div
+            className={`border-b border-dashed mb-5 ${
+              isDark ? 'border-white/20' : 'border-black/15'
+            }`}
+          />
 
-            {/* Feature Checklist */}
-            <ul className="space-y-3 mb-7">
-              {sparkFeatures.map((feat, i) => (
-                <li key={i} className="flex items-center gap-3 text-xs">
-                  {feat.included ? (
-                    <span
-                      className={`size-5 rounded-full flex items-center justify-center shrink-0 ${
-                        isDark
-                          ? 'bg-white text-[#18181b]'
-                          : 'bg-[#18181b] text-white'
-                      }`}
-                    >
-                      <Check className="w-3 h-3 stroke-[2.5]" />
-                    </span>
-                  ) : (
-                    <span
-                      className={`size-5 flex items-center justify-center shrink-0 ${
-                        isDark ? 'text-neutral-500' : 'text-neutral-400'
-                      }`}
-                    >
-                      <X className="w-3.5 h-3.5 stroke-[2]" />
-                    </span>
-                  )}
+          <ul className="space-y-3 mb-7 flex-1">
+            {sparkFeatures.map((feat, i) => (
+              <li key={i} className="flex items-center gap-3 text-xs">
+                {feat.included ? (
                   <span
-                    className={
-                      feat.included
-                        ? 'font-medium'
-                        : isDark
-                        ? 'text-neutral-500'
-                        : 'text-neutral-400'
-                    }
+                    className={`size-5 rounded-full flex items-center justify-center shrink-0 ${
+                      isDark
+                        ? 'bg-white text-[#18181b]'
+                        : 'bg-[#18181b] text-white'
+                    }`}
                   >
-                    {feat.text}
+                    <Check className="w-3 h-3 stroke-[2.5]" />
                   </span>
-                </li>
-              ))}
-            </ul>
-          </div>
+                ) : (
+                  <span
+                    className={`size-5 flex items-center justify-center shrink-0 ${
+                      isDark ? 'text-neutral-500' : 'text-neutral-400'
+                    }`}
+                  >
+                    <X className="w-3.5 h-3.5 stroke-[2]" />
+                  </span>
+                )}
+                <span
+                  className={
+                    feat.included
+                      ? 'font-medium'
+                      : isDark
+                      ? 'text-neutral-500'
+                      : 'text-neutral-500'
+                  }
+                >
+                  {feat.text}
+                </span>
+              </li>
+            ))}
+          </ul>
 
-          {/* Bottom CTA Button */}
-          <div className="pt-2 flex justify-center">
+          <div className="pt-2 mt-auto flex justify-center">
             <button
               type="button"
               onClick={(e) => {
@@ -1012,94 +964,70 @@ export const PricingModal: React.FC<PricingModalProps> = ({
         {/* ==================== CARD 2: FIRE PLAN ($7 USD) ==================== */}
         <div
           onClick={() => setActiveCardIndex(2)}
-          className={`relative rounded-[28px] p-6 sm:p-7 flex flex-col justify-between transition-all border-[2px] shadow-xl ${
+          className={`relative rounded-[28px] p-6 sm:p-7 flex flex-col transition-all border-[2px] shadow-xl ${
             isDark ? 'bg-[#18181b] text-white' : 'bg-white text-[#18181b]'
           } ${
             currentPlan === 'fire'
               ? 'border-[#FC4C01] ring-4 ring-[#FC4C01]/20'
               : isDark
-              ? 'border-[#FC4C01]/40 hover:border-[#FC4C01]/70'
+              ? 'border-white/25 hover:border-white/35'
               : 'border-black/15 hover:border-black/25'
           }`}
         >
-          {/* Top-Right Pro Badge */}
-          <div className="flex items-start justify-between gap-2 mb-3">
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-xl font-bold tracking-tight">Fire</h2>
-                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-[#FC4C01]/15 text-[#FC4C01] border border-[#FC4C01]/30 uppercase tracking-wider">
-                  Unlimited
-                </span>
-              </div>
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl font-bold tracking-tight">Fire</h2>
+              <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider ${neutralBadgeClass}`}>
+                Unlimited
+              </span>
             </div>
             <div
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold ${
-                currentPlan === 'fire'
-                  ? 'bg-[#FC4C01] text-white'
-                  : isDark
-                  ? 'bg-white/10 text-white border border-white/15'
-                  : 'bg-[#f4f4f5] border border-black/10 text-[#18181b]'
+              className={`inline-flex items-center px-3 py-1 rounded-full text-[11px] font-bold ${
+                currentPlan === 'fire' ? activeBadgeClass : neutralBadgeClass
               }`}
             >
               <span>{currentPlan === 'fire' ? 'Active Plan' : 'Flagship'}</span>
-              <span className="size-1.5 rounded-full bg-[#FC4C01]" />
             </div>
           </div>
 
-          <div>
-            {/* Price Block */}
-            <div className="flex items-baseline gap-2.5 mt-1 mb-3">
-              <span
-                className={`text-3xl sm:text-4xl font-semibold line-through decoration-2 tabular-nums ${
-                  isDark ? 'text-neutral-500' : 'text-neutral-400'
-                }`}
-              >
-                $12
-              </span>
-              <span className="text-4xl sm:text-5xl font-bold tracking-tight tabular-nums">
-                {billingCycle === 'annual' ? '$5.60' : '$7'}
-              </span>
-              <div
-                className={`text-[11px] leading-tight ${
-                  isDark ? 'text-neutral-300' : 'text-[#52525b]'
-                }`}
-              >
-                <div>/ month (USD)</div>
-                <div>{billingCycle === 'annual' ? '$67 billed yearly' : '$84 billed monthly'}</div>
-              </div>
-            </div>
-
-            <p
-              className={`text-xs leading-relaxed mb-5 ${
-                isDark ? 'text-neutral-300' : 'text-[#52525b]'
-              }`}
-            >
-              Maximize research performance with unlimited file uploads, all flagship Opus 5.5,
-              GPT-6.1 Sol &amp; Astra models, and dedicated multi-agent compute.
-            </p>
-
-            {/* Separator */}
-            <div
-              className={`border-b border-dashed mb-5 ${
-                isDark ? 'border-white/20' : 'border-black/15'
-              }`}
-            />
-
-            {/* Feature Checklist */}
-            <ul className="space-y-3 mb-7">
-              {fireFeatures.map((feat, i) => (
-                <li key={i} className="flex items-center gap-3 text-xs">
-                  <span className="size-5 rounded-full bg-[#FC4C01] text-white flex items-center justify-center shrink-0">
-                    <Check className="w-3 h-3 stroke-[2.5]" />
-                  </span>
-                  <span className="font-medium">{feat.text}</span>
-                </li>
-              ))}
-            </ul>
+          <div className="flex items-baseline gap-2.5 mt-1 mb-3 min-h-[48px]">
+            <span className="text-4xl sm:text-5xl font-bold tracking-tight tabular-nums">
+              {billingCycle === 'annual' ? `$${LEGAL_CONFIG.FIRE_YEARLY_PRICE_USD}/yr` : '$7/mo'}
+            </span>
+            <span className={`text-xs font-medium ${isDark ? 'text-neutral-300' : 'text-neutral-600'}`}>
+              {billingCycle === 'annual'
+                ? `(≈$${LEGAL_CONFIG.FIRE_YEARLY_MONTHLY_EQUIV_USD}/mo)`
+                : '· billed monthly'}
+            </span>
           </div>
 
-          {/* Bottom Pill CTA Button */}
-          <div className="pt-2 flex justify-center">
+          <p
+            className={`text-xs leading-relaxed mb-5 min-h-[38px] ${
+              isDark ? 'text-neutral-300' : 'text-neutral-600'
+            }`}
+          >
+            Maximize research performance with unlimited file uploads, all flagship Opus 5.5,
+            GPT-6.1 Sol &amp; Astra models, and dedicated multi-agent compute.
+          </p>
+
+          <div
+            className={`border-b border-dashed mb-5 ${
+              isDark ? 'border-white/20' : 'border-black/15'
+            }`}
+          />
+
+          <ul className="space-y-3 mb-7 flex-1">
+            {fireFeatures.map((feat, i) => (
+              <li key={i} className="flex items-center gap-3 text-xs">
+                <span className="size-5 rounded-full bg-[#FC4C01] text-white flex items-center justify-center shrink-0">
+                  <Check className="w-3 h-3 stroke-[2.5]" />
+                </span>
+                <span className="font-medium">{feat.text}</span>
+              </li>
+            ))}
+          </ul>
+
+          <div className="pt-2 mt-auto flex justify-center">
             <button
               type="button"
               onClick={(e) => {

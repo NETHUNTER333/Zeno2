@@ -470,79 +470,91 @@ export const StreakModal: React.FC<StreakModalProps> = ({
 
         {/* Navigation Tabs */}
         <div
+          role="tablist"
+          aria-label="Streak and rewards sections"
           className={`px-4 sm:px-5 pt-3 border-b flex items-center gap-3 sm:gap-4 overflow-x-auto scrollbar-none text-xs ${
             isDark ? 'border-white/10' : 'border-black/10'
           }`}
         >
-          <button
-            type="button"
-            onClick={() => setActiveTab('calendar')}
-            className={`pb-2.5 font-medium border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-              activeTab === 'calendar'
-                ? 'border-[#FC4C01] text-[#FC4C01]'
-                : isDark
-                ? 'border-transparent text-neutral-400 hover:text-white'
-                : 'border-transparent text-neutral-500 hover:text-black'
-            }`}
-          >
-            <CalendarIcon className="w-3.5 h-3.5" />
-            <span>Streak Calendar</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('badges')}
-            className={`pb-2.5 font-medium border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-              activeTab === 'badges'
-                ? 'border-[#FC4C01] text-[#FC4C01]'
-                : isDark
-                ? 'border-transparent text-neutral-400 hover:text-white'
-                : 'border-transparent text-neutral-500 hover:text-black'
-            }`}
-          >
-            <Award className="w-3.5 h-3.5" />
-            <span>Badges ({unlockedBadgesCount}/{badges.length})</span>
-            {unclaimedBadgesCount > 0 && (
-              <span className="px-1.5 py-0.2 rounded text-[10px] font-mono tabular-nums bg-[#FC4C01] text-white">
-                {unclaimedBadgesCount}
-              </span>
-            )}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('milestones')}
-            className={`pb-2.5 font-medium border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-              activeTab === 'milestones'
-                ? 'border-[#FC4C01] text-[#FC4C01]'
-                : isDark
-                ? 'border-transparent text-neutral-400 hover:text-white'
-                : 'border-transparent text-neutral-500 hover:text-black'
-            }`}
-          >
-            <Trophy className="w-3.5 h-3.5" />
-            <span>Milestones</span>
-            {unclaimedCount > 0 && (
-              <span className="px-1.5 py-0.2 rounded text-[10px] font-mono tabular-nums bg-[#FC4C01] text-white">
-                {unclaimedCount}
-              </span>
-            )}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('protection')}
-            className={`pb-2.5 font-medium border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-              activeTab === 'protection'
-                ? 'border-[#FC4C01] text-[#FC4C01]'
-                : isDark
-                ? 'border-transparent text-neutral-400 hover:text-white'
-                : 'border-transparent text-neutral-500 hover:text-black'
-            }`}
-          >
-            <Shield className="w-3.5 h-3.5" />
-            <span>Shield & Goals</span>
-          </button>
+          {(
+            [
+              {
+                id: 'calendar' as const,
+                icon: <CalendarIcon className="w-3.5 h-3.5" />,
+                label: 'Streak Calendar',
+                badgeCount: 0,
+              },
+              {
+                id: 'badges' as const,
+                icon: <Award className="w-3.5 h-3.5" />,
+                label: `Badges (${unlockedBadgesCount}/${badges.length})`,
+                badgeCount: unclaimedBadgesCount,
+              },
+              {
+                id: 'milestones' as const,
+                icon: <Trophy className="w-3.5 h-3.5" />,
+                label: 'Milestones',
+                badgeCount: unclaimedCount,
+              },
+              {
+                id: 'protection' as const,
+                icon: <Shield className="w-3.5 h-3.5" />,
+                label: 'Shield & Goals',
+                badgeCount: 0,
+              },
+            ] as const
+          ).map((tItem, idx, arr) => {
+            const isSelected = activeTab === tItem.id;
+            return (
+              <button
+                key={tItem.id}
+                id={`streak-tab-${tItem.id}`}
+                type="button"
+                role="tab"
+                aria-selected={isSelected}
+                aria-controls={`streak-tabpanel-${tItem.id}`}
+                tabIndex={isSelected ? 0 : -1}
+                onClick={() => setActiveTab(tItem.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    const next = arr[(idx + 1) % arr.length];
+                    setActiveTab(next.id);
+                    document.getElementById(`streak-tab-${next.id}`)?.focus();
+                  } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    const prev = arr[(idx - 1 + arr.length) % arr.length];
+                    setActiveTab(prev.id);
+                    document.getElementById(`streak-tab-${prev.id}`)?.focus();
+                  } else if (e.key === 'Home') {
+                    e.preventDefault();
+                    setActiveTab(arr[0].id);
+                    document.getElementById(`streak-tab-${arr[0].id}`)?.focus();
+                  } else if (e.key === 'End') {
+                    e.preventDefault();
+                    const last = arr[arr.length - 1];
+                    setActiveTab(last.id);
+                    document.getElementById(`streak-tab-${last.id}`)?.focus();
+                  }
+                }}
+                className={`pb-2.5 font-medium border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                  isSelected
+                    ? 'border-[#FC4C01] text-[#FC4C01]'
+                    : isDark
+                    ? 'border-transparent text-neutral-400 hover:text-white'
+                    : 'border-transparent text-neutral-500 hover:text-black'
+                }`}
+              >
+                {tItem.icon}
+                <span>{tItem.label}</span>
+                {tItem.badgeCount > 0 && (
+                  <span className="px-1.5 py-0.2 rounded text-[10px] font-mono tabular-nums bg-[#FC4C01] text-white">
+                    {tItem.badgeCount}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
 
         {/* Status Toast Banner */}
@@ -558,6 +570,8 @@ export const StreakModal: React.FC<StreakModalProps> = ({
             <button
               type="button"
               onClick={() => setStatusBanner(null)}
+              aria-label="Dismiss status message"
+              title="Dismiss status message"
               className="opacity-70 hover:opacity-100 cursor-pointer"
             >
               <X className="w-3.5 h-3.5" />
@@ -566,7 +580,12 @@ export const StreakModal: React.FC<StreakModalProps> = ({
         )}
 
         {/* Body Content */}
-        <div className="p-4 sm:p-5 overflow-y-auto slim-scrollbar flex-1 space-y-4">
+        <div
+          id={`streak-tabpanel-${activeTab}`}
+          role="tabpanel"
+          aria-labelledby={`streak-tab-${activeTab}`}
+          className="p-4 sm:p-5 overflow-y-auto slim-scrollbar flex-1 space-y-4"
+        >
           {activeTab === 'calendar' && (
             <>
               {/* Month Navigation Header */}
@@ -612,6 +631,7 @@ export const StreakModal: React.FC<StreakModalProps> = ({
                         : 'border-black/10 hover:bg-black/[0.04] text-neutral-700'
                     }`}
                     title="Previous month"
+                    aria-label="Previous month"
                   >
                     <ChevronLeft className="w-3.5 h-3.5" />
                   </button>
@@ -624,6 +644,7 @@ export const StreakModal: React.FC<StreakModalProps> = ({
                         : 'border-black/10 hover:bg-black/[0.04] text-neutral-700'
                     }`}
                     title="Next month"
+                    aria-label="Next month"
                   >
                     <ChevronRight className="w-3.5 h-3.5" />
                   </button>

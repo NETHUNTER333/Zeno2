@@ -1039,7 +1039,7 @@ export const UserAccountStore = {
     };
     this.saveSubscription(sub);
 
-    // Sync upgraded tier to Firestore and backend quota ledger
+    // Sync upgraded tier to Firestore and backend usage counters
     const currentUsage = this.getUsage();
     syncUserDailyQuotaToFirestore({
       plan,
@@ -1189,7 +1189,7 @@ export const UserAccountStore = {
         this.applyServerQuotaSnapshot(firestoreQuota, false);
       }
 
-      // 2. Sync monotonic counters with backend server quota ledger (/api/quota/sync)
+      // 2. Sync monotonic counters with backend server usage counters (/api/quota/sync)
       const latestUsage = this.getUsage();
       const latestPlan = this.getNormalizedPlan();
       const headers = await getAuthHeaders();

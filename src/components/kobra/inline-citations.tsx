@@ -33,7 +33,7 @@ export const InlineCitation: React.FC<InlineCitationProps> = ({
         onClick={() => {
           window.dispatchEvent(
             new CustomEvent('zeno-highlight-source', {
-              detail: { index, active: true },
+              detail: { index, active: true, scroll: true },
             })
           );
           const cardEl = document.getElementById(`source-card-${index}`);
@@ -55,7 +55,7 @@ export const InlineCitation: React.FC<InlineCitationProps> = ({
             })
           );
         }}
-        aria-label={`Highlight source ${index}`}
+        aria-label={`Source ${index}`}
         className="inline-flex whitespace-nowrap items-center justify-center h-4.5 min-w-[18px] px-1.5 rounded-full text-[10px] font-mono font-bold align-super mx-0.5 cursor-pointer transition-colors bg-[#FC4C01]/10 text-[#FC4C01] border border-[#FC4C01]/30 hover:bg-[#FC4C01] hover:text-white"
       >
         [{index}]
@@ -102,7 +102,7 @@ export const InlineCitation: React.FC<InlineCitationProps> = ({
           e.stopPropagation();
           window.dispatchEvent(
             new CustomEvent('zeno-highlight-source', {
-              detail: { url: source.url, index, active: true },
+              detail: { url: source.url, index, active: true, scroll: true },
             })
           );
         }}
@@ -111,8 +111,8 @@ export const InlineCitation: React.FC<InlineCitationProps> = ({
             ? 'bg-[#1e1e24] border-white/20 text-neutral-100 hover:bg-[#FC4C01]/20 hover:text-[#FC4C01] hover:border-[#FC4C01]/50'
             : 'bg-neutral-100 border-neutral-300 text-neutral-950 hover:bg-[#FC4C01]/15 hover:text-[#FC4C01] hover:border-[#FC4C01]/50'
         }`}
-        title={`Citation [${index}]: ${source.title}`}
-        aria-label={`Citation ${index}: ${source.title}`}
+        title={`Source ${index}: ${source.title}`}
+        aria-label={`Source ${index}: ${source.title}`}
       >
         {index}
       </a>

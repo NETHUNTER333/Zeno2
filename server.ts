@@ -58,7 +58,9 @@ import {
   callTregEndpointReliable,
   extractUrlSafely,
   fallbackPublicWebSearchWithStatus,
+  isBiomedicalOrLifeScienceQuery,
   isBoilerplateOrJunkSearchResult,
+  scoreSourceRelevanceToQuery,
   searchScholarlyLiterature,
   searchWebReliable,
   type SearchExecutionOutcome,
@@ -81,7 +83,9 @@ import {
   writeStaticSeoAndLegalAssets,
   resolveServerLegalDocId,
   isKnownSpaClientRoute,
+  resolveSpaClientRouteMeta,
   renderPrerenderedLegalHtml,
+  renderPrerenderedSpaRouteHtml,
   renderPrerendered404Html,
   moderateUserPromptSafety,
   moderateUploadedAttachment,
@@ -5993,9 +5997,10 @@ function resolveCoreTopic(
     /\b(this|these|that|those)\s+(week|month|year|morning|afternoon|evening|night|weekend|quarter|season|century|decade|time|moment|point|days?|hours?)\b/gi,
     ' '
   );
-  const hasFollowUpPronoun = /\b(it|its|they|them|their|he|him|his|she|her|that\s+one|this\s+one|same\s+one)\b/i.test(
-    queryWithoutTemporalPhrases
-  );
+  const hasFollowUpPronoun =
+    /\b(which\s+one|which\s+of|what\s+about|how\s+about|it|its|they|them|their|he|him|his|she|her|that\s+one|this\s+one|same\s+one|of\s+these|of\s+those|among\s+them|between\s+them|the\s+first|the\s+second|the\s+last|why\s+is\s+that|how\s+does\s+that)\b/i.test(
+      queryWithoutTemporalPhrases
+    ) || /^(which|why|how\s+about|what\s+about|and\s+what|and\s+how|and\s+which)\b/i.test(userQuery.trim());
 
   // If the user uploaded an image/file and asked a generic question like "Analyze this image", use the OCR/attachment topic
   const isGenericAttachmentPrompt =
@@ -6006,7 +6011,7 @@ function resolveCoreTopic(
     return attachmentExtractedTopic.split(/\s+/).slice(0, 8).join(' ').slice(0, 65);
   }
 
-  // If currentTopic already has >= 2 meaningful words and no explicit third-person pronoun reference,
+  // If currentTopic already has >= 2 meaningful words and no follow-up reference,
   // it is a self-contained query (e.g., "What happened in AI news this week?") — NEVER bleed priorTopic!
   if (currentTopicWords.length >= 2 && !hasFollowUpPronoun) {
     return currentTopic;
@@ -6019,7 +6024,7 @@ function resolveCoreTopic(
     if (!m || !m.content) continue;
     if (m.role === 'user') {
       const candidate = extractTopicFromText(m.content);
-      if (candidate.length >= 3 && !/^(much|many|cost|price|how|what|why|when|where|who)$/i.test(candidate)) {
+      if (candidate.length >= 3 && !/^(much|many|cost|price|how|what|why|when|where|who|one)$/i.test(candidate)) {
         priorTopic = candidate;
         break;
       }
@@ -6031,14 +6036,15 @@ function resolveCoreTopic(
     return fallback.split(/\s+/).slice(0, 8).join(' ').slice(0, 65);
   }
 
-  // Only combine priorTopic when the current query is a short follow-up (<= 2 topic words) with an explicit pronoun ("How much does it cost?", "When was he born?")
+  // Combine priorTopic with current follow-up intent (e.g. "AI news this week" + "which one matters most for developers?" -> "AI news this week matters most developers")
   if (
     hasFollowUpPronoun &&
-    currentTopicWords.length <= 2 &&
+    currentTopicWords.length <= 5 &&
     priorTopic &&
     !currentTopic.toLowerCase().includes(priorTopic.toLowerCase())
   ) {
-    return `${priorTopic} ${currentTopic}`.split(/\s+/).slice(0, 10).join(' ').slice(0, 70).trim();
+    const cleanedCurrent = currentTopic.replace(/\b(one|ones)\b/gi, '').replace(/\s+/g, ' ').trim();
+    return `${priorTopic} ${cleanedCurrent}`.split(/\s+/).slice(0, 10).join(' ').slice(0, 75).trim();
   }
 
   return currentTopic;
@@ -7285,20 +7291,31 @@ app.post('/api/search/live', async (req, res) => {
 
     await Promise.allSettled(tasks);
 
-    const filteredLiveSources = liveSources.filter(
-      (s) => !isBoilerplateOrJunkSearchResult(s, userQuery)
-    );
+    const filteredLiveSources = liveSources.filter((s) => {
+      if (isBoilerplateOrJunkSearchResult(s, userQuery)) return false;
+      if (isResearchMode) {
+        return scoreSourceRelevanceToQuery(s, userQuery) >= 1.5;
+      }
+      return scoreSourceRelevanceToQuery(s, userQuery) >= 0;
+    });
+
+    if (isResearchMode) {
+      filteredLiveSources.sort(
+        (a, b) => scoreSourceRelevanceToQuery(b, userQuery) - scoreSourceRelevanceToQuery(a, userQuery)
+      );
+    }
+
     const xSources = filteredLiveSources.filter((s) => s.domain === 'x.com');
     const webSources = filteredLiveSources.filter((s) => s.domain !== 'x.com');
     const balancedSources =
-      xSources.length > 0 && webSources.length > 0
+      !isResearchMode && xSources.length > 0 && webSources.length > 0
         ? [...webSources.slice(0, 4), ...xSources.slice(0, 2), ...webSources.slice(4)]
         : filteredLiveSources;
 
     return res.json({
       success: true,
       sources: balancedSources
-        .slice(0, isResearchMode ? 12 : 6)
+        .slice(0, isResearchMode ? 10 : 6)
         .map((s, i) => ({ ...s, position: i + 1 })),
     });
   } catch (err: any) {
@@ -9993,7 +10010,7 @@ app.post('/api/chat', async (req, res) => {
       pinnedInsights,
       clientClock,
     } = req.body || {};
-    const webSearch = true;
+    const webSearch = rawWebSearch !== false;
     const messages = validation.messages;
     const requestStart = Date.now();
     const lastUserMessage = [...messages].reverse().find((m) => m.role === 'user');
@@ -10338,9 +10355,10 @@ ${transcriptSnippet
       Boolean(personCandidate) &&
       (hasExplicitPersonaIntent || (candidateWordCount >= 1 && candidateWordCount <= 4 && wantsImage));
 
-    // Run live web search only for substantive informational queries (never on conversational, currency, math, or clock queries)
+    // Run live web search only for substantive informational queries when webSearch is enabled
     const isCurrencyQ = isCurrencyQuery(userQuery);
     const shouldRunWebSearch =
+      webSearch &&
       !shouldSkipSearchForConversational &&
       !isClockQuery &&
       !shouldSkipSearchForAttachment &&
@@ -10438,14 +10456,25 @@ ${transcriptSnippet
           (async () => {
             try {
               const searchStartTime = Date.now();
+              const explicitSearchQuery =
+                typeof req.body?.searchQuery === 'string' && req.body.searchQuery.trim().length > 2
+                  ? req.body.searchQuery.trim()
+                  : '';
               const effectiveSearchQuery = directGithubIntel
                 ? `${directGithubIntel.repoCard.fullName} github`
+                : explicitSearchQuery
+                ? explicitSearchQuery
                 : isPureCodeOrMath
                 ? normalizeCodingPromptText(coreTopic || userQuery)
                 : coreTopic;
+              const isEffectiveNews =
+                searchMode === 'news' ||
+                /\b(news|headlines|happened|this\s+week|today'?s\s+news|latest\s+news|breaking)\b/i.test(
+                  effectiveSearchQuery
+                );
               const outcome = await searchWebReliable(
                 effectiveSearchQuery,
-                searchMode === 'news' ? 'news' : 'organic',
+                isEffectiveNews ? 'news' : 'organic',
                 Boolean(nsfwMode),
                 abortController.signal
               );
@@ -12093,6 +12122,22 @@ if (!isTest) {
           return res.status(404).end(req.method === 'HEAD' ? undefined : notFoundHtml);
         }
 
+        // Serve route-specific title & meta description for known SPA client routes (/study, /study/*, /discover, /research, /pricing, /r/*, etc.) with HTTP 200
+        const spaRouteMeta = resolveSpaClientRouteMeta(req.path);
+        if (
+          (req.method === 'GET' || req.method === 'HEAD') &&
+          spaRouteMeta &&
+          req.path !== '/' &&
+          req.path !== '/index.html' &&
+          viteInstance
+        ) {
+          const rawHtml = fs.readFileSync(path.resolve(__dirname, 'index.html'), 'utf8');
+          const transformed = await viteInstance.transformIndexHtml(req.originalUrl, rawHtml);
+          const prerenderedSpa = renderPrerenderedSpaRouteHtml(transformed, req.path);
+          res.setHeader('Content-Type', 'text/html; charset=utf-8');
+          return res.status(200).end(req.method === 'HEAD' ? undefined : prerenderedSpa);
+        }
+
         if (
           req.method === 'GET' &&
           (req.path === '/' || req.path === '/index.html') &&
@@ -12135,9 +12180,10 @@ if (!isTest) {
           res.setHeader('Content-Type', 'text/html; charset=utf-8');
           return res.status(404).send(notFoundHtml);
         }
+        const spaHtml = renderPrerenderedSpaRouteHtml(rawHtml, req.path);
         const requestUrl = `${req.protocol}://${req.get('host') || 'zeno0x.vercel.app'}${req.originalUrl}`;
         const enriched = injectSocialMetaIntoHtml(
-          rawHtml,
+          spaHtml,
           req.query as Record<string, unknown>,
           requestUrl
         );

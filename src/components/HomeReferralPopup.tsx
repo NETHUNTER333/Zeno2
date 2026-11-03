@@ -139,8 +139,8 @@ export const HomeReferralPopup: React.FC<HomeReferralPopupProps> = ({ theme = 'd
           <button
             type="button"
             onClick={handleDismiss}
-            title="Remove notification popup"
-            aria-label="Remove notification popup"
+            title="Close referral tracker"
+            aria-label="Close referral tracker"
             className={`p-1 rounded-lg transition-colors cursor-pointer shrink-0 ${
               isDark
                 ? 'text-neutral-400 hover:text-white hover:bg-white/10'

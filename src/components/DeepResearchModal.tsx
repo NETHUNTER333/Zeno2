@@ -38,8 +38,374 @@ import {
   AnswerSource,
 } from '../lib/deepResearchHistoryStore';
 import { MathMarkdown } from './MathMarkdown';
+import { openZenoReportModal } from './LegalAndInfoPages';
+import { Flag } from 'lucide-react';
 
 export { type AnswerSource };
+
+const RESEARCH_STOP_WORDS = new Set([
+  'the', 'and', 'for', 'with', 'from', 'that', 'this', 'what', 'which', 'when',
+  'where', 'who', 'whom', 'whose', 'why', 'how', 'are', 'was', 'were', 'been',
+  'being', 'have', 'has', 'had', 'having', 'does', 'did', 'doing', 'can', 'could',
+  'should', 'would', 'may', 'might', 'must', 'shall', 'will', 'about', 'into',
+  'through', 'during', 'before', 'after', 'above', 'below', 'between', 'under',
+  'again', 'further', 'then', 'once', 'here', 'there', 'all', 'any', 'both',
+  'each', 'few', 'more', 'most', 'other', 'some', 'such', 'only', 'own', 'same',
+  'than', 'too', 'very', 'just', 'best', 'top', 'new', 'latest', 'good', 'better',
+  'review', 'guide', 'overview', 'comparison', 'compare', 'vs', 'versus',
+]);
+
+function isBiomedicalResearchQuery(query: string): boolean {
+  const q = String(query || '').toLowerCase();
+  return /\b(clinical|medical|medicine|patient|patients|disease|syndrome|therapy|therapeutic|treatment|drug|pharmacology|pharmacokinetic|dosage|dose|symptom|diagnosis|diagnostic|prognosis|pathology|oncology|cancer|tumor|tumour|cardiac|cardiovascular|neurology|neurological|brain|psychiatric|diabetes|insulin|metabolic|metabolism|immune|immunology|vaccine|infection|viral|bacteria|bacterial|surgery|surgical|hospital|physician|doctor|nursing|pediatric|prenatal|pregnancy|fetal|genetics|genomic|dna|rna|protein|peptide|enzyme|receptor|biomarker|cell|cellular|mortality|morbidity|epidemiology|cohort|randomized|placebo|trial|pubmed|medline|biomedical|anatomy|physiology|gut|microbiome|vitamin|supplement|longevity|aging|sleep|circadian)\b/i.test(
+    q
+  );
+}
+
+const OFF_TOPIC_ACADEMIC_PATTERNS = [
+  /\bprenatal\s+diagnosis\b/i,
+  /\bclinical[-\s]data\b/i,
+  /\belectronic\s+health\s+record/i,
+  /\bfinancial\s+time[-\s]series\b/i,
+  /\btime[-\s]series\s+forecasting\b/i,
+  /\btext2sparql\b/i,
+  /\bsparql[-\s]?llm\b/i,
+  /\bsemeval[-\s]?\d*\s*task\b/i,
+  /\bnarrative\s+similarity\b/i,
+  /\bpatient\s+outcomes?\b/i,
+  /\brandomized\s+controlled\s+trial\b/i,
+];
+
+function extractMeaningfulTerms(text: string): string[] {
+  return String(text || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9.+_-]+/g, ' ')
+    .split(/\s+/)
+    .map((t) => t.replace(/^[._-]+|[._-]+$/g, ''))
+    .filter((t) => t.length >= 2 && !RESEARCH_STOP_WORDS.has(t) && !/^(19|20)\d{2}$/.test(t));
+}
+
+function expandQueryConcepts(query: string): string[] {
+  const q = query.toLowerCase();
+  const extra: string[] = [];
+  if (/\b(llm|llms|large language model|language models)\b/.test(q)) {
+    extra.push('llm', 'llms', 'language model', 'llama', 'mistral', 'qwen', 'deepseek', 'gemma', 'phi', 'mixtral', 'open-weight', 'open-source', 'weights', 'benchmark', 'mmlu', 'humaneval', 'gsm8k');
+  }
+  if (/\b(open[-\s]?source|open[-\s]?weight|local)\b/.test(q)) {
+    extra.push('open-source', 'open source', 'open-weight', 'open weights', 'apache', 'mit license', 'huggingface', 'ollama', 'vllm', 'llama', 'qwen', 'deepseek', 'mistral', 'gemma');
+  }
+  return extra;
+}
+
+function scoreResearchSourceRelevance(
+  source: { title?: string; snippet?: string; url?: string; domain?: string },
+  query: string
+): number {
+  const title = String(source.title || '').toLowerCase();
+  const snippet = String(source.snippet || '').toLowerCase();
+  const url = String(source.url || '').toLowerCase();
+  const domain = String(source.domain || '').toLowerCase();
+  const combined = `${title} ${snippet} ${url}`;
+
+  const isBioQuery = isBiomedicalResearchQuery(query);
+
+  // Immediately reject biomedical databases and off-topic clinical/SPARQL/time-series/SemEval papers for non-biomedical queries
+  if (!isBioQuery) {
+    if (
+      domain.includes('europepmc.org') ||
+      domain.includes('ncbi.nlm.nih.gov') ||
+      domain.includes('pubmed') ||
+      domain.includes('medline') ||
+      url.includes('europepmc.org') ||
+      url.includes('ncbi.nlm.nih.gov/pmc') ||
+      url.includes('pubmed.ncbi.nlm.nih.gov')
+    ) {
+      return -10;
+    }
+    for (const pat of OFF_TOPIC_ACADEMIC_PATTERNS) {
+      if (pat.test(combined) && !pat.test(query.toLowerCase())) {
+        return -10;
+      }
+    }
+    if (
+      /\b(clinical|patient|patients|hospital|medical|prenatal|fetal|oncology|cardiology|pathology|surgery|disease|diagnosis|therapy)\b/i.test(
+        title
+      )
+    ) {
+      return -8;
+    }
+  }
+
+  const coreTerms = extractMeaningfulTerms(query);
+  if (coreTerms.length === 0) return 1;
+
+  let score = 0;
+  let matchedTerms = 0;
+
+  for (const term of coreTerms) {
+    const variants = [term];
+    if (term.endsWith('s') && term.length > 3) variants.push(term.slice(0, -1));
+    if (term === 'llm' || term === 'llms') variants.push('language model', 'large language model');
+    if (term === 'open-source') variants.push('open source', 'open-weight', 'open weight');
+
+    const inTitle = variants.some((v) => title.includes(v));
+    const inSnippet = variants.some((v) => snippet.includes(v));
+    const inUrl = variants.some((v) => url.includes(v));
+
+    if (inTitle) {
+      score += 3.0;
+      matchedTerms++;
+    } else if (inSnippet) {
+      score += 1.5;
+      matchedTerms++;
+    } else if (inUrl) {
+      score += 1.0;
+      matchedTerms++;
+    }
+  }
+
+  const expanded = expandQueryConcepts(query);
+  let expandedMatches = 0;
+  for (const concept of expanded) {
+    if (title.includes(concept)) {
+      score += 1.2;
+      expandedMatches++;
+    } else if (snippet.includes(concept)) {
+      score += 0.6;
+      expandedMatches++;
+    }
+  }
+
+  // Require at least 2 core terms (or 1 core term + expanded domain concepts)
+  const minRequired = coreTerms.length >= 2 ? 2 : 1;
+  if (matchedTerms < minRequired && !(matchedTerms >= 1 && expandedMatches >= 2)) {
+    return 0;
+  }
+
+  // Penalize narrow domain-specific academic papers when query is a general landscape/best-of query
+  if (
+    /\b(best|top|comparison|vs|versus|guide|benchmark|leaderboard)\b/i.test(query) &&
+    (domain.includes('arxiv.org') || domain.includes('doi.org')) &&
+    !/\b(survey|benchmark|leaderboard|overview|evaluation|comparison|llama|qwen|deepseek|mistral|open-source|open-weight)\b/i.test(
+      title
+    )
+  ) {
+    score -= 2.5;
+  }
+
+  return score;
+}
+
+function filterRelevantResearchSources(query: string, rawSources: SearchSource[]): SearchSource[] {
+  const seenUrls = new Set<string>();
+  const scored: Array<{ source: SearchSource; score: number }> = [];
+
+  for (const s of rawSources) {
+    if (!s || !s.url || isClientBoilerplateSource(s)) continue;
+    const normUrl = s.url.trim().replace(/\/+$/, '');
+    if (seenUrls.has(normUrl)) continue;
+    seenUrls.add(normUrl);
+
+    const score = scoreResearchSourceRelevance(s, query);
+    if (score >= 2.2) {
+      scored.push({ source: s, score });
+    }
+  }
+
+  scored.sort((a, b) => b.score - a.score);
+  // Never pad up to 12 sources; return only genuinely relevant sources
+  return scored.slice(0, 10).map((item) => item.source);
+}
+
+/**
+ * Post-generation Citation Mapping & Verification Stage:
+ * 1. Verifies that each inline citation [k] in a sentence is entailed/supported by source k's title/snippet/domain.
+ * 2. Remaps mismatched citations to the highest-scoring supporting source in candidateSources, or removes unsupported citations.
+ * 3. Drops any candidate sources that are never cited in the final report (Rule 4).
+ * 4. Renumbers cited sources sequentially [1]..[M] in order of first appearance in the report text.
+ */
+function verifyAndCompactResearchCitations(
+  rawMarkdown: string,
+  candidateSources: AnswerSource[],
+  query: string
+): { verifiedText: string; finalSources: AnswerSource[] } {
+  if (!rawMarkdown || candidateSources.length === 0) {
+    return {
+      verifiedText: rawMarkdown.replace(/\s*\[\d+(?:,\s*\d+)*\]/g, ''),
+      finalSources: [],
+    };
+  }
+
+  const sourceById = new Map<number, AnswerSource>();
+  for (const s of candidateSources) {
+    sourceById.set(s.id, s);
+  }
+
+  const scoreSourceSupportForClaim = (source: AnswerSource, claimText: string): number => {
+    const sText = `${source.title || ''} ${source.snippet || ''} ${source.name || ''} ${source.domain || ''}`.toLowerCase();
+    const claimLower = claimText.toLowerCase();
+    const claimTerms = extractMeaningfulTerms(claimText);
+    if (claimTerms.length === 0) return 1;
+
+    let score = 0;
+    for (const term of claimTerms) {
+      if (sText.includes(term)) {
+        score += term.length >= 5 ? 2.0 : 1.0;
+      }
+    }
+
+    // Specific model / benchmark entity checks so claims about Llama, Mistral, Qwen, DeepSeek, Gemma, MMLU, GSM8K, HumanEval match sources that discuss them or LLMs
+    const specificEntities = [
+      'llama', 'mistral', 'mixtral', 'qwen', 'deepseek', 'gemma', 'phi-3', 'phi-4', 'falcon', 'yi-',
+      'mmlu', 'gsm8k', 'humaneval', 'swe-bench', 'math', 'gpqa', 'coding', 'ollama', 'vllm', 'huggingface',
+    ];
+    for (const ent of specificEntities) {
+      if (claimLower.includes(ent)) {
+        if (sText.includes(ent)) {
+          score += 3.5;
+        } else if (/\b(llm|llms|language model|open-source|open source|open-weight|benchmark|ai model|coding)\b/i.test(sText)) {
+          score += 1.2;
+        }
+      }
+    }
+
+    // Also reward baseline relevance of the source to the user query
+    const queryRel = scoreResearchSourceRelevance(source, query);
+    if (queryRel > 0) {
+      score += Math.min(2.0, queryRel * 0.25);
+    } else {
+      score -= 10;
+    }
+
+    return score;
+  };
+
+  // Process line by line to inspect sentences/rows containing [1] or [1, 2]
+  const lines = rawMarkdown.split('\n');
+  const verifiedLines = lines.map((line) => {
+    if (!/\[\d+(?:,\s*\d+)*\]/.test(line)) return line;
+
+    return line.replace(/\[(\d+(?:,\s*\d+)*)\]/g, (_fullMatch, idListStr: string, offset: number) => {
+      // Extract local sentence/clause context around this citation
+      const windowStart = Math.max(0, offset - 220);
+      const windowEnd = Math.min(line.length, offset + 80);
+      const claimContext = line.slice(windowStart, windowEnd).replace(/\[\d+(?:,\s*\d+)*\]/g, ' ');
+
+      const rawIds = idListStr
+        .split(',')
+        .map((n) => parseInt(n.trim(), 10))
+        .filter((n) => !isNaN(n));
+
+      const validatedIds: number[] = [];
+
+      for (const id of rawIds) {
+        const citedSource = sourceById.get(id);
+        const currentSupport = citedSource ? scoreSourceSupportForClaim(citedSource, claimContext) : -10;
+
+        if (citedSource && currentSupport >= 1.5) {
+          if (!validatedIds.includes(id)) validatedIds.push(id);
+        } else {
+          // Find best supporting source across candidateSources
+          let bestSource: AnswerSource | null = null;
+          let bestScore = 1.5;
+          for (const candidate of candidateSources) {
+            const s = scoreSourceSupportForClaim(candidate, claimContext);
+            if (s > bestScore) {
+              bestScore = s;
+              bestSource = candidate;
+            }
+          }
+          if (bestSource && !validatedIds.includes(bestSource.id)) {
+            validatedIds.push(bestSource.id);
+          }
+        }
+      }
+
+      if (validatedIds.length === 0) {
+        return '';
+      }
+      return `[${validatedIds.join(',')}]`;
+    });
+  });
+
+  let intermediateText = verifiedLines.join('\n').replace(/  +\./g, '.');
+
+  // Collect cited source IDs in order of first appearance
+  const oldIdToNewId = new Map<number, number>();
+  const orderedSources: AnswerSource[] = [];
+
+  const citationScanRegex = /\[(\d+(?:,\s*\d+)*)\]/g;
+  let match: RegExpExecArray | null;
+  while ((match = citationScanRegex.exec(intermediateText)) !== null) {
+    const ids = match[1]
+      .split(',')
+      .map((n) => parseInt(n.trim(), 10))
+      .filter((n) => !isNaN(n));
+    for (const oldId of ids) {
+      if (!oldIdToNewId.has(oldId)) {
+        const src = sourceById.get(oldId);
+        if (src) {
+          const newId = orderedSources.length + 1;
+          oldIdToNewId.set(oldId, newId);
+          orderedSources.push({ ...src, id: newId });
+        }
+      }
+    }
+  }
+
+  // If the model failed to output any inline citations despite having relevant sources,
+  // attach verified citations to the first paragraphs that match a candidate source.
+  if (orderedSources.length === 0 && candidateSources.length > 0) {
+    const paraBlocks = intermediateText.split('\n\n');
+    const usedIds = new Set<number>();
+    const patchedBlocks = paraBlocks.map((block) => {
+      const trimmed = block.trim();
+      if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('|') || trimmed.startsWith('```')) {
+        return block;
+      }
+      let bestCandidate: AnswerSource | null = null;
+      let bestScore = 1.5;
+      for (const c of candidateSources) {
+        if (usedIds.has(c.id)) continue;
+        const sc = scoreSourceSupportForClaim(c, trimmed);
+        if (sc > bestScore) {
+          bestScore = sc;
+          bestCandidate = c;
+        }
+      }
+      if (bestCandidate) {
+        usedIds.add(bestCandidate.id);
+        const newId = orderedSources.length + 1;
+        oldIdToNewId.set(bestCandidate.id, newId);
+        orderedSources.push({ ...bestCandidate, id: newId });
+        return `${block.replace(/([.!?])\s*$/, '')} [${newId}].`;
+      }
+      return block;
+    });
+    return {
+      verifiedText: patchedBlocks.join('\n\n'),
+      finalSources: orderedSources,
+    };
+  }
+
+  // Rewrite all [oldId] occurrences to [newId] in order of first appearance
+  const renumberedText = intermediateText.replace(/\[(\d+(?:,\s*\d+)*)\]/g, (_m, idListStr: string) => {
+    const newIds: number[] = [];
+    for (const part of idListStr.split(',')) {
+      const oldId = parseInt(part.trim(), 10);
+      const mapped = oldIdToNewId.get(oldId);
+      if (mapped && !newIds.includes(mapped)) {
+        newIds.push(mapped);
+      }
+    }
+    return newIds.length > 0 ? `[${newIds.join(',')}]` : '';
+  });
+
+  return {
+    verifiedText: renumberedText,
+    finalSources: orderedSources,
+  };
+}
 
 export interface DeepResearchModalProps {
   isOpen: boolean;
@@ -462,20 +828,50 @@ export const DeepResearchModal: React.FC<DeepResearchModalProps> = ({
       const authHeaders = await getAuthHeaders();
 
       // 1. Live Web & Scholarly Search specifically for this question
-      const searchRes = await callApi('/api/search/live', {
-        method: 'POST',
-        headers: authHeaders,
-        signal: controller.signal,
-        body: JSON.stringify({
-          query: cleanQ,
-          searchMode: activeSearchMode === 'news' ? 'news' : 'organic',
-          isResearchMode: true,
-        }),
-      }).then((r) => r.json());
+      // Rewrite follow-ups with conversation topic so retrieval stays on-topic
+      const baseTopic = turns.length > 0 ? turns[0].question : '';
+      const effectiveSearchQuery =
+        isFollowUp && baseTopic && !cleanQ.toLowerCase().includes(baseTopic.toLowerCase().slice(0, 18))
+          ? `${baseTopic} — ${cleanQ}`
+          : cleanQ;
 
-      const rawSources: SearchSource[] = (Array.isArray(searchRes?.sources) ? searchRes.sources : [])
-        .filter((s: SearchSource) => !isClientBoilerplateSource(s))
-        .slice(0, 18);
+      const isBioQuery = isBiomedicalResearchQuery(effectiveSearchQuery);
+
+      // Fetch organic web results + (if biomedical) scholarly results in parallel, then strictly filter by relevance
+      const [organicRes, researchRes] = await Promise.all([
+        callApi('/api/search/live', {
+          method: 'POST',
+          headers: authHeaders,
+          signal: controller.signal,
+          body: JSON.stringify({
+            query: effectiveSearchQuery,
+            searchMode: activeSearchMode === 'news' ? 'news' : 'organic',
+            isResearchMode: false,
+          }),
+        })
+          .then((r) => r.json())
+          .catch(() => ({ sources: [] })),
+        callApi('/api/search/live', {
+          method: 'POST',
+          headers: authHeaders,
+          signal: controller.signal,
+          body: JSON.stringify({
+            query: effectiveSearchQuery,
+            searchMode: activeSearchMode === 'news' ? 'news' : 'organic',
+            isResearchMode: isBioQuery,
+          }),
+        })
+          .then((r) => r.json())
+          .catch(() => ({ sources: [] })),
+      ]);
+
+      const combinedCandidates: SearchSource[] = [
+        ...(Array.isArray(organicRes?.sources) ? organicRes.sources : []),
+        ...(Array.isArray(researchRes?.sources) ? researchRes.sources : []),
+      ];
+
+      // Filter retrieved sources by relevance BEFORE indexing (drop off-topic papers, never pad to 12)
+      const rawSources: SearchSource[] = filterRelevantResearchSources(effectiveSearchQuery, combinedCandidates);
 
       let mappedSources: AnswerSource[] = rawSources.map((s, idx) => {
         const domain =
@@ -506,8 +902,12 @@ export const DeepResearchModal: React.FC<DeepResearchModalProps> = ({
         prev.map((t) => (t.id === turnId ? { ...t, sources: mappedSources } : t))
       );
 
+      // Lock citation IDs [1]..[N] to their extracted source passages
       const sourceContext = mappedSources
-        .map((s) => `[${s.id}] ${s.name} (${s.domain}) — ${s.title}\n${s.snippet ? `Summary: ${s.snippet}` : ''}`)
+        .map(
+          (s) =>
+            `SOURCE [${s.id}]\nTitle: ${s.title}\nPublisher/Domain: ${s.name} (${s.domain})\nURL: ${s.url}\nExtracted Passage: ${s.snippet || s.title}`
+        )
         .join('\n\n');
 
       // Build conversation messages for conversational research chat
@@ -516,31 +916,37 @@ export const DeepResearchModal: React.FC<DeepResearchModalProps> = ({
         { role: 'assistant', content: t.fullAnswer },
       ]).flat();
 
+      const lockedGroundingBlock = sourceContext
+        ? `\n<locked_grounding_sources>\n${sourceContext}\n</locked_grounding_sources>\n\nSTRICT CITATION LOCKING RULES:\n1. Each source above has a locked ID from [1] to [${mappedSources.length}].\n2. Cite ONLY a source ID [k] when SOURCE [k]'s Extracted Passage or Title directly supports the specific model, benchmark, metric, or claim in that sentence.\n3. NEVER cite an ID that does not discuss the claim in that sentence, and NEVER invent citation numbers outside [1]..[${mappedSources.length}].\n4. Place citations at the end of the supported clause or sentence like [1] or [1,2].`
+        : `\nNo external web sources matched the relevance threshold. Answer accurately without inline [N] citation markers.`;
+
       const researchSystemPrompt = isFollowUp
         ? `You are an expert research investigator continuing an ongoing deep research investigation.
 The user is asking a follow-up question to delve deeper: "${cleanQ}".
 
 CORE DIRECTIVES:
-- Answer the follow-up inquiry comprehensively with deep factual evidence, quantitative data, and biological/mechanistic or architectural rigor.
+- Answer the follow-up inquiry comprehensively with deep factual evidence, quantitative data, and architectural/mechanistic rigor.
 - Seamlessly build upon the findings, mechanisms, and metrics previously established in this research thread.
-- Ground key factual statements, dosages, data points, and mechanisms using inline citations like [1], [2], or [1,3] matching the Grounding Sources provided.
-- Format with clean Markdown headings (e.g. ## Mechanism Details, ## Comparative Evidence, ## Thresholds & Limitations), clear paragraphs, and markdown tables when comparing figures.
+- Ground factual statements, data points, and benchmarks using ONLY the locked inline citation IDs [1]..[${mappedSources.length}] whose passage directly supports that sentence.
+- Format with clean Markdown headings (e.g. ## Key Findings, ## Comparative Benchmarks, ## Trade-offs & Recommendations), clear paragraphs, and markdown tables when comparing figures.
 - DO NOT output fake boilerplate badges (NO "Peer-Reviewed Standard" or "Academic Research Paper · Systematic Review").
 - NEVER echo prompt instructions or start with raw markdown hashtags in title text.
-
-${sourceContext ? `Grounding Sources for this follow-up inquiry:\n${sourceContext}\n` : ''}`
+${lockedGroundingBlock}`
         : `You are an expert research investigator conducting a rigorous, exhaustive deep research synthesis on: "${cleanQ}".
 
 CORE DIRECTIVES:
 - Provide an in-depth, authoritative, comprehensive research report answering the inquiry with high factual depth.
-- Ground factual findings, quantitative thresholds, mechanisms, and empirical outcomes with inline citations like [1], [2], or [1,3] matching the Grounding Sources.
-- Organize logically with clean Markdown headings tailored specifically to the subject (e.g. ## Core Mechanisms & Biochemical Pathways, ## Clinical & Empirical Evidence, ## Quantitative Thresholds & Cohorts, ## Practical Recommendations & Safety Limits).
+- Ground factual findings, model comparisons, benchmarks, quantitative thresholds, and empirical outcomes using ONLY the locked inline citation IDs [1]..[${mappedSources.length}] whose passage directly supports that sentence.
+- Organize logically with clean Markdown headings tailored specifically to the subject.
 - Present key comparative metrics or benchmarks in clean Markdown tables.
 - DO NOT output fake boilerplate badges or canned header cards (NO "Peer-Reviewed Standard", NO "Academic Research Paper · Systematic Review").
 - DO NOT output bloated abstract boxes. Provide crisp, clear executive summaries and direct deep analysis.
 - NEVER echo prompt instructions or leave raw markdown symbols.
+${lockedGroundingBlock}`;
 
-${sourceContext ? `Grounding Sources:\n${sourceContext}\n` : ''}`;
+      const userTurnContent = sourceContext
+        ? `${cleanQ}\n\nUse ONLY these locked sources for inline [1]..[${mappedSources.length}] citations (cite only IDs whose passage directly supports the sentence):\n\n${sourceContext}`
+        : cleanQ;
 
       const chatResp = await callApi('/api/chat', {
         method: 'POST',
@@ -548,48 +954,16 @@ ${sourceContext ? `Grounding Sources:\n${sourceContext}\n` : ''}`;
         signal: controller.signal,
         body: JSON.stringify({
           systemPrompt: researchSystemPrompt,
-          messages: [...priorMessages, { role: 'user', content: cleanQ }],
-          webSearch: true,
+          messages: [...priorMessages, { role: 'user', content: userTurnContent }],
+          webSearch: false,
           searchMode: activeSearchMode === 'news' ? 'news' : 'organic',
           model: activeModel?.geminiModel || selectedModelId || 'zro/deepseek-v4.1-flash',
-          isResearchMode: true,
+          isResearchMode: false,
           maxTokens: 4096,
         }),
       });
 
       const chatData = await chatResp.json();
-
-      // Merge additional verified sources if initial list was small
-      if (Array.isArray(chatData?.sources) && chatData.sources.length > 0 && mappedSources.length < 4) {
-        const extraClean = (chatData.sources as SearchSource[])
-          .filter((s) => !isClientBoilerplateSource(s) && !mappedSources.some((m) => m.url === s.url));
-        if (extraClean.length > 0) {
-          const merged = [...rawSources, ...extraClean].slice(0, 18);
-          mappedSources = merged.map((s, idx) => {
-            const domain =
-              s.domain ||
-              (() => {
-                try {
-                  return new URL(s.url).hostname.replace(/^www\./, '');
-                } catch {
-                  return 'web.source';
-                }
-              })();
-            return {
-              id: idx + 1,
-              name: formatSourceShortName(domain, s.title),
-              title: s.title || domain,
-              url: s.url,
-              domain,
-              snippet: s.snippet,
-            };
-          });
-          setActiveSources(mappedSources);
-          setTurns((prev) =>
-            prev.map((t) => (t.id === turnId ? { ...t, sources: mappedSources } : t))
-          );
-        }
-      }
 
       const rawReply = String(chatData?.text || '')
         .replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '')
@@ -602,7 +976,16 @@ ${sourceContext ? `Grounding Sources:\n${sourceContext}\n` : ''}`;
       if (rawReply) {
         // Strip out any trailing ---FOLLOWUPS--- slop if present
         const [cleanAnswer] = rawReply.split(/---FOLLOWUPS---/i);
-        const trimmedAnswer = cleanAnswer.trim();
+        const rawTrimmedAnswer = cleanAnswer.trim();
+
+        // Stage 3/4 Post-Generation Verification & Citation Mapping:
+        // Verify each cited passage supports the sentence, remap or strip unsupported citations,
+        // drop uncited sources so uncited sources never get a number, and renumber sequentially [1]..[M].
+        const { verifiedText: trimmedAnswer, finalSources: verifiedSources } =
+          verifyAndCompactResearchCitations(rawTrimmedAnswer, mappedSources, effectiveSearchQuery);
+
+        mappedSources = verifiedSources;
+        setActiveSources(mappedSources);
 
         setStreamingFullText(trimmedAnswer);
         startWordStream(trimmedAnswer, turnId);
@@ -725,9 +1108,10 @@ ${sourceContext ? `Grounding Sources:\n${sourceContext}\n` : ''}`;
 
   // Render inline text with KaTeX math ($$...$$ only, never single-$ currency), **bold**, and [1] or [1,3] numbered citation chips
   const renderRichLine = (lineText: string, lineKey: string, turnSources: AnswerSource[]) => {
-    // Glue spaces before inline citations [1] with a non-breaking space so citation chips never wrap onto their own line
-    const gluedLine = lineText.replace(/(\S)[ \t]+(\[\d+(?:,\s*\d+)*\])/g, '$1\u00A0$2');
-    const parts = gluedLine.split(/(\$\$[^\$\n]+\$\$|\*\*[^*]+\*\*|\[\d+(?:,\s*\d+)*\])/g);
+    // Capture optional preceding non-whitespace word + citation [1] + optional trailing punctuation so chip never wraps alone
+    const parts = lineText.split(
+      /(\$\$[^\$\n]+\$\$|\*\*[^*]+\*\*|(?:\S+[ \t]+)?\[\d+(?:,\s*\d+)*\][.,;:]?)/g
+    );
 
     return parts.map((part, idx) => {
       if (!part) return null;
@@ -753,25 +1137,34 @@ ${sourceContext ? `Grounding Sources:\n${sourceContext}\n` : ''}`;
         );
       }
 
-      // Citation segment e.g. [1] or [1,3]
-      const citeMatch = part.match(/^\[(\d+(?:,\s*\d+)*)\]$/);
+      // Citation segment (with optional attached preceding word and trailing punctuation)
+      const citeMatch = part.match(/^(?:(\S+)[ \t]+)?\[(\d+(?:,\s*\d+)*)\]([.,;:]?)$/);
       if (citeMatch) {
-        const ids = citeMatch[1]
+        const leadingWord = citeMatch[1] || '';
+        const trailingPunct = citeMatch[3] || '';
+        const ids = citeMatch[2]
           .split(',')
           .map((n) => parseInt(n.trim(), 10))
           .filter((n) => !isNaN(n));
         const primarySource = turnSources.find((s) => s.id === ids[0]) || turnSources[0];
-        if (!primarySource) return null;
+        if (!primarySource) {
+          return (
+            <React.Fragment key={`${lineKey}-t-${idx}`}>
+              {leadingWord}
+              {trailingPunct}
+            </React.Fragment>
+          );
+        }
 
         const extraCount = ids.length > 1 ? ` +${ids.length - 1}` : '';
         const numberBadge = `[${ids.join(',')}]`;
-        const chipLabel = `${numberBadge} ${primarySource.name}${extraCount}`;
         const anchorKey = `${lineKey}-c-${idx}`;
         const isHighlighted = ids.some((id) => hoveredSourceIds.includes(id));
         const isPreviewOpen = activeChipPreview?.anchorKey === anchorKey;
 
         return (
-          <span key={anchorKey} className="relative inline-block whitespace-nowrap align-baseline mx-0.5">
+          <span key={anchorKey} className="inline whitespace-nowrap align-baseline">
+            {leadingWord ? `${leadingWord}\u00A0` : ''}
             <a
               href={primarySource.url}
               target="_blank"
@@ -803,8 +1196,8 @@ ${sourceContext ? `Grounding Sources:\n${sourceContext}\n` : ''}`;
                   cardEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
                 }
               }}
-              aria-label={`Source ${chipLabel}`}
-              className={`inline-flex whitespace-nowrap items-center gap-1 px-1.5 py-0.5 rounded text-[10.5px] font-medium leading-tight transition-all cursor-pointer !no-underline ${
+              aria-label={`Source ${primarySource.id}: ${primarySource.title}`}
+              className={`inline-flex whitespace-nowrap items-center gap-1 px-1.5 py-0.5 rounded text-[10.5px] font-medium leading-tight transition-all cursor-pointer !no-underline align-baseline ${
                 isHighlighted || isPreviewOpen
                   ? 'bg-[#FC4C01] text-white font-semibold ring-1 ring-[#FC4C01]'
                   : isDark
@@ -815,6 +1208,7 @@ ${sourceContext ? `Grounding Sources:\n${sourceContext}\n` : ''}`;
               <span className="font-mono font-bold text-[10px] opacity-85">{numberBadge}</span>
               <span className="whitespace-nowrap">{primarySource.name}{extraCount}</span>
             </a>
+            {trailingPunct}
           </span>
         );
       }
@@ -1088,7 +1482,7 @@ ${sourceContext ? `Grounding Sources:\n${sourceContext}\n` : ''}`;
                 >
                   {/* Modern Sleek User Inquiry Header (No Big Ass Number Circle) */}
                   <div className="mb-3">
-                    <div className="flex items-center gap-2 mb-1.5">
+                    <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
                       <span
                         className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10.5px] font-medium border backdrop-blur-md ${
                           isDark
@@ -1099,6 +1493,23 @@ ${sourceContext ? `Grounding Sources:\n${sourceContext}\n` : ''}`;
                         <Search className="w-2.5 h-2.5 opacity-70" />
                         <span>{tIdx === 0 ? 'Research Inquiry' : `Follow-up #${tIdx + 1}`}</span>
                       </span>
+
+                      {!isCurrentTurnSearching && !isCurrentTurnStreaming && (turn.durationSec || activeDurationSec) ? (
+                        <span
+                          data-testid="deep-research-elapsed-badge"
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-mono tabular-nums border ${
+                            isDark
+                              ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                              : 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                          }`}
+                        >
+                          <Clock className="w-3 h-3 shrink-0" />
+                          <span>
+                            Completed in {turn.durationSec || activeDurationSec}s · {turnSources.length}{' '}
+                            {turnSources.length === 1 ? 'source' : 'sources'}
+                          </span>
+                        </span>
+                      ) : null}
                     </div>
                     <h2
                       className={`text-base sm:text-[18px] font-semibold tracking-tight leading-snug ${
@@ -1673,12 +2084,34 @@ ${sourceContext ? `Grounding Sources:\n${sourceContext}\n` : ''}`;
                           >
                             <ThumbsDown className="w-2.5 h-2.5" />
                           </button>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              openZenoReportModal({
+                                targetType: 'ai_answer',
+                                targetId: turn.id,
+                                contentPreview: turn.fullAnswer.slice(0, 280),
+                              })
+                            }
+                            title="Report AI output"
+                            aria-label="Report AI output"
+                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-all cursor-pointer ${
+                              isDark
+                                ? 'border-white/[0.1] bg-white/[0.04] text-neutral-400 hover:text-white hover:bg-white/[0.08]'
+                                : 'border-black/[0.08] bg-black/[0.03] text-neutral-600 hover:text-black hover:bg-black/[0.06]'
+                            }`}
+                          >
+                            <Flag className="w-2.5 h-2.5" />
+                            <span>Report</span>
+                          </button>
                         </div>
                       </div>
 
-                      {turn.durationSec ? (
-                        <div className="text-[11px] tabular-nums opacity-60">
-                          Answered in {turn.durationSec}s
+                      {turn.durationSec || activeDurationSec ? (
+                        <div className="text-[11px] font-mono tabular-nums opacity-75">
+                          Completed in {turn.durationSec || activeDurationSec}s · {turnSources.length}{' '}
+                          {turnSources.length === 1 ? 'source' : 'sources'}
                         </div>
                       ) : null}
                     </div>

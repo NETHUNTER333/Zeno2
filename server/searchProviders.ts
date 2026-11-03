@@ -306,6 +306,138 @@ export function isBoilerplateOrJunkSearchResult(
  * Queries Europe PMC (PubMed / MEDLINE / PMC) and OpenAlex for peer-reviewed scientific,
  * clinical, biomedical, and technical papers with real PMIDs/DOIs, journals, and abstracts.
  */
+export function isBiomedicalOrLifeScienceQuery(query: string): boolean {
+  const q = String(query || '').toLowerCase();
+  const hasTechAiIntent =
+    /\b(open[\s-]*source\s+llms?|large\s+language\s+models?|llms?\s+in\s+202\d|llama|mistral|qwen|deepseek|gemma|claude|gpt|coding|programming|react|typescript|javascript|python|rust|kubernetes|docker|nextjs|vercel|benchmark|mmlu|humaneval|gsm8k|huggingface|ollama|vllm|gguf)\b/i.test(
+      q
+    );
+  const hasExplicitBioMedicalIntent =
+    /\b(medical|clinical|medicine|health|disease|patient|therapy|treatment|drug|pharmacology|vaccine|virus|bacteria|cancer|tumor|oncology|cardiology|neurology|psychiatry|anatomy|physiology|biology|biological|genetics|genomics|dna|rna|protein|cell|molecular|endocrine|hormone|steroid|epiphyseal|surgery|surgical|pathology|diagnosis|prenatal|fetal|pediatric|hospital|pubmed|biomedical|epidemiology|nutrition|metabolism|longevity|sleep|gut\s+microbiome)\b/i.test(
+      q
+    );
+  if (hasTechAiIntent && !hasExplicitBioMedicalIntent) {
+    return false;
+  }
+  return hasExplicitBioMedicalIntent;
+}
+
+export function scoreSourceRelevanceToQuery(
+  source: { title?: string; snippet?: string; url?: string; domain?: string },
+  query: string
+): number {
+  const q = String(query || '').toLowerCase().trim();
+  if (!q) return 1;
+
+  const title = String(source.title || '').toLowerCase();
+  const snippet = String(source.snippet || '').toLowerCase();
+  const domain = String(source.domain || '').toLowerCase();
+  const url = String(source.url || '').toLowerCase();
+  const combined = `${title} ${snippet} ${domain}`;
+
+  const isBioQuery = isBiomedicalOrLifeScienceQuery(q);
+  const isLlmOrTechQuery =
+    /\b(llm|llms|large\s+language\s+model|open[\s-]*source|llama|mistral|qwen|deepseek|gemma|coding|developer|programming|software|ai\s+model|benchmark)\b/i.test(
+      q
+    );
+
+  // Hard reject off-topic biomedical/clinical/prenatal papers when the query is not biomedical
+  if (!isBioQuery) {
+    if (
+      /\b(pubmed\.ncbi\.nlm\.nih\.gov|pmc\.ncbi\.nlm\.nih\.gov|europepmc\.org|medline)\b/i.test(
+        `${domain} ${url}`
+      )
+    ) {
+      return -10;
+    }
+    if (
+      /\b(prenatal\s+diagnosis|clinical\s+data|clinical\s+trial|patients?\s+with|medical\s+records|electronic\s+health\s+records|ehr|oncology|cardiovascular|maternal|fetal|pathology|disease\s+prognosis|hospitalized)\b/i.test(
+        combined
+      )
+    ) {
+      return -10;
+    }
+  }
+
+  // Hard reject ultra-narrow unrelated academic workshop tasks for general LLM queries
+  if (isLlmOrTechQuery) {
+    if (
+      !/\b(sparql|rdf|knowledge\s+graph)\b/i.test(q) &&
+      /\b(sparql|text2sparql|rdf\s+triple)\b/i.test(combined)
+    ) {
+      return -8;
+    }
+    if (
+      !/\b(semeval|narrative\s+similarity)\b/i.test(q) &&
+      /\b(semeval[\s-]*202\d|narrative\s+similarity)\b/i.test(combined)
+    ) {
+      return -8;
+    }
+    if (
+      !/\b(financial|finance|stock|forex|time[\s-]*series\s+forecasting|trading)\b/i.test(q) &&
+      /\b(financial\s+time[\s-]*series|stock\s+price\s+forecasting|portfolio\s+optimization)\b/i.test(
+        combined
+      )
+    ) {
+      return -8;
+    }
+  }
+
+  const stopWords = new Set([
+    'what', 'which', 'who', 'whom', 'whose', 'where', 'when', 'why', 'how',
+    'are', 'is', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had',
+    'do', 'does', 'did', 'the', 'and', 'for', 'with', 'from', 'into', 'about',
+    'that', 'this', 'these', 'those', 'best', 'top', 'most', 'more', 'some',
+    'in', 'on', 'at', 'to', 'of', 'by', 'as', 'an', 'a', 'or',
+  ]);
+
+  const rawTokens = q
+    .replace(/[^\w\s-]/g, ' ')
+    .split(/\s+/)
+    .map((t) => t.trim())
+    .filter((t) => t.length >= 2 && !stopWords.has(t));
+
+  if (rawTokens.length === 0) return 1;
+
+  let score = 0;
+  let matchedCoreTokens = 0;
+
+  for (const tok of rawTokens) {
+    const isYear = /^202\d$/.test(tok);
+    const inTitle = title.includes(tok);
+    const inSnippet = snippet.includes(tok);
+    const inDomain = domain.includes(tok);
+
+    if (inTitle) {
+      score += isYear ? 1.0 : 2.5;
+      if (!isYear) matchedCoreTokens += 1;
+    } else if (inSnippet || inDomain) {
+      score += isYear ? 0.5 : 1.2;
+      if (!isYear) matchedCoreTokens += 1;
+    }
+  }
+
+  if (/\b(open[\s-]*source)\b/i.test(q) && /\b(llm|llms|language\s+model)\b/i.test(q)) {
+    if (/\b(open[\s-]*source|open[\s-]*weight|local\s+llm)\b/i.test(combined)) {
+      score += 3.0;
+    }
+    if (
+      /\b(llama|mistral|mixtral|qwen|deepseek|gemma|phi[\s-]*[34]|yi|falcon|ollama|huggingface|vllm|mmlu|gsm8k|humaneval)\b/i.test(
+        combined
+      )
+    ) {
+      score += 2.5;
+    }
+  }
+
+  const nonYearTokens = rawTokens.filter((t) => !/^202\d$/.test(t));
+  if (nonYearTokens.length >= 2 && matchedCoreTokens === 0) {
+    return -5;
+  }
+
+  return score;
+}
+
 export async function searchScholarlyLiterature(
   query: string,
   maxResults = 10,
@@ -317,8 +449,11 @@ export async function searchScholarlyLiterature(
     .trim();
   if (!cleanQ) return [];
 
+  const allowBioMedical = isBiomedicalOrLifeScienceQuery(cleanQ);
+
   const fetchEuropePmc = async (): Promise<SearchResultItem[]> => {
     const items: SearchResultItem[] = [];
+    if (!allowBioMedical) return items;
     try {
       const epmcUrl = `https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=${encodeURIComponent(
         cleanQ
@@ -460,6 +595,7 @@ export async function searchScholarlyLiterature(
     for (const candidate of [epmcItems[i], oaItems[i]]) {
       if (!candidate) continue;
       if (isUnsolicitedNonEnglishResult(candidate, cleanQ)) continue;
+      if (scoreSourceRelevanceToQuery(candidate, cleanQ) < 2.0) continue;
       const normTitle = candidate.title.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 55);
       if (seenTitles.has(normTitle)) continue;
       seenTitles.add(normTitle);

@@ -59,6 +59,10 @@ export function buildSitemapXml(): string {
   const lastmod = LEGAL_CONFIG.EFFECTIVE_DATE_ISO;
   const urls = [
     { loc: `${base}/`, priority: '1.0', changefreq: 'daily' },
+    { loc: `${base}/study`, priority: '0.95', changefreq: 'daily' },
+    { loc: `${base}/discover`, priority: '0.9', changefreq: 'daily' },
+    { loc: `${base}/research`, priority: '0.9', changefreq: 'weekly' },
+    { loc: `${base}/pricing`, priority: '0.85', changefreq: 'monthly' },
     { loc: `${base}/legal`, priority: '0.9', changefreq: 'monthly' },
     { loc: `${base}/terms`, priority: '0.9', changefreq: 'monthly' },
     { loc: `${base}/privacy`, priority: '0.9', changefreq: 'monthly' },
@@ -89,6 +93,13 @@ ${entries}
 export function buildRobotsTxt(): string {
   return `User-agent: *
 Allow: /
+Allow: /study
+Allow: /discover
+Allow: /research
+Allow: /pricing
+Allow: /r/
+Allow: /share/
+Allow: /p/
 Allow: /legal
 Allow: /terms
 Allow: /privacy
@@ -143,23 +154,100 @@ export function resolveServerLegalDocId(pathname: string): LegalDocId | null {
   return null;
 }
 
+export interface SpaRouteMeta {
+  title: string;
+  description: string;
+  canonicalPath: string;
+}
+
+export function resolveSpaClientRouteMeta(pathname: string): SpaRouteMeta | null {
+  const clean = (pathname || '/').replace(/\/+$/, '').toLowerCase() || '/';
+
+  if (clean === '/' || clean === '/index.html') {
+    return {
+      title: 'Zeno — AI Search, Deep Research & YouTube Study Workspace',
+      description:
+        'Real-time AI search, multi-source Deep Research, and interactive YouTube Study Workspace with flashcards, quizzes, and mind maps.',
+      canonicalPath: '/',
+    };
+  }
+  if (clean === '/study' || clean.startsWith('/study/')) {
+    return {
+      title: 'YouTube Study Workspace · Zeno',
+      description:
+        'Turn any YouTube lecture or educational video into interactive timestamped transcripts, flashcards, quizzes, summaries, and mind maps on Zeno.',
+      canonicalPath: '/study',
+    };
+  }
+  if (clean === '/discover' || clean.startsWith('/discover/')) {
+    return {
+      title: 'Discover Research & Open-Source Code · Zeno',
+      description:
+        'Explore live ArXiv papers, open-source GitHub repositories, and community study sets on Zeno.',
+      canonicalPath: '/discover',
+    };
+  }
+  if (clean === '/research' || clean.startsWith('/research/')) {
+    return {
+      title: 'Deep Research Synthesis · Zeno',
+      description:
+        'Conduct multi-source deep research with verified inline citations and comparative evidence tables on Zeno.',
+      canonicalPath: '/research',
+    };
+  }
+  if (clean === '/pricing') {
+    return {
+      title: 'Plans & Pricing · Zeno',
+      description:
+        'Compare Zeno Free, Spark ($3/mo), and Fire ($7/mo) plans with a 7-day refund guarantee.',
+      canonicalPath: '/pricing',
+    };
+  }
+  if (clean === '/account' || clean === '/settings') {
+    return {
+      title: 'Account & Workspace Settings · Zeno',
+      description:
+        'Manage your Zeno account, subscription plan, usage limits, referrals, and privacy controls.',
+      canonicalPath: clean,
+    };
+  }
+  if (clean === '/login' || clean === '/signup') {
+    return {
+      title: 'Sign In · Zeno',
+      description:
+        'Sign in or create a Zeno account to sync your chats, YouTube study sets, flashcards, and deep research.',
+      canonicalPath: clean,
+    };
+  }
+  if (clean.startsWith('/r/') || clean.startsWith('/invite/')) {
+    return {
+      title: 'Invite to Zeno · AI Research & Study Workspace',
+      description:
+        'Join Zeno with this referral invite link to access live AI search, Deep Research, and the YouTube Study Workspace.',
+      canonicalPath: '/',
+    };
+  }
+  if (
+    clean === '/chat' ||
+    clean.startsWith('/chat/') ||
+    clean.startsWith('/share/') ||
+    clean.startsWith('/p/')
+  ) {
+    return {
+      title: 'Shared Research & Study Session · Zeno',
+      description: 'View this shared AI research synthesis or study session on Zeno.',
+      canonicalPath: '/',
+    };
+  }
+  return null;
+}
+
 export function isKnownSpaClientRoute(pathname: string): boolean {
   const clean = (pathname || '/').replace(/\/+$/, '').toLowerCase() || '/';
+  if (resolveSpaClientRouteMeta(clean) !== null) {
+    return true;
+  }
   if (
-    clean === '/' ||
-    clean === '/index.html' ||
-    clean === '/login' ||
-    clean === '/signup' ||
-    clean === '/chat' ||
-    clean === '/study' ||
-    clean === '/pricing' ||
-    clean === '/discover' ||
-    clean === '/account' ||
-    clean === '/settings' ||
-    clean.startsWith('/r/') ||
-    clean.startsWith('/invite/') ||
-    clean.startsWith('/share/') ||
-    clean.startsWith('/p/') ||
     clean.startsWith('/src/') ||
     clean.startsWith('/@') ||
     clean.startsWith('/node_modules/') ||
@@ -168,6 +256,42 @@ export function isKnownSpaClientRoute(pathname: string): boolean {
     return true;
   }
   return false;
+}
+
+export function renderPrerenderedSpaRouteHtml(baseHtml: string, pathname: string): string {
+  const meta = resolveSpaClientRouteMeta(pathname) || {
+    title: 'Zeno — AI Search, Deep Research & YouTube Study Workspace',
+    description:
+      'Real-time AI search, multi-source Deep Research, and interactive YouTube Study Workspace with flashcards, quizzes, and mind maps.',
+    canonicalPath: '/',
+  };
+  const canonicalUrl = `${LEGAL_CONFIG.LIVE_SITE_URL}${meta.canonicalPath}`;
+
+  let html = baseHtml
+    .replace(/<title>[\s\S]*?<\/title>/i, `<title>${escapeHtml(meta.title)}</title>`)
+    .replace(
+      /<meta\s+name="description"\s+content="[^"]*"\s*\/?>/i,
+      `<meta name="description" content="${escapeHtml(meta.description)}" />`
+    )
+    .replace(
+      /<meta\s+property="og:title"\s+content="[^"]*"\s*\/?>/i,
+      `<meta property="og:title" content="${escapeHtml(meta.title)}" />`
+    )
+    .replace(
+      /<meta\s+property="og:description"\s+content="[^"]*"\s*\/?>/i,
+      `<meta property="og:description" content="${escapeHtml(meta.description)}" />`
+    );
+
+  const headExtras = `
+    <link rel="canonical" href="${escapeHtml(canonicalUrl)}" />
+    <meta property="og:url" content="${escapeHtml(canonicalUrl)}" />
+    <meta name="twitter:title" content="${escapeHtml(meta.title)}" />
+    <meta name="twitter:description" content="${escapeHtml(meta.description)}" />`;
+
+  if (html.includes('</head>')) {
+    html = html.replace('</head>', `${headExtras}\n  </head>`);
+  }
+  return html;
 }
 
 function renderSemanticPolicyBodyHtml(doc: PolicyDocument): string {
@@ -450,7 +574,7 @@ export function renderPrerendered404Html(baseHtml: string, requestedPath = '/'):
       <a href="/acceptable-use" style="color:#a1a1aa;text-decoration:none;">Acceptable Use</a> ·
       <a href="/cookies" style="color:#a1a1aa;text-decoration:none;">Cookies</a> ·
       <a href="/contact" style="color:#a1a1aa;text-decoration:none;">Contact</a> ·
-      © ${year} ${escapeHtml(LEGAL_CONFIG.OPERATOR_NAME)}
+      © ${year} ${escapeHtml(LEGAL_CONFIG.OPERATOR_NAME)}. All rights reserved.
     </footer>
   </div>`;
 
@@ -503,6 +627,27 @@ export function writeStaticSeoAndLegalAssets(rootDir: string): void {
           if (!fs.existsSync(subDir)) fs.mkdirSync(subDir, { recursive: true });
           fs.writeFileSync(path.join(subDir, 'index.html'), rendered, 'utf8');
         }
+
+        // Also prerender all known SPA routes into dist/ so Vercel static hosting serves HTTP 200 with route-specific <title> and meta description
+        const spaStaticRoutes = [
+          'study',
+          'discover',
+          'research',
+          'pricing',
+          'settings',
+          'account',
+          'login',
+          'signup',
+          'chat',
+        ];
+        for (const routeSlug of spaStaticRoutes) {
+          const renderedSpa = renderPrerenderedSpaRouteHtml(baseHtml, `/${routeSlug}`);
+          fs.writeFileSync(path.join(distDir, `${routeSlug}.html`), renderedSpa, 'utf8');
+          const subDir = path.join(distDir, routeSlug);
+          if (!fs.existsSync(subDir)) fs.mkdirSync(subDir, { recursive: true });
+          fs.writeFileSync(path.join(subDir, 'index.html'), renderedSpa, 'utf8');
+        }
+
         fs.writeFileSync(
           path.join(distDir, '404.html'),
           renderPrerendered404Html(baseHtml, '/404'),
