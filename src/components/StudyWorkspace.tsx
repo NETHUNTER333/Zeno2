@@ -53,7 +53,6 @@ import {
   extractTextFromPdfFile,
 } from '../lib/pdfStudyEngine';
 import { speakTextWithSmallestAi, stopSmallestSpeech } from '../lib/smallestAi';
-import { apiFetch } from '../lib/apiBase';
 import { UserAccountStore } from '../lib/userAccountStore';
 import { MathMarkdown } from './MathMarkdown';
 
@@ -605,7 +604,7 @@ export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
     setYtWebSearching(true);
     try {
       const authHeaders = await getAuthHeaders();
-      const res = await apiFetch('/api/study/youtube-search', {
+      const res = await fetch('/api/study/youtube-search', {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({ query: q, limit: 12 }),
@@ -643,7 +642,7 @@ Break down every key concept, explanation, example, and takeaway clearly:
 
 ${fullTranscriptText}`;
 
-      const res = await apiFetch('/api/study/ai-assistant', {
+      const res = await fetch('/api/study/ai-assistant', {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({
@@ -699,7 +698,7 @@ ${fullTranscriptText}`;
 
     try {
       const authHeaders = await getAuthHeaders();
-      const res = await apiFetch('/api/study/topic', {
+      const res = await fetch('/api/study/topic', {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({ query: cleanTopic }),
@@ -822,7 +821,7 @@ ${fullTranscriptText}`;
       const consolidated = consolidateTranscriptSegments([{ start_s: 0, duration_s: 0, text: t }]);
       setSegments(consolidated.length > 0 ? consolidated : [{ start_s: 0, duration_s: 0, text: t }]);
       const authHeaders = await getAuthHeaders();
-      const aiRes = await apiFetch('/api/youtube/study', {
+      const aiRes = await fetch('/api/youtube/study', {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({
@@ -858,13 +857,14 @@ ${fullTranscriptText}`;
     hintAuthor?: string,
     cachedTranscript?: YouTubeTranscriptSegment[]
   ) => {
+    const normVidId = extractYouTubeIdFromInput(targetVidId) || targetVidId.trim();
     const cleanHint = (hintTitle || '')
       .replace(/^YouTube Video\s*\((.+?)\)(?:\s*by\s*YouTube)?$/i, '$1')
       .trim();
 
     setViewMode('workspace');
     setSourceType('youtube');
-    setActiveVideoId(targetVidId);
+    setActiveVideoId(normVidId);
     setShowSourceViewer(true);
     setAutoPlayVideo(true);
     setTopicVideos([]);
@@ -879,7 +879,7 @@ ${fullTranscriptText}`;
     setRevealedDontKnowMap({});
 
     let title =
-      cleanHint && cleanHint !== targetVidId
+      cleanHint && cleanHint !== normVidId
         ? cleanHint
         : 'YouTube Video';
     let author = hintAuthor || 'YouTube';
@@ -887,7 +887,7 @@ ${fullTranscriptText}`;
     try {
       const oembedRes = await fetch(
         `https://www.youtube.com/oembed?url=${encodeURIComponent(
-          `https://www.youtube.com/watch?v=${targetVidId}`
+          `https://www.youtube.com/watch?v=${normVidId}`
         )}&format=json`,
         { signal: AbortSignal.timeout(3000) }
       );
@@ -907,10 +907,15 @@ ${fullTranscriptText}`;
 
       if (rawLoadedSegments.length === 0) {
         try {
-          const res = await apiFetch('/api/youtube/transcript', {
+          const reqBody = {
+            url: `https://www.youtube.com/watch?v=${normVidId}`,
+            videoId: normVidId,
+          };
+          console.log('[StudyWorkspace] Requesting transcript with body:', reqBody);
+          const res = await fetch('/api/youtube/transcript', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ videoId: targetVidId }),
+            body: JSON.stringify(reqBody),
             signal: AbortSignal.timeout(30000),
           });
           if (res.ok) {
@@ -940,7 +945,7 @@ ${fullTranscriptText}`;
       setLoadingStageText('Transcript ready — synthesizing chapters, quiz & flashcards...');
 
       const authHeaders = await getAuthHeaders();
-      const aiRes = await apiFetch('/api/youtube/study', {
+      const aiRes = await fetch('/api/youtube/study', {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({
@@ -1037,7 +1042,7 @@ ${fullTranscriptText}`;
 
     try {
       const authHeaders = await getAuthHeaders();
-      const res = await apiFetch('/api/pdf/study', {
+      const res = await fetch('/api/pdf/study', {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({
@@ -1168,7 +1173,7 @@ ${fullTranscriptText}`;
         .slice(0, 15)
         .map((s) => `[${formatTime(s.start_s)}] ${s.text}`)
         .join('\n');
-      const res = await apiFetch('/api/chat', {
+      const res = await fetch('/api/chat', {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({
@@ -1368,7 +1373,7 @@ ${fullTranscriptText}`;
         ? `For the quiz question: "${currentQuoted}"\n\nUser request: ${displayPrompt}\n\nProvide a clear, simple, helpful explanation grounded in "${resolvedTitle}".`
         : displayPrompt;
 
-      const res = await apiFetch('/api/study/ai-assistant', {
+      const res = await fetch('/api/study/ai-assistant', {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({
@@ -1982,7 +1987,7 @@ ${fullTranscriptText}`;
               <button
                 type="button"
                 onClick={() => setViewMode('home')}
-                className={`h-8 px-3.5 rounded-full border text-xs font-medium inline-flex items-center justify-center transition-colors cursor-pointer whitespace-nowrap ${
+                className={`h-9 min-h-[44px] sm:min-h-0 sm:h-8 px-3.5 rounded-full border text-xs font-medium hidden sm:inline-flex items-center justify-center transition-colors cursor-pointer whitespace-nowrap ${
                   isDark
                     ? 'bg-white/[0.04] hover:bg-white/[0.09] border-white/[0.12] text-neutral-200'
                     : 'bg-black/[0.03] hover:bg-black/[0.07] border-black/[0.12] text-neutral-800'
@@ -1994,7 +1999,7 @@ ${fullTranscriptText}`;
               <button
                 type="button"
                 onClick={handleExportStudyPack}
-                className={`h-8 w-8 rounded-full border inline-flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
+                className={`size-9 min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 sm:size-8 rounded-full border hidden sm:inline-flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
                   isDark
                     ? 'bg-white/[0.04] hover:bg-white/[0.09] border-white/[0.12] text-neutral-200'
                     : 'bg-black/[0.03] hover:bg-black/[0.07] border-black/[0.12] text-neutral-800'
@@ -2011,7 +2016,7 @@ ${fullTranscriptText}`;
                   onClick={() => setTopMoreMenuOpen((p) => !p)}
                   aria-label="More study options"
                   title="More options"
-                  className={`h-8 w-8 rounded-full border inline-flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
+                  className={`size-9 min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 sm:size-8 rounded-full border inline-flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
                     isDark
                       ? 'bg-white/[0.04] hover:bg-white/[0.09] border-white/[0.12] text-neutral-200'
                       : 'bg-black/[0.03] hover:bg-black/[0.07] border-black/[0.12] text-neutral-800'
@@ -2028,6 +2033,17 @@ ${fullTranscriptText}`;
                         : 'bg-white border-black/[0.1] text-black'
                     }`}
                   >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTopMoreMenuOpen(false);
+                        setViewMode('home');
+                      }}
+                      className="w-full sm:hidden px-3 py-2 rounded-lg text-xs flex items-center justify-between hover:bg-current/5 cursor-pointer"
+                    >
+                      <span>New Topic</span>
+                      <Plus className="w-3.5 h-3.5 opacity-60" />
+                    </button>
                     <button
                       type="button"
                       onClick={() => {
@@ -2377,15 +2393,19 @@ ${fullTranscriptText}`;
                 <button
                   type="button"
                   onClick={() => {
-                    if (sourceType === 'youtube' && activeVideoId) {
-                      loadYouTubeSource(activeVideoId, resolvedTitle, resolvedAuthor);
+                    const resolvedId =
+                      extractYouTubeIdFromInput(activeVideoId || initialId || '') ||
+                      (activeVideoId || initialId || '').trim();
+                    if (sourceType === 'youtube' && resolvedId) {
+                      console.log('[StudyWorkspace] Retry Generation for videoId:', resolvedId);
+                      loadYouTubeSource(resolvedId, resolvedTitle, resolvedAuthor);
                     } else if (sourceType === 'topic') {
                       loadTopicStudySpace(resolvedTitle);
                     } else if (sourceType === 'pdf') {
                       loadTextOrPdfSource(resolvedTitle, rawSourceText, 'pdf', pdfUrl);
                     }
                   }}
-                  className="px-4 py-2 rounded-xl bg-white text-black text-xs font-semibold hover:bg-neutral-200 transition cursor-pointer"
+                  className="px-4 py-2.5 rounded-xl bg-white text-black text-xs font-semibold hover:bg-neutral-200 transition cursor-pointer min-h-[44px]"
                 >
                   Retry Generation
                 </button>

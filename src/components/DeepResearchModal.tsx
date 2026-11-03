@@ -544,6 +544,53 @@ function bindVerifyAndRenumberCitations(
     intermediateText = paragraphs.join('\n\n');
   }
 
+  // Enforce source balance: no single source can back >40% of cited sentences
+  const citationMatches = Array.from(intermediateText.matchAll(/\[(S\d+(?:,\s*S\d+)*)\]/gi));
+  const totalCitationsCount = citationMatches.length;
+  if (totalCitationsCount >= 3 && keptSources.length >= 2) {
+    const maxAllowedPerSource = Math.max(1, Math.floor(totalCitationsCount * 0.40));
+    const sourceCitationCounts = new Map<string, number>();
+
+    intermediateText = intermediateText.replace(
+      /\[(S\d+(?:,\s*S\d+)*)\]/gi,
+      (_origMatch, sidListStr: string) => {
+        const sids = sidListStr
+          .split(',')
+          .map((s) => s.trim().toUpperCase())
+          .filter((s) => /^S\d+$/.test(s));
+
+        const keptSids: string[] = [];
+        for (const sid of sids) {
+          const currentCount = sourceCitationCounts.get(sid) || 0;
+          if (currentCount < maxAllowedPerSource) {
+            keptSids.push(sid);
+            sourceCitationCounts.set(sid, currentCount + 1);
+          } else {
+            // Reallocate to another keptSource that is under the cap to preserve balance
+            let alternateSource: TaggedResearchSource | null = null;
+            let lowestUsage = 999;
+            for (const candidate of keptSources) {
+              if (candidate.sid === sid) continue;
+              const count = sourceCitationCounts.get(candidate.sid) || 0;
+              if (count < lowestUsage && count < maxAllowedPerSource) {
+                lowestUsage = count;
+                alternateSource = candidate;
+              }
+            }
+            if (alternateSource && !keptSids.includes(alternateSource.sid)) {
+              keptSids.push(alternateSource.sid);
+              sourceCitationCounts.set(
+                alternateSource.sid,
+                (sourceCitationCounts.get(alternateSource.sid) || 0) + 1
+              );
+            }
+          }
+        }
+        return keptSids.length > 0 ? `[${keptSids.join(', ')}]` : '';
+      }
+    );
+  }
+
   // Step 2: Renumber [S#] to [1], [2], [3] by order of FIRST APPEARANCE and reorder source cards to match!
   const sidToFinalNum = new Map<string, number>();
   const citedSources: AnswerSource[] = [];
@@ -1132,6 +1179,44 @@ export const DeepResearchModal: React.FC<DeepResearchModalProps> = ({
 
       // Round 1 Search
       let validatedRawSources = await fetchAndValidateSourcesRound(cleanQ);
+
+      // Multi-query coverage for "best X" / comparisons (2–3 sub-queries for major entities like Llama, Mistral, Qwen, DeepSeek, Gemma)
+      const isComparisonOrBestQuery =
+        /\b(best|top|compare|comparison|versus|vs|leaderboard|rankings?)\b/i.test(cleanQ) ||
+        /\b(llms?|language models?|ai models?|open[ -]source models?)\b/i.test(cleanQ);
+
+      if (isComparisonOrBestQuery) {
+        const subQueries: string[] = [];
+        if (/\b(llms?|language models?|ai models?|open[ -]source|weights)\b/i.test(cleanQ)) {
+          subQueries.push(
+            'Llama 3 open source LLM benchmarks 2026',
+            'Mistral Mixtral open weights LLM 2026',
+            'Qwen DeepSeek Gemma open source LLM benchmarks 2026'
+          );
+        } else {
+          const terms = extractMeaningfulTerms(cleanQ).slice(0, 4);
+          subQueries.push(
+            `${terms.join(' ')} top benchmarks evaluation 2026`,
+            `${terms.join(' ')} architecture comparison 2026`
+          );
+        }
+
+        const subResults = await Promise.allSettled(
+          subQueries.map((sq) => fetchAndValidateSourcesRound(sq))
+        );
+        const seen = new Set(validatedRawSources.map((s) => s.url.replace(/\/+$/, '')));
+        for (const res of subResults) {
+          if (res.status === 'fulfilled' && Array.isArray(res.value)) {
+            for (const src of res.value) {
+              const key = src.url.replace(/\/+$/, '');
+              if (!seen.has(key)) {
+                seen.add(key);
+                validatedRawSources.push(src);
+              }
+            }
+          }
+        }
+      }
 
       // FIX 2: Target 5 to 8 sources. If fewer than 4 pass, run one more search round with a rewritten query before writing.
       if (validatedRawSources.length < 4) {
@@ -2021,7 +2106,7 @@ STRICT RULES:
                                 : researchElapsedSec < 4
                                 ? `Stage 2/4 · Cross-verifying ${turnSources.length || 'live'} sources & extracting passages...`
                                 : researchElapsedSec < 9
-                                ? `Stage 3/4 · Mapping inline citations [1–${Math.max(1, turnSources.length)}] & evidence tables...`
+                                ? `Stage 3/4 · Mapping evidence sources [S1..S${Math.max(1, turnSources.length)}] to report citations...`
                                 : 'Stage 4/4 · Synthesizing structured research report...'
                             }
                             isDark={isDark}

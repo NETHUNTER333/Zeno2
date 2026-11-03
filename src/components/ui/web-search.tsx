@@ -213,90 +213,7 @@ function WebSearch({
   const reduced = !!useReducedMotion();
   const [openState, setOpenState] = useState(defaultOpen);
   const [expanded, setExpanded] = useState(false);
-  const [highlightedSourceKey, setHighlightedSourceKey] = useState<string | null>(null);
   const [measureRef, labelWidth] = useSize<HTMLSpanElement>("width");
-  const clearTimerRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    const onHighlight = (e: Event) => {
-      const detail = (
-        e as CustomEvent<{ url?: string; index?: number; active?: boolean; scroll?: boolean; messageId?: string }>
-      ).detail;
-      if (!detail) return;
-      if (detail.messageId && messageId && detail.messageId !== messageId) {
-        return;
-      }
-      if (detail.active === false) {
-        if (!clearTimerRef.current) setHighlightedSourceKey(null);
-        return;
-      }
-      const matchIdx = sources.findIndex(
-        (s, idx) =>
-          (detail.index !== undefined && (s.position ?? idx + 1) === detail.index) ||
-          (detail.url && s.url === detail.url)
-      );
-      if (matchIdx !== -1) {
-        const key = String(sources[matchIdx].position ?? matchIdx + 1);
-        setHighlightedSourceKey(key);
-        if (open === undefined) setOpenState(true);
-        const isHiddenInMore = matchIdx >= COLUMNS - 1;
-        if (isHiddenInMore) {
-          setExpanded(true);
-        }
-        if (detail.scroll) {
-          if (clearTimerRef.current) {
-            window.clearTimeout(clearTimerRef.current);
-            clearTimerRef.current = null;
-          }
-          const prefersReduced =
-            typeof window !== "undefined" &&
-            window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
-          const behavior: ScrollBehavior = prefersReduced ? "auto" : "smooth";
-          const cardId = messageId ? `src-${messageId}-${key}` : `src-${key}`;
-
-          const doHighlight = () => {
-            const cardEl =
-              document.getElementById(cardId) ||
-              document.getElementById(`src-${key}`) ||
-              document.getElementById(`source-card-${key}`);
-            if (cardEl) {
-              cardEl.scrollIntoView({ behavior, block: "center" });
-              cardEl.classList.add("zeno-source-highlight");
-            }
-          };
-
-          if (isHiddenInMore) {
-            window.setTimeout(doHighlight, 70);
-          } else {
-            doHighlight();
-            window.setTimeout(doHighlight, 50);
-          }
-
-          clearTimerRef.current = window.setTimeout(() => {
-            const cardEl =
-              document.getElementById(cardId) ||
-              document.getElementById(`src-${key}`) ||
-              document.getElementById(`source-card-${key}`);
-            if (cardEl) {
-              cardEl.classList.remove("zeno-source-highlight");
-            }
-            setHighlightedSourceKey(null);
-            clearTimerRef.current = null;
-          }, 2000);
-        }
-      }
-    };
-    window.addEventListener("zeno-highlight-source", onHighlight);
-    window.addEventListener("zeno:highlight-source-card", onHighlight);
-    return () => {
-      window.removeEventListener("zeno-highlight-source", onHighlight);
-      window.removeEventListener("zeno:highlight-source-card", onHighlight);
-      if (clearTimerRef.current) {
-        window.clearTimeout(clearTimerRef.current);
-        clearTimerRef.current = null;
-      }
-    };
-  }, [sources, open, messageId]);
 
   const searching = status === "searching";
   const isOpen = open ?? openState;
@@ -421,7 +338,7 @@ function WebSearch({
           <Collapse key="sources" reduced={reduced}>
             <ol
               data-slot="web-search-sources"
-              className="relative grid grid-cols-2 gap-2 pt-2.5 !pl-0 !my-0 list-none"
+              className="relative grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2.5 !pl-0 !my-0 list-none"
             >
               <AnimatePresence mode="popLayout">
                 {shown.map((source, i) =>
@@ -432,7 +349,6 @@ function WebSearch({
                       source={source}
                       index={source.position ?? i + 1}
                       linked={linked}
-                      highlighted={highlightedSourceKey === String(source.position ?? i + 1)}
                       onSelect={onSelectCitation}
                       messageId={messageId}
                     />,
@@ -540,14 +456,12 @@ function SourceCard({
   source,
   index,
   linked,
-  highlighted = false,
   onSelect,
   messageId,
 }: {
   source: WebSource;
   index: number;
   linked: boolean;
-  highlighted?: boolean;
   onSelect?: (source: WebSearchSource) => void;
   messageId?: string;
 }) {
@@ -570,8 +484,6 @@ function SourceCard({
       className={cn(
         CARD_SHELL,
         "group justify-between transition-all duration-200",
-        highlighted &&
-          "!border-[#FC4C01] ring-2 ring-[#FC4C01] bg-[#FC4C01]/[0.10] dark:bg-[#FC4C01]/[0.16]",
         !linked && !onSelect && "cursor-default",
       )}
     >
@@ -584,12 +496,7 @@ function SourceCard({
           {siteName(source.url, source.domain)}
         </span>
         <span
-          className={cn(
-            "rounded-full px-1.5 py-0.5 text-[10px] font-mono font-semibold tabular-nums transition-colors",
-            highlighted
-              ? "bg-[#FC4C01] text-white"
-              : "bg-[#f4f4f5] text-[#52525b] dark:bg-white/[0.08] dark:text-white/80",
-          )}
+          className="rounded-full px-1.5 py-0.5 text-[10px] font-mono font-semibold tabular-nums transition-colors bg-[#f4f4f5] text-[#52525b] dark:bg-white/[0.08] dark:text-white/80"
         >
           {index}
         </span>
@@ -900,49 +807,13 @@ function WebSearchCitation({
   const { active: open, set, hover } = useHoverIntent(PREVIEW_DELAY);
   const ghUser = extractGitHubUsername(source.url);
 
-  const notifySourceHighlight = (active: boolean, scroll = false) => {
-    if (typeof window === "undefined") return;
-    window.dispatchEvent(
-      new CustomEvent("zeno-highlight-source", {
-        detail: { url: source.url, index, active, scroll, messageId },
-      })
-    );
-    if (scroll) {
-      window.dispatchEvent(
-        new CustomEvent("zeno:highlight-source-card", {
-          detail: { url: source.url, index, scroll: true, messageId },
-        })
-      );
-    }
-  };
-
   const handleChipClick = (e: React.MouseEvent | React.KeyboardEvent) => {
     e.preventDefault();
     e.stopPropagation();
     // Keep hover preview popover open
     set(true, 0);
-    notifySourceHighlight(true, true);
     if (ghUser && onOpenModal) {
       onOpenModal(source);
-    }
-
-    // Direct element scroll and highlight fallback in case event handler hasn't caught it yet
-    if (typeof window !== "undefined") {
-      const prefersReduced =
-        window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
-      const behavior: ScrollBehavior = prefersReduced ? "auto" : "smooth";
-      const cardId = messageId ? `src-${messageId}-${index}` : `src-${index}`;
-      const cardEl =
-        document.getElementById(cardId) ||
-        document.getElementById(`src-${index}`) ||
-        document.getElementById(`source-card-${index}`);
-      if (cardEl) {
-        cardEl.scrollIntoView({ behavior, block: "center" });
-        cardEl.classList.add("zeno-source-highlight");
-        setTimeout(() => {
-          cardEl.classList.remove("zeno-source-highlight");
-        }, 2000);
-      }
     }
   };
 
@@ -952,11 +823,9 @@ function WebSearchCitation({
       className={cn("relative inline-flex align-baseline mx-0.5 whitespace-nowrap", className)}
       onPointerEnter={(event) => {
         hover.onPointerEnter(event);
-        notifySourceHighlight(true, false);
       }}
       onPointerLeave={() => {
         hover.onPointerLeave();
-        notifySourceHighlight(false, false);
       }}
       {...props}
     >
@@ -968,16 +837,13 @@ function WebSearchCitation({
             handleChipClick(e);
           } else if (e.key === "Escape") {
             set(false, 0);
-            notifySourceHighlight(false, false);
           }
         }}
         onFocus={() => {
           set(true, 0);
-          notifySourceHighlight(true, false);
         }}
         onBlur={() => {
           set(false, 0);
-          notifySourceHighlight(false, false);
         }}
         aria-label={index !== undefined ? `Source ${index}: ${source.title}` : `Source: ${source.title}`}
         className={cn(

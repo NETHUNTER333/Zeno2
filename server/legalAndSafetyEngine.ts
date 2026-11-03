@@ -221,9 +221,8 @@ export function resolveSpaClientRouteMeta(pathname: string): SpaRouteMeta | null
   }
   if (clean.startsWith('/r/') || clean.startsWith('/invite/')) {
     return {
-      title: 'Invite to Zeno · AI Research & Study Workspace',
-      description:
-        'Join Zeno with this referral invite link to access live AI search, Deep Research, and the YouTube Study Workspace.',
+      title: 'Join me on Zeno',
+      description: 'Join me on Zeno',
       canonicalPath: '/',
     };
   }

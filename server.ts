@@ -1884,13 +1884,31 @@ async function scrapeAcademicOrGitHubPage(url: string) {
   }
 }
 
-// Helper to extract YouTube video ID from any YouTube URL
-function extractYouTubeId(url: string): string | undefined {
-  if (!url) return undefined;
-  const match = url.match(
-    /(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/|live\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/
+// Helper to extract YouTube video ID from any YouTube URL or raw ID input
+function extractYouTubeId(urlOrId: string): string | undefined {
+  if (!urlOrId) return undefined;
+  let raw = String(urlOrId).trim();
+  try {
+    raw = decodeURIComponent(raw);
+  } catch {}
+  if (/^[a-zA-Z0-9_-]{11}$/.test(raw)) {
+    return raw;
+  }
+  // Try matching v= in query string (handles extra params before/after v= like &t=, &si=, feature=)
+  const vMatch = raw.match(/[?&]v=([a-zA-Z0-9_-]{11})(?:[&?#/]|$)/);
+  if (vMatch) return vMatch[1];
+
+  // Try matching youtu.be/, shorts/, embed/, live/, v/ paths
+  const pathMatch = raw.match(
+    /(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:embed\/|shorts\/|live\/|v\/|watch\/))([a-zA-Z0-9_-]{11})(?:[&?#/]|$)/
   );
-  return match ? match[1] : undefined;
+  if (pathMatch) return pathMatch[1];
+
+  // Fallback broad match
+  const broadMatch = raw.match(
+    /(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/|live\/|v\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/
+  );
+  return broadMatch ? broadMatch[1] : undefined;
 }
 
 // Convert any known video URL across the internet into a direct iframe embed URL
@@ -8699,21 +8717,44 @@ Requirements:
 
 // POST /api/youtube/transcript — Extract timed transcript & video metadata via InstaCloud Subclip + Innertube
 app.post('/api/youtube/transcript', async (req, res) => {
+  console.log('[API /api/youtube/transcript] Request body:', JSON.stringify(req.body));
   try {
-    const rawInput = String(req.body?.url || req.body?.videoId || '').trim();
+    const rawUrl = String(req.body?.url || '').trim();
+    const rawVideoId = String(req.body?.videoId || '').trim();
     const preferredLang = String(req.body?.lang || 'en').trim();
-    const videoId = extractYouTubeId(rawInput) || (/^[a-zA-Z0-9_-]{11}$/.test(rawInput) ? rawInput : '');
+
+    // Normalise from videoId first, then from url
+    const videoId =
+      extractYouTubeId(rawVideoId) ||
+      extractYouTubeId(rawUrl) ||
+      (/^[a-zA-Z0-9_-]{11}$/.test(rawVideoId) ? rawVideoId : '') ||
+      (/^[a-zA-Z0-9_-]{11}$/.test(rawUrl) ? rawUrl : '');
 
     if (!videoId) {
-      return res.status(400).json({
+      const errResponse = {
         success: false,
-        error: 'Please provide a valid YouTube URL or 11-character video ID.',
-      });
+        error: 'Invalid YouTube URL or video ID. Please check the URL and try again.',
+      };
+      console.warn(
+        '[API /api/youtube/transcript] 422 Invalid YouTube URL/ID:',
+        JSON.stringify(errResponse),
+        'Reason: unable to parse valid 11-char videoId from input:',
+        JSON.stringify(req.body)
+      );
+      return res.status(422).json(errResponse);
     }
 
-    const extracted = await extractYouTubeTranscriptSubclip(videoId, preferredLang);
+    let extracted = await extractYouTubeTranscriptSubclip(videoId, preferredLang);
+
+    // If primary provider fails, retry once after 1.5s, then try secondary providers before returning an error
     if (!extracted.segments || extracted.segments.length === 0) {
-      // Try direct call to deployed Whisper API service on InstaCloud
+      console.log(`[API /api/youtube/transcript] Primary attempt returned 0 segments for ${videoId}, waiting 1.5s to retry...`);
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      extracted = await extractYouTubeTranscriptSubclip(videoId, preferredLang);
+    }
+
+    // Secondary provider fallback: try direct Whisper API service on InstaCloud if still empty
+    if (!extracted.segments || extracted.segments.length === 0) {
       try {
         const wRes = await fetch(`${INSTACLOUD_WHISPER_URL}/transcribe`, {
           method: 'POST',
@@ -8739,11 +8780,14 @@ app.post('/api/youtube/transcript', async (req, res) => {
       } catch {}
     }
 
+    // Return 422 ONLY for truly invalid URL; upstream failures return 502 with a clear message
     if (!extracted.segments || extracted.segments.length === 0) {
-      return res.status(422).json({
+      const upstreamErr = {
         success: false,
-        error: "Couldn't fetch captions right now. The transcript server may be offline or YouTube blocked the request. Retry in a moment, or paste the transcript.",
-      });
+        error: "Couldn't fetch captions from YouTube upstream provider right now. The transcript server may be offline or YouTube blocked the request. Please retry in a moment, or paste the transcript.",
+      };
+      console.warn('[API /api/youtube/transcript] 502 Upstream failure for videoId:', videoId);
+      return res.status(502).json(upstreamErr);
     }
 
     return res.json({
@@ -8759,9 +8803,9 @@ app.post('/api/youtube/transcript', async (req, res) => {
     });
   } catch (err: any) {
     console.error('YouTube transcript error:', err);
-    return res.status(500).json({
+    return res.status(502).json({
       success: false,
-      error: err.message || 'Failed to extract YouTube transcript',
+      error: err.message || 'Failed to extract YouTube transcript from upstream provider',
     });
   }
 });

@@ -28,57 +28,12 @@ export const InlineCitation: React.FC<InlineCitationProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const triggerHighlight = () => {
-    window.dispatchEvent(
-      new CustomEvent('zeno-highlight-source', {
-        detail: { index, active: true, scroll: true, messageId },
-      })
-    );
-    window.dispatchEvent(
-      new CustomEvent('zeno:highlight-source-card', {
-        detail: { index, scroll: true, messageId },
-      })
-    );
-    if (typeof window !== 'undefined') {
-      const prefersReduced =
-        window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
-      const behavior: ScrollBehavior = prefersReduced ? 'auto' : 'smooth';
-      const cardId = messageId ? `src-${messageId}-${index}` : `src-${index}`;
-      const cardEl =
-        document.getElementById(cardId) ||
-        document.getElementById(`src-${index}`) ||
-        document.getElementById(`source-card-${index}`);
-      if (cardEl) {
-        cardEl.scrollIntoView({ behavior, block: 'center' });
-        cardEl.classList.add('zeno-source-highlight');
-        setTimeout(() => {
-          cardEl.classList.remove('zeno-source-highlight');
-        }, 2000);
-      }
-    }
-  };
-
   if (!source) {
     return (
       <button
         type="button"
-        onClick={triggerHighlight}
-        onMouseEnter={() => {
-          window.dispatchEvent(
-            new CustomEvent('zeno-highlight-source', {
-              detail: { index, active: true, messageId },
-            })
-          );
-        }}
-        onMouseLeave={() => {
-          window.dispatchEvent(
-            new CustomEvent('zeno-highlight-source', {
-              detail: { index, active: false, messageId },
-            })
-          );
-        }}
         aria-label={`Source ${index}`}
-        className="inline-flex whitespace-nowrap items-center justify-center h-4.5 min-w-[18px] px-1.5 rounded-full text-[10px] font-mono font-bold align-super mx-0.5 cursor-pointer transition-colors bg-[#FC4C01]/10 text-[#FC4C01] border border-[#FC4C01]/30 hover:bg-[#FC4C01] hover:text-white"
+        className="inline-flex whitespace-nowrap items-center justify-center h-4.5 min-w-[18px] px-1.5 rounded-full text-[10px] font-mono font-bold align-super mx-0.5 cursor-default transition-colors bg-[#FC4C01]/10 text-[#FC4C01] border border-[#FC4C01]/30"
       >
         [{index}]
       </button>
@@ -98,22 +53,8 @@ export const InlineCitation: React.FC<InlineCitationProps> = ({
   return (
     <span
       ref={containerRef}
-      onMouseEnter={() => {
-        setIsOpen(true);
-        window.dispatchEvent(
-          new CustomEvent('zeno-highlight-source', {
-            detail: { url: source.url, index, active: true, messageId },
-          })
-        );
-      }}
-      onMouseLeave={() => {
-        setIsOpen(false);
-        window.dispatchEvent(
-          new CustomEvent('zeno-highlight-source', {
-            detail: { url: source.url, index, active: false, messageId },
-          })
-        );
-      }}
+      onMouseEnter={() => setIsOpen(true)}
+      onMouseLeave={() => setIsOpen(false)}
       className="relative inline-block whitespace-nowrap align-super mx-0.5 select-none"
     >
       <button
@@ -121,25 +62,10 @@ export const InlineCitation: React.FC<InlineCitationProps> = ({
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
-          setIsOpen(true);
-          triggerHighlight();
+          setIsOpen((prev) => !prev);
         }}
-        onFocus={() => {
-          setIsOpen(true);
-          window.dispatchEvent(
-            new CustomEvent('zeno-highlight-source', {
-              detail: { url: source?.url, index, active: true, messageId },
-            })
-          );
-        }}
-        onBlur={() => {
-          setIsOpen(false);
-          window.dispatchEvent(
-            new CustomEvent('zeno-highlight-source', {
-              detail: { url: source?.url, index, active: false, messageId },
-            })
-          );
-        }}
+        onFocus={() => setIsOpen(true)}
+        onBlur={() => setIsOpen(false)}
         className={`inline-flex whitespace-nowrap items-center justify-center h-4.5 min-w-[18px] px-1.5 rounded-full text-[10px] font-mono font-bold transition-all cursor-pointer border align-super hover:scale-105 !no-underline shadow-2xs ${
           isDark
             ? 'bg-[#1e1e24] border-white/20 text-neutral-100 hover:bg-[#FC4C01]/20 hover:text-[#FC4C01] hover:border-[#FC4C01]/50'

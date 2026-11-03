@@ -17,6 +17,7 @@ import {
   Lock,
   Cpu,
   HardDrive,
+  ChevronDown,
 } from 'lucide-react';
 import { UserAccountStore, PLAN_LIMITS } from '../lib/userAccountStore';
 import { UsageQuota } from '../types';
@@ -71,6 +72,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
   });
   const [upgradeBanner, setUpgradeBanner] = useState<string | null>(null);
   const [matrixTab, setMatrixTab] = useState<'all' | 'models' | 'quotas'>('all');
+  const [mobileExpandedPlan, setMobileExpandedPlan] = useState<'spark' | 'fire' | 'free' | null>('spark');
   const [resetCountdown, setResetCountdown] = useState<string>(() => getUtcResetCountdown());
   const [isSyncingQuota, setIsSyncingQuota] = useState(false);
 
@@ -1094,7 +1096,47 @@ export const PricingModal: React.FC<PricingModalProps> = ({
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        {/* Mobile Accordion View per Plan (<md) */}
+        <div className="md:hidden space-y-2.5">
+          {(['free', 'spark', 'fire'] as const).map((planKey) => {
+            const isExpanded = mobileExpandedPlan === planKey;
+            const planTitle = planKey === 'fire' ? 'Fire ($7/mo · Unlimited)' : planKey === 'spark' ? 'Spark ($3/mo · 10x)' : 'Free Tier ($0)';
+            const accentColor = planKey === 'fire' ? 'text-orange-400' : planKey === 'spark' ? 'text-amber-400' : '';
+            return (
+              <div
+                key={planKey}
+                className={`rounded-2xl border overflow-hidden transition-all ${
+                  isDark ? 'bg-[#18181b] border-white/10' : 'bg-neutral-50 border-black/10'
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => setMobileExpandedPlan(isExpanded ? null : planKey)}
+                  className="w-full p-3.5 flex items-center justify-between text-xs font-bold cursor-pointer"
+                >
+                  <span className={accentColor}>{planTitle}</span>
+                  <ChevronDown className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                </button>
+                {isExpanded && (
+                  <div className={`px-3.5 pb-3.5 pt-1 space-y-2.5 border-t text-xs ${isDark ? 'border-white/10 text-neutral-300' : 'border-black/10 text-neutral-700'}`}>
+                    {visibleComparisonRows.map((row, rIdx) => {
+                      const val = planKey === 'free' ? row.free : planKey === 'spark' ? row.spark : row.fire;
+                      return (
+                        <div key={rIdx} className="flex items-center justify-between gap-2 py-1 border-b border-current/5 last:border-0">
+                          <span className="font-medium opacity-80">{row.feature}</span>
+                          <span className="font-mono font-semibold text-right">{val}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Desktop Comparison Table (md+) */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr

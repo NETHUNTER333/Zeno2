@@ -370,7 +370,7 @@ export const CookieConsentBanner: React.FC<{
     <div
       role="region"
       aria-label="Cookie and local storage notice"
-      className="fixed top-14 inset-x-3 sm:top-auto sm:bottom-4 sm:left-4 sm:right-auto sm:max-w-[300px] z-30 pointer-events-auto"
+      className="fixed bottom-20 sm:bottom-4 inset-x-3 sm:left-4 sm:right-auto sm:max-w-[320px] z-30 pointer-events-auto"
     >
       <div
         className={`rounded-2xl border p-2.5 sm:p-3 shadow-xl transition-all ${

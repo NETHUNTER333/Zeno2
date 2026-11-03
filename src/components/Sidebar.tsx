@@ -43,6 +43,7 @@ import {
   EvaluatedBadge,
 } from '../lib/userAccountStore';
 import { StreakModal } from './StreakModal';
+import { auth } from '../lib/firebase';
 
 
 export interface ChatThread {
@@ -1143,11 +1144,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
           )}
         </div>
 
-        {/* Active Plan & Upload Quota Card — Session-Dismissible Promo */}
+        {/* Active Plan & Upload Quota Card — Session-Dismissible Promo (shown ONLY to signed-in Free users) */}
         {!isPlanPromoDismissed && (
           <div className="px-3 pb-2.5">
             {(() => {
-              const normPlan = UserAccountStore.getNormalizedPlan(userSub.plan);
+              const isSignedIn = Boolean(
+                auth?.currentUser ||
+                (userProfile?.email && userProfile.email.includes('@'))
+              );
+              const planCheck: any = UserAccountStore.getNormalizedPlan(userSub.plan);
+              if (!isSignedIn || planCheck !== 'free') return null;
               return (
                 <div
                   className={`relative w-full p-3.5 rounded-2xl border text-left transition-all ${
@@ -1174,9 +1180,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   >
                     <div className="flex items-center justify-between gap-2 mb-1.5">
                       <span className="font-semibold text-xs tracking-tight">
-                        {normPlan === 'fire'
+                        {planCheck === 'fire'
                           ? 'Fire Plan ($7)'
-                          : normPlan === 'spark'
+                          : planCheck === 'spark'
                           ? 'Spark Plan ($3 · 10x)'
                           : 'Choose Plan ($3 / $7)'}
                       </span>
@@ -1187,7 +1193,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             : 'bg-[#18181b] text-white'
                         }`}
                       >
-                        {normPlan === 'fire' ? 'Active' : normPlan === 'spark' ? 'Upgrade $7' : 'Start $3'}
+                        {planCheck === 'fire' ? 'Active' : planCheck === 'spark' ? 'Upgrade $7' : 'Start $3'}
                       </span>
                     </div>
                     <div className={`flex items-center justify-between text-[10.5px] font-mono ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
