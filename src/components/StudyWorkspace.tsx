@@ -53,6 +53,7 @@ import {
   extractTextFromPdfFile,
 } from '../lib/pdfStudyEngine';
 import { speakTextWithSmallestAi, stopSmallestSpeech } from '../lib/smallestAi';
+import { apiFetch } from '../lib/apiBase';
 import { UserAccountStore } from '../lib/userAccountStore';
 import { MathMarkdown } from './MathMarkdown';
 
@@ -604,7 +605,7 @@ export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
     setYtWebSearching(true);
     try {
       const authHeaders = await getAuthHeaders();
-      const res = await fetch('/api/study/youtube-search', {
+      const res = await apiFetch('/api/study/youtube-search', {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({ query: q, limit: 12 }),
@@ -642,7 +643,7 @@ Break down every key concept, explanation, example, and takeaway clearly:
 
 ${fullTranscriptText}`;
 
-      const res = await fetch('/api/study/ai-assistant', {
+      const res = await apiFetch('/api/study/ai-assistant', {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({
@@ -698,7 +699,7 @@ ${fullTranscriptText}`;
 
     try {
       const authHeaders = await getAuthHeaders();
-      const res = await fetch('/api/study/topic', {
+      const res = await apiFetch('/api/study/topic', {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({ query: cleanTopic }),
@@ -821,7 +822,7 @@ ${fullTranscriptText}`;
       const consolidated = consolidateTranscriptSegments([{ start_s: 0, duration_s: 0, text: t }]);
       setSegments(consolidated.length > 0 ? consolidated : [{ start_s: 0, duration_s: 0, text: t }]);
       const authHeaders = await getAuthHeaders();
-      const aiRes = await fetch('/api/youtube/study', {
+      const aiRes = await apiFetch('/api/youtube/study', {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({
@@ -906,7 +907,7 @@ ${fullTranscriptText}`;
 
       if (rawLoadedSegments.length === 0) {
         try {
-          const res = await fetch('/api/youtube/transcript', {
+          const res = await apiFetch('/api/youtube/transcript', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ videoId: targetVidId }),
@@ -939,7 +940,7 @@ ${fullTranscriptText}`;
       setLoadingStageText('Transcript ready — synthesizing chapters, quiz & flashcards...');
 
       const authHeaders = await getAuthHeaders();
-      const aiRes = await fetch('/api/youtube/study', {
+      const aiRes = await apiFetch('/api/youtube/study', {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({
@@ -1036,7 +1037,7 @@ ${fullTranscriptText}`;
 
     try {
       const authHeaders = await getAuthHeaders();
-      const res = await fetch('/api/pdf/study', {
+      const res = await apiFetch('/api/pdf/study', {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({
@@ -1167,7 +1168,7 @@ ${fullTranscriptText}`;
         .slice(0, 15)
         .map((s) => `[${formatTime(s.start_s)}] ${s.text}`)
         .join('\n');
-      const res = await fetch('/api/chat', {
+      const res = await apiFetch('/api/chat', {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({
@@ -1367,7 +1368,7 @@ ${fullTranscriptText}`;
         ? `For the quiz question: "${currentQuoted}"\n\nUser request: ${displayPrompt}\n\nProvide a clear, simple, helpful explanation grounded in "${resolvedTitle}".`
         : displayPrompt;
 
-      const res = await fetch('/api/study/ai-assistant', {
+      const res = await apiFetch('/api/study/ai-assistant', {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({
