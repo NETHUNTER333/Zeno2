@@ -7,6 +7,7 @@ import {
   validateSafePublicUrl,
 } from './config';
 import { isAdultUrlOrDomain, isAdultQueryOrText } from './legalAndSafetyEngine';
+import { reportUpstreamProviderFailure } from './sentry';
 
 export interface SearchResultItem {
   position: number;

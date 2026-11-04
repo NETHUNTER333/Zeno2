@@ -60,6 +60,9 @@ export default defineConfig(() => {
     worker: {
       format: 'es' as const,
     },
+    build: {
+      sourcemap: 'hidden' as const,
+    },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modify—file watching is disabled to prevent flickering during agent edits.

@@ -97,8 +97,10 @@ import {
   isAdultUrlOrDomain,
   isAdultQueryOrText,
 } from './server/legalAndSafetyEngine';
+import { initBackendSentry, sentryBackendMiddleware, sentryErrorHandler, reportUpstreamProviderFailure, Sentry } from './server/sentry';
 
 dotenv.config();
+initBackendSentry();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -3739,6 +3741,7 @@ Return ONLY valid JSON matching this schema:
 }
 
 export const app = express();
+app.use(sentryBackendMiddleware);
 app.set('trust proxy', getTrustProxySetting());
 const ALLOWED_ORIGINS = [
   'https://kinich.app',
@@ -3776,6 +3779,13 @@ app.get('/api/health', (_req, res) => {
     time: new Date().toISOString(),
     version: '1.0.0',
   });
+});
+
+// Test endpoint to verify backend Sentry error capturing
+app.get('/api/test-sentry-error', (req, res) => {
+  const err = new Error('Test backend Sentry error trigger for Kinich');
+  Sentry.captureException(err, { tags: { route: '/api/test-sentry-error', trigger: 'test' } });
+  res.status(500).json({ error: 'Test backend Sentry error', code: 'TEST_SENTRY_ERROR' });
 });
 
 // Protected Route: Cryptographic Token Verification & Identity Endpoint

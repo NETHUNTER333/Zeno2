@@ -432,6 +432,7 @@ const Signup1 = ({
               }`}
             >
               <input
+                data-testid="guest-age-checkbox"
                 type="checkbox"
                 checked={consentAccepted}
                 onChange={(e) => {
@@ -517,6 +518,7 @@ const Signup1 = ({
                   : signupText}
               </Button>
               <Button
+                data-testid="guest-continue-btn"
                 type="button"
                 variant="outline"
                 className={`w-full h-10 transition-all ${
