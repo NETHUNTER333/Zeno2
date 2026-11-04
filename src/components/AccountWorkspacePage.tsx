@@ -104,8 +104,8 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
       setStreak(UserAccountStore.getDailyStreak(threads));
       setBadges(UserAccountStore.getEvaluatedBadges(threads));
     };
-    window.addEventListener('zeno-account-updated', refreshFromStore);
-    return () => window.removeEventListener('zeno-account-updated', refreshFromStore);
+    window.addEventListener('kinich-account-updated', refreshFromStore);
+    return () => window.removeEventListener('kinich-account-updated', refreshFromStore);
   }, [threads]);
 
   useEffect(() => {
@@ -199,7 +199,7 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `zeno_chat_export_${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `kinich_chat_export_${new Date().toISOString().slice(0, 10)}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -586,7 +586,7 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
                           </span>
                         </div>
                         <div className="text-xs text-neutral-400 mt-0.5">
-                          Reminds you via toast notification if you haven't completed your daily Zeno interaction by your scheduled time.
+                          Reminds you via toast notification if you haven't completed your daily Kinich interaction by your scheduled time.
                         </div>
                       </div>
                     </div>
@@ -714,7 +714,7 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
                           onBackToChat();
                           setTimeout(() => {
                             window.dispatchEvent(
-                              new CustomEvent('zeno-open-streak-modal', {
+                              new CustomEvent('kinich-open-streak-modal', {
                                 detail: { tab: 'badges' },
                               })
                             );
@@ -917,9 +917,9 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
                         onClick={() => {
                           onClearAllHistory();
                           try {
-                            localStorage.removeItem('zeno_threads_v3');
-                            localStorage.removeItem('zeno_knowledge_vault_v1');
-                            localStorage.removeItem('zeno_user_profile_v1');
+                            localStorage.removeItem('kinich_threads_v3');
+                            localStorage.removeItem('kinich_knowledge_vault_v1');
+                            localStorage.removeItem('kinich_user_profile_v1');
                           } catch {}
                           triggerSuccessAlert('Guest data cleared from this browser');
                         }}
@@ -1317,7 +1317,7 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
                         key={item.path}
                         type="button"
                         onClick={() => {
-                          window.dispatchEvent(new CustomEvent('zeno-navigate-route', { detail: { path: item.path } }));
+                          window.dispatchEvent(new CustomEvent('kinich-navigate-route', { detail: { path: item.path } }));
                         }}
                         className={`p-3 rounded-xl border text-left transition-all flex items-center justify-between group cursor-pointer ${
                           isDark
@@ -1343,7 +1343,7 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
                     <button
                       type="button"
                       onClick={() => {
-                        window.dispatchEvent(new CustomEvent('zeno-navigate-route', { detail: { path: '/legal' } }));
+                        window.dispatchEvent(new CustomEvent('kinich-navigate-route', { detail: { path: '/legal' } }));
                       }}
                       className="text-[#FC4C01] hover:underline font-medium cursor-pointer"
                     >
@@ -1358,7 +1358,7 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
               <SiteFooter
                 isDark={isDark}
                 onNavigate={(path) => {
-                  window.dispatchEvent(new CustomEvent('zeno-navigate-route', { detail: { path } }));
+                  window.dispatchEvent(new CustomEvent('kinich-navigate-route', { detail: { path } }));
                 }}
               />
             </div>

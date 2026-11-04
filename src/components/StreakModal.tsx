@@ -324,7 +324,7 @@ export const StreakModal: React.FC<StreakModalProps> = ({
   };
 
   const handleTestReminderToast = () => {
-    window.dispatchEvent(new Event('zeno-trigger-streak-reminder'));
+    window.dispatchEvent(new Event('kinich-trigger-streak-reminder'));
     setStatusBanner('Triggered daily streak reminder toast preview.');
     setTimeout(() => setStatusBanner(null), 3000);
   };
@@ -1345,7 +1345,7 @@ export const StreakModal: React.FC<StreakModalProps> = ({
                           isDark ? 'text-neutral-400' : 'text-neutral-500'
                         }`}
                       >
-                        Reminds you via toast banner if you haven't completed your daily Zeno interaction by your scheduled time
+                        Reminds you via toast banner if you haven't completed your daily Kinich interaction by your scheduled time
                       </div>
                     </div>
                   </div>

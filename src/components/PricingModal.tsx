@@ -99,12 +99,12 @@ export const PricingModal: React.FC<PricingModalProps> = ({
         setActiveCardIndex(nextPlan === 'fire' ? 2 : nextPlan === 'spark' ? 1 : 0);
       }
     };
-    window.addEventListener('zeno-account-updated', sync);
+    window.addEventListener('kinich-account-updated', sync);
     const timer = window.setInterval(() => {
       setResetCountdown(getUtcResetCountdown());
     }, 30_000);
     return () => {
-      window.removeEventListener('zeno-account-updated', sync);
+      window.removeEventListener('kinich-account-updated', sync);
       window.clearInterval(timer);
     };
   }, [initialHighlightPlan]);

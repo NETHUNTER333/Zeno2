@@ -32,12 +32,12 @@ interface Signup1Props {
 }
 
 const Signup1 = ({
-  heading = "Welcome to Zeno",
+  heading = "Welcome to Kinich",
   logo = {
     url: "#",
-    src: "/zeno-icon.svg",
-    alt: "Zeno logo",
-    title: "Zeno",
+    src: "/assets/aistudio/kinich-icon-1024_544040c6.png",
+    alt: "Kinich logo",
+    title: "Kinich",
   },
   googleText = "Sign in with Google",
   signupText = "Create an account",
@@ -74,7 +74,7 @@ const Signup1 = ({
           if (qRef && qRef.trim()) {
             targetCode = qRef.trim();
           } else {
-            const rawRef = localStorage.getItem("ref") || localStorage.getItem("zeno_pending_ref_code");
+            const rawRef = localStorage.getItem("ref") || localStorage.getItem("kinich_pending_ref_code");
             if (rawRef) {
               try {
                 const parsed = JSON.parse(rawRef);
@@ -247,7 +247,7 @@ const Signup1 = ({
                   src={logo.src}
                   alt={logo.alt}
                   title={logo.title}
-                  className={`h-14 w-14 drop-shadow-sm ${isDark ? "invert" : ""}`}
+                  className="h-14 w-14 rounded-2xl drop-shadow-sm object-cover"
                 />
               </a>
             </div>
@@ -257,7 +257,7 @@ const Signup1 = ({
                   isDark ? "text-white" : "text-zinc-900"
                 }`}
               >
-                {isLoginMode ? "Welcome back to Zeno" : heading}
+                {isLoginMode ? "Welcome back to Kinich" : heading}
               </h1>
             )}
             <p
@@ -344,7 +344,7 @@ const Signup1 = ({
               {/* Status Note / Mode Switch Hint */}
               {isLoginMode ? (
                 <div className="mt-3 pt-2.5 border-t border-emerald-500/20 flex items-center justify-between gap-2 text-[11px] text-emerald-300/90">
-                  <span>New to Zeno? Switch to Create Account to claim.</span>
+                  <span>New to Kinich? Switch to Create Account to claim.</span>
                   <button
                     type="button"
                     onClick={() => {
@@ -449,7 +449,7 @@ const Signup1 = ({
                   onClick={(e) => {
                     e.preventDefault();
                     window.dispatchEvent(
-                      new CustomEvent("zeno-navigate-route", { detail: { path: "/terms" } })
+                      new CustomEvent("kinich-navigate-route", { detail: { path: "/terms" } })
                     );
                   }}
                   className={`font-semibold underline transition-colors ${
@@ -464,7 +464,7 @@ const Signup1 = ({
                   onClick={(e) => {
                     e.preventDefault();
                     window.dispatchEvent(
-                      new CustomEvent("zeno-navigate-route", { detail: { path: "/privacy" } })
+                      new CustomEvent("kinich-navigate-route", { detail: { path: "/privacy" } })
                     );
                   }}
                   className={`font-semibold underline transition-colors ${
@@ -479,7 +479,7 @@ const Signup1 = ({
                   onClick={(e) => {
                     e.preventDefault();
                     window.dispatchEvent(
-                      new CustomEvent("zeno-navigate-route", { detail: { path: "/acceptable-use" } })
+                      new CustomEvent("kinich-navigate-route", { detail: { path: "/acceptable-use" } })
                     );
                   }}
                   className={`font-semibold underline transition-colors ${
@@ -600,7 +600,7 @@ const Signup1 = ({
               compact
               isDark={isDark}
               onNavigate={(path) =>
-                window.dispatchEvent(new CustomEvent("zeno-navigate-route", { detail: { path } }))
+                window.dispatchEvent(new CustomEvent("kinich-navigate-route", { detail: { path } }))
               }
             />
           </div>

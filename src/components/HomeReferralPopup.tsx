@@ -27,11 +27,11 @@ export const HomeReferralPopup: React.FC<HomeReferralPopupProps> = ({ theme = 'd
     getMyReferralStatus()
       .then(() => refresh())
       .catch(() => {});
-    window.addEventListener('zeno-growth-updated', refresh);
-    window.addEventListener('zeno-account-updated', refresh);
+    window.addEventListener('kinich-growth-updated', refresh);
+    window.addEventListener('kinich-account-updated', refresh);
     return () => {
-      window.removeEventListener('zeno-growth-updated', refresh);
-      window.removeEventListener('zeno-account-updated', refresh);
+      window.removeEventListener('kinich-growth-updated', refresh);
+      window.removeEventListener('kinich-account-updated', refresh);
     };
   }, []);
 

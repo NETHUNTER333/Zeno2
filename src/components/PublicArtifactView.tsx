@@ -102,7 +102,7 @@ export const PublicArtifactView: React.FC<PublicArtifactViewProps> = ({
         if (!loaded) {
           setArtifact(null);
           setError(
-            'This Zeno page is unavailable, has been set to private by its creator, or does not exist.'
+            'This Kinich page is unavailable, has been set to private by its creator, or does not exist.'
           );
         } else {
           setArtifact(loaded);
@@ -113,7 +113,7 @@ export const PublicArtifactView: React.FC<PublicArtifactViewProps> = ({
       })
       .catch(() => {
         if (!cancelled) {
-          setError('Could not load this Zeno page.');
+          setError('Could not load this Kinich page.');
         }
       })
       .finally(() => {
@@ -224,7 +224,7 @@ export const PublicArtifactView: React.FC<PublicArtifactViewProps> = ({
   };
 
   const handleOpenCreatorProfile = async () => {
-    if (!artifact || !artifact.ownerId || artifact.ownerId === 'system_zeno') return;
+    if (!artifact || !artifact.ownerId || artifact.ownerId === 'system_kinich') return;
     setLoadingCreator(true);
     try {
       const data = await fetchCreatorPublicProfile(artifact.ownerId);
@@ -266,7 +266,7 @@ export const PublicArtifactView: React.FC<PublicArtifactViewProps> = ({
                 : 'bg-neutral-100 text-neutral-700 border border-black/[0.08]'
             }`}
           >
-            {artifact?.category || 'Zeno Page'}
+            {artifact?.category || 'Kinich Page'}
           </span>
 
           {artifact && (
@@ -320,7 +320,7 @@ export const PublicArtifactView: React.FC<PublicArtifactViewProps> = ({
                     : 'bg-neutral-900 text-white hover:bg-neutral-800'
                 }`}
               >
-                Fork in Zeno
+                Fork in Kinich
               </button>
             </>
           )}
@@ -354,7 +354,7 @@ export const PublicArtifactView: React.FC<PublicArtifactViewProps> = ({
             </div>
           ) : isEditing ? (
             <div className="space-y-4">
-              <h3 className="text-sm font-semibold">Edit Zeno Page</h3>
+              <h3 className="text-sm font-semibold">Edit Kinich Page</h3>
               <div>
                 <label className="block text-xs text-neutral-500 mb-1">Title</label>
                 <input
@@ -661,7 +661,7 @@ export const PublicArtifactView: React.FC<PublicArtifactViewProps> = ({
               >
                 <div>
                   <div className="text-sm font-semibold">
-                    Continue researching this topic in Zeno
+                    Continue researching this topic in Kinich
                   </div>
                   <div className="text-xs text-neutral-500 mt-0.5">
                     Fork this page into an interactive session, run deep verification, or generate study cards.
@@ -676,7 +676,7 @@ export const PublicArtifactView: React.FC<PublicArtifactViewProps> = ({
                         title: artifact.title,
                         promptText: artifact.promptText,
                         answerText: artifact.summary || artifact.content,
-                        modelName: artifact.modelUsed || 'Zeno Synthesis',
+                        modelName: artifact.modelUsed || 'Kinich Synthesis',
                         sourcesCount: artifact.sources?.length || 0,
                         authorName: artifact.showAuthorAttribution
                           ? artifact.authorName
@@ -700,14 +700,14 @@ export const PublicArtifactView: React.FC<PublicArtifactViewProps> = ({
                       isDark ? 'bg-white text-black' : 'bg-neutral-900 text-white'
                     }`}
                   >
-                    Open in Zeno
+                    Open in Kinich
                   </button>
                 </div>
               </div>
 
               {/* Moderation / Report Footer */}
               <div className="flex items-center justify-between text-[11px] text-neutral-500 pt-1">
-                <span>Published via Zeno</span>
+                <span>Published via Kinich</span>
                 <button
                   type="button"
                   onClick={() => setShowReportForm((v) => !v)}

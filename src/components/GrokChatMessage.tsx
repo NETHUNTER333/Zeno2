@@ -34,7 +34,7 @@ import {
   Globe,
   Flag
 } from 'lucide-react';
-import { openZenoReportModal } from './LegalAndInfoPages';
+import { openKinichReportModal } from './LegalAndInfoPages';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
@@ -88,7 +88,7 @@ interface GrokChatMessageProps {
   threadTitle?: string;
   onRetry?: (modelOverride?: ModelOption) => void;
   onEdit?: (content: string) => void;
-  onAskZeno?: (prompt: string) => void;
+  onAskKinich?: (prompt: string) => void;
   onOpenShareStudio?: (
     message: ChatMessageType,
     tab?: 'share' | 'export' | 'quote' | 'publish'
@@ -191,7 +191,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
   threadTitle,
   onRetry,
   onEdit,
-  onAskZeno,
+  onAskKinich,
   onOpenShareStudio,
   onOpenKnowledgeVault,
   theme = 'dark',
@@ -342,8 +342,8 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
     const syncPinState = () => {
       setIsPinned(UserAccountStore.getBookmarks().some((b) => b.messageId === message.id));
     };
-    window.addEventListener('zeno-account-updated', syncPinState);
-    return () => window.removeEventListener('zeno-account-updated', syncPinState);
+    window.addEventListener('kinich-account-updated', syncPinState);
+    return () => window.removeEventListener('kinich-account-updated', syncPinState);
   }, [message.id]);
 
   const handleTogglePin = () => {
@@ -413,8 +413,8 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
         )
       );
     };
-    window.addEventListener('zeno-vault-updated', syncVaultHighlights);
-    return () => window.removeEventListener('zeno-vault-updated', syncVaultHighlights);
+    window.addEventListener('kinich-vault-updated', syncVaultHighlights);
+    return () => window.removeEventListener('kinich-vault-updated', syncVaultHighlights);
   }, [message.id]);
 
   const handleCaptureTextSelection = React.useCallback(() => {
@@ -499,7 +499,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
       .trim();
     if (!cleanBody) return;
     KnowledgeVaultStore.saveItem({
-      title: threadTitle || cleanBody.replace(/[#*`~>\n]+/g, ' ').trim().slice(0, 72) || 'Zeno Insight',
+      title: threadTitle || cleanBody.replace(/[#*`~>\n]+/g, ' ').trim().slice(0, 72) || 'Kinich Insight',
       summary: cleanBody.replace(/[#*`~>\n]+/g, ' ').trim().slice(0, 220),
       content: cleanBody,
       type: 'ai_response',
@@ -1080,7 +1080,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
             <PersonaWikiCard
               persona={message.personaWiki}
               isDark={isDark}
-              onAskZeno={onAskZeno}
+              onAskKinich={onAskKinich}
             />
           )}
 
@@ -1245,13 +1245,13 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                     >
                       <span>Save</span>
                     </button>
-                    {onAskZeno && (
+                    {onAskKinich && (
                       <button
                         type="button"
                         onClick={() => {
                           const snippet = selectedSegmentText;
                           setSelectedSegmentText('');
-                          onAskZeno(`Explain this further: "${snippet.slice(0, 300)}"`);
+                          onAskKinich(`Explain this further: "${snippet.slice(0, 300)}"`);
                         }}
                         className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors cursor-pointer ${
                           isDark
@@ -1614,7 +1614,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                                   'Show a complete working code example',
                                 ]
                           }
-                          onSelectOption={onAskZeno}
+                          onSelectOption={onAskKinich}
                           isDark={isDark}
                         />
                       );
@@ -1756,7 +1756,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                 <ProductCards
                   products={detectedProducts}
                   isDark={isDark}
-                  onAskProduct={onAskZeno}
+                  onAskProduct={onAskKinich}
                 />
               );
             })()}
@@ -1777,7 +1777,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                   mode={mapData.mode}
                   nodes={mapData.nodes}
                   isDark={isDark}
-                  onSelectNodePrompt={onAskZeno}
+                  onSelectNodePrompt={onAskKinich}
                 />
               );
             })()}
@@ -1900,7 +1900,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                     key={quote.symbol}
                     quote={quote}
                     isDark={isDark}
-                    onAskZeno={onAskZeno}
+                    onAskKinich={onAskKinich}
                   />
                 ))}
               </div>
@@ -1919,7 +1919,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                     key={paper.id}
                     paper={paper}
                     isDark={isDark}
-                    onAskZeno={onAskZeno}
+                    onAskKinich={onAskKinich}
                   />
                 ))}
               </div>
@@ -1943,7 +1943,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                     key={idx}
                     repo={repo}
                     isDark={isDark}
-                    onAskZeno={onAskZeno}
+                    onAskKinich={onAskKinich}
                   />
                 ))}
               </div>
@@ -2558,8 +2558,8 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                     className={`p-1 rounded transition-colors cursor-pointer ${
                       isDark ? 'hover:text-white' : 'hover:text-[#0d0d0d]'
                     }`}
-                    title="Create Zeno Share Card or Export"
-                    aria-label="Create Zeno Share Card"
+                    title="Create Kinich Share Card or Export"
+                    aria-label="Create Kinich Share Card"
                   >
                     <Share2 className="w-3.5 h-3.5" />
                   </button>
@@ -2568,7 +2568,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                 <button
                   type="button"
                   onClick={() =>
-                    openZenoReportModal({
+                    openKinichReportModal({
                       targetType: 'ai_answer',
                       targetId: message.id,
                       contentPreview: String(message.content || '').slice(0, 400),
@@ -2634,7 +2634,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
           extractedText={pdfViewerData.extractedText}
           initialTab={pdfViewerData.initialTab}
           isDark={isDark}
-          onAskZeno={onAskZeno}
+          onAskKinich={onAskKinich}
         />
       )}
 
@@ -2653,7 +2653,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
           onClose={() => setActiveStudyVideo(null)}
           video={activeStudyVideo}
           isDark={isDark}
-          onAskZeno={onAskZeno}
+          onAskKinich={onAskKinich}
         />
       )}
     </div>

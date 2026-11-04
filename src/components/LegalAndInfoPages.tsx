@@ -185,9 +185,9 @@ export function setCookiePreference(choice: CookiePreferenceChoice): void {
     localStorage.setItem(LEGAL_CONFIG.COOKIE_CONSENT_KEY, choice);
     if (choice === 'essential') {
       // Clear optional functional referral cache if user selects Essential Only
-      localStorage.removeItem('zeno_referral_state_v1');
+      localStorage.removeItem('kinich_referral_state_v1');
     }
-    window.dispatchEvent(new CustomEvent('zeno-cookie-pref-changed', { detail: { choice } }));
+    window.dispatchEvent(new CustomEvent('kinich-cookie-pref-changed', { detail: { choice } }));
   } catch {}
 }
 
@@ -231,9 +231,9 @@ export interface ReportModalPayload {
   contentPreview?: string;
 }
 
-export function openZenoReportModal(payload: ReportModalPayload): void {
+export function openKinichReportModal(payload: ReportModalPayload): void {
   if (typeof window === 'undefined') return;
-  window.dispatchEvent(new CustomEvent('zeno-open-report', { detail: payload }));
+  window.dispatchEvent(new CustomEvent('kinich-open-report', { detail: payload }));
 }
 
 // ============================================================================
@@ -360,8 +360,8 @@ export const CookieConsentBanner: React.FC<{
 
   useEffect(() => {
     const sync = () => setChoice(getCookiePreference());
-    window.addEventListener('zeno-cookie-pref-changed', sync);
-    return () => window.removeEventListener('zeno-cookie-pref-changed', sync);
+    window.addEventListener('kinich-cookie-pref-changed', sync);
+    return () => window.removeEventListener('kinich-cookie-pref-changed', sync);
   }, []);
 
   if (choice !== null) return null;
@@ -635,8 +635,8 @@ export const ReportContentModal: React.FC<{ isDark?: boolean }> = ({ isDark = tr
         setDetails('');
       }
     };
-    window.addEventListener('zeno-open-report', handler);
-    return () => window.removeEventListener('zeno-open-report', handler);
+    window.addEventListener('kinich-open-report', handler);
+    return () => window.removeEventListener('kinich-open-report', handler);
   }, []);
 
   if (!payload) return null;

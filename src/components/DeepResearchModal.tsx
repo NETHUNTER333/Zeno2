@@ -38,7 +38,7 @@ import {
   AnswerSource,
 } from '../lib/deepResearchHistoryStore';
 import { MathMarkdown } from './MathMarkdown';
-import { openZenoReportModal } from './LegalAndInfoPages';
+import { openKinichReportModal } from './LegalAndInfoPages';
 import { Flag } from 'lucide-react';
 
 export { type AnswerSource };
@@ -678,7 +678,7 @@ export interface DeepResearchModalProps {
 
 const FEEDBACK_REASONS = ['Not accurate', 'Wrong source', 'Too long', 'Out of date'];
 
-const INSTACLOUD_API_BASE = 'https://prod-main-zeno-api-c257d4-00gfx3c9932.compute.instacloud-edge.com';
+const INSTACLOUD_API_BASE = 'https://prod-main-kinich-api-c257d4-00gfx3c9932.compute.instacloud-edge.com';
 
 async function callApi(path: string, init?: RequestInit): Promise<Response> {
   const isStaticHost =
@@ -1269,7 +1269,7 @@ export const DeepResearchModal: React.FC<DeepResearchModalProps> = ({
         title: s.title,
         excerpt300: s.excerpt.slice(0, 300),
       }));
-      console.log(`[Zeno Deep Research] Sources passed to writer for "${cleanQ}":`, sourceLogsForWriter);
+      console.log(`[Kinich Deep Research] Sources passed to writer for "${cleanQ}":`, sourceLogsForWriter);
       for (const logItem of sourceLogsForWriter) {
         console.log(
           `[${logItem.sid}] URL: ${logItem.url} | Title: ${logItem.title} | Excerpt (first 300 chars): ${logItem.excerpt300}`
@@ -1423,7 +1423,7 @@ STRICT RULES:
 
       // FIX 4: If no, regenerate once from the same sources.
       if (!passesTopicGuard && keptSources.length > 0) {
-        console.warn(`[Zeno Deep Research] Topic Guard rejected Attempt 1 for "${cleanQ}". Regenerating once from the same sources...`);
+        console.warn(`[Kinich Deep Research] Topic Guard rejected Attempt 1 for "${cleanQ}". Regenerating once from the same sources...`);
         candidateReport = await runWriterCall(true);
         passesTopicGuard = await judgeWhetherReportAnswersQuery(candidateReport);
       }
@@ -2635,7 +2635,7 @@ STRICT RULES:
                           <button
                             type="button"
                             onClick={() =>
-                              openZenoReportModal({
+                              openKinichReportModal({
                                 targetType: 'ai_answer',
                                 targetId: turn.id,
                                 contentPreview: turn.fullAnswer.slice(0, 280),

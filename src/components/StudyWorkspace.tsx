@@ -65,7 +65,7 @@ export interface StudyWorkspaceProps {
   } | null;
   onBackToChat: () => void;
   isDark?: boolean;
-  onAskZeno?: (prompt: string) => void;
+  onAskKinich?: (prompt: string) => void;
 }
 
 export type WorkspaceTabType =
@@ -435,7 +435,7 @@ export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
 
   const [spaces, setSpaces] = useState<StudySpaceItem[]>(() => {
     try {
-      const saved = localStorage.getItem('zeno_study_spaces_v2');
+      const saved = localStorage.getItem('kinich_study_spaces_v2');
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
@@ -492,7 +492,7 @@ export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
 
   useEffect(() => {
     try {
-      localStorage.setItem('zeno_study_spaces_v2', JSON.stringify(spaces));
+      localStorage.setItem('kinich_study_spaces_v2', JSON.stringify(spaces));
     } catch {}
   }, [spaces]);
 
@@ -2099,7 +2099,7 @@ ${fullTranscriptText}`;
                       onClick={() => {
                         setTopMoreMenuOpen(false);
                         window.dispatchEvent(
-                          new CustomEvent('zeno-open-report', {
+                          new CustomEvent('kinich-open-report', {
                             detail: {
                               targetType: 'study_set',
                               targetId: activeVideoId || resolvedTitle,

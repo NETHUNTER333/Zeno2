@@ -1,11 +1,11 @@
 /**
- * Unified API Base for Zeno Web Client
- * Ensures that when deployed statically on Vercel (https://zeno0x.vercel.app),
- * all backend API calls are correctly routed to the InstaCloud zeno-api container.
+ * Unified API Base for Kinich Web Client
+ * Ensures that when deployed statically on Vercel (https://kinich0x.vercel.app),
+ * all backend API calls are correctly routed to the InstaCloud kinich-api container.
  */
 
 export const INSTACLOUD_ZENO_API_ORIGIN =
-  'https://prod-main-zeno-api-c257d4-00gfx3c9932.compute.instacloud-edge.com';
+  'https://prod-main-kinich-api-c257d4-00gfx3c9932.compute.instacloud-edge.com';
 
 export function getBackendBaseUrl(): string {
   if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_BACKEND_URL) {

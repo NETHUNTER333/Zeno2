@@ -572,14 +572,14 @@ export async function publishSharedThreadToFirestore(thread: {
   const snapshotPayload: SharedThreadSnapshotDoc = {
     id: shareId,
     ownerId: auth.currentUser?.uid || 'guest_owner',
-    title: String(thread.title || 'Shared Zeno Thread').slice(0, 200),
+    title: String(thread.title || 'Shared Kinich Thread').slice(0, 200),
     createdAt: Number(thread.createdAt) || Date.now(),
     messages: sanitizedMessages,
   };
 
   // Always cache locally so instant preview works even offline or without Firebase Auth
   try {
-    localStorage.setItem(`zeno_shared_${shareId}`, JSON.stringify(snapshotPayload));
+    localStorage.setItem(`kinich_shared_${shareId}`, JSON.stringify(snapshotPayload));
   } catch {}
 
   const user = auth.currentUser;
@@ -607,7 +607,7 @@ export async function loadSharedThreadFromFirestore(
   if (!safeId) return null;
 
   try {
-    const localRaw = localStorage.getItem(`zeno_shared_${safeId}`);
+    const localRaw = localStorage.getItem(`kinich_shared_${safeId}`);
     if (localRaw) {
       const parsed = JSON.parse(localRaw);
       if (parsed && Array.isArray(parsed.messages)) {
@@ -719,8 +719,8 @@ export async function savePublicArtifactToFirestore(artifact: {
     const payload = stripUndefined({
       id: safeId,
       ownerId: user.uid,
-      authorName: String(artifact.authorName || user.displayName || 'Zeno Researcher').slice(0, 100),
-      title: String(artifact.title || 'Zeno Resource').slice(0, 200),
+      authorName: String(artifact.authorName || user.displayName || 'Kinich Researcher').slice(0, 100),
+      title: String(artifact.title || 'Kinich Resource').slice(0, 200),
       summary: String(artifact.summary || '').slice(0, 500),
       content: String(artifact.content || '').slice(0, 32000),
       category: String(artifact.category || 'Research').slice(0, 50),

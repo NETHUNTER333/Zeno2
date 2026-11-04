@@ -6,13 +6,13 @@ import { generateDeterministicSparkline, fetchLiveFinanceQuoteClient } from '../
 interface FinanceTerminalCardProps {
   quote: FinanceQuote;
   isDark?: boolean;
-  onAskZeno?: (prompt: string) => void;
+  onAskKinich?: (prompt: string) => void;
 }
 
 export const FinanceTerminalCard: React.FC<FinanceTerminalCardProps> = ({
   quote: initialQuote,
   isDark = true,
-  onAskZeno,
+  onAskKinich,
 }) => {
   const [quote, setQuote] = useState<FinanceQuote>(initialQuote);
   const [timeframe, setTimeframe] = useState<'1D' | '1W' | '1M' | '1Y'>('1D');
@@ -303,7 +303,7 @@ export const FinanceTerminalCard: React.FC<FinanceTerminalCardProps> = ({
       </div>
 
       {/* Footer Action Bar */}
-      {onAskZeno && (
+      {onAskKinich && (
         <div
           className={`mt-3 pt-2.5 border-t flex items-center justify-between gap-2 text-xs ${
             isDark ? 'border-[#1f242d]' : 'border-slate-200'
@@ -316,7 +316,7 @@ export const FinanceTerminalCard: React.FC<FinanceTerminalCardProps> = ({
             <button
               type="button"
               onClick={() =>
-                onAskZeno(
+                onAskKinich(
                   `Provide a deep fundamental, technical, and catalyst analysis for ${quote.name} (${quote.symbol}) currently trading around ${formatUsd(quote.price)}.`
                 )
               }

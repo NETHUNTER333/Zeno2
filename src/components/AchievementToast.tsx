@@ -75,18 +75,18 @@ export const AchievementToast: React.FC<AchievementToastProps> = ({ isDark }) =>
       }
     };
 
-    window.addEventListener('zeno-achievement-unlocked', handleUnlockEvent as EventListener);
-    window.addEventListener('zeno-account-updated', syncAccountState);
+    window.addEventListener('kinich-achievement-unlocked', handleUnlockEvent as EventListener);
+    window.addEventListener('kinich-account-updated', syncAccountState);
 
     return () => {
-      window.removeEventListener('zeno-achievement-unlocked', handleUnlockEvent as EventListener);
-      window.removeEventListener('zeno-account-updated', syncAccountState);
+      window.removeEventListener('kinich-achievement-unlocked', handleUnlockEvent as EventListener);
+      window.removeEventListener('kinich-account-updated', syncAccountState);
     };
   }, [syncAccountState]);
 
   useEffect(() => {
     window.dispatchEvent(
-      new CustomEvent('zeno-achievement-toast-active', {
+      new CustomEvent('kinich-achievement-toast-active', {
         detail: { active: Boolean(activeToast) },
       })
     );
@@ -153,7 +153,7 @@ export const AchievementToast: React.FC<AchievementToastProps> = ({ isDark }) =>
   const handleOpenVault = () => {
     const targetTab = activeToast.kind === 'milestone' ? 'milestones' : 'badges';
     window.dispatchEvent(
-      new CustomEvent('zeno-open-streak-modal', {
+      new CustomEvent('kinich-open-streak-modal', {
         detail: { tab: targetTab },
       })
     );

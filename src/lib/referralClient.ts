@@ -34,10 +34,10 @@ export interface ReferralDashboardResponse {
   error?: string;
 }
 
-const STORAGE_KEY = 'zeno_pending_ref_code';
-const SHARED_CLIENT_ID_KEY = 'zeno_growth_client_id';
-const LEGACY_CLIENT_ID_KEY = 'zeno_client_id';
-const COOKIE_NAME = 'zeno_ref_code';
+const STORAGE_KEY = 'kinich_pending_ref_code';
+const SHARED_CLIENT_ID_KEY = 'kinich_growth_client_id';
+const LEGACY_CLIENT_ID_KEY = 'kinich_client_id';
+const COOKIE_NAME = 'kinich_ref_code';
 const COOKIE_MAX_AGE = 30 * 24 * 60 * 60; // 30 days in seconds
 
 export function getOrCreateSharedClientId(): string {
@@ -70,7 +70,7 @@ export function computeCanonicalReferralCode(userId?: string): string {
   const clean = String(effectiveId || 'guest').trim() || 'guest';
   let h1 = 0x811c9dc5;
   let h2 = 0x01000193;
-  const seed = `zeno_ref_${clean}`;
+  const seed = `kinich_ref_${clean}`;
   for (let i = 0; i < seed.length; i++) {
     const ch = seed.charCodeAt(i);
     h1 ^= ch;
@@ -97,7 +97,7 @@ export function isSelfReferralCode(candidateCode?: string | null): boolean {
   }
 
   try {
-    const cachedRaw = localStorage.getItem('zeno_referral_status_v1');
+    const cachedRaw = localStorage.getItem('kinich_referral_status_v1');
     if (cachedRaw) {
       const parsed = JSON.parse(cachedRaw);
       const cachedCode = String(parsed?.referralCode || parsed?.code || '').trim().toLowerCase();
@@ -229,7 +229,7 @@ export async function captureInboundReferral(): Promise<PendingReferralInfo | nu
 export function getPendingReferral(): PendingReferralInfo | null {
   if (typeof window === 'undefined') return null;
 
-  // 1. Check localStorage ('zeno_pending_ref_code' or 'ref')
+  // 1. Check localStorage ('kinich_pending_ref_code' or 'ref')
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
@@ -306,7 +306,7 @@ export async function claimPendingReferralAfterAuth(
     const effectiveUid = userId || auth.currentUser?.uid || getOrCreateSharedClientId();
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      'X-Zeno-Client-Id': effectiveUid,
+      'X-Kinich-Client-Id': effectiveUid,
     };
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
@@ -353,7 +353,7 @@ export async function fetchUserReferralDashboard(): Promise<ReferralDashboardRes
     const token = await auth.currentUser?.getIdToken().catch(() => null);
     const uid = auth.currentUser?.uid || getOrCreateSharedClientId();
     const headers: Record<string, string> = {
-      'X-Zeno-Client-Id': uid,
+      'X-Kinich-Client-Id': uid,
     };
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;

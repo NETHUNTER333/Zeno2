@@ -9,13 +9,13 @@ export interface ExportableThread {
 }
 
 function sanitizeFilename(name: string): string {
-  const cleaned = (name || 'zeno-conversation')
+  const cleaned = (name || 'kinich-conversation')
     .toLowerCase()
     .replace(/[^a-z0-9-_]+/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '')
     .slice(0, 60);
-  return cleaned || 'zeno-conversation';
+  return cleaned || 'kinich-conversation';
 }
 
 function stripGenerativeUiBlocks(content: string): string {
@@ -43,7 +43,7 @@ export function buildConversationMarkdown(thread: ExportableThread): string {
   const createdDate = new Date(thread.createdAt || Date.now()).toLocaleString();
 
   const lines: string[] = [
-    `# ${thread.title || 'Zeno Conversation'}`,
+    `# ${thread.title || 'Kinich Conversation'}`,
     '',
     `- **Created**: ${createdDate}`,
     `- **Exported**: ${exportedDate}`,
@@ -58,7 +58,7 @@ export function buildConversationMarkdown(thread: ExportableThread): string {
     const timeStr = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString() : '';
     const roleHeader = isUser
       ? `### User${timeStr ? ` _(${timeStr})_` : ''}`
-      : `### Zeno${msg.modelUsed ? ` · \`${msg.modelUsed}\`` : ''}${
+      : `### Kinich${msg.modelUsed ? ` · \`${msg.modelUsed}\`` : ''}${
           msg.timing?.totalSec ? ` _(${msg.timing.totalSec}s)_` : ''
         }`;
 
@@ -164,7 +164,7 @@ export function exportConversationAsPdf(thread: ExportableThread): void {
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(18);
   doc.setTextColor(15, 15, 15);
-  const titleLines = doc.splitTextToSize(thread.title || 'Zeno Conversation', contentWidth);
+  const titleLines = doc.splitTextToSize(thread.title || 'Kinich Conversation', contentWidth);
   doc.text(titleLines, margin, cursorY);
   cursorY += titleLines.length * 22 + 4;
 
@@ -303,7 +303,7 @@ export function buildNotionReadyMarkdown(thread: ExportableThread): string {
   const createdDate = new Date(thread.createdAt || Date.now()).toLocaleString();
 
   const lines: string[] = [
-    `# ${thread.title || 'Zeno Research Thread'}`,
+    `# ${thread.title || 'Kinich Research Thread'}`,
     '',
     `> **Workspace Export** · Created ${createdDate} · Exported ${exportedDate} · ${thread.messages.length} messages`,
     '',
@@ -536,7 +536,7 @@ export function renderQuoteCardToCanvas(
   ctx.fillStyle = palette.textMuted;
   ctx.font = '500 13px "JetBrains Mono", monospace';
   const headerMeta = [
-    config.modelName || 'Zeno Synthesis',
+    config.modelName || 'Kinich Synthesis',
     config.sourcesCount ? `${config.sourcesCount} cited sources` : null,
     config.dateStr ||
       new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
@@ -602,11 +602,11 @@ export function renderQuoteCardToCanvas(
   ctx.fillStyle = palette.textMuted;
   ctx.font = '500 13px "Plus Jakarta Sans", -apple-system, sans-serif';
   const leftFooter = config.authorName
-    ? `Shared by ${config.authorName.slice(0, 32)}  ·  Explore with Zeno`
-    : 'Explore with Zeno  →  zeno0x.vercel.app';
+    ? `Shared by ${config.authorName.slice(0, 32)}  ·  Explore with Kinich`
+    : 'Explore with Kinich  →  kinich0x.vercel.app';
   ctx.fillText(leftFooter, padding, footerY);
 
-  const rightWatermark = 'zeno0x.vercel.app';
+  const rightWatermark = 'kinich0x.vercel.app';
   ctx.font = '500 12px "JetBrains Mono", monospace';
   const rwWidth = ctx.measureText(rightWatermark).width;
   ctx.fillText(rightWatermark, width - padding - rwWidth, footerY);
@@ -618,7 +618,7 @@ export function downloadQuoteCardPng(config: QuoteCardConfig): void {
   const dataUrl = canvas.toDataURL('image/png');
   const a = document.createElement('a');
   a.href = dataUrl;
-  a.download = `${sanitizeFilename(config.title)}-zeno-card.png`;
+  a.download = `${sanitizeFilename(config.title)}-kinich-card.png`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -697,7 +697,7 @@ export function renderWeeklyReportCardToCanvas(
   // Headline
   ctx.fillStyle = palette.textPrimary;
   ctx.font = '700 34px "Plus Jakarta Sans", -apple-system, sans-serif';
-  ctx.fillText('Your Week with Zeno', padding, y);
+  ctx.fillText('Your Week with Kinich', padding, y);
 
   y += 30;
   ctx.fillStyle = palette.textMuted;
@@ -794,7 +794,7 @@ export function renderWeeklyReportCardToCanvas(
   ctx.font = '500 13px "Plus Jakarta Sans", -apple-system, sans-serif';
   ctx.fillText('Private conversation contents excluded by default', padding, footerY);
 
-  const rightWatermark = 'Explore with Zeno → zeno0x.vercel.app';
+  const rightWatermark = 'Explore with Kinich → kinich0x.vercel.app';
   ctx.font = '600 13px "JetBrains Mono", monospace';
   const rwW = ctx.measureText(rightWatermark).width;
   ctx.fillText(rightWatermark, width - padding - rwW, footerY);
@@ -806,7 +806,7 @@ export function downloadWeeklyReportCardPng(config: WeeklyReportCardConfig): voi
   const dataUrl = canvas.toDataURL('image/png');
   const a = document.createElement('a');
   a.href = dataUrl;
-  a.download = `zeno-weekly-brief.png`;
+  a.download = `kinich-weekly-brief.png`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

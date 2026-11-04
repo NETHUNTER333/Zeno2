@@ -33,9 +33,9 @@ export const TTS_LANGUAGES: TtsLanguageOption[] = [
   { code: 'japanese', label: 'Japanese', nativeLabel: '日本語', bcp47: 'ja-JP' },
 ];
 
-const LANG_STORAGE_KEY = 'zeno_tts_lang';
-const GENDER_STORAGE_KEY = 'zeno_tts_gender';
-const SPEED_STORAGE_KEY = 'zeno_tts_speed';
+const LANG_STORAGE_KEY = 'kinich_tts_lang';
+const GENDER_STORAGE_KEY = 'kinich_tts_gender';
+const SPEED_STORAGE_KEY = 'kinich_tts_speed';
 
 export function getSavedTtsLanguage(): string {
   try {
@@ -50,7 +50,7 @@ export function getSavedTtsLanguage(): string {
 export function setSavedTtsLanguage(langCode: string) {
   try {
     localStorage.setItem(LANG_STORAGE_KEY, langCode);
-    window.dispatchEvent(new CustomEvent('zeno-tts-prefs-changed'));
+    window.dispatchEvent(new CustomEvent('kinich-tts-prefs-changed'));
   } catch {}
 }
 
@@ -65,7 +65,7 @@ export function getSavedTtsGender(): TtsVoiceGender {
 export function setSavedTtsGender(gender: TtsVoiceGender) {
   try {
     localStorage.setItem(GENDER_STORAGE_KEY, gender);
-    window.dispatchEvent(new CustomEvent('zeno-tts-prefs-changed'));
+    window.dispatchEvent(new CustomEvent('kinich-tts-prefs-changed'));
   } catch {}
 }
 
@@ -86,7 +86,7 @@ let activeAbortController: AbortController | null = null;
 export function setSavedTtsSpeed(speed: TtsPlaybackSpeed) {
   try {
     localStorage.setItem(SPEED_STORAGE_KEY, String(speed));
-    window.dispatchEvent(new CustomEvent('zeno-tts-prefs-changed'));
+    window.dispatchEvent(new CustomEvent('kinich-tts-prefs-changed'));
   } catch {}
   setActiveTtsPlaybackSpeed(speed);
 }
@@ -255,7 +255,7 @@ export async function speakTextWithSmallestAi(
       const rawAudioBlob = await response.blob();
       if (controller.signal.aborted) return;
 
-      const needsMaleShift = response.headers.get('X-Zeno-Tts-Pitch-Shift') === 'male';
+      const needsMaleShift = response.headers.get('X-Kinich-Tts-Pitch-Shift') === 'male';
       const audioBlob = await shiftBlobToMaleVoiceIfNeeded(rawAudioBlob, needsMaleShift);
       if (controller.signal.aborted) return;
 

@@ -5,17 +5,17 @@ import {
   KnowledgeVaultItem,
   KnowledgeCollection,
   CreatorPublicProfile,
-  ZenoReferralStatus,
-  ZenoMissionItem,
-  ZenoIntelligenceLevel,
-  ZenoNotificationPreferences,
+  KinichReferralStatus,
+  KinichMissionItem,
+  KinichIntelligenceLevel,
+  KinichNotificationPreferences,
   GrowthAnalyticsEventName,
   GrowthFunnelSummary,
   SearchSource,
   EliteReferrerLeaderboardEntry,
   TopContributorEntry,
-  ZenoFeedbackCategory,
-  ZenoFeedbackSubmission,
+  KinichFeedbackCategory,
+  KinichFeedbackSubmission,
 } from '../types';
 import {
   auth,
@@ -38,20 +38,20 @@ import {
 } from './referralClient';
 
 const GROWTH_KEYS = {
-  CLIENT_ID: 'zeno_growth_client_id',
-  VAULT_ITEMS: 'zeno_vault_items_v1',
-  VAULT_COLLECTIONS: 'zeno_vault_collections_v1',
-  MY_ARTIFACTS: 'zeno_my_artifacts_v1',
-  CREATOR_PROFILE: 'zeno_creator_profile_v1',
-  REFERRAL_STATUS: 'zeno_referral_status_v1',
-  PENDING_REF_CODE: 'zeno_pending_ref_code_v1',
-  NOTIFY_PREFS: 'zeno_notify_prefs_v1',
-  DISMISSED_CONTINUATION: 'zeno_dismissed_continuation_v1',
-  LOCAL_ANALYTICS_COUNTS: 'zeno_growth_analytics_counts_v1',
-  SEEN_EVENT_KEYS: 'zeno_growth_seen_events_v1',
-  FEEDBACK_ITEMS: 'zeno_submitted_feedback_v1',
-  USER_REFERRAL_TRACKER: 'zeno_user_referral_tracker_v1',
-  CLAIMED_REFERRER_BONUSES: 'zeno_claimed_referrer_bonuses_v1',
+  CLIENT_ID: 'kinich_growth_client_id',
+  VAULT_ITEMS: 'kinich_vault_items_v1',
+  VAULT_COLLECTIONS: 'kinich_vault_collections_v1',
+  MY_ARTIFACTS: 'kinich_my_artifacts_v1',
+  CREATOR_PROFILE: 'kinich_creator_profile_v1',
+  REFERRAL_STATUS: 'kinich_referral_status_v1',
+  PENDING_REF_CODE: 'kinich_pending_ref_code_v1',
+  NOTIFY_PREFS: 'kinich_notify_prefs_v1',
+  DISMISSED_CONTINUATION: 'kinich_dismissed_continuation_v1',
+  LOCAL_ANALYTICS_COUNTS: 'kinich_growth_analytics_counts_v1',
+  SEEN_EVENT_KEYS: 'kinich_growth_seen_events_v1',
+  FEEDBACK_ITEMS: 'kinich_submitted_feedback_v1',
+  USER_REFERRAL_TRACKER: 'kinich_user_referral_tracker_v1',
+  CLAIMED_REFERRER_BONUSES: 'kinich_claimed_referrer_bonuses_v1',
 };
 
 export const DISCOVER_CATEGORIES: DiscoverCategory[] = [
@@ -121,19 +121,19 @@ export function getOrCreateClientId(): string {
 
 async function getGrowthHeaders(): Promise<Record<string, string>> {
   const clientId = getOrCreateClientId();
-  return getAuthHeaders({ 'X-Zeno-Client-Id': clientId });
+  return getAuthHeaders({ 'X-Kinich-Client-Id': clientId });
 }
 
 function emitGrowthUpdate(): void {
   if (typeof window !== 'undefined') {
-    window.dispatchEvent(new Event('zeno-growth-updated'));
+    window.dispatchEvent(new Event('kinich-growth-updated'));
   }
 }
 
 function emitVaultUpdate(): void {
   if (typeof window !== 'undefined') {
-    window.dispatchEvent(new Event('zeno-vault-updated'));
-    window.dispatchEvent(new Event('zeno-growth-updated'));
+    window.dispatchEvent(new Event('kinich-vault-updated'));
+    window.dispatchEvent(new Event('kinich-growth-updated'));
   }
 }
 
@@ -544,7 +544,7 @@ export const KnowledgeVaultStore = {
     const colMap = new Map(collections.map((c) => [c.id, c.name]));
 
     const lines: string[] = [
-      '# Zeno Personal Knowledge Vault Export',
+      '# Kinich Personal Knowledge Vault Export',
       '',
       `- **Exported**: ${new Date().toLocaleString()}`,
       `- **Total Saved Insights**: ${items.length}`,
@@ -656,7 +656,7 @@ export async function fetchPublicArtifactById(
   return null;
 }
 
-export async function publishZenoArtifact(input: {
+export async function publishKinichArtifact(input: {
   id?: string;
   title: string;
   summary: string;
@@ -678,7 +678,7 @@ export async function publishZenoArtifact(input: {
   const payload = {
     ...input,
     outputType,
-    authorName: input.authorName || profile.displayName || 'Zeno Researcher',
+    authorName: input.authorName || profile.displayName || 'Kinich Researcher',
     authorUsername: profile.username || undefined,
     authorBio: profile.bio || undefined,
   };
@@ -743,9 +743,9 @@ export async function publishZenoArtifact(input: {
   return createdArtifact;
 }
 
-export const publishPublicArtifact = publishZenoArtifact;
+export const publishPublicArtifact = publishKinichArtifact;
 
-export async function updateZenoArtifact(
+export async function updateKinichArtifact(
   artifactId: string,
   patch: Partial<
     Pick<
@@ -783,9 +783,9 @@ export async function updateZenoArtifact(
   return updated;
 }
 
-export const updatePublicArtifact = updateZenoArtifact;
+export const updatePublicArtifact = updateKinichArtifact;
 
-export async function deleteZenoArtifact(artifactId: string): Promise<boolean> {
+export async function deleteKinichArtifact(artifactId: string): Promise<boolean> {
   try {
     const headers = await getGrowthHeaders();
     await fetch(`/api/growth/artifacts/${encodeURIComponent(artifactId)}`, {
@@ -803,7 +803,7 @@ export async function deleteZenoArtifact(artifactId: string): Promise<boolean> {
   return true;
 }
 
-export const deletePublicArtifact = deleteZenoArtifact;
+export const deletePublicArtifact = deleteKinichArtifact;
 
 export function getMyPublishedArtifacts(): PublicArtifact[] {
   return safeLoad<PublicArtifact[]>(GROWTH_KEYS.MY_ARTIFACTS, []);
@@ -849,9 +849,9 @@ export const recordArtifactEngagement = recordArtifactInteraction;
 // REFERRAL SYSTEM ("ZENO PASSES")
 // ============================================================================
 
-export async function getMyReferralStatus(): Promise<ZenoReferralStatus> {
+export async function getMyReferralStatus(): Promise<KinichReferralStatus> {
   const origin =
-    typeof window !== 'undefined' ? window.location.origin : 'https://zeno0x.vercel.app';
+    typeof window !== 'undefined' ? window.location.origin : 'https://kinich0x.vercel.app';
   try {
     const headers = await getGrowthHeaders();
     // Try primary new /api/referral/me first, fallback to /api/growth/referrals/me
@@ -869,7 +869,7 @@ export async function getMyReferralStatus(): Promise<ZenoReferralStatus> {
         const qualified = Number(data.stats?.qualified ?? data.verifiedReferralsCount ?? 0);
         const rewarded = Number(data.stats?.rewarded ?? data.qualifiedActionsCount ?? 0);
 
-        const status: ZenoReferralStatus = {
+        const status: KinichReferralStatus = {
           referralCode: code,
           code,
           referrerUid: auth.currentUser?.uid || data.referrerUid || getOrCreateClientId(),
@@ -894,12 +894,12 @@ export async function getMyReferralStatus(): Promise<ZenoReferralStatus> {
 
   const myUid = auth.currentUser?.uid || getOrCreateClientId();
   const canonicalCode = computeCanonicalReferralCode(myUid);
-  const cached = safeLoad<ZenoReferralStatus | null>(GROWTH_KEYS.REFERRAL_STATUS, null);
+  const cached = safeLoad<KinichReferralStatus | null>(GROWTH_KEYS.REFERRAL_STATUS, null);
   if (cached && cached.referralCode === canonicalCode) return cached;
 
   const fallbackCode = canonicalCode;
   const inviteUrl = `${origin}/r/${fallbackCode}`;
-  const fallbackStatus: ZenoReferralStatus = {
+  const fallbackStatus: KinichReferralStatus = {
     referralCode: fallbackCode,
     code: fallbackCode,
     referrerUid: myUid,
@@ -921,7 +921,7 @@ export async function getMyReferralStatus(): Promise<ZenoReferralStatus> {
 export const fetchMyReferralStatus = getMyReferralStatus;
 
 export function getUnlockedCosmeticThemes(): ShareCardTheme[] {
-  const cached = safeLoad<ZenoReferralStatus | null>(GROWTH_KEYS.REFERRAL_STATUS, null);
+  const cached = safeLoad<KinichReferralStatus | null>(GROWTH_KEYS.REFERRAL_STATUS, null);
   const base: ShareCardTheme[] = ['carbon', 'ivory', 'slate'];
   if (!cached || !Array.isArray(cached.unlockedThemes)) return base;
   if (
@@ -968,9 +968,9 @@ export function evaluateMissionsAndLevel(
   threads: Array<{ id: string; title: string; createdAt: number; messages?: any[] }>,
   vaultItemsArg?: KnowledgeVaultItem[]
 ): {
-  missions: ZenoMissionItem[];
-  level: ZenoIntelligenceLevel & { xp: number };
-  intelligenceLevel: ZenoIntelligenceLevel;
+  missions: KinichMissionItem[];
+  level: KinichIntelligenceLevel & { xp: number };
+  intelligenceLevel: KinichIntelligenceLevel;
 } {
   const vaultItems = vaultItemsArg || KnowledgeVaultStore.getItems();
   const collections = KnowledgeVaultStore.getCollections();
@@ -999,7 +999,7 @@ export function evaluateMissionsAndLevel(
     Number(localCounts.share_action_initiated || 0);
   const multiTurnThreadsCount = threads.filter((t) => (t.messages?.length || 0) >= 4).length;
 
-  const missions: ZenoMissionItem[] = [
+  const missions: KinichMissionItem[] = [
     {
       id: 'mission_save_insight',
       title: 'Save your first useful answer',
@@ -1030,7 +1030,7 @@ export function evaluateMissionsAndLevel(
     },
     {
       id: 'mission_share_card',
-      title: 'Create a Zeno Share Card',
+      title: 'Create a Kinich Share Card',
       description: 'Export a high-resolution Share Card or share a research snapshot.',
       xp: 100,
       progress: Math.min(1, shareCardsCount),
@@ -1039,8 +1039,8 @@ export function evaluateMissionsAndLevel(
     },
     {
       id: 'mission_publish_page',
-      title: 'Publish a Public Zeno Resource',
-      description: 'Publish a study guide, research synthesis, or workflow to Zeno Discover.',
+      title: 'Publish a Public Kinich Resource',
+      description: 'Publish a study guide, research synthesis, or workflow to Kinich Discover.',
       xp: 150,
       progress: Math.min(1, publicArtifactsCount),
       target: 1,
@@ -1064,12 +1064,12 @@ export function evaluateMissionsAndLevel(
 
   const levels: Array<{
     level: number;
-    name: ZenoIntelligenceLevel['name'];
+    name: KinichIntelligenceLevel['name'];
     achievement: string;
     minXp: number;
     nextXp: number;
   }> = [
-    { level: 1, name: 'Explorer', achievement: 'Discover Zeno', minXp: 0, nextXp: 75 },
+    { level: 1, name: 'Explorer', achievement: 'Discover Kinich', minXp: 0, nextXp: 75 },
     {
       level: 2,
       name: 'Researcher',
@@ -1211,7 +1211,7 @@ export function computeWeeklyIntelligenceReport(
 // RESPECTFUL NOTIFICATION PREFERENCES & CREATOR PROFILES
 // ============================================================================
 
-export const DEFAULT_NOTIFICATION_PREFS: ZenoNotificationPreferences = {
+export const DEFAULT_NOTIFICATION_PREFS: KinichNotificationPreferences = {
   enabled: false,
   unfinishedResearchReminders: true,
   weeklyIntelligenceBrief: true,
@@ -1221,8 +1221,8 @@ export const DEFAULT_NOTIFICATION_PREFS: ZenoNotificationPreferences = {
   updatedAt: Date.now(),
 };
 
-export function getNotificationPreferences(): ZenoNotificationPreferences {
-  const loaded = safeLoad<ZenoNotificationPreferences>(
+export function getNotificationPreferences(): KinichNotificationPreferences {
+  const loaded = safeLoad<KinichNotificationPreferences>(
     GROWTH_KEYS.NOTIFY_PREFS,
     DEFAULT_NOTIFICATION_PREFS
   );
@@ -1235,8 +1235,8 @@ export function getNotificationPreferences(): ZenoNotificationPreferences {
 }
 
 export function saveNotificationPreferences(
-  prefs: Partial<ZenoNotificationPreferences>
-): ZenoNotificationPreferences {
+  prefs: Partial<KinichNotificationPreferences>
+): KinichNotificationPreferences {
   const current = getNotificationPreferences();
   const briefVal =
     prefs.weeklyIntelligenceReport !== undefined
@@ -1244,7 +1244,7 @@ export function saveNotificationPreferences(
       : prefs.weeklyIntelligenceBrief !== undefined
       ? prefs.weeklyIntelligenceBrief
       : current.weeklyIntelligenceBrief;
-  const updated: ZenoNotificationPreferences = {
+  const updated: KinichNotificationPreferences = {
     ...current,
     ...prefs,
     weeklyIntelligenceBrief: briefVal,
@@ -1260,9 +1260,9 @@ export function getCreatorProfileLocal(): CreatorPublicProfile {
   const userProfile = UserAccountStore.getProfile();
   return safeLoad<CreatorPublicProfile>(GROWTH_KEYS.CREATOR_PROFILE, {
     uid: auth.currentUser?.uid || userProfile.id || getOrCreateClientId(),
-    displayName: userProfile.displayName || 'Zeno Researcher',
+    displayName: userProfile.displayName || 'Kinich Researcher',
     username: userProfile.username || 'researcher',
-    bio: userProfile.bio || 'Exploring ideas, research papers, and technical workflows on Zeno.',
+    bio: userProfile.bio || 'Exploring ideas, research papers, and technical workflows on Kinich.',
     avatarUrl: userProfile.avatar || '',
     isPublic: false,
     specialtyTags: ['research', 'ai'],
@@ -1424,10 +1424,10 @@ const FALLBACK_ELITE_REFERRERS: EliteReferrerLeaderboardEntry[] = [
 const FALLBACK_TOP_CONTRIBUTORS: TopContributorEntry[] = [
   {
     rank: 1,
-    uid: 'zeno_editorial',
-    displayName: 'Zeno Research Team',
-    username: 'zeno_research',
-    bio: 'Curated reference synthesis and mathematical study guides built with Zeno.',
+    uid: 'kinich_editorial',
+    displayName: 'Kinich Research Team',
+    username: 'kinich_research',
+    bio: 'Curated reference synthesis and mathematical study guides built with Kinich.',
     publishedCount: 2,
     totalSaves: 17,
     totalForks: 11,
@@ -1440,9 +1440,9 @@ const FALLBACK_TOP_CONTRIBUTORS: TopContributorEntry[] = [
   },
   {
     rank: 2,
-    uid: 'zeno_systems',
-    displayName: 'Zeno Systems Lab',
-    username: 'zeno_systems',
+    uid: 'kinich_systems',
+    displayName: 'Kinich Systems Lab',
+    username: 'kinich_systems',
     bio: 'Production architecture patterns and systems engineering notes.',
     publishedCount: 2,
     totalSaves: 13,
@@ -1456,9 +1456,9 @@ const FALLBACK_TOP_CONTRIBUTORS: TopContributorEntry[] = [
   },
   {
     rank: 3,
-    uid: 'zeno_study',
-    displayName: 'Zeno Study Studio',
-    username: 'zeno_study',
+    uid: 'kinich_study',
+    displayName: 'Kinich Study Studio',
+    username: 'kinich_study',
     bio: 'High-yield study sheets and university STEM exam guides.',
     publishedCount: 1,
     totalSaves: 10,
@@ -1472,9 +1472,9 @@ const FALLBACK_TOP_CONTRIBUTORS: TopContributorEntry[] = [
   },
   {
     rank: 4,
-    uid: 'zeno_learning',
-    displayName: 'Zeno Learning Lab',
-    username: 'zeno_learning',
+    uid: 'kinich_learning',
+    displayName: 'Kinich Learning Lab',
+    username: 'kinich_learning',
     bio: 'Evidence-based learning frameworks and exam preparation workflows.',
     publishedCount: 1,
     totalSaves: 9,
@@ -1602,7 +1602,7 @@ export function incrementLocalReferralCountForUser(params: {
       existing?.displayName ||
       params.displayName ||
       UserAccountStore.getProfile().displayName ||
-      'Zeno Researcher',
+      'Kinich Researcher',
     username:
       existing?.username ||
       params.username ||
@@ -1621,14 +1621,14 @@ export function incrementLocalReferralCountForUser(params: {
 
   // If this matches the current user, also sync REFERRAL_STATUS in localStorage
   const myId = getOrCreateClientId();
-  const cachedRef = safeLoad<ZenoReferralStatus | null>(GROWTH_KEYS.REFERRAL_STATUS, null);
+  const cachedRef = safeLoad<KinichReferralStatus | null>(GROWTH_KEYS.REFERRAL_STATUS, null);
   if (
     updated.uid === myId ||
     updated.uid === auth.currentUser?.uid ||
     (cachedRef && cachedRef.referralCode === updated.referralCode)
   ) {
     if (cachedRef) {
-      const nextStatus: ZenoReferralStatus = {
+      const nextStatus: KinichReferralStatus = {
         ...cachedRef,
         validatedSignupsCount: Math.max(cachedRef.validatedSignupsCount || 0, nextCount),
         verifiedReferralsCount: Math.max(cachedRef.verifiedReferralsCount || 0, nextCount),
@@ -1698,7 +1698,7 @@ export function claimTopReferrerBonus(entry: {
   safeSave(GROWTH_KEYS.USER_REFERRAL_TRACKER, tracker);
 
   // Unlock cosmetic share card themes in local referral status
-  const cachedRef = safeLoad<ZenoReferralStatus | null>(GROWTH_KEYS.REFERRAL_STATUS, null);
+  const cachedRef = safeLoad<KinichReferralStatus | null>(GROWTH_KEYS.REFERRAL_STATUS, null);
   if (cachedRef) {
     const mergedThemes = Array.from(
       new Set([
@@ -1753,14 +1753,14 @@ export async function fetchGrowthLeaderboards(): Promise<{
     }
   } catch {}
 
-  const cachedRef = safeLoad<ZenoReferralStatus | null>(GROWTH_KEYS.REFERRAL_STATUS, null);
+  const cachedRef = safeLoad<KinichReferralStatus | null>(GROWTH_KEYS.REFERRAL_STATUS, null);
   const myUid = getOrCreateClientId();
   const tracker = getLocalReferralTracker();
   const localMyCount = tracker[myUid]?.referredCount || cachedRef?.validatedSignupsCount || 0;
   const myEntry: EliteReferrerLeaderboardEntry = {
     rank: FALLBACK_ELITE_REFERRERS.length + 1,
     uid: myUid,
-    displayName: UserAccountStore.getProfile().displayName || 'You (Zeno Explorer)',
+    displayName: UserAccountStore.getProfile().displayName || 'You (Kinich Explorer)',
     username: UserAccountStore.getProfile().username || 'you',
     referralCode: computeCanonicalReferralCode(auth.currentUser?.uid || myUid),
     claimedReferrals: localMyCount,
@@ -1792,7 +1792,7 @@ export async function claimReferralCodeManual(
   if (!/^zp_[a-zA-Z0-9_-]{3,28}$/.test(code)) {
     return {
       ok: false,
-      message: 'Please enter a valid Zeno Pass code starting with zp_ (e.g. zp_elena94x).',
+      message: 'Please enter a valid Kinich Pass code starting with zp_ (e.g. zp_elena94x).',
     };
   }
   if (isSelfReferralCode(code)) {
@@ -1847,14 +1847,14 @@ export async function claimReferralCodeManual(
   }
 }
 
-export async function submitZenoFeedback(input: {
-  category: ZenoFeedbackCategory;
+export async function submitKinichFeedback(input: {
+  category: KinichFeedbackCategory;
   rating: number;
   subject: string;
   message: string;
   includeDiagnostics?: boolean;
   diagnosticsSummary?: string;
-}): Promise<{ ok: boolean; item?: ZenoFeedbackSubmission; error?: string }> {
+}): Promise<{ ok: boolean; item?: KinichFeedbackSubmission; error?: string }> {
   const cleanMessage = (input.message || '').trim();
   if (cleanMessage.length < 4) {
     return { ok: false, error: 'Please write at least a few words of feedback.' };
@@ -1877,18 +1877,18 @@ export async function submitZenoFeedback(input: {
     });
     const data = await res.json().catch(() => ({}));
     if (res.ok && data?.item) {
-      const savedList = safeLoad<ZenoFeedbackSubmission[]>(GROWTH_KEYS.FEEDBACK_ITEMS, []);
-      const nextList = [data.item as ZenoFeedbackSubmission, ...savedList].slice(0, 30);
+      const savedList = safeLoad<KinichFeedbackSubmission[]>(GROWTH_KEYS.FEEDBACK_ITEMS, []);
+      const nextList = [data.item as KinichFeedbackSubmission, ...savedList].slice(0, 30);
       safeSave(GROWTH_KEYS.FEEDBACK_ITEMS, nextList);
       emitGrowthUpdate();
-      return { ok: true, item: data.item as ZenoFeedbackSubmission };
+      return { ok: true, item: data.item as KinichFeedbackSubmission };
     }
     return {
       ok: false,
       error: data?.error?.message || 'Could not submit feedback right now.',
     };
   } catch {
-    const fallbackItem: ZenoFeedbackSubmission = {
+    const fallbackItem: KinichFeedbackSubmission = {
       id: `fb_local_${Date.now().toString(36)}`,
       category: input.category,
       rating: input.rating,
@@ -1898,15 +1898,15 @@ export async function submitZenoFeedback(input: {
       status: 'routed',
       createdAt: Date.now(),
     };
-    const savedList = safeLoad<ZenoFeedbackSubmission[]>(GROWTH_KEYS.FEEDBACK_ITEMS, []);
+    const savedList = safeLoad<KinichFeedbackSubmission[]>(GROWTH_KEYS.FEEDBACK_ITEMS, []);
     safeSave(GROWTH_KEYS.FEEDBACK_ITEMS, [fallbackItem, ...savedList].slice(0, 30));
     emitGrowthUpdate();
     return { ok: true, item: fallbackItem };
   }
 }
 
-export async function fetchMySubmittedFeedback(): Promise<ZenoFeedbackSubmission[]> {
-  const local = safeLoad<ZenoFeedbackSubmission[]>(GROWTH_KEYS.FEEDBACK_ITEMS, []);
+export async function fetchMySubmittedFeedback(): Promise<KinichFeedbackSubmission[]> {
+  const local = safeLoad<KinichFeedbackSubmission[]>(GROWTH_KEYS.FEEDBACK_ITEMS, []);
   try {
     const headers = await getGrowthHeaders();
     const res = await fetch('/api/growth/feedback/mine', { headers });
@@ -1914,7 +1914,7 @@ export async function fetchMySubmittedFeedback(): Promise<ZenoFeedbackSubmission
       const data = await res.json();
       if (Array.isArray(data?.items) && data.items.length > 0) {
         safeSave(GROWTH_KEYS.FEEDBACK_ITEMS, data.items);
-        return data.items as ZenoFeedbackSubmission[];
+        return data.items as KinichFeedbackSubmission[];
       }
     }
   } catch {}
@@ -1974,8 +1974,8 @@ export const REFERRAL_8_REWARD_TIERS: ReferralRewardTier[] = [
   },
 ];
 
-const EIGHT_REF_STORAGE_KEY = 'zeno_eight_referral_rewards_v1';
-const HOME_REF_POPUP_DISMISSED_KEY = 'zeno_home_ref_popup_dismissed_v1';
+const EIGHT_REF_STORAGE_KEY = 'kinich_eight_referral_rewards_v1';
+const HOME_REF_POPUP_DISMISSED_KEY = 'kinich_home_ref_popup_dismissed_v1';
 
 export interface EightReferralTrackerState {
   count: number;
@@ -1988,9 +1988,9 @@ export interface EightReferralTrackerState {
 
 export function getEightReferralTrackerState(): EightReferralTrackerState {
   const origin =
-    typeof window !== 'undefined' ? window.location.origin : 'https://zeno0x.vercel.app';
+    typeof window !== 'undefined' ? window.location.origin : 'https://kinich0x.vercel.app';
   const myUid = auth.currentUser?.uid || getOrCreateClientId();
-  const cachedRef = safeLoad<ZenoReferralStatus | null>(GROWTH_KEYS.REFERRAL_STATUS, null);
+  const cachedRef = safeLoad<KinichReferralStatus | null>(GROWTH_KEYS.REFERRAL_STATUS, null);
   const tracker = getLocalReferralTracker();
   const savedRewards = safeLoad<{ count?: number; claimedTiers?: number[] }>(
     EIGHT_REF_STORAGE_KEY,

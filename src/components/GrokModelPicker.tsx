@@ -874,8 +874,8 @@ export const GrokModelPicker: React.FC<GrokModelPickerProps> = ({
 
   useEffect(() => {
     const syncPlan = () => setCurrentPlan(UserAccountStore.getNormalizedPlan());
-    window.addEventListener('zeno-account-updated', syncPlan);
-    return () => window.removeEventListener('zeno-account-updated', syncPlan);
+    window.addEventListener('kinich-account-updated', syncPlan);
+    return () => window.removeEventListener('kinich-account-updated', syncPlan);
   }, []);
 
   useEffect(() => {
@@ -908,7 +908,7 @@ export const GrokModelPicker: React.FC<GrokModelPickerProps> = ({
       onOpenPricing(tier, reason);
     } else if (typeof window !== 'undefined') {
       window.dispatchEvent(
-        new CustomEvent('zeno-open-pricing', {
+        new CustomEvent('kinich-open-pricing', {
           detail: { highlightPlan: tier, reason },
         })
       );

@@ -53,16 +53,16 @@ export const StreakReminderToast: React.FC<StreakReminderToastProps> = ({
         Notification.permission === 'granted'
       ) {
         try {
-          new Notification(`Zeno · ${latest.currentStreak}d Daily Streak Reminder`, {
-            body: `Complete your daily Zeno interaction (${latest.todayInteractions}/${latest.dailyGoal}) to keep your ${latest.currentStreak}-day streak alive.`,
+          new Notification(`Kinich · ${latest.currentStreak}d Daily Streak Reminder`, {
+            body: `Complete your daily Kinich interaction (${latest.todayInteractions}/${latest.dailyGoal}) to keep your ${latest.currentStreak}-day streak alive.`,
           });
         } catch {}
       }
     };
 
-    window.addEventListener('zeno-account-updated', syncStreak);
-    window.addEventListener('zeno-trigger-streak-reminder', handleTriggerManual);
-    window.addEventListener('zeno-achievement-toast-active', handleAchievementToastState);
+    window.addEventListener('kinich-account-updated', syncStreak);
+    window.addEventListener('kinich-trigger-streak-reminder', handleTriggerManual);
+    window.addEventListener('kinich-achievement-toast-active', handleAchievementToastState);
 
     const checkSchedule = () => {
       if (Date.now() < snoozedUntilTs || achievementToastActive) return;
@@ -77,9 +77,9 @@ export const StreakReminderToast: React.FC<StreakReminderToastProps> = ({
     const interval = setInterval(checkSchedule, 60000);
 
     return () => {
-      window.removeEventListener('zeno-account-updated', syncStreak);
-      window.removeEventListener('zeno-trigger-streak-reminder', handleTriggerManual);
-      window.removeEventListener('zeno-achievement-toast-active', handleAchievementToastState);
+      window.removeEventListener('kinich-account-updated', syncStreak);
+      window.removeEventListener('kinich-trigger-streak-reminder', handleTriggerManual);
+      window.removeEventListener('kinich-achievement-toast-active', handleAchievementToastState);
       clearInterval(interval);
     };
   }, [snoozedUntilTs, completedAck, achievementToastActive]);
@@ -145,7 +145,7 @@ export const StreakReminderToast: React.FC<StreakReminderToastProps> = ({
                 </div>
                 <div>
                   <div className="flex items-center gap-1.5">
-                    <span className="text-xs font-semibold">Daily Zeno Streak Reminder</span>
+                    <span className="text-xs font-semibold">Daily Kinich Streak Reminder</span>
                     <span className="px-1.5 py-0.5 rounded text-[10px] font-mono tabular-nums font-semibold bg-[#FC4C01]/15 text-[#FC4C01] border border-[#FC4C01]/30">
                       {streak.currentStreak}d
                     </span>
@@ -184,7 +184,7 @@ export const StreakReminderToast: React.FC<StreakReminderToastProps> = ({
                 isDark ? 'text-neutral-300' : 'text-neutral-600'
               }`}
             >
-              Complete your daily Zeno interaction now to keep your{' '}
+              Complete your daily Kinich interaction now to keep your{' '}
               <span className="font-semibold text-[#FC4C01]">{streak.currentStreak}-day streak</span>{' '}
               active and progress toward your next milestone reward.
             </p>

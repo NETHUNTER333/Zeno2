@@ -98,18 +98,18 @@ onAuthStateChanged(auth, async (firebaseUser) => {
 
 
 const STORAGE_KEYS = {
-  PROFILE: 'zeno_user_profile',
-  PERSONALIZATION: 'zeno_user_personalization',
-  FOLDERS: 'zeno_project_folders',
-  FILES: 'zeno_workspace_files',
-  CITATIONS: 'zeno_saved_citations',
-  BOOKMARKS: 'zeno_saved_bookmarks',
-  SESSIONS: 'zeno_active_sessions',
-  SUBSCRIPTION: 'zeno_user_subscription_v2',
-  USAGE: 'zeno_usage_quota_v2',
-  PRIVACY: 'zeno_privacy_settings',
-  ONBOARDING_DONE: 'zeno_onboarding_completed',
-  DAILY_STREAK: 'zeno_daily_streak_v1',
+  PROFILE: 'kinich_user_profile',
+  PERSONALIZATION: 'kinich_user_personalization',
+  FOLDERS: 'kinich_project_folders',
+  FILES: 'kinich_workspace_files',
+  CITATIONS: 'kinich_saved_citations',
+  BOOKMARKS: 'kinich_saved_bookmarks',
+  SESSIONS: 'kinich_active_sessions',
+  SUBSCRIPTION: 'kinich_user_subscription_v2',
+  USAGE: 'kinich_usage_quota_v2',
+  PRIVACY: 'kinich_privacy_settings',
+  ONBOARDING_DONE: 'kinich_onboarding_completed',
+  DAILY_STREAK: 'kinich_daily_streak_v1',
 };
 
 export interface StreakMilestone {
@@ -173,7 +173,7 @@ export const STREAK_MILESTONES: StreakMilestone[] = [
   {
     days: 100,
     title: '100-Day Apex',
-    subtitle: 'Centurion status in the Zeno workspace',
+    subtitle: 'Centurion status in the Kinich workspace',
     bonusMessages: 5000,
     bonusUploads: 1000,
     bonusShields: 1,
@@ -206,7 +206,7 @@ export const ACHIEVEMENT_BADGES: AchievementBadge[] = [
   {
     id: 'first-spark',
     title: 'First Spark',
-    subtitle: 'Complete your first daily interaction on Zeno',
+    subtitle: 'Complete your first daily interaction on Kinich',
     category: 'streak',
     tier: 'bronze',
     iconName: 'flame',
@@ -258,7 +258,7 @@ export const ACHIEVEMENT_BADGES: AchievementBadge[] = [
   {
     id: 'streak-30',
     title: 'Sovereign Mind',
-    subtitle: 'Achieve a 30-day master streak across Zeno',
+    subtitle: 'Achieve a 30-day master streak across Kinich',
     category: 'streak',
     tier: 'obsidian',
     iconName: 'award',
@@ -271,7 +271,7 @@ export const ACHIEVEMENT_BADGES: AchievementBadge[] = [
   {
     id: 'streak-100',
     title: 'Centurion Apex',
-    subtitle: 'Reach an unbroken 100-day legendary streak on Zeno',
+    subtitle: 'Reach an unbroken 100-day legendary streak on Kinich',
     category: 'streak',
     tier: 'obsidian',
     iconName: 'trophy',
@@ -310,7 +310,7 @@ export const ACHIEVEMENT_BADGES: AchievementBadge[] = [
   {
     id: 'prompt-centurion',
     title: 'Prompt Centurion',
-    subtitle: 'Complete 25+ total interactions across Zeno',
+    subtitle: 'Complete 25+ total interactions across Kinich',
     category: 'mastery',
     tier: 'gold',
     iconName: 'trophy',
@@ -522,10 +522,10 @@ function computeStreakFromDates(
 }
 
 export const DEFAULT_PROFILE: UserProfile = {
-  id: 'zeno_usr_98124',
+  id: 'kinich_usr_98124',
   displayName: 'doom',
   username: 'doomsh7',
-  email: 'user@zeno.app',
+  email: 'user@kinich.app',
   phoneNumber: '',
   emailVerified: true,
   avatar: '',
@@ -699,10 +699,10 @@ export const UserAccountStore = {
   isUserSignedIn(): boolean {
     if (auth.currentUser) return true;
     try {
-      if (localStorage.getItem('zeno_explicit_signout') === 'true') {
+      if (localStorage.getItem('kinich_explicit_signout') === 'true') {
         return false;
       }
-      if (localStorage.getItem('zeno_auth_session') === 'true') {
+      if (localStorage.getItem('kinich_auth_session') === 'true') {
         return true;
       }
       const rawProfile = localStorage.getItem(STORAGE_KEYS.PROFILE);
@@ -718,8 +718,8 @@ export const UserAccountStore = {
     const user = await signInWithGoogle();
     if (user) {
       try {
-        localStorage.setItem('zeno_auth_session', 'true');
-        localStorage.removeItem('zeno_explicit_signout');
+        localStorage.setItem('kinich_auth_session', 'true');
+        localStorage.removeItem('kinich_explicit_signout');
       } catch {}
       this.emitChange();
     }
@@ -730,8 +730,8 @@ export const UserAccountStore = {
       const user = await signUpWithEmail(email, pass);
       if (user) {
         try {
-          localStorage.setItem('zeno_auth_session', 'true');
-          localStorage.removeItem('zeno_explicit_signout');
+          localStorage.setItem('kinich_auth_session', 'true');
+          localStorage.removeItem('kinich_explicit_signout');
         } catch {}
         this.emitChange();
       }
@@ -756,8 +756,8 @@ export const UserAccountStore = {
         };
         this.saveProfile(fallbackProfile);
         try {
-          localStorage.setItem('zeno_auth_session', 'true');
-          localStorage.removeItem('zeno_explicit_signout');
+          localStorage.setItem('kinich_auth_session', 'true');
+          localStorage.removeItem('kinich_explicit_signout');
         } catch {}
         this.emitChange();
         return {
@@ -775,8 +775,8 @@ export const UserAccountStore = {
       const user = await signInWithEmail(email, pass);
       if (user) {
         try {
-          localStorage.setItem('zeno_auth_session', 'true');
-          localStorage.removeItem('zeno_explicit_signout');
+          localStorage.setItem('kinich_auth_session', 'true');
+          localStorage.removeItem('kinich_explicit_signout');
         } catch {}
         this.emitChange();
       }
@@ -799,8 +799,8 @@ export const UserAccountStore = {
         };
         this.saveProfile(fallbackProfile);
         try {
-          localStorage.setItem('zeno_auth_session', 'true');
-          localStorage.removeItem('zeno_explicit_signout');
+          localStorage.setItem('kinich_auth_session', 'true');
+          localStorage.removeItem('kinich_explicit_signout');
         } catch {}
         this.emitChange();
         return {
@@ -813,20 +813,20 @@ export const UserAccountStore = {
       throw err;
     }
   },
-  loginAsGuest(displayName = 'Guest Explorer', email = 'guest@zeno.ai') {
+  loginAsGuest(displayName = 'Guest Explorer', email = 'guest@kinich.ai') {
     const current = this.getProfile();
     const guestProfile: UserProfile = {
       ...current,
       id: current.id || 'guest_' + Date.now().toString(36),
       displayName: displayName || current.displayName || 'Guest Explorer',
-      email: email || current.email || 'guest@zeno.ai',
+      email: email || current.email || 'guest@kinich.ai',
       signinProvider: 'guest',
       accountStatus: 'verified',
     };
     this.saveProfile(guestProfile);
     try {
-      localStorage.setItem('zeno_auth_session', 'true');
-      localStorage.removeItem('zeno_explicit_signout');
+      localStorage.setItem('kinich_auth_session', 'true');
+      localStorage.removeItem('kinich_explicit_signout');
     } catch {}
     this.emitChange();
     return guestProfile;
@@ -840,8 +840,8 @@ export const UserAccountStore = {
     } catch {}
     try {
       localStorage.removeItem(STORAGE_KEYS.PROFILE);
-      localStorage.removeItem('zeno_auth_session');
-      localStorage.setItem('zeno_explicit_signout', 'true');
+      localStorage.removeItem('kinich_auth_session');
+      localStorage.setItem('kinich_explicit_signout', 'true');
     } catch {}
     this.emitChange();
   },
@@ -851,7 +851,7 @@ export const UserAccountStore = {
     } catch {}
     try {
       localStorage.clear();
-      localStorage.setItem('zeno_explicit_signout', 'true');
+      localStorage.setItem('kinich_explicit_signout', 'true');
     } catch {}
     this.emitChange();
   },
@@ -1339,7 +1339,7 @@ export const UserAccountStore = {
     messages?: Array<{ timestamp?: number; modelUsed?: string }>;
   }> {
     try {
-      const raw = localStorage.getItem('zeno_threads');
+      const raw = localStorage.getItem('kinich_threads');
       if (!raw) return [];
       const parsed = JSON.parse(raw);
       return Array.isArray(parsed) ? parsed : [];
@@ -1950,7 +1950,7 @@ export const UserAccountStore = {
   triggerMilestoneToastPreview(days: number): AchievementUnlockPayload | null {
     const payload = this.buildMilestoneAchievementPayload(days, true);
     if (payload && typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('zeno-achievement-unlocked', { detail: payload }));
+      window.dispatchEvent(new CustomEvent('kinich-achievement-unlocked', { detail: payload }));
     }
     return payload;
   },
@@ -1958,7 +1958,7 @@ export const UserAccountStore = {
   triggerBadgeToastPreview(badgeId: string): AchievementUnlockPayload | null {
     const payload = this.buildBadgeAchievementPayload(badgeId, true);
     if (payload && typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('zeno-achievement-unlocked', { detail: payload }));
+      window.dispatchEvent(new CustomEvent('kinich-achievement-unlocked', { detail: payload }));
     }
     return payload;
   },
@@ -2010,7 +2010,7 @@ export const UserAccountStore = {
     }
 
     for (const payload of payloadsToEmit) {
-      window.dispatchEvent(new CustomEvent('zeno-achievement-unlocked', { detail: payload }));
+      window.dispatchEvent(new CustomEvent('kinich-achievement-unlocked', { detail: payload }));
     }
   },
 
@@ -2139,7 +2139,7 @@ export const UserAccountStore = {
   // Event dispatcher for reactive updates across components
   emitChange(): void {
     if (typeof window !== 'undefined') {
-      window.dispatchEvent(new Event('zeno-account-updated'));
+      window.dispatchEvent(new Event('kinich-account-updated'));
     }
   },
 };

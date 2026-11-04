@@ -12,7 +12,7 @@ export interface YouTubeTranscriptModalProps {
   onClose: () => void;
   onSummarize?: (transcript: string) => void;
   isDark?: boolean;
-  onAskZeno?: (prompt: string) => void;
+  onAskKinich?: (prompt: string) => void;
   video?: {
     videoId?: string;
     title?: string;
@@ -31,7 +31,7 @@ export const YouTubeTranscriptModal: React.FC<YouTubeTranscriptModalProps> = ({
   isOpen = true,
   onClose,
   isDark = true,
-  onAskZeno,
+  onAskKinich,
   video,
 }) => {
   if (!isOpen) return null;
@@ -56,7 +56,7 @@ export const YouTubeTranscriptModal: React.FC<YouTubeTranscriptModalProps> = ({
         initialVideo={resolvedVideo}
         onBackToChat={onClose}
         isDark={isDark}
-        onAskZeno={onAskZeno}
+        onAskKinich={onAskKinich}
       />
     </div>
   );

@@ -41,8 +41,8 @@ export const HeaderTokenTracker: React.FC<HeaderTokenTrackerProps> = ({ messages
 
   useEffect(() => {
     const syncPins = () => setPinnedCount(UserAccountStore.getBookmarks().length);
-    window.addEventListener('zeno-account-updated', syncPins);
-    return () => window.removeEventListener('zeno-account-updated', syncPins);
+    window.addEventListener('kinich-account-updated', syncPins);
+    return () => window.removeEventListener('kinich-account-updated', syncPins);
   }, []);
 
   const assistantResponses = messages.filter((m) => m.role === 'assistant');

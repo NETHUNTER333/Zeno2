@@ -52,7 +52,7 @@ export interface DeepResearchRecord {
   createdAt: number;
 }
 
-const STORAGE_KEY = 'zeno_deep_research_history_v1';
+const STORAGE_KEY = 'kinich_deep_research_history_v1';
 const LISTENERS: Set<() => void> = new Set();
 
 function notifyListeners() {

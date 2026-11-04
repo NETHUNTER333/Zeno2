@@ -233,7 +233,7 @@ export const ImageGenerationCard: React.FC<ImageGenerationCardProps> = ({
               href={generatedUrl}
               target="_blank"
               rel="noopener noreferrer"
-              download="zeno-generated.jpg"
+              download="kinich-generated.jpg"
               className="px-3 py-1.5 rounded-full bg-white text-black hover:bg-neutral-200 text-xs font-semibold inline-flex items-center gap-1.5 !no-underline cursor-pointer"
             >
               <Download className="w-3.5 h-3.5" />

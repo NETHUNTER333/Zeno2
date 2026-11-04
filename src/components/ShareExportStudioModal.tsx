@@ -149,7 +149,7 @@ export const ShareExportStudioModal: React.FC<ShareExportStudioModalProps> = ({
     const rawAnswer = (selectedExchange?.assistantMsg?.content || '')
       .replace(/<think>[\s\S]*?<\/think>/gi, '')
       .trim();
-    const defaultTitle = (thread.title || 'Zeno Research Synthesis').slice(0, 90);
+    const defaultTitle = (thread.title || 'Kinich Research Synthesis').slice(0, 90);
     const defaultPrompt = (selectedExchange?.promptText || '').slice(0, 220);
     const cleanExcerpt = rawAnswer
       .replace(/^#{1,6}\s+/gm, '')
@@ -161,7 +161,7 @@ export const ShareExportStudioModal: React.FC<ShareExportStudioModalProps> = ({
 
     setCustomCardTitle(defaultTitle);
     setCustomPromptText(defaultPrompt);
-    setCustomAnswerExcerpt(cleanExcerpt || 'Select a response to generate a Zeno Share Card.');
+    setCustomAnswerExcerpt(cleanExcerpt || 'Select a response to generate a Kinich Share Card.');
     setRawSelectedContent(rawAnswer || '');
   }, [selectedExchangeKey]);
 
@@ -198,16 +198,16 @@ export const ShareExportStudioModal: React.FC<ShareExportStudioModalProps> = ({
 
   const quoteConfig: QuoteCardConfig = useMemo(() => {
     return {
-      title: customCardTitle || thread?.title || 'Zeno Research Synthesis',
+      title: customCardTitle || thread?.title || 'Kinich Research Synthesis',
       promptText: includePromptOnCard && customPromptText.trim() ? customPromptText.trim() : undefined,
       answerText: customAnswerExcerpt || 'Select a message to generate a share card.',
-      modelName: selectedExchange?.assistantMsg?.modelUsed || 'Zeno Synthesis',
+      modelName: selectedExchange?.assistantMsg?.modelUsed || 'Kinich Synthesis',
       sourcesCount: selectedExchange?.assistantMsg?.sources?.length || 0,
       dateStr: new Date(selectedExchange?.assistantMsg?.timestamp || Date.now()).toLocaleDateString(
         'en-US',
         { month: 'short', day: 'numeric', year: 'numeric' }
       ),
-      authorName: includeAuthorOnCard ? userProfile.displayName || 'Zeno Researcher' : undefined,
+      authorName: includeAuthorOnCard ? userProfile.displayName || 'Kinich Researcher' : undefined,
       aspectRatio,
       theme: quoteTheme,
     };
@@ -263,11 +263,11 @@ export const ShareExportStudioModal: React.FC<ShareExportStudioModalProps> = ({
       try {
         const blob = await canvasToBlob(canvasRef.current);
         if (blob) {
-          const file = new File([blob], 'zeno-insight-card.png', { type: 'image/png' });
+          const file = new File([blob], 'kinich-insight-card.png', { type: 'image/png' });
           if (navigator.canShare && navigator.canShare({ files: [file] })) {
             await navigator.share({
               title: quoteConfig.title,
-              text: `${quoteConfig.title} — Explore with Zeno`,
+              text: `${quoteConfig.title} — Explore with Kinich`,
               files: [file],
             });
             setShareFeedback('Opened device share sheet.');
@@ -277,7 +277,7 @@ export const ShareExportStudioModal: React.FC<ShareExportStudioModalProps> = ({
         }
         await navigator.share({
           title: quoteConfig.title,
-          text: `${quoteConfig.title}\n\n${quoteConfig.answerText.slice(0, 200)}…\n\nExplore with Zeno:`,
+          text: `${quoteConfig.title}\n\n${quoteConfig.answerText.slice(0, 200)}…\n\nExplore with Kinich:`,
           url: window.location.origin,
         });
         setShareFeedback('Opened device share sheet.');
@@ -296,7 +296,7 @@ export const ShareExportStudioModal: React.FC<ShareExportStudioModalProps> = ({
     const contentToSave = rawSelectedContent || customAnswerExcerpt;
     if (!contentToSave.trim()) return;
     KnowledgeVaultStore.saveItem({
-      title: customCardTitle || thread.title || 'Saved Zeno Insight',
+      title: customCardTitle || thread.title || 'Saved Kinich Insight',
       summary: customAnswerExcerpt.slice(0, 240),
       content: contentToSave,
       type: 'ai_response',
@@ -329,7 +329,7 @@ export const ShareExportStudioModal: React.FC<ShareExportStudioModalProps> = ({
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${(thread.title || 'zeno-notion-export')
+    a.download = `${(thread.title || 'kinich-notion-export')
       .toLowerCase()
       .replace(/[^a-z0-9-_]+/g, '-')}-notion.md`;
     document.body.appendChild(a);
@@ -371,7 +371,7 @@ export const ShareExportStudioModal: React.FC<ShareExportStudioModalProps> = ({
         >
           <div className="min-w-0">
             <h2 className="text-sm sm:text-base font-semibold tracking-tight">
-              Zeno Share Studio
+              Kinich Share Studio
             </h2>
             <p className="text-xs text-neutral-500 mt-0.5 truncate max-w-lg">
               {thread.title} · Transform insights into Share Cards, Thread Snapshots, or Knowledge Vault notes
@@ -693,7 +693,7 @@ export const ShareExportStudioModal: React.FC<ShareExportStudioModalProps> = ({
                       onChange={(e) => setIncludeAuthorOnCard(e.target.checked)}
                       className="rounded"
                     />
-                    <span>Attribute my display name ({userProfile.displayName || 'Zeno User'})</span>
+                    <span>Attribute my display name ({userProfile.displayName || 'Kinich User'})</span>
                   </label>
                 </div>
 
@@ -773,7 +773,7 @@ export const ShareExportStudioModal: React.FC<ShareExportStudioModalProps> = ({
               <div>
                 <h3 className="text-sm font-semibold">Read-Only Thread Snapshot Link</h3>
                 <p className="text-xs text-neutral-500 mt-1 leading-relaxed">
-                  Anyone with this unindexed link can view a read-only snapshot of this conversation—including cited web sources and ArXiv papers—and fork it into their own Zeno workspace.
+                  Anyone with this unindexed link can view a read-only snapshot of this conversation—including cited web sources and ArXiv papers—and fork it into their own Kinich workspace.
                 </p>
               </div>
 

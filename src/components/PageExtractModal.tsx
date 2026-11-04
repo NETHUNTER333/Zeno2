@@ -31,9 +31,9 @@ export interface PageExtractModalProps {
 }
 
 const INSTACLOUD_API_BASE =
-  'https://prod-main-zeno-api-c257d4-00gfx3c9932.compute.instacloud-edge.com';
+  'https://prod-main-kinich-api-c257d4-00gfx3c9932.compute.instacloud-edge.com';
 
-async function callZenoEndpoint(path: string, init?: RequestInit): Promise<Response> {
+async function callKinichEndpoint(path: string, init?: RequestInit): Promise<Response> {
   const isStaticHost =
     typeof window !== 'undefined' &&
     (window.location.hostname.includes('vercel.app') ||
@@ -204,7 +204,7 @@ export const PageExtractModal: React.FC<PageExtractModalProps> = ({
       }
 
       const authHeaders = await getAuthHeaders();
-      const res = await callZenoEndpoint('/api/treg/extract', {
+      const res = await callKinichEndpoint('/api/treg/extract', {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({ url: normalizedUrl }),
@@ -245,7 +245,7 @@ export const PageExtractModal: React.FC<PageExtractModalProps> = ({
 
     try {
       const authHeaders = await getAuthHeaders();
-      const res = await callZenoEndpoint('/api/chat', {
+      const res = await callKinichEndpoint('/api/chat', {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({

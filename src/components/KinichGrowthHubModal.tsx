@@ -22,13 +22,13 @@ import {
   PublicArtifact,
   KnowledgeVaultItem,
   KnowledgeCollection,
-  ZenoReferralStatus,
+  KinichReferralStatus,
   CreatorPublicProfile,
-  ZenoNotificationPreferences,
+  KinichNotificationPreferences,
   EliteReferrerLeaderboardEntry,
   TopContributorEntry,
-  ZenoFeedbackCategory,
-  ZenoFeedbackSubmission,
+  KinichFeedbackCategory,
+  KinichFeedbackSubmission,
 } from '../types';
 import {
   DISCOVER_CATEGORIES,
@@ -46,7 +46,7 @@ import {
   getUnlockedCosmeticThemes,
   fetchGrowthLeaderboards,
   claimReferralCodeManual,
-  submitZenoFeedback,
+  submitKinichFeedback,
   fetchMySubmittedFeedback,
   getLocalReferralTracker,
   getClaimedReferrerBonuses,
@@ -71,7 +71,7 @@ import { fetchUserReferralDashboard, ReferralDashboardResponse } from '../lib/re
 
 export type GrowthHubTab = 'discover' | 'vault' | 'weekly' | 'passes' | 'feedback';
 
-export interface ZenoGrowthHubModalProps {
+export interface KinichGrowthHubModalProps {
   isOpen: boolean;
   onClose: () => void;
   initialTab?: GrowthHubTab;
@@ -119,7 +119,7 @@ interface LiveDiscoverArxivPaper {
   connectedRepos?: LiveDiscoverConnectedRepo[];
 }
 
-export const ZenoGrowthHubModal: React.FC<ZenoGrowthHubModalProps> = ({
+export const KinichGrowthHubModal: React.FC<KinichGrowthHubModalProps> = ({
   isOpen,
   onClose,
   initialTab = 'discover',
@@ -170,27 +170,27 @@ export const ZenoGrowthHubModal: React.FC<ZenoGrowthHubModalProps> = ({
   const [includeTopicsOnWeeklyCard, setIncludeTopicsOnWeeklyCard] = useState<boolean>(false);
   const [weeklyCardTheme] = useState<ShareCardTheme>('carbon');
   const weeklyCanvasRef = useRef<HTMLCanvasElement>(null);
-  const [notifPrefs, setNotifPrefs] = useState<ZenoNotificationPreferences>(() =>
+  const [notifPrefs, setNotifPrefs] = useState<KinichNotificationPreferences>(() =>
     getNotificationPreferences()
   );
   const [hideMissionsPanel, setHideMissionsPanel] = useState<boolean>(() => {
     try {
-      return localStorage.getItem('zeno_hide_missions_v1') === 'true';
+      return localStorage.getItem('kinich_hide_missions_v1') === 'true';
     } catch {
       return false;
     }
   });
 
   // --- TAB 4: ZENO PASSES (REFERRALS) & CREATOR PROFILE ---
-  const [referralStatus, setReferralStatus] = useState<ZenoReferralStatus | null>(null);
+  const [referralStatus, setReferralStatus] = useState<KinichReferralStatus | null>(null);
   const [dashboardData, setDashboardData] = useState<ReferralDashboardResponse | null>(null);
   const [copiedRefLink, setCopiedRefLink] = useState<boolean>(false);
   const [creatorProfile, setCreatorProfile] = useState<CreatorPublicProfile>(() => {
     const p = UserAccountStore.getProfile();
     return {
       uid: auth.currentUser?.uid || 'local',
-      displayName: p.displayName || 'Zeno Researcher',
-      username: p.username || 'zeno_researcher',
+      displayName: p.displayName || 'Kinich Researcher',
+      username: p.username || 'kinich_researcher',
       bio: p.bio || '',
       avatarUrl: p.avatar || '',
       isPublic: false,
@@ -227,7 +227,7 @@ export const ZenoGrowthHubModal: React.FC<ZenoGrowthHubModalProps> = ({
   );
 
   // --- TAB 5: FEEDBACK & SUGGESTIONS STATE ---
-  const [feedbackCategory, setFeedbackCategory] = useState<ZenoFeedbackCategory>('feature');
+  const [feedbackCategory, setFeedbackCategory] = useState<KinichFeedbackCategory>('feature');
   const [feedbackRating, setFeedbackRating] = useState<number>(5);
   const [feedbackSubject, setFeedbackSubject] = useState<string>('');
   const [feedbackMessage, setFeedbackMessage] = useState<string>('');
@@ -235,7 +235,7 @@ export const ZenoGrowthHubModal: React.FC<ZenoGrowthHubModalProps> = ({
   const [submittingFeedback, setSubmittingFeedback] = useState<boolean>(false);
   const [feedbackToast, setFeedbackToast] = useState<string | null>(null);
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
-  const [myFeedbackHistory, setMyFeedbackHistory] = useState<ZenoFeedbackSubmission[]>([]);
+  const [myFeedbackHistory, setMyFeedbackHistory] = useState<KinichFeedbackSubmission[]>([]);
 
   useEffect(() => {
     if (isOpen) {
@@ -253,8 +253,8 @@ export const ZenoGrowthHubModal: React.FC<ZenoGrowthHubModalProps> = ({
       setVaultItems(KnowledgeVaultStore.getItems());
       setCollections(KnowledgeVaultStore.getCollections());
     };
-    window.addEventListener('zeno-vault-updated', syncVault);
-    return () => window.removeEventListener('zeno-vault-updated', syncVault);
+    window.addEventListener('kinich-vault-updated', syncVault);
+    return () => window.removeEventListener('kinich-vault-updated', syncVault);
   }, []);
 
   // Load Discover items + Live arXiv & Connected GitHub feed when Discover tab or filters change
@@ -477,14 +477,14 @@ export const ZenoGrowthHubModal: React.FC<ZenoGrowthHubModalProps> = ({
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `zeno-knowledge-vault.${ext}`;
+    a.download = `kinich-knowledge-vault.${ext}`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
 
-  const handleUpdateNotifPref = (patch: Partial<ZenoNotificationPreferences>) => {
+  const handleUpdateNotifPref = (patch: Partial<KinichNotificationPreferences>) => {
     const next = saveNotificationPreferences(patch);
     setNotifPrefs(next);
   };
@@ -540,10 +540,10 @@ export const ZenoGrowthHubModal: React.FC<ZenoGrowthHubModalProps> = ({
       >
         <div className="min-w-0">
           <h2 className="text-sm sm:text-base font-semibold tracking-tight truncate">
-            Zeno Workspace Hub
+            Kinich Workspace Hub
           </h2>
           <p className="text-[11px] text-neutral-500 truncate hidden sm:block">
-            Live arXiv + Connected GitHub · Knowledge Vault · Zeno Passes
+            Live arXiv + Connected GitHub · Knowledge Vault · Kinich Passes
           </p>
         </div>
 
@@ -1013,7 +1013,7 @@ export const ZenoGrowthHubModal: React.FC<ZenoGrowthHubModalProps> = ({
                                   className="px-3 py-1.5 rounded-lg bg-[#FC4C01] hover:bg-[#e04300] text-white font-mono text-[11px] font-bold inline-flex items-center gap-1 cursor-pointer transition-colors"
                                 >
                                   <Sparkles className="w-3 h-3" />
-                                  <span>Ask Zeno</span>
+                                  <span>Ask Kinich</span>
                                 </button>
                               </div>
                             </div>
@@ -1169,7 +1169,7 @@ export const ZenoGrowthHubModal: React.FC<ZenoGrowthHubModalProps> = ({
                                   }}
                                   className={`px-3 py-1.5 rounded-lg font-mono text-[11px] font-bold cursor-pointer ${primaryBtn}`}
                                 >
-                                  Inspect in Zeno
+                                  Inspect in Kinich
                                 </button>
                               </div>
                             </div>
@@ -1188,7 +1188,7 @@ export const ZenoGrowthHubModal: React.FC<ZenoGrowthHubModalProps> = ({
                     <div className="flex items-center gap-2">
                       <Sparkles className="w-4 h-4 text-[#FC4C01]" />
                       <h4 className="text-xs sm:text-sm font-bold uppercase tracking-wider font-mono">
-                        Zeno Community Study Guides & Research Blueprints
+                        Kinich Community Study Guides & Research Blueprints
                       </h4>
                     </div>
                     <div className="flex items-center gap-1.5">
@@ -1219,7 +1219,7 @@ export const ZenoGrowthHubModal: React.FC<ZenoGrowthHubModalProps> = ({
 
                   {discoverLoading ? (
                     <div className="py-12 text-center text-neutral-500">
-                      Loading public Zeno library…
+                      Loading public Kinich library…
                     </div>
                   ) : discoverItems.length === 0 ? (
                     <div className={`p-8 rounded-2xl border-2 text-center space-y-1.5 ${cardSurface}`}>
@@ -1323,7 +1323,7 @@ export const ZenoGrowthHubModal: React.FC<ZenoGrowthHubModalProps> = ({
                                   type="button"
                                   onClick={() => {
                                     window.dispatchEvent(
-                                      new CustomEvent('zeno-open-report', {
+                                      new CustomEvent('kinich-open-report', {
                                         detail: {
                                           targetType: 'discover_item',
                                           targetId: item.id,
@@ -1742,7 +1742,7 @@ export const ZenoGrowthHubModal: React.FC<ZenoGrowthHubModalProps> = ({
                         7-Day Rolling Window · {weeklyReport.periodLabel}
                       </div>
                       <h3 className="text-sm font-semibold mt-0.5">
-                        Your Weekly Zeno Intelligence Report
+                        Your Weekly Kinich Intelligence Report
                       </h3>
                     </div>
                     <span
@@ -1792,7 +1792,7 @@ export const ZenoGrowthHubModal: React.FC<ZenoGrowthHubModalProps> = ({
                   </div>
                 </div>
 
-                {/* Zeno Intelligence Level & Optional Missions */}
+                {/* Kinich Intelligence Level & Optional Missions */}
                 <div className={`p-4 sm:p-5 rounded-2xl border space-y-3.5 ${cardSurface}`}>
                   <div className="flex items-center justify-between gap-2">
                     <div>
@@ -1807,7 +1807,7 @@ export const ZenoGrowthHubModal: React.FC<ZenoGrowthHubModalProps> = ({
                         const next = !hideMissionsPanel;
                         setHideMissionsPanel(next);
                         try {
-                          localStorage.setItem('zeno_hide_missions_v1', String(next));
+                          localStorage.setItem('kinich_hide_missions_v1', String(next));
                         } catch {}
                       }}
                       className="text-[11px] text-neutral-500 hover:text-current cursor-pointer font-medium"
@@ -2049,8 +2049,8 @@ export const ZenoGrowthHubModal: React.FC<ZenoGrowthHubModalProps> = ({
                           const url = dashboardData?.link || referralStatus?.referralUrl || eightRefState.inviteUrl;
                           const code = dashboardData?.code || referralStatus?.code || eightRefState.code;
                           navigator.share({
-                            title: 'Join me on Zeno',
-                            text: `Explore research, AI models, and YouTube study tools on Zeno with my invite code: ${code}`,
+                            title: 'Join me on Kinich',
+                            text: `Explore research, AI models, and YouTube study tools on Kinich with my invite code: ${code}`,
                             url,
                           }).catch(() => {});
                         }}
@@ -2124,7 +2124,7 @@ export const ZenoGrowthHubModal: React.FC<ZenoGrowthHubModalProps> = ({
                 {/* Redeem Friend Pass Code */}
                 <div className={`p-3.5 rounded-xl border space-y-2 ${subCardSurface}`}>
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-semibold">Have a friend's Zeno Pass code?</span>
+                    <span className="text-xs font-semibold">Have a friend's Kinich Pass code?</span>
                     <span className="text-[11px] font-mono text-neutral-500">
                       Your Code: {referralStatus?.code || eightRefState.code}
                     </span>
@@ -2262,7 +2262,7 @@ export const ZenoGrowthHubModal: React.FC<ZenoGrowthHubModalProps> = ({
                     Product Feedback
                   </div>
                   <h3 className="text-base font-semibold mt-0.5">
-                    Help Shape Zeno Research & Learning
+                    Help Shape Kinich Research & Learning
                   </h3>
                   <p
                     className={`text-xs mt-1 leading-relaxed ${
@@ -2400,7 +2400,7 @@ export const ZenoGrowthHubModal: React.FC<ZenoGrowthHubModalProps> = ({
 
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
                   <span className="text-[11px] text-neutral-500">
-                    Dispatched securely via Zeno backend relay.
+                    Dispatched securely via Kinich backend relay.
                   </span>
                   <button
                     type="button"
@@ -2414,7 +2414,7 @@ export const ZenoGrowthHubModal: React.FC<ZenoGrowthHubModalProps> = ({
                         const diag = feedbackIncludeDiag
                           ? `Plan: ${sub.plan} | Level: ${level.level} (${level.name}) | Threads: ${threads.length}`
                           : undefined;
-                        const res = await submitZenoFeedback({
+                        const res = await submitKinichFeedback({
                           category: feedbackCategory,
                           rating: feedbackRating,
                           subject: feedbackSubject,

@@ -69,7 +69,7 @@ export interface InbuiltPdfViewerProps {
   extractedText?: string;
   initialTab?: PdfStudioTab;
   isDark?: boolean;
-  onAskZeno?: (prompt: string) => void;
+  onAskKinich?: (prompt: string) => void;
   enableArxivSearch?: boolean;
 }
 
@@ -85,9 +85,9 @@ interface PdfChatTurn {
   content: string;
 }
 
-const INSTACLOUD_API_BASE = 'https://prod-main-zeno-api-c257d4-00gfx3c9932.compute.instacloud-edge.com';
+const INSTACLOUD_API_BASE = 'https://prod-main-kinich-api-c257d4-00gfx3c9932.compute.instacloud-edge.com';
 
-async function callZenoApi(path: string, init?: RequestInit): Promise<Response> {
+async function callKinichApi(path: string, init?: RequestInit): Promise<Response> {
   const isStaticHost =
     typeof window !== 'undefined' &&
     (window.location.hostname.includes('vercel.app') ||
@@ -116,7 +116,7 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
   extractedText: initialExtractedText = '',
   initialTab = 'quiz',
   isDark = true,
-  onAskZeno,
+  onAskKinich,
   enableArxivSearch = false,
 }) => {
   const resolvedInitialTitle =
@@ -231,7 +231,7 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
     setIsSynthesizingBundle(true);
     try {
       const authHeaders = await getAuthHeaders();
-      const res = await callZenoApi('/api/pdf/study', {
+      const res = await callKinichApi('/api/pdf/study', {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({
@@ -326,7 +326,7 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
 
     // Load saved user notes for this document
     try {
-      const savedNote = localStorage.getItem(`zeno_pdf_notes_${resolvedInitialTitle}`);
+      const savedNote = localStorage.getItem(`kinich_pdf_notes_${resolvedInitialTitle}`);
       if (savedNote !== null) setUserNotes(savedNote);
       else setUserNotes('');
     } catch {}
@@ -458,7 +458,7 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
     setIsSearchingArxiv(true);
     try {
       const authHeaders = await getAuthHeaders();
-      const res = await callZenoApi(`/api/arxiv/search?q=${encodeURIComponent(q)}&max_results=6`, {
+      const res = await callKinichApi(`/api/arxiv/search?q=${encodeURIComponent(q)}&max_results=6`, {
         headers: authHeaders,
       });
       const data = await res.json();
@@ -507,7 +507,7 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
 
     try {
       const authHeaders = await getAuthHeaders();
-      const res = await callZenoApi('/api/chat', {
+      const res = await callKinichApi('/api/chat', {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({
@@ -553,7 +553,7 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
 
     try {
       const authHeaders = await getAuthHeaders();
-      const res = await callZenoApi('/api/chat', {
+      const res = await callKinichApi('/api/chat', {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({
@@ -2078,7 +2078,7 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
                           const val = e.target.value;
                           setUserNotes(val);
                           try {
-                            localStorage.setItem(`zeno_pdf_notes_${activePdfName}`, val);
+                            localStorage.setItem(`kinich_pdf_notes_${activePdfName}`, val);
                           } catch {}
                         }}
                         rows={4}

@@ -6,13 +6,13 @@ import GitHubActivity, { extractGitHubUsername } from './ui/github-activity';
 interface GithubRepoCardProps {
   repo: GithubRepo;
   isDark?: boolean;
-  onAskZeno?: (prompt: string) => void;
+  onAskKinich?: (prompt: string) => void;
 }
 
 export const GithubRepoCard: React.FC<GithubRepoCardProps> = ({
   repo,
   isDark = true,
-  onAskZeno,
+  onAskKinich,
 }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isCloneModalOpen, setIsCloneModalOpen] = useState(false);

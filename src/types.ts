@@ -388,8 +388,8 @@ export interface UserPersonalization {
   preferredLanguage: string;
   responseLength: ResponseLength;
   responseStyle: ResponseStyle;
-  customInstructionsAbout: string; // What Zeno should know about you
-  customInstructionsResponse: string; // How Zeno should respond
+  customInstructionsAbout: string; // What Kinich should know about you
+  customInstructionsResponse: string; // How Kinich should respond
   customInstructionsEnabled: boolean;
   voicePersona: string;
   voiceSpeed: number; // 0.75 - 1.5
@@ -586,7 +586,7 @@ export interface CreatorPublicProfile {
   updatedAt: number;
 }
 
-export interface ZenoReferralStatus {
+export interface KinichReferralStatus {
   referralCode: string;
   code?: string;
   referrerUid: string;
@@ -602,7 +602,7 @@ export interface ZenoReferralStatus {
   createdAt: number;
 }
 
-export interface ZenoMissionItem {
+export interface KinichMissionItem {
   id: string;
   title: string;
   description: string;
@@ -613,7 +613,7 @@ export interface ZenoMissionItem {
   completedAt?: number;
 }
 
-export interface ZenoIntelligenceLevel {
+export interface KinichIntelligenceLevel {
   level: number;
   name: 'Explorer' | 'Researcher' | 'Analyst' | 'Scholar' | 'Architect' | 'Polymath';
   achievement: string;
@@ -622,7 +622,7 @@ export interface ZenoIntelligenceLevel {
   nextLevelXp: number;
 }
 
-export interface ZenoNotificationPreferences {
+export interface KinichNotificationPreferences {
   enabled: boolean;
   unfinishedResearchReminders: boolean;
   weeklyIntelligenceBrief: boolean;
@@ -718,7 +718,7 @@ export interface TopContributorEntry {
   isCurrentUser?: boolean;
 }
 
-export type ZenoFeedbackCategory =
+export type KinichFeedbackCategory =
   | 'feature'
   | 'bug'
   | 'model_quality'
@@ -726,9 +726,9 @@ export type ZenoFeedbackCategory =
   | 'research_tools'
   | 'praise';
 
-export interface ZenoFeedbackSubmission {
+export interface KinichFeedbackSubmission {
   id: string;
-  category: ZenoFeedbackCategory;
+  category: KinichFeedbackCategory;
   rating: number;
   subject: string;
   message: string;

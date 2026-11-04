@@ -1,5 +1,5 @@
 /**
- * Signature Radiant Gradients for Zeno Models & Canvas Backgrounds
+ * Signature Radiant Gradients for Kinich Models & Canvas Backgrounds
  * Inspired by high-saturation radiant sunlight, diffuse top dome spotlights,
  * and sunset orange/peach luminous warmth.
  */
@@ -278,7 +278,7 @@ export type BackgroundGradientMode = 'dynamic-model' | 'exact-sunset' | 'subtle'
 export function getStoredBackgroundGradientMode(): BackgroundGradientMode {
   if (typeof window === 'undefined') return 'dynamic-model';
   try {
-    const val = localStorage.getItem('zeno_bg_gradient_mode');
+    const val = localStorage.getItem('kinich_bg_gradient_mode');
     if (val === 'exact-sunset' || val === 'subtle' || val === 'off') {
       return val;
     }
@@ -289,6 +289,6 @@ export function getStoredBackgroundGradientMode(): BackgroundGradientMode {
 export function setStoredBackgroundGradientMode(mode: BackgroundGradientMode): void {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem('zeno_bg_gradient_mode', mode);
+    localStorage.setItem('kinich_bg_gradient_mode', mode);
   } catch {}
 }

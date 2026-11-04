@@ -20,13 +20,13 @@ import { PersonaWiki } from '../types';
 interface PersonaWikiCardProps {
   persona: PersonaWiki;
   isDark?: boolean;
-  onAskZeno?: (prompt: string) => void;
+  onAskKinich?: (prompt: string) => void;
 }
 
 export const PersonaWikiCard: React.FC<PersonaWikiCardProps> = ({
   persona,
   isDark = true,
-  onAskZeno,
+  onAskKinich,
 }) => {
   const [selectedImageIdx, setSelectedImageIdx] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -502,7 +502,7 @@ export const PersonaWikiCard: React.FC<PersonaWikiCardProps> = ({
         )}
 
         {/* Subtle career follow-up suggestions */}
-        {onAskZeno && activeTab === 'overview' && (
+        {onAskKinich && activeTab === 'overview' && (
           <div
             className={`mt-3 pt-2.5 border-t flex flex-wrap items-center gap-1.5 ${
               isDark ? 'border-[#222227]' : 'border-[#e4e4e7]'
@@ -511,7 +511,7 @@ export const PersonaWikiCard: React.FC<PersonaWikiCardProps> = ({
             <button
               type="button"
               onClick={() =>
-                onAskZeno(
+                onAskKinich(
                   `Give me a complete career timeline, records, and filmography/highlights for ${persona.name}.`
                 )
               }
@@ -527,7 +527,7 @@ export const PersonaWikiCard: React.FC<PersonaWikiCardProps> = ({
             <button
               type="button"
               onClick={() =>
-                onAskZeno(`What are the latest verified 2026 updates and projects for ${persona.name}?`)
+                onAskKinich(`What are the latest verified 2026 updates and projects for ${persona.name}?`)
               }
               className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-colors cursor-pointer ${
                 isDark

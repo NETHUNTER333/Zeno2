@@ -11,7 +11,7 @@ import {
 import { ChatThread } from './Sidebar';
 import { KnowledgeVaultItem } from '../types';
 import { KnowledgeVaultStore, getNotificationPreferences } from '../lib/growthStore';
-import { GrowthHubTab } from './ZenoGrowthHubModal';
+import { GrowthHubTab } from './KinichGrowthHubModal';
 
 export interface SmartContinuationStripProps {
   threads: ChatThread[];
@@ -36,7 +36,7 @@ export const SmartContinuationStrip: React.FC<SmartContinuationStripProps> = ({
   );
   const [hideContinuationSection, setHideContinuationSection] = useState<boolean>(() => {
     try {
-      return localStorage.getItem('zeno_hide_continuation_strip_v1') === 'true';
+      return localStorage.getItem('kinich_hide_continuation_strip_v1') === 'true';
     } catch {
       return false;
     }
@@ -47,8 +47,8 @@ export const SmartContinuationStrip: React.FC<SmartContinuationStripProps> = ({
       setVaultItems(KnowledgeVaultStore.getItems());
       setDismissedIds(KnowledgeVaultStore.getDismissedContinuationIds());
     };
-    window.addEventListener('zeno-vault-updated', sync);
-    return () => window.removeEventListener('zeno-vault-updated', sync);
+    window.addEventListener('kinich-vault-updated', sync);
+    return () => window.removeEventListener('kinich-vault-updated', sync);
   }, []);
 
   const notifPrefs = useMemo(() => getNotificationPreferences(), [vaultItems]);
@@ -169,7 +169,7 @@ export const SmartContinuationStrip: React.FC<SmartContinuationStripProps> = ({
             }`}
           >
             <Share2 className="w-3.5 h-3.5 text-purple-400" />
-            <span>Zeno Passes</span>
+            <span>Kinich Passes</span>
           </button>
         </div>
 
@@ -179,7 +179,7 @@ export const SmartContinuationStrip: React.FC<SmartContinuationStripProps> = ({
             onClick={() => {
               setHideContinuationSection(true);
               try {
-                localStorage.setItem('zeno_hide_continuation_strip_v1', 'true');
+                localStorage.setItem('kinich_hide_continuation_strip_v1', 'true');
               } catch {}
             }}
             className="text-[11px] text-neutral-500 hover:text-neutral-300 cursor-pointer"

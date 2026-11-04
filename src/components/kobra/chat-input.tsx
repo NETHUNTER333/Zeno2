@@ -316,14 +316,14 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       setUsageQuota(UserAccountStore.getUsage());
       setCurrentPlan(UserAccountStore.getNormalizedPlan());
     };
-    window.addEventListener('zeno-account-updated', syncQuota);
-    return () => window.removeEventListener('zeno-account-updated', syncQuota);
+    window.addEventListener('kinich-account-updated', syncQuota);
+    return () => window.removeEventListener('kinich-account-updated', syncQuota);
   }, []);
 
   const openPricingModal = (highlightPlan: 'spark' | 'fire' = 'spark', reason?: string) => {
     if (typeof window !== 'undefined') {
       window.dispatchEvent(
-        new CustomEvent('zeno-open-pricing', {
+        new CustomEvent('kinich-open-pricing', {
           detail: { highlightPlan, reason },
         })
       );

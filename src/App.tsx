@@ -41,7 +41,7 @@ import { ShareExportStudioModal } from './components/ShareExportStudioModal';
 import { DeepResearchModal } from './components/DeepResearchModal';
 import { PageExtractModal } from './components/PageExtractModal';
 import { InbuiltPdfViewer, PdfStudioTab } from './components/InbuiltPdfViewer';
-import { ZenoGrowthHubModal, GrowthHubTab } from './components/ZenoGrowthHubModal';
+import { KinichGrowthHubModal, GrowthHubTab } from './components/KinichGrowthHubModal';
 import { PublicArtifactView } from './components/PublicArtifactView';
 import { StreakReminderToast } from './components/StreakReminderToast';
 import { AchievementToast } from './components/AchievementToast';
@@ -90,7 +90,7 @@ interface SavedThread extends ChatThread {
   messages: ChatMessageType[];
 }
 
-const INSTACLOUD_API_BASE = 'https://prod-main-zeno-api-c257d4-00gfx3c9932.compute.instacloud-edge.com';
+const INSTACLOUD_API_BASE = 'https://prod-main-kinich-api-c257d4-00gfx3c9932.compute.instacloud-edge.com';
 
 function getClientRealTimeClock() {
   const now = new Date();
@@ -428,7 +428,7 @@ function enforceClientClockInReply(
   return data;
 }
 
-async function fetchZenoApi(path: string, init?: RequestInit): Promise<Response> {
+async function fetchKinichApi(path: string, init?: RequestInit): Promise<Response> {
   const isStaticHost =
     typeof window !== 'undefined' &&
     (window.location.hostname.includes('vercel.app') ||
@@ -512,7 +512,7 @@ const DYNAMIC_SUGGESTION_POOLS: Record<string, string[]> = {
 export default function App() {
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     try {
-      const saved = localStorage.getItem('zeno_theme');
+      const saved = localStorage.getItem('kinich_theme');
       if (saved === 'dark' || saved === 'light') return saved;
     } catch {}
     return 'dark';
@@ -520,7 +520,7 @@ export default function App() {
 
   const [threads, setThreads] = useState<SavedThread[]>(() => {
     try {
-      const saved = localStorage.getItem('zeno_threads_v2');
+      const saved = localStorage.getItem('kinich_threads_v2');
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
@@ -531,7 +531,7 @@ export default function App() {
 
   const [activeThreadId, setActiveThreadId] = useState<string | null>(() => {
     try {
-      const active = localStorage.getItem('zeno_active_thread');
+      const active = localStorage.getItem('kinich_active_thread');
       if (active) return active;
     } catch {}
     return null;
@@ -646,25 +646,25 @@ export default function App() {
     if (clean === '/study' || clean.startsWith('/study/')) {
       setIsSignedIn(true);
       setCurrentView('study');
-      document.title = 'YouTube Study Workspace · Zeno';
+      document.title = 'YouTube Study Workspace · Kinich';
     } else if (clean === '/account' || clean.startsWith('/account/') || clean === '/settings' || clean.startsWith('/settings/')) {
       setCurrentView('account');
-      document.title = 'Account & Settings · Zeno';
+      document.title = 'Account & Settings · Kinich';
     } else if (clean === '/pricing' || clean.startsWith('/pricing/')) {
       setIsSignedIn(true);
       setPricingModalState({ isOpen: true, highlightPlan: undefined, limitReason: null });
-      document.title = 'Plans & Pricing · Zeno';
+      document.title = 'Plans & Pricing · Kinich';
     } else if (clean === '/research' || clean.startsWith('/research/')) {
       setIsSignedIn(true);
       setDeepResearchState({ isOpen: true });
-      document.title = 'Deep Research · Zeno';
+      document.title = 'Deep Research · Kinich';
     } else if (clean === '/discover' || clean.startsWith('/discover/')) {
       setIsSignedIn(true);
       setGrowthHubState({ isOpen: true, initialTab: 'discover' });
-      document.title = 'Discover Public Research · Zeno';
+      document.title = 'Discover Public Research · Kinich';
     } else if (clean === '/' || clean === '/chat' || clean.startsWith('/chat/')) {
       setCurrentView('chat');
-      document.title = 'Zeno — Deep Research, Real-Time Web Search & YouTube Study Workspace';
+      document.title = 'Kinich — Deep Research, Real-Time Web Search & YouTube Study Workspace';
     }
   };
 
@@ -672,17 +672,17 @@ export default function App() {
     if (legalOr404Route) return;
     const clean = typeof window !== 'undefined' ? window.location.pathname.toLowerCase() : '/';
     if (currentView === 'study' || clean === '/study' || clean.startsWith('/study/')) {
-      document.title = 'YouTube Study Workspace · Zeno';
+      document.title = 'YouTube Study Workspace · Kinich';
     } else if (currentView === 'account' || clean === '/account' || clean === '/settings') {
-      document.title = 'Account & Settings · Zeno';
+      document.title = 'Account & Settings · Kinich';
     } else if (clean === '/pricing' || clean.startsWith('/pricing/')) {
-      document.title = 'Plans & Pricing · Zeno';
+      document.title = 'Plans & Pricing · Kinich';
     } else if (clean === '/research' || clean.startsWith('/research/')) {
-      document.title = 'Deep Research · Zeno';
+      document.title = 'Deep Research · Kinich';
     } else if (clean === '/discover' || clean.startsWith('/discover/')) {
-      document.title = 'Discover Public Research · Zeno';
+      document.title = 'Discover Public Research · Kinich';
     } else {
-      document.title = 'Zeno — Deep Research, Real-Time Web Search & YouTube Study Workspace';
+      document.title = 'Kinich — Deep Research, Real-Time Web Search & YouTube Study Workspace';
     }
   }, [currentView, legalOr404Route]);
 
@@ -708,14 +708,14 @@ export default function App() {
       }
     };
     window.addEventListener('popstate', onPopState);
-    window.addEventListener('zeno-navigate-route', onLegalNav);
+    window.addEventListener('kinich-navigate-route', onLegalNav);
     return () => {
       window.removeEventListener('popstate', onPopState);
-      window.removeEventListener('zeno-navigate-route', onLegalNav);
+      window.removeEventListener('kinich-navigate-route', onLegalNav);
     };
   }, []);
 
-  // Listen for global 'zeno-open-pricing' events from ChatInput, GrokModelPicker, Sidebar, etc.
+  // Listen for global 'kinich-open-pricing' events from ChatInput, GrokModelPicker, Sidebar, etc.
   useEffect(() => {
     const handleOpenPricing = (e: Event) => {
       const detail = (e as CustomEvent)?.detail || {};
@@ -725,11 +725,11 @@ export default function App() {
         limitReason: detail.reason || null,
       });
     };
-    window.addEventListener('zeno-open-pricing', handleOpenPricing);
-    return () => window.removeEventListener('zeno-open-pricing', handleOpenPricing);
+    window.addEventListener('kinich-open-pricing', handleOpenPricing);
+    return () => window.removeEventListener('kinich-open-pricing', handleOpenPricing);
   }, []);
 
-  // Load Public Shared Thread snapshot (?share=), Public Zeno Page (?artifact=), and Referral attribution (?ref=)
+  // Load Public Shared Thread snapshot (?share=), Public Kinich Page (?artifact=), and Referral attribution (?ref=)
   useEffect(() => {
     try {
       captureReferralFromUrlIfPresent();
@@ -739,7 +739,7 @@ export default function App() {
 
       const artifactId = params.get('artifact')?.trim();
       if (artifactId) {
-        // Public Zeno Pages are accessible without forcing signup
+        // Public Kinich Pages are accessible without forcing signup
         setIsSignedIn(true);
         setPublicArtifactModal({
           isOpen: true,
@@ -776,8 +776,8 @@ export default function App() {
       if (user) {
         setIsSignedIn(true);
         try {
-          localStorage.setItem('zeno_auth_session', 'true');
-          localStorage.removeItem('zeno_explicit_signout');
+          localStorage.setItem('kinich_auth_session', 'true');
+          localStorage.removeItem('kinich_explicit_signout');
         } catch {}
         // Automatically claim any captured pending referral code (cookie or localStorage) for this authenticated user
         claimPendingReferralAfterAuth(user.uid, user.email || '').catch((e) => {
@@ -808,7 +808,7 @@ export default function App() {
       } else {
         // If Firebase Auth currentUser is null, check if user explicitly signed out
         try {
-          if (localStorage.getItem('zeno_explicit_signout') === 'true') {
+          if (localStorage.getItem('kinich_explicit_signout') === 'true') {
             setIsSignedIn(false);
           } else if (UserAccountStore.isUserSignedIn()) {
             setIsSignedIn(true);
@@ -824,7 +824,7 @@ export default function App() {
       setUserProfile(UserAccountStore.getProfile());
       setUserSub(UserAccountStore.getSubscription());
       try {
-        if (localStorage.getItem('zeno_explicit_signout') === 'true') {
+        if (localStorage.getItem('kinich_explicit_signout') === 'true') {
           setIsSignedIn(false);
           return;
         }
@@ -833,8 +833,8 @@ export default function App() {
         setIsSignedIn(true);
       }
     };
-    window.addEventListener('zeno-account-updated', handleAccountSync);
-    return () => window.removeEventListener('zeno-account-updated', handleAccountSync);
+    window.addEventListener('kinich-account-updated', handleAccountSync);
+    return () => window.removeEventListener('kinich-account-updated', handleAccountSync);
   }, []);
 
   useEffect(() => {
@@ -844,8 +844,8 @@ export default function App() {
       }
       setCurrentView('study');
     };
-    window.addEventListener('zeno-open-study-workspace', handleOpenStudyWorkspace);
-    return () => window.removeEventListener('zeno-open-study-workspace', handleOpenStudyWorkspace);
+    window.addEventListener('kinich-open-study-workspace', handleOpenStudyWorkspace);
+    return () => window.removeEventListener('kinich-open-study-workspace', handleOpenStudyWorkspace);
   }, []);
 
   // Automatically resize application container for any device screen, mobile keyboard, or browser window
@@ -916,7 +916,7 @@ export default function App() {
     () =>
       activeThread || {
         id: 'thread-preview',
-        title: 'Zeno Research Session',
+        title: 'Kinich Research Session',
         createdAt: 0,
         messages,
       },
@@ -1016,7 +1016,7 @@ export default function App() {
   // Sync theme to document.documentElement
   useEffect(() => {
     try {
-      localStorage.setItem('zeno_theme', theme);
+      localStorage.setItem('kinich_theme', theme);
     } catch {}
 
     if (theme === 'dark') {
@@ -1031,18 +1031,18 @@ export default function App() {
   // Clean up any legacy NSFW Mode from localStorage
   useEffect(() => {
     try {
-      localStorage.removeItem('zeno_nsfw_mode');
+      localStorage.removeItem('kinich_nsfw_mode');
     } catch {}
   }, []);
 
   // Persist threads to localStorage & Firebase Firestore
   useEffect(() => {
     try {
-      localStorage.setItem('zeno_threads_v2', JSON.stringify(threads));
+      localStorage.setItem('kinich_threads_v2', JSON.stringify(threads));
       if (activeThreadId) {
-        localStorage.setItem('zeno_active_thread', activeThreadId);
+        localStorage.setItem('kinich_active_thread', activeThreadId);
       } else {
-        localStorage.removeItem('zeno_active_thread');
+        localStorage.removeItem('kinich_active_thread');
       }
     } catch {}
 
@@ -1206,7 +1206,7 @@ export default function App() {
       content: artifact.content,
       timestamp: Date.now() + 1,
       sources: artifact.sources || [],
-      modelUsed: artifact.modelUsed || 'Zeno Synthesis',
+      modelUsed: artifact.modelUsed || 'Kinich Synthesis',
     };
     const newId = `thread-${Date.now()}`;
     const forkedThread: SavedThread = {
@@ -1239,7 +1239,7 @@ export default function App() {
       content: item.content,
       timestamp: Date.now() + 1,
       sources: item.sources || [],
-      modelUsed: 'Zeno Knowledge Vault',
+      modelUsed: 'Kinich Knowledge Vault',
     };
     const newId = `thread-${Date.now()}`;
     const resumedThread: SavedThread = {
@@ -1454,7 +1454,7 @@ export default function App() {
     let chatCompleted = false;
     if (computedLoadingMode === 'search') {
       getAuthHeaders().then((authHeaders) =>
-        fetchZenoApi('/api/search/live', {
+        fetchKinichApi('/api/search/live', {
           method: 'POST',
           headers: authHeaders,
           signal: controller.signal,
@@ -1515,7 +1515,7 @@ export default function App() {
         query,
         userPersonalization?.preferredLanguage
       );
-      const response = await fetchZenoApi('/api/chat', {
+      const response = await fetchKinichApi('/api/chat', {
         method: 'POST',
         headers: authHeaders,
         signal: controller.signal,
@@ -1702,8 +1702,8 @@ export default function App() {
     const idsToDelete = threads.map((t) => t.id);
     setThreads([]);
     setActiveThreadId(null);
-    localStorage.removeItem('zeno_threads_v2');
-    localStorage.removeItem('zeno_active_thread');
+    localStorage.removeItem('kinich_threads_v2');
+    localStorage.removeItem('kinich_active_thread');
     clearAllChatThreadsFromFirestore(idsToDelete).catch((err) =>
       console.error('Failed to clear threads in Firestore:', err)
     );
@@ -1774,7 +1774,7 @@ export default function App() {
       const regenQuery = lastUserInContext ? stripInjectedClockNote(lastUserInContext.content) : '';
       const isRegenClockQuery = isDateOrTimeClockQuery(regenQuery);
 
-      const response = await fetchZenoApi('/api/chat', {
+      const response = await fetchKinichApi('/api/chat', {
         method: 'POST',
         headers: authHeaders,
         signal: controller.signal,
@@ -1927,7 +1927,7 @@ export default function App() {
       const authHeaders = await getAuthHeaders();
       const clientClock = getClientRealTimeClock();
       const clockSystemPrompt = buildClientClockSystemDirective(clientClock);
-      const response = await fetchZenoApi('/api/chat', {
+      const response = await fetchKinichApi('/api/chat', {
         method: 'POST',
         headers: authHeaders,
         signal: controller.signal,
@@ -2123,7 +2123,7 @@ export default function App() {
                   setCurrentView('chat');
                 }}
                 isDark={isDark}
-                onAskZeno={(prompt) => {
+                onAskKinich={(prompt) => {
                   if (typeof window !== 'undefined' && window.location.pathname.startsWith('/study')) {
                     window.history.pushState({}, '', '/');
                   }
@@ -2248,10 +2248,8 @@ export default function App() {
               {isThreadEmpty ? (
                 /* Empty State: Center logo, Smart Continuation strip, and prompt input anchored at bottom */
                 <div className="flex-1 min-w-0 flex flex-col items-center justify-between px-3 sm:px-4 w-full overflow-y-auto pt-14 sm:pt-16 pb-[max(1rem,env(safe-area-inset-bottom))] sm:pb-8">
-                  {/* Center Area: Centered Grok Wordmark */}
-                  <div className="flex-1 flex flex-col items-center justify-center my-auto">
-                    <GrokLogo size="lg" isDark={isDark} />
-                  </div>
+                  {/* Center Area: Clean spacer */}
+                  <div className="flex-1 my-auto" />
 
                   {/* Bottom Anchored Area: 8-Referral Notification Popup & Prompt Input */}
                   <div className="w-full max-w-3xl flex flex-col items-center mt-auto">
@@ -2306,7 +2304,7 @@ export default function App() {
                         isDark ? 'text-[#666666]' : 'text-[#8a8a8a]'
                       }`}
                     >
-                      Zeno can make mistakes. Verify important information.
+                      Kinich can make mistakes. Verify important information.
                     </div>
                   </div>
                 </div>
@@ -2366,7 +2364,7 @@ export default function App() {
                           threadTitle={activeThread?.title}
                           onRetry={(modelOverride) => handleRegenerateMessage(msg.id, modelOverride)}
                           onEdit={(content) => handleEditMessage(msg.id, content)}
-                          onAskZeno={(prompt) => handleSend(prompt)}
+                          onAskKinich={(prompt) => handleSend(prompt)}
                           onOpenShareStudio={(targetMsg, tab) =>
                             setShareStudioState({
                               isOpen: true,
@@ -2440,7 +2438,7 @@ export default function App() {
                           isDark ? 'text-[#666666]' : 'text-[#8a8a8a]'
                         }`}
                       >
-                        Zeno can make mistakes. Verify important information.
+                        Kinich can make mistakes. Verify important information.
                       </div>
                     </div>
                   </div>
@@ -2486,7 +2484,7 @@ export default function App() {
                 timestamp: Date.now() + 1,
                 sources,
                 arxivPapers,
-                modelUsed: 'Zeno Deep Research Agent',
+                modelUsed: 'Kinich Deep Research Agent',
               };
               if (!activeThreadId) {
                 const newId = `thread-${Date.now()}`;
@@ -2527,8 +2525,8 @@ export default function App() {
             }}
           />
 
-          {/* Zeno Growth Hub Modal (Discover, Knowledge Vault, Weekly Brief, Zeno Passes) */}
-          <ZenoGrowthHubModal
+          {/* Kinich Growth Hub Modal (Discover, Knowledge Vault, Weekly Brief, Kinich Passes) */}
+          <KinichGrowthHubModal
             isOpen={growthHubState.isOpen}
             onClose={() => setGrowthHubState((prev) => ({ ...prev, isOpen: false }))}
             initialTab={growthHubState.initialTab}
@@ -2546,7 +2544,7 @@ export default function App() {
             isDark={isDark}
           />
 
-          {/* Public Zeno Page Reader & Fork Modal (?artifact=<id>) */}
+          {/* Public Kinich Page Reader & Fork Modal (?artifact=<id>) */}
           <PublicArtifactView
             isOpen={publicArtifactModal.isOpen}
             artifactId={publicArtifactModal.artifactId}
@@ -2583,7 +2581,7 @@ export default function App() {
             initialTab={pdfStudioState.initialTab || 'quiz'}
             summary="We propose a new simple network architecture, the Transformer, based solely on attention mechanisms, dispensing with recurrence and convolutions entirely. Scaled dot-product attention computes the dot products of the query with all keys, divides each by the square root of the key dimension d_k to prevent vanishing gradients in the softmax, and applies a softmax function to obtain weights on the values. Multi-head attention allows the model to jointly attend to information from different representation subspaces at different positions in parallel. Because the Transformer contains no recurrence and no convolution, positional encodings using sine and cosine functions of different frequencies are added to the input embeddings to inject sequence order. On both WMT 2014 English-to-German and English-to-French translation benchmarks, the Transformer achieves state-of-the-art BLEU scores while requiring significantly less training time and enabling full parallelization across sequence tokens."
             isDark={isDark}
-            onAskZeno={(prompt) => handleSend(prompt)}
+            onAskKinich={(prompt) => handleSend(prompt)}
           />
 
           {/* Quick Frictionless 3-Step Onboarding Modal */}

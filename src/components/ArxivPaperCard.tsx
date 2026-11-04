@@ -7,13 +7,13 @@ import GitHubActivity, { extractGitHubUsername } from './ui/github-activity';
 interface ArxivPaperCardProps {
   paper: ArxivPaper;
   isDark?: boolean;
-  onAskZeno?: (prompt: string) => void;
+  onAskKinich?: (prompt: string) => void;
 }
 
 export const ArxivPaperCard: React.FC<ArxivPaperCardProps> = ({
   paper,
   isDark = true,
-  onAskZeno,
+  onAskKinich,
 }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -139,12 +139,12 @@ export const ArxivPaperCard: React.FC<ArxivPaperCardProps> = ({
           <span>Open Split Deep Reader</span>
         </button>
 
-        {onAskZeno && (
+        {onAskKinich && (
           <>
             <button
               type="button"
               onClick={() =>
-                onAskZeno(
+                onAskKinich(
                   `Explain the core mathematical formulations, equations, and theoretical derivations of arXiv:${paper.id} ("${paper.title}"). Abstract: ${paper.summary.slice(0, 600)}`
                 )
               }
@@ -158,7 +158,7 @@ export const ArxivPaperCard: React.FC<ArxivPaperCardProps> = ({
             <button
               type="button"
               onClick={() =>
-                onAskZeno(
+                onAskKinich(
                   `Summarize the Key Contributions, empirical benchmarks, and novelty of arXiv:${paper.id} ("${paper.title}"). Abstract: ${paper.summary.slice(0, 600)}`
                 )
               }
@@ -172,7 +172,7 @@ export const ArxivPaperCard: React.FC<ArxivPaperCardProps> = ({
             <button
               type="button"
               onClick={() =>
-                onAskZeno(
+                onAskKinich(
                   `Provide a step-by-step Methodology & Architecture Breakdown of arXiv:${paper.id} ("${paper.title}"). Abstract: ${paper.summary.slice(0, 600)}`
                 )
               }
@@ -313,7 +313,7 @@ export const ArxivPaperCard: React.FC<ArxivPaperCardProps> = ({
           pdfName={paper.title}
           extractedText={`Paper Title: ${paper.title}\n\nAuthors: ${paper.authors.join(', ')}\nPublished: ${formatDate(paper.published)}\nCategories: ${paper.categories.join(', ')}\n\nABSTRACT:\n${paper.summary}`}
           isDark={isDark}
-          onAskZeno={onAskZeno}
+          onAskKinich={onAskKinich}
         />
       )}
     </div>

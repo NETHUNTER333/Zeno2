@@ -78,7 +78,7 @@ export const LEGAL_DOCUMENTS: Record<LegalDocId, PolicyDocument> = {
       {
         id: 'overview',
         number: '01',
-        title: 'What Zeno Does',
+        title: 'What Kinich Does',
         paragraphs: [
           `${LEGAL_CONFIG.TRADE_NAME} (${LEGAL_CONFIG.LIVE_SITE_URL}) is an AI-powered research and study platform offering real-time AI search with cited web sources, autonomous Deep Research reports, a YouTube Study workspace (timestamped transcripts, structured summaries, interactive quizzes, flashcards, lesson plans, and audio summaries), persistent chat history, PDF and document study uploads, guest mode, user accounts via Email and Google sign-in, daily study streaks and achievement badges, a referral program with usage rewards, and optional paid subscription plans.`,
           `AI responses and study syntheses are generated using third-party large language model providers (including Google Gemini, DeepSeek, and OpenRouter/TokenHarbor-routed models). Subscription payments and taxes are processed by Dodo Payments acting as Merchant of Record.`,
@@ -169,8 +169,8 @@ export const LEGAL_DOCUMENTS: Record<LegalDocId, PolicyDocument> = {
     version: LEGAL_CONFIG.CONSENT_VERSION,
     shortVersionBullets: [
       `You must be at least ${LEGAL_CONFIG.MIN_AGE} years old to access or use ${LEGAL_CONFIG.TRADE_NAME}.`,
-      `You own the prompts and study documents you upload, and you may use Zeno's AI outputs for personal, educational, and commercial work. We do not use your content to train AI models.`,
-      `AI outputs can be inaccurate or incomplete. Never rely on Zeno as a substitute for qualified medical, legal, financial, tax, or mental-health professionals.`,
+      `You own the prompts and study documents you upload, and you may use Kinich's AI outputs for personal, educational, and commercial work. We do not use your content to train AI models.`,
+      `AI outputs can be inaccurate or incomplete. Never rely on Kinich as a substitute for qualified medical, legal, financial, tax, or mental-health professionals.`,
       `Paid subscriptions (${LEGAL_CONFIG.PRICE}) are billed by Dodo Payments as Merchant of Record, renew automatically until cancelled, and are covered by our Refund Policy (/refund).`,
       `Uploading photos of real people, government IDs (Aadhaar, PAN), payment card numbers, or explicit material is strictly prohibited (/acceptable-use).`,
     ],
@@ -210,7 +210,7 @@ export const LEGAL_DOCUMENTS: Record<LegalDocId, PolicyDocument> = {
         number: '04',
         title: 'Description of the Service & Beta Features',
         paragraphs: [
-          `${LEGAL_CONFIG.TRADE_NAME} provides an integrated AI workspace featuring: (a) AI Search with live web citations; (b) autonomous Deep Research reports; (c) a YouTube Study workspace that retrieves public video transcripts and generates summaries, quizzes, flashcards, lesson plans, and audio syntheses; (d) PDF and document study extraction; (e) Knowledge Vault note curation and Zeno Discover community pages; and (f) daily study streaks, badges, and referral rewards.`,
+          `${LEGAL_CONFIG.TRADE_NAME} provides an integrated AI workspace featuring: (a) AI Search with live web citations; (b) autonomous Deep Research reports; (c) a YouTube Study workspace that retrieves public video transcripts and generates summaries, quizzes, flashcards, lesson plans, and audio syntheses; (d) PDF and document study extraction; (e) Knowledge Vault note curation and Kinich Discover community pages; and (f) daily study streaks, badges, and referral rewards.`,
           `Certain features may be labeled as "Preview", "Beta", or "Experimental". Beta features are provided as-is, may change or be discontinued at any time, and may exhibit higher latency or error rates.`,
         ],
       },
@@ -235,7 +235,7 @@ export const LEGAL_DOCUMENTS: Record<LegalDocId, PolicyDocument> = {
         paragraphs: [
           `As between you and ${LEGAL_CONFIG.OPERATOR_NAME}, you retain all ownership rights in the text prompts, questions, PDFs, study notes, and files you submit to the Service ("User Input"), and, to the fullest extent permitted by applicable law, you own the specific syntheses, study guides, and outputs generated for you in response to your User Input ("Output"). Due to the nature of machine learning, similar or identical Outputs may be generated for other users asking similar questions.`,
           `Limited License to Operate the Service: By submitting User Input, you grant ${LEGAL_CONFIG.OPERATOR_NAME} a worldwide, non-exclusive, royalty-free license to host, cache, transmit, display, and process your User Input solely as necessary to provide, secure, and maintain the Service for you (and, only when you explicitly click "Share" or "Publish to Discover", to display that shared thread or page to others).`,
-          `No Foundation Model Training: Zeno does not use your data to train its own models. Third-party AI providers process prompts under their respective API terms, which do not use paid API traffic for model training; free-tier or fallback endpoints may be subject to the provider's standard terms.`,
+          `No Foundation Model Training: Kinich does not use your data to train its own models. Third-party AI providers process prompts under their respective API terms, which do not use paid API traffic for model training; free-tier or fallback endpoints may be subject to the provider's standard terms.`,
         ],
       },
       {
@@ -265,7 +265,7 @@ export const LEGAL_DOCUMENTS: Record<LegalDocId, PolicyDocument> = {
       {
         id: 'intellectual-property',
         number: '09',
-        title: 'Zeno Intellectual Property',
+        title: 'Kinich Intellectual Property',
         paragraphs: [
           `The ${LEGAL_CONFIG.TRADE_NAME} name, logo, user interface design, software code, system architecture, curated Discover templates, badge artwork, and documentation are owned by ${LEGAL_CONFIG.OPERATOR_NAME} and protected by Indian and international copyright, trademark, and intellectual property laws. Except for your User Input and Outputs, these Terms do not grant you any right, title, or interest in the Service.`,
         ],
@@ -278,7 +278,7 @@ export const LEGAL_DOCUMENTS: Record<LegalDocId, PolicyDocument> = {
           `${LEGAL_CONFIG.TRADE_NAME} offers a Free Tier along with optional paid subscriptions: Spark (${LEGAL_CONFIG.SPARK_PRICE_MONTHLY} or ${LEGAL_CONFIG.SPARK_PRICE_ANNUAL}) and Fire (${LEGAL_CONFIG.FIRE_PRICE_MONTHLY} or ${LEGAL_CONFIG.FIRE_PRICE_ANNUAL}).`,
         ],
         bullets: [
-          `Merchant of Record: All subscription payments are processed by Dodo Payments ("Dodo"), which acts as our authorized Merchant of Record and reseller. Your bank or card statement will display Dodo Payments (or Dodo*Zeno).`,
+          `Merchant of Record: All subscription payments are processed by Dodo Payments ("Dodo"), which acts as our authorized Merchant of Record and reseller. Your bank or card statement will display Dodo Payments (or Dodo*Kinich).`,
           `Automatic Renewal & Cancellation: Subscriptions renew automatically at the end of each monthly or annual billing cycle unless you cancel beforehand via Settings → Plans & Pricing or through your Dodo Payments billing portal link. After cancellation, your paid features remain active until the end of the current paid period, after which your account reverts to the Free Tier.`,
           `Taxes & Price Changes: Displayed prices may be subject to applicable GST, VAT, or sales tax calculated by Dodo Payments at checkout based on your billing location. We will give at least 30 days' advance notice via email before any price increase takes effect on an existing subscription.`,
           `Usage Quotas & Fair Use: Each plan includes daily usage allowances (resetting at 00:00 UTC) for prompts, file uploads, web searches, Deep Research reports, and Study sessions. Even on high-limit or "unlimited" tiers, automated scripting, account sharing, proxy resale, or abusive burst traffic that degrades service stability is prohibited and may be rate-limited.`,
@@ -338,7 +338,7 @@ export const LEGAL_DOCUMENTS: Record<LegalDocId, PolicyDocument> = {
         title: 'Copyright & Intellectual Property Complaints',
         paragraphs: [
           `We respect intellectual property rights and respond to notices of alleged copyright infringement in accordance with the Indian Copyright Act, 1957, Rule 3(1)(d) of the Information Technology (Intermediary Guidelines and Digital Media Ethics Code) Rules, 2021, and the U.S. Digital Millennium Copyright Act (DMCA).`,
-          `If you believe that any public content on ${LEGAL_CONFIG.TRADE_NAME} (such as a published Zeno Discover page or shared thread) infringes your copyright, please send a written takedown notice to ${LEGAL_CONFIG.SUPPORT_EMAIL} containing: (1) identification of the copyrighted work; (2) the exact URL on ${LEGAL_CONFIG.LIVE_SITE_URL} of the allegedly infringing material; (3) your name, postal address, telephone number, and email address; (4) a good-faith statement that the disputed use is not authorized by the copyright owner, its agent, or the law; and (5) a statement, under penalty of perjury, that the information in your notice is accurate and that you are the copyright owner or authorized to act on the owner's behalf.`,
+          `If you believe that any public content on ${LEGAL_CONFIG.TRADE_NAME} (such as a published Kinich Discover page or shared thread) infringes your copyright, please send a written takedown notice to ${LEGAL_CONFIG.SUPPORT_EMAIL} containing: (1) identification of the copyrighted work; (2) the exact URL on ${LEGAL_CONFIG.LIVE_SITE_URL} of the allegedly infringing material; (3) your name, postal address, telephone number, and email address; (4) a good-faith statement that the disputed use is not authorized by the copyright owner, its agent, or the law; and (5) a statement, under penalty of perjury, that the information in your notice is accurate and that you are the copyright owner or authorized to act on the owner's behalf.`,
         ],
       },
       {
@@ -469,7 +469,7 @@ export const LEGAL_DOCUMENTS: Record<LegalDocId, PolicyDocument> = {
         title: 'AI Model Processing & Third-Party Inference Providers',
         paragraphs: [
           `When you submit a prompt, document, or study request, ${LEGAL_CONFIG.TRADE_NAME} sends the relevant prompt context to third-party AI model providers (such as Google Gemini API, DeepSeek, and OpenRouter/TokenHarbor/MoonMath/IteraCompute API gateways) to generate your answer, quiz, or summary. When you use the YouTube Study workspace, we retrieve publicly available captions/transcripts for the video ID you specify.`,
-          `Zeno does not use your data to train its own models. Third-party AI providers process prompts under their respective API terms, which do not use paid API traffic for model training; free-tier or fallback endpoints may be subject to the provider's standard terms. Each provider processes inference requests under its published API privacy terms (linked in Section 5 below).`,
+          `Kinich does not use your data to train its own models. Third-party AI providers process prompts under their respective API terms, which do not use paid API traffic for model training; free-tier or fallback endpoints may be subject to the provider's standard terms. Each provider processes inference requests under its published API privacy terms (linked in Section 5 below).`,
         ],
       },
       {
@@ -869,7 +869,7 @@ export const LEGAL_DOCUMENTS: Record<LegalDocId, PolicyDocument> = {
         number: '05',
         title: 'Category E — How to Report Violations or Unsafe Content',
         paragraphs: [
-          `Every AI response, YouTube Study set, Deep Research report, and Zeno Discover page includes a built-in "Report" button allowing you to flag inaccurate, harmful, or infringing content directly to our Trust & Safety queue. You may also report abuse, safety issues, or illegal content at any time via ${LEGAL_CONFIG.ABUSE_EMAIL} or through our Contact & Support page (/contact). Formal grievances are acknowledged within ${LEGAL_CONFIG.GRIEVANCE_ACK_HOURS} hours and resolved within ${LEGAL_CONFIG.GRIEVANCE_RESOLUTION_DAYS} days.`,
+          `Every AI response, YouTube Study set, Deep Research report, and Kinich Discover page includes a built-in "Report" button allowing you to flag inaccurate, harmful, or infringing content directly to our Trust & Safety queue. You may also report abuse, safety issues, or illegal content at any time via ${LEGAL_CONFIG.ABUSE_EMAIL} or through our Contact & Support page (/contact). Formal grievances are acknowledged within ${LEGAL_CONFIG.GRIEVANCE_ACK_HOURS} hours and resolved within ${LEGAL_CONFIG.GRIEVANCE_RESOLUTION_DAYS} days.`,
         ],
       },
     ],
@@ -904,7 +904,7 @@ export const LEGAL_DOCUMENTS: Record<LegalDocId, PolicyDocument> = {
       {
         id: 'how-we-use-storage',
         number: '01',
-        title: 'How Zeno Uses Cookies & Browser Storage',
+        title: 'How Kinich Uses Cookies & Browser Storage',
         paragraphs: [
           `Modern web applications use browser cookies and HTML5 localStorage to maintain session state across page reloads. At ${LEGAL_CONFIG.TRADE_NAME}, we minimize browser storage to what is genuinely needed to authenticate your account, remember your interface preferences, cache your study workspace locally, and honor referral links.`,
           `We do NOT use third-party advertising networks, behavioral retargeting cookies, or cross-site tracking pixels.`,

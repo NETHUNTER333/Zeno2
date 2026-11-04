@@ -310,7 +310,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [isWorkspaceCollapsed, setIsWorkspaceCollapsed] = useState<boolean>(() => {
     try {
-      return localStorage.getItem('zeno_sidebar_workspace_collapsed') === 'true';
+      return localStorage.getItem('kinich_sidebar_workspace_collapsed') === 'true';
     } catch {
       return false;
     }
@@ -334,7 +334,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   >('calendar');
   const [isPlanPromoDismissed, setIsPlanPromoDismissed] = useState<boolean>(() => {
     try {
-      return sessionStorage.getItem('zeno_plan_promo_dismissed') === '1';
+      return sessionStorage.getItem('kinich_plan_promo_dismissed') === '1';
     } catch {
       return false;
     }
@@ -355,15 +355,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
       }>;
       openStreakCenter(custom.detail?.tab || 'calendar');
     };
-    window.addEventListener('zeno-open-streak-modal', handleOpenStreakEvent);
-    return () => window.removeEventListener('zeno-open-streak-modal', handleOpenStreakEvent);
+    window.addEventListener('kinich-open-streak-modal', handleOpenStreakEvent);
+    return () => window.removeEventListener('kinich-open-streak-modal', handleOpenStreakEvent);
   }, []);
 
   const toggleWorkspaceCollapsed = () => {
     setIsWorkspaceCollapsed((prev) => {
       const next = !prev;
       try {
-        localStorage.setItem('zeno_sidebar_workspace_collapsed', String(next));
+        localStorage.setItem('kinich_sidebar_workspace_collapsed', String(next));
       } catch {}
       return next;
     });
@@ -383,8 +383,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
       setDailyStreak(UserAccountStore.getDailyStreak(threads));
       setEvaluatedBadges(UserAccountStore.getEvaluatedBadges(threads));
     };
-    window.addEventListener('zeno-account-updated', syncProfile);
-    return () => window.removeEventListener('zeno-account-updated', syncProfile);
+    window.addEventListener('kinich-account-updated', syncProfile);
+    return () => window.removeEventListener('kinich-account-updated', syncProfile);
   }, [threads]);
 
   const unlockedBadgesCount = useMemo(
@@ -561,7 +561,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             onOpenPricing(undefined);
           } else if (typeof window !== 'undefined') {
             window.dispatchEvent(
-              new CustomEvent('zeno-open-pricing', { detail: {} })
+              new CustomEvent('kinich-open-pricing', { detail: {} })
             );
           }
           if (window.innerWidth < 768) onClose();
@@ -571,7 +571,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       if (onOpenGrowthHub) {
         items.push({
           id: 'action-discover',
-          label: 'Zeno Discover',
+          label: 'Kinich Discover',
           sublabel: 'Live arXiv papers & connected GitHub repos',
           icon: <Compass className="w-3.5 h-3.5 text-current" />,
           onClick: () => {
@@ -591,7 +591,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         });
         items.push({
           id: 'action-passes',
-          label: 'Zeno Passes & Leaderboard',
+          label: 'Kinich Passes & Leaderboard',
           sublabel: 'Elite Referrer ranks & Top Contributors',
           icon: <Trophy className="w-3.5 h-3.5 text-current" />,
           onClick: () => {
@@ -1169,7 +1169,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         onOpenPricing(undefined);
                       } else if (typeof window !== 'undefined') {
                         window.dispatchEvent(
-                          new CustomEvent('zeno-open-pricing', {
+                          new CustomEvent('kinich-open-pricing', {
                             detail: {},
                           })
                         );
@@ -1213,7 +1213,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       e.stopPropagation();
                       setIsPlanPromoDismissed(true);
                       try {
-                        sessionStorage.setItem('zeno_plan_promo_dismissed', '1');
+                        sessionStorage.setItem('kinich_plan_promo_dismissed', '1');
                       } catch {}
                     }}
                     aria-label="Dismiss plan promo"
