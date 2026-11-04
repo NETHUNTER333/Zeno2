@@ -1413,7 +1413,7 @@ STRICT RULES:
           const stem = t.endsWith('s') && t.length > 4 ? t.slice(0, -1) : t;
           return draftLower.includes(t) || (stem.length >= 4 && draftLower.includes(stem));
         });
-        if (qTerms.length >= 2 && matchedQTerms.length === 0) {
+        if (qTerms.length >= 4 && matchedQTerms.length === 0) {
           return false;
         }
 
@@ -1445,7 +1445,8 @@ STRICT RULES:
               .replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '')
               .trim()
               .toUpperCase();
-            if (verdict.startsWith('NO') || /\bNO\b/.test(verdict.slice(0, 12))) {
+            // Only reject if the judge explicitly says NO (not NOVEL, NOT, etc.)
+            if (verdict === 'NO' || verdict.startsWith('NO ') || verdict.startsWith('NO.') || verdict.startsWith('NO,')) {
               return false;
             }
           }

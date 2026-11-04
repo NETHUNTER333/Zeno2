@@ -8895,7 +8895,6 @@ app.post('/api/youtube/transcript', async (req, res) => {
       thumbnail: extracted.thumbnail,
       durationSec: extracted.durationSec,
       provider: extracted.provider,
-      instaCloudProjectId: INSTACLOUD_PROJECT_ID,
       segments: extracted.segments,
     });
   } catch (err: any) {
@@ -9364,8 +9363,7 @@ app.post('/api/youtube/study', async (req, res) => {
       return res.json({
         success: true,
         cached: true,
-        instaCloudProjectId: INSTACLOUD_PROJECT_ID,
-        instaCloudUrl: INSTACLOUD_BASE_URL,
+          instaCloudUrl: INSTACLOUD_BASE_URL,
         study: {
           ...cached,
           metrics: {
@@ -9990,7 +9988,6 @@ STRICT RULES:
     return res.json({
       success: true,
       cached: false,
-      instaCloudProjectId: INSTACLOUD_PROJECT_ID,
       instaCloudUrl: INSTACLOUD_BASE_URL,
       study: finalBundle,
     });
@@ -10277,7 +10274,6 @@ ${transcriptContext}`;
 
     return res.json({
       success: true,
-      instaCloudProjectId: INSTACLOUD_PROJECT_ID,
       answer,
     });
   } catch (err: any) {
