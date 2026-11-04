@@ -525,6 +525,15 @@ export function scoreSourceRelevanceToQuery(
     ) {
       return -10;
     }
+    const isExplanatoryQuery = /\b(how|what|explain|explanation|architecture|tutorial|guide|work|works|working|introduction|understanding)\b/i.test(q);
+    if (isExplanatoryQuery && /\b(transformer|transformers)\b/i.test(q)) {
+      if (
+        !/\b(protein|drug|travelling\s+salesman|tsp|vehicle\s+routing|stock|forecasting)\b/i.test(q) &&
+        /\b(de\s+novo\s+drug|protein-specific|travelling\s+salesman|travelling\s+salesperson|vehicle\s+routing\s+problem)\b/i.test(combined)
+      ) {
+        return -15.0;
+      }
+    }
   }
 
   const stopWords = new Set([
@@ -542,7 +551,20 @@ export function scoreSourceRelevanceToQuery(
     .map((t) => t.trim())
     .filter((t) => t.length >= 2 && !stopWords.has(t));
 
-  if (rawTokens.length === 0) return isNewsQuery && isPreferredNewsOutlet(source) ? 5 : 1;
+  if (rawTokens.length === 0) return 1.0;
+
+  // Strict location & proper noun entity enforcement (e.g. "india", "hyderabad", "rbi")
+  const keyEntitiesToEnforce: { term: string; altRegex: RegExp }[] = [];
+  if (/\bindia\b/i.test(q)) keyEntitiesToEnforce.push({ term: 'india', altRegex: /\b(india|indian)\b/i });
+  if (/\bhyderabad\b/i.test(q)) keyEntitiesToEnforce.push({ term: 'hyderabad', altRegex: /\bhyderabad\b/i });
+  if (/\brbi\b/i.test(q)) keyEntitiesToEnforce.push({ term: 'rbi', altRegex: /\b(rbi|reserve\s+bank)\b/i });
+  if (/\btransformer\b/i.test(q)) keyEntitiesToEnforce.push({ term: 'transformer', altRegex: /\b(transformers?|attention)\b/i });
+
+  for (const entity of keyEntitiesToEnforce) {
+    if (!entity.altRegex.test(combined)) {
+      return -25.0; // Hard reject results missing critical query entity
+    }
+  }
 
   let score = 0;
   let matchedCoreTokens = 0;
@@ -588,8 +610,20 @@ export function scoreSourceRelevanceToQuery(
     }
   }
 
-  if (isNewsQuery && isPreferredNewsOutlet(source)) {
-    score += 12.0;
+  const nonYearTokens = rawTokens.filter((t) => !/^202\d$/.test(t));
+  const tokenMatchRatio = nonYearTokens.length > 0 ? matchedCoreTokens / nonYearTokens.length : 1;
+
+  if (nonYearTokens.length >= 1 && matchedCoreTokens === 0) {
+    return -25.0;
+  }
+
+  if (nonYearTokens.length >= 3 && tokenMatchRatio < 0.4) {
+    return -15.0;
+  }
+
+  // Only apply outlet quality boost if the article matches the core entity terms of the query
+  if (isNewsQuery && isPreferredNewsOutlet(source) && tokenMatchRatio >= 0.5) {
+    score += 3.0;
   }
 
   const isOpenSourceLlmQuery =
@@ -620,11 +654,6 @@ export function scoreSourceRelevanceToQuery(
     } else {
       score -= 4.5;
     }
-  }
-
-  const nonYearTokens = rawTokens.filter((t) => !/^202\d$/.test(t));
-  if (nonYearTokens.length >= 1 && matchedCoreTokens === 0) {
-    return -5;
   }
 
   return score;
@@ -992,7 +1021,7 @@ export async function fallbackPublicWebSearchWithStatus(
           .trim() || query;
 
       const googleNewsSearchExpr = !isStockQ
-        ? `${strippedTopic} (site:reuters.com OR site:theverge.com OR site:techcrunch.com OR site:apnews.com OR site:theguardian.com OR site:arstechnica.com OR site:wired.com OR site:technologyreview.com OR site:venturebeat.com) -stock -stocks -earnings -shares -zacks -seekingalpha when:7d`
+        ? `${strippedTopic} -stock -stocks -earnings -shares -zacks -seekingalpha`
         : query;
 
       const feedPromises: Promise<SearchResultItem[]>[] = [
@@ -1030,57 +1059,6 @@ export async function fallbackPublicWebSearchWithStatus(
           return parseRssBlockList(await res.text());
         })().catch(() => []),
       ];
-
-      if (isAiOrTechNews) {
-        const directOutletFeeds = [
-          {
-            url: 'https://techcrunch.com/category/artificial-intelligence/feed/',
-            domain: 'techcrunch.com',
-            publisher: 'TechCrunch',
-          },
-          {
-            url: 'https://www.theverge.com/rss/ai-artificial-intelligence/index.xml',
-            domain: 'theverge.com',
-            publisher: 'The Verge',
-          },
-          {
-            url: 'https://feeds.arstechnica.com/arstechnica/index',
-            domain: 'arstechnica.com',
-            publisher: 'Ars Technica',
-          },
-          {
-            url: 'https://www.theguardian.com/technology/artificialintelligenceai/rss',
-            domain: 'theguardian.com',
-            publisher: 'The Guardian',
-          },
-          {
-            url: 'https://venturebeat.com/category/ai/feed/',
-            domain: 'venturebeat.com',
-            publisher: 'VentureBeat',
-          },
-          {
-            url: 'https://www.wired.com/feed/tag/ai/latest/rss',
-            domain: 'wired.com',
-            publisher: 'Wired',
-          },
-        ];
-        for (const outlet of directOutletFeeds) {
-          feedPromises.push(
-            (async () => {
-              const res = await fetch(outlet.url, {
-                headers: {
-                  'User-Agent': 'Mozilla/5.0 (compatible; ZenoNewsReader/1.0)',
-                  Accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml;q=0.9, */*;q=0.8',
-                },
-                signal: signal || AbortSignal.timeout(2_800),
-              });
-              if (!res.ok) return [];
-              const parsed = parseRssBlockList(await res.text(), outlet.domain, outlet.publisher);
-              return parsed.filter((item) => scoreSourceRelevanceToQuery(item, query) >= 1.5).slice(0, 4);
-            })().catch(() => [])
-          );
-        }
-      }
 
       const feedBatches = await Promise.all(feedPromises);
       const reversedBatches = [...feedBatches].reverse();
