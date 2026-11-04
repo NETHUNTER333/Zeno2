@@ -577,22 +577,23 @@ export async function publishSharedThreadToFirestore(thread: {
     messages: sanitizedMessages,
   };
 
-  // Always cache locally so instant preview works even offline or without Firebase Auth
+  // Always cache locally so instant preview works even offline
   try {
     localStorage.setItem(`kinich_shared_${shareId}`, JSON.stringify(snapshotPayload));
   } catch {}
 
-  const user = auth.currentUser;
-  if (user && user.uid) {
-    const path = `shared_threads/${shareId}`;
+  // 1. Save to Firestore (works for both guests and authenticated users)
+  try {
+    await setDoc(doc(db, 'shared_threads', shareId), snapshotPayload);
+  } catch {
+    // 2. Fallback to server endpoint
     try {
-      await setDoc(doc(db, 'shared_threads', shareId), {
-        ...snapshotPayload,
-        ownerId: user.uid,
+      await fetch('/api/share/snapshot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(snapshotPayload),
       });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, path);
-    }
+    } catch {}
   }
 
   return shareId;
@@ -616,15 +617,25 @@ export async function loadSharedThreadFromFirestore(
     }
   } catch {}
 
-  const path = `shared_threads/${safeId}`;
+  // 1. Query Firestore
   try {
     const snap = await getDoc(doc(db, 'shared_threads', safeId));
     if (snap.exists()) {
       return snap.data() as SharedThreadSnapshotDoc;
     }
-  } catch (error) {
-    handleFirestoreError(error, OperationType.GET, path);
-  }
+  } catch {}
+
+  // 2. Query server endpoint
+  try {
+    const res = await fetch(`/api/share/snapshot/${encodeURIComponent(safeId)}`);
+    if (res.ok) {
+      const json = await res.json();
+      if (json && json.snapshot && Array.isArray(json.snapshot.messages)) {
+        return json.snapshot as SharedThreadSnapshotDoc;
+      }
+    }
+  } catch {}
+
   return null;
 }
 

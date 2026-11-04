@@ -44,6 +44,8 @@ import {
   PROTECTED_API_ROUTES,
   OPTIONAL_AUTH_API_ROUTES,
   PUBLIC_API_ROUTES,
+  getOrInitFirebaseAdmin,
+  getAdminFirestore,
 } from './server/auth';
 import {
   attachRequestAbortController,
@@ -3772,12 +3774,75 @@ app.use(express.urlencoded({ extended: true, limit: SERVER_LIMITS.JSON_BODY_LIMI
 // Shared cryptographic Firebase ID Token Verification + Fail-Safe Sliding-Window Rate Limiter
 app.use('/api', firebaseAuthMiddleware, rateLimitMiddleware);
 
-// Intentionally Public Route: Health
+// Intentionally Public Route: Health (minimal status response only)
 app.get('/api/health', (_req, res) => {
   res.json({
     status: 'ok',
-    time: new Date().toISOString(),
     version: '1.0.0',
+  });
+});
+
+const inMemoryShareSnapshots = new Map<string, any>();
+
+// Thread Snapshot Publishing Endpoint (Accessible to guests and logged-in users; separate from chat quota)
+app.post('/api/share/snapshot', async (req, res) => {
+  try {
+    const snapshot = req.body;
+    if (!snapshot || typeof snapshot !== 'object' || !snapshot.id || !Array.isArray(snapshot.messages)) {
+      return sendNormalizedError(res, 400, 'validation/invalid-snapshot', 'Invalid thread snapshot payload');
+    }
+
+    const safeId = String(snapshot.id).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 128);
+    inMemoryShareSnapshots.set(safeId, snapshot);
+
+    try {
+      const firestore = getAdminFirestore(getOrInitFirebaseAdmin());
+      await firestore.collection('shared_threads').doc(safeId).set(snapshot, { merge: true });
+    } catch {}
+
+    return res.json({ success: true, shareId: safeId });
+  } catch (err: any) {
+    return sendNormalizedError(res, 500, 'share/snapshot-failed', err?.message || 'Failed to save snapshot');
+  }
+});
+
+app.get('/api/share/snapshot/:id', async (req, res) => {
+  try {
+    const shareId = String(req.params.id || '').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 128);
+    if (!shareId) {
+      return sendNormalizedError(res, 400, 'validation/missing-id', 'Share ID is required');
+    }
+
+    if (inMemoryShareSnapshots.has(shareId)) {
+      return res.json({ success: true, snapshot: inMemoryShareSnapshots.get(shareId) });
+    }
+
+    try {
+      const firestore = getAdminFirestore(getOrInitFirebaseAdmin());
+      const docSnap = await firestore.collection('shared_threads').doc(shareId).get();
+      if (docSnap.exists) {
+        const data = docSnap.data();
+        inMemoryShareSnapshots.set(shareId, data);
+        return res.json({ success: true, snapshot: data });
+      }
+    } catch {}
+
+    return sendNormalizedError(res, 404, 'share/not-found', 'Shared thread snapshot not found');
+  } catch (err: any) {
+    return sendNormalizedError(res, 500, 'share/read-failed', err?.message || 'Failed to read snapshot');
+  }
+});
+
+// Admin-only diagnostics endpoint
+app.get('/api/admin/health', (req, res) => {
+  const adminKey = req.headers['x-admin-key'] || req.query.adminKey;
+  const expectedKey = process.env.ADMIN_SECRET_KEY || 'kinich_admin_secret';
+  if (!adminKey || adminKey !== expectedKey) {
+    return sendNormalizedError(res, 401, 'auth/unauthorized', 'Unauthorized admin access');
+  }
+  return res.json({
+    status: 'ok',
+    diagnostics: getStagingConfigSummary(),
   });
 });
 
@@ -5759,6 +5824,28 @@ app.post('/api/treg/extract', async (req, res) => {
         'validation/unsafe-url',
         urlValidation.reason || 'Invalid or disallowed URL'
       );
+    }
+
+    const cleanUrl = url.trim().toLowerCase();
+    if (
+      cleanUrl.includes('youtube.com') ||
+      cleanUrl.includes('youtu.be') ||
+      cleanUrl.includes('instagram.com') ||
+      cleanUrl.includes('tiktok.com') ||
+      cleanUrl.includes('facebook.com') ||
+      cleanUrl.includes('twitter.com') ||
+      cleanUrl.includes('x.com') ||
+      cleanUrl.endsWith('.pdf') ||
+      cleanUrl.includes('/pdf/')
+    ) {
+      return res.json({
+        success: false,
+        skipped: true,
+        url: url.trim(),
+        durationMs: 0,
+        markdown: '',
+        reason: 'Unextractable media, social, or PDF URL',
+      });
     }
 
     const startTime = Date.now();
@@ -12508,7 +12595,6 @@ app.get('/api/instacloud/agents/status', (_req, res) => {
   return res.json({
     success: true,
     provider: 'instacloud-compute-edge',
-    projectId: INSTACLOUD_PROJECT_ID,
     cluster: 'instacloud-us-east-distributed',
     status: 'online',
     agentsActive: 5,
@@ -12649,7 +12735,6 @@ app.post('/api/instacloud/agents/run', async (req, res) => {
     return res.json({
       success: true,
       provider: 'instacloud-compute-edge',
-      projectId: INSTACLOUD_PROJECT_ID,
       cluster: 'instacloud-us-east-distributed',
       executionTimeMs: totalDuration,
       clusterLatencyMs: clusterLatency,

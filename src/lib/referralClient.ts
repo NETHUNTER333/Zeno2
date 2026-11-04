@@ -145,9 +145,9 @@ export function extractReferralCodeFromUrl(): string | null {
       return queryCode;
     }
 
-    // 2. Check deep link pathname /r/CODE
+    // 2. Check deep link pathname /r/CODE or /invite/CODE
     const pathname = url.pathname;
-    const rMatch = pathname.match(/^\/r\/([a-zA-Z0-9_-]+)/i);
+    const rMatch = pathname.match(/^\/(?:r|invite)\/([a-zA-Z0-9_-]+)/i);
     if (rMatch && rMatch[1]) {
       return rMatch[1].trim();
     }
@@ -158,14 +158,18 @@ export function extractReferralCodeFromUrl(): string | null {
 /**
  * Captures and validates an inbound referral code from the URL on landing.
  * Saves to both localStorage and a 30-day cookie to survive OAuth redirects.
- * Strictly ignores and clears self-referral links.
+ * Strictly ignores and clears self-referral or invalid links.
  */
 export async function captureInboundReferral(): Promise<PendingReferralInfo | null> {
   const code = extractReferralCodeFromUrl();
+  const isDeepLinkPath = typeof window !== 'undefined' && /^\/(?:r|invite)\//i.test(window.location.pathname);
+
   if (code) {
-    // Block self-referrals immediately when opening one's own link
     if (isSelfReferralCode(code)) {
       clearPendingReferral();
+      if (isDeepLinkPath) {
+        try { window.history.replaceState({}, '', '/'); } catch {}
+      }
       return null;
     }
 
@@ -174,27 +178,36 @@ export async function captureInboundReferral(): Promise<PendingReferralInfo | nu
       capturedAt: Date.now(),
     };
 
-    // Save to localStorage
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(pending));
     } catch {}
 
-    // Save to 30-day cookie
     setCookie(COOKIE_NAME, code, COOKIE_MAX_AGE);
 
-    // Validate with backend to get referrer's display name for banner
     try {
       const res = await apiFetch(`/api/referral/validate/${encodeURIComponent(code)}`);
       if (res.ok) {
         const data = await res.json();
-        if (data.valid && data.referrerName) {
-          pending.referrerName = data.referrerName;
-          try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(pending));
-          } catch {}
+        if (data.valid !== false) {
+          if (data.referrerName) {
+            pending.referrerName = data.referrerName;
+            try {
+              localStorage.setItem(STORAGE_KEY, JSON.stringify(pending));
+            } catch {}
+          }
+        } else {
+          clearPendingReferral();
+          if (isDeepLinkPath) {
+            try { window.history.replaceState({}, '', '/'); } catch {}
+          }
+          return null;
         }
       }
     } catch {}
+
+    if (isDeepLinkPath) {
+      try { window.history.replaceState({}, '', '/'); } catch {}
+    }
 
     return pending;
   }

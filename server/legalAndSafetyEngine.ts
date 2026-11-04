@@ -165,7 +165,7 @@ export function resolveSpaClientRouteMeta(pathname: string): SpaRouteMeta | null
 
   if (clean === '/' || clean === '/index.html') {
     return {
-      title: 'Zeno — AI Search, Deep Research & YouTube Study Workspace',
+      title: 'Kinich — AI Search, Deep Research & YouTube Study Workspace',
       description:
         'Real-time AI search, multi-source Deep Research, and interactive YouTube Study Workspace with flashcards, quizzes, and mind maps.',
       canonicalPath: '/',
@@ -173,56 +173,56 @@ export function resolveSpaClientRouteMeta(pathname: string): SpaRouteMeta | null
   }
   if (clean === '/study' || clean.startsWith('/study/')) {
     return {
-      title: 'YouTube Study Workspace · Zeno',
+      title: 'YouTube Study Workspace · Kinich',
       description:
-        'Turn any YouTube lecture or educational video into interactive timestamped transcripts, flashcards, quizzes, summaries, and mind maps on Zeno.',
+        'Turn any YouTube lecture or educational video into interactive timestamped transcripts, flashcards, quizzes, summaries, and mind maps on Kinich.',
       canonicalPath: '/study',
     };
   }
   if (clean === '/discover' || clean.startsWith('/discover/')) {
     return {
-      title: 'Discover Research & Open-Source Code · Zeno',
+      title: 'Discover Research & Open-Source Code · Kinich',
       description:
-        'Explore live ArXiv papers, open-source GitHub repositories, and community study sets on Zeno.',
+        'Explore live ArXiv papers, open-source GitHub repositories, and community study sets on Kinich.',
       canonicalPath: '/discover',
     };
   }
   if (clean === '/research' || clean.startsWith('/research/')) {
     return {
-      title: 'Deep Research Synthesis · Zeno',
+      title: 'Deep Research Synthesis · Kinich',
       description:
-        'Conduct multi-source deep research with verified inline citations and comparative evidence tables on Zeno.',
+        'Conduct multi-source deep research with verified inline citations and comparative evidence tables on Kinich.',
       canonicalPath: '/research',
     };
   }
   if (clean === '/pricing') {
     return {
-      title: 'Plans & Pricing · Zeno',
+      title: 'Plans & Pricing · Kinich',
       description:
-        'Compare Zeno Free, Spark ($3/mo), and Fire ($7/mo) plans with a 7-day refund guarantee.',
+        'Compare Kinich Free, Spark ($3/mo), and Fire ($7/mo) plans with a 7-day refund guarantee.',
       canonicalPath: '/pricing',
     };
   }
   if (clean === '/account' || clean === '/settings') {
     return {
-      title: 'Account & Workspace Settings · Zeno',
+      title: 'Account & Workspace Settings · Kinich',
       description:
-        'Manage your Zeno account, subscription plan, usage limits, referrals, and privacy controls.',
+        'Manage your Kinich account, subscription plan, usage limits, referrals, and privacy controls.',
       canonicalPath: clean,
     };
   }
   if (clean === '/login' || clean === '/signup') {
     return {
-      title: 'Sign In · Zeno',
+      title: 'Sign In · Kinich',
       description:
-        'Sign in or create a Zeno account to sync your chats, YouTube study sets, flashcards, and deep research.',
+        'Sign in or create a Kinich account to sync your chats, YouTube study sets, flashcards, and deep research.',
       canonicalPath: clean,
     };
   }
   if (clean.startsWith('/r/') || clean.startsWith('/invite/')) {
     return {
-      title: 'Join me on Zeno',
-      description: 'Join me on Zeno',
+      title: 'Join me on Kinich',
+      description: 'Join me on Kinich',
       canonicalPath: '/',
     };
   }
@@ -233,8 +233,8 @@ export function resolveSpaClientRouteMeta(pathname: string): SpaRouteMeta | null
     clean.startsWith('/p/')
   ) {
     return {
-      title: 'Shared Research & Study Session · Zeno',
-      description: 'View this shared AI research synthesis or study session on Zeno.',
+      title: 'Shared Research & Study Session · Kinich',
+      description: 'View this shared AI research synthesis or study session on Kinich.',
       canonicalPath: '/',
     };
   }

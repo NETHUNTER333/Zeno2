@@ -103,19 +103,23 @@
       "destination": "/chat.html"
     },
     {
-      "source": "/r/:code",
+      "source": "/r/:code*",
       "destination": "/index.html"
     },
     {
-      "source": "/invite/:code",
+      "source": "/invite/:code*",
       "destination": "/index.html"
     },
     {
-      "source": "/share/:id",
+      "source": "/s/:id*",
       "destination": "/index.html"
     },
     {
-      "source": "/p/:id",
+      "source": "/share/:id*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/p/:id*",
       "destination": "/index.html"
     }
   ],

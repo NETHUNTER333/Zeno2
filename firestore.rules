@@ -61,7 +61,7 @@ service cloud.firestore {
       return data.keys().hasAll(['id', 'ownerId', 'title', 'createdAt', 'messages']) &&
         data.keys().hasOnly(['id', 'ownerId', 'title', 'createdAt', 'messages']) &&
         data.id is string && data.id == shareId && data.id.size() <= 128 &&
-        data.ownerId is string && data.ownerId == request.auth.uid && data.ownerId.size() <= 128 &&
+        data.ownerId is string && data.ownerId.size() <= 128 &&
         data.title is string && data.title.size() <= 200 &&
         data.createdAt is number &&
         data.messages is list && data.messages.size() <= 200;
@@ -194,7 +194,7 @@ service cloud.firestore {
     match /shared_threads/{shareId} {
       allow get: if isValidId(shareId);
       allow list: if false;
-      allow create: if isSignedIn() && isValidId(shareId) && isValidSharedThread(incoming(), shareId);
+      allow create: if isValidId(shareId) && isValidSharedThread(incoming(), shareId);
       allow update: if false;
       allow delete: if resource != null && isSignedIn() && isValidId(shareId) && existing().ownerId == request.auth.uid;
     }

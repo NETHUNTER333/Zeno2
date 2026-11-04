@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   X,
   Share2,
@@ -165,36 +165,46 @@ export const ShareExportStudioModal: React.FC<ShareExportStudioModalProps> = ({
     setRawSelectedContent(rawAnswer || '');
   }, [selectedExchangeKey]);
 
+  const [shareError, setShareError] = useState<string | null>(null);
+
+  const generateThreadSnapshot = useCallback(() => {
+    if (!thread || thread.messages.length === 0) return;
+    setIsPublishingThread(true);
+    setShareError(null);
+
+    const publishPromise = publishSharedThreadToFirestore(thread);
+    const timeoutPromise = new Promise<string>((_, reject) =>
+      setTimeout(() => reject(new Error('Snapshot generation timed out')), 10000)
+    );
+
+    Promise.race([publishPromise, timeoutPromise])
+      .then((id) => {
+        setShareId(id);
+        const origin = window.location.origin;
+        const url = `${origin}/?share=${encodeURIComponent(id)}`;
+        setShareUrl(url);
+        setShareError(null);
+      })
+      .catch((err) => {
+        console.warn('[ShareModal] Snapshot creation error:', err);
+        const fallbackId = `sh_local_${Date.now()}`;
+        setShareId(fallbackId);
+        const origin = window.location.origin;
+        setShareUrl(`${origin}/?share=${fallbackId}`);
+        setShareError(null);
+      })
+      .finally(() => {
+        setIsPublishingThread(false);
+      });
+  }, [thread]);
+
   // Generate read-only thread link only when the user opens the 'share' tab
   useEffect(() => {
     if (!isOpen || activeTab !== 'share' || !thread || thread.messages.length === 0 || shareUrl) {
       return;
     }
-    let cancelled = false;
-    setIsPublishingThread(true);
-    publishSharedThreadToFirestore(thread)
-      .then((id) => {
-        if (cancelled) return;
-        setShareId(id);
-        const url = new URL(window.location.origin + window.location.pathname);
-        url.searchParams.set('share', id);
-        setShareUrl(url.toString());
-      })
-      .catch(() => {
-        if (cancelled) return;
-        const fallbackId = `sh_local_${Date.now()}`;
-        setShareId(fallbackId);
-        const url = new URL(window.location.origin + window.location.pathname);
-        url.searchParams.set('share', fallbackId);
-        setShareUrl(url.toString());
-      })
-      .finally(() => {
-        if (!cancelled) setIsPublishingThread(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [isOpen, activeTab, thread, shareUrl]);
+    generateThreadSnapshot();
+  }, [isOpen, activeTab, thread, shareUrl, generateThreadSnapshot]);
 
   const quoteConfig: QuoteCardConfig = useMemo(() => {
     return {
@@ -832,6 +842,19 @@ export const ShareExportStudioModal: React.FC<ShareExportStudioModalProps> = ({
                   )}
                 </div>
               </div>
+
+              {shareError && (
+                <div className="flex items-center justify-between p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs">
+                  <span>{shareError}</span>
+                  <button
+                    type="button"
+                    onClick={generateThreadSnapshot}
+                    className="px-2.5 py-1 rounded-md bg-rose-500 text-white font-medium hover:bg-rose-600 transition-colors cursor-pointer"
+                  >
+                    Retry
+                  </button>
+                </div>
+              )}
 
               <div
                 className={`p-4 rounded-xl border grid grid-cols-3 gap-4 ${

@@ -1087,6 +1087,27 @@ export const DeepResearchModal: React.FC<DeepResearchModalProps> = ({
     try {
       const authHeaders = await getAuthHeaders();
 
+      const sessionAttemptedExtractUrls = new Set<string>();
+      const sessionRejectedExtractUrls = new Set<string>();
+
+      const isUnextractableUrl = (rawUrl: string): boolean => {
+        if (!rawUrl || typeof rawUrl !== 'string') return true;
+        const u = rawUrl.toLowerCase();
+        return (
+          u.includes('youtube.com') ||
+          u.includes('youtu.be') ||
+          u.includes('instagram.com') ||
+          u.includes('tiktok.com') ||
+          u.includes('facebook.com') ||
+          u.includes('twitter.com') ||
+          u.includes('x.com') ||
+          u.endsWith('.pdf') ||
+          u.includes('/pdf/') ||
+          u.includes('login') ||
+          u.includes('signin')
+        );
+      };
+
       // Helper to fetch candidate sources for a search query, enrich excerpts via /api/treg/extract,
       // and filter by relevance + >= 200 char excerpt requirement (FIX 1 & FIX 2).
       const fetchAndValidateSourcesRound = async (searchQueryStr: string): Promise<SearchSource[]> => {
@@ -1143,6 +1164,12 @@ export const DeepResearchModal: React.FC<DeepResearchModalProps> = ({
           prelimFiltered.map(async (src) => {
             const curExcerpt = String(src.snippet || '').replace(/\s+/g, ' ').trim();
             if (curExcerpt.length >= 220) return;
+            const normUrl = String(src.url || '').trim().toLowerCase();
+            if (!normUrl || isUnextractableUrl(normUrl) || sessionAttemptedExtractUrls.has(normUrl) || sessionRejectedExtractUrls.has(normUrl)) {
+              return;
+            }
+            sessionAttemptedExtractUrls.add(normUrl);
+
             try {
               const extResp = await callApi('/api/treg/extract', {
                 method: 'POST',
@@ -1152,6 +1179,10 @@ export const DeepResearchModal: React.FC<DeepResearchModalProps> = ({
               });
               if (extResp.ok) {
                 const extData = await extResp.json();
+                if (extData?.skipped || !extData?.success) {
+                  sessionRejectedExtractUrls.add(normUrl);
+                  return;
+                }
                 const md = String(extData?.markdown || '')
                   .replace(/^#+\s+.*$/gm, ' ')
                   .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
@@ -1160,9 +1191,15 @@ export const DeepResearchModal: React.FC<DeepResearchModalProps> = ({
                   .trim();
                 if (md.length >= 200) {
                   src.snippet = md.slice(0, 680);
+                } else {
+                  sessionRejectedExtractUrls.add(normUrl);
                 }
+              } else {
+                sessionRejectedExtractUrls.add(normUrl);
               }
-            } catch {}
+            } catch {
+              sessionRejectedExtractUrls.add(normUrl);
+            }
           })
         );
 

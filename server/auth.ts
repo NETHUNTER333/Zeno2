@@ -9,12 +9,15 @@ import {
   type AppOptions,
 } from 'firebase-admin/app';
 import { getAuth as getAdminAuth, type DecodedIdToken } from 'firebase-admin/auth';
+import { getFirestore as getAdminFirestore } from 'firebase-admin/firestore';
 import {
   getFirebaseProjectId,
   isFirebaseCheckRevokedEnabled,
   isStrictAuthRequired,
   sendNormalizedError,
 } from './config';
+
+export { getAdminFirestore };
 
 export interface VerifiedAuthContext {
   uid: string;
@@ -80,6 +83,8 @@ export const OPTIONAL_AUTH_API_ROUTES = [
 
 export const PUBLIC_API_ROUTES = [
   '/health',
+  '/admin/health',
+  '/share/snapshot',
   '/tokenharbor/models',
   '/treg/status',
   '/treg/catalog',

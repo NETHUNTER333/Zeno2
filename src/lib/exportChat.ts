@@ -202,7 +202,7 @@ export function exportConversationAsPdf(thread: ExportableThread): void {
       ]
         .filter(Boolean)
         .join(' · ');
-      doc.text(`ZENO${suffix ? `  (${suffix})` : ''}`, margin, cursorY);
+      doc.text(`KINICH${suffix ? `  (${suffix})` : ''}`, margin, cursorY);
     }
     cursorY += 15;
 
@@ -531,7 +531,7 @@ export function renderQuoteCardToCanvas(
   // Header brand + metadata
   ctx.fillStyle = palette.textPrimary;
   ctx.font = '700 20px "Plus Jakarta Sans", -apple-system, sans-serif';
-  ctx.fillText('ZENO', padding, y + 18);
+  ctx.fillText('KINICH', padding, y + 18);
 
   ctx.fillStyle = palette.textMuted;
   ctx.font = '500 13px "JetBrains Mono", monospace';
