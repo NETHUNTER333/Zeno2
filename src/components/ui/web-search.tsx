@@ -338,7 +338,7 @@ function WebSearch({
           <Collapse key="sources" reduced={reduced}>
             <ol
               data-slot="web-search-sources"
-              className="relative grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2.5 !pl-0 !my-0 list-none"
+              className="relative grid grid-cols-2 gap-2 pt-2.5 !pl-0 !my-0 list-none"
             >
               <AnimatePresence mode="popLayout">
                 {shown.map((source, i) =>

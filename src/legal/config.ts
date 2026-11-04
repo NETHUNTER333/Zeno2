@@ -7,7 +7,7 @@
 export const LEGAL_CONFIG = {
   OPERATOR_NAME: 'Kinich',
   TRADE_NAME: 'Kinich',
-  LIVE_SITE_URL: 'https://kinich.ai',
+  LIVE_SITE_URL: 'https://kinich.app',
   ADDRESS: 'Operated online from India',
   GOVERNING_COURTS: 'Hyderabad, Telangana, India',
   SUPPORT_EMAIL: 'wakefullfinding62@gmail.com',
@@ -98,7 +98,7 @@ export const THIRD_PARTY_SERVICES_AUDIT: SubprocessorEntry[] = [
     purpose: 'API request routing, rate limiting, search synthesis, transcript processing, and content safety moderation.',
     dataShared: 'API payloads, search queries, attachment buffers (transiently in memory), and rate-limit identifiers.',
     location: 'United States / Global Edge',
-    privacyPolicyUrl: 'https://kinich0x.vercel.app/privacy',
+    privacyPolicyUrl: 'https://kinich.app/privacy',
   },
   {
     name: 'Dodo Payments',
@@ -130,7 +130,7 @@ export const THIRD_PARTY_SERVICES_AUDIT: SubprocessorEntry[] = [
     purpose: 'Real-time web search results, news grounding, image search, and URL text extraction when Web Search is active.',
     dataShared: 'Search query keywords derived from the current prompt and public URLs requested for extraction.',
     location: 'United States / Global',
-    privacyPolicyUrl: 'https://kinich0x.vercel.app/privacy',
+    privacyPolicyUrl: 'https://kinich.app/privacy',
   },
   {
     name: 'YouTube IFrame API & Public Caption Services',

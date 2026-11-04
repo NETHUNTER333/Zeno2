@@ -851,7 +851,7 @@ export const recordArtifactEngagement = recordArtifactInteraction;
 
 export async function getMyReferralStatus(): Promise<KinichReferralStatus> {
   const origin =
-    typeof window !== 'undefined' ? window.location.origin : 'https://kinich0x.vercel.app';
+    typeof window !== 'undefined' ? window.location.origin : 'https://kinich.app';
   try {
     const headers = await getGrowthHeaders();
     // Try primary new /api/referral/me first, fallback to /api/growth/referrals/me
@@ -1988,7 +1988,7 @@ export interface EightReferralTrackerState {
 
 export function getEightReferralTrackerState(): EightReferralTrackerState {
   const origin =
-    typeof window !== 'undefined' ? window.location.origin : 'https://kinich0x.vercel.app';
+    typeof window !== 'undefined' ? window.location.origin : 'https://kinich.app';
   const myUid = auth.currentUser?.uid || getOrCreateClientId();
   const cachedRef = safeLoad<KinichReferralStatus | null>(GROWTH_KEYS.REFERRAL_STATUS, null);
   const tracker = getLocalReferralTracker();

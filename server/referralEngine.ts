@@ -512,7 +512,7 @@ export class ReferralDatabase {
    */
   public getDashboard(userId: string): ReferralDashboardData {
     const code = this.getOrCreateReferralCode(userId);
-    const link = `https://zeno0x.vercel.app/r/${code}`;
+    const link = `https://kinich.app/r/${code}`;
 
     const referrals = this.db
       .prepare(

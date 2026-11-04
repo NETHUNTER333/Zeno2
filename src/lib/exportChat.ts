@@ -603,10 +603,10 @@ export function renderQuoteCardToCanvas(
   ctx.font = '500 13px "Plus Jakarta Sans", -apple-system, sans-serif';
   const leftFooter = config.authorName
     ? `Shared by ${config.authorName.slice(0, 32)}  ·  Explore with Kinich`
-    : 'Explore with Kinich  →  kinich0x.vercel.app';
+    : 'Explore with Kinich  →  kinich.app';
   ctx.fillText(leftFooter, padding, footerY);
 
-  const rightWatermark = 'kinich0x.vercel.app';
+  const rightWatermark = 'kinich.app';
   ctx.font = '500 12px "JetBrains Mono", monospace';
   const rwWidth = ctx.measureText(rightWatermark).width;
   ctx.fillText(rightWatermark, width - padding - rwWidth, footerY);
@@ -678,7 +678,7 @@ export function renderWeeklyReportCardToCanvas(
   // Brand + Period
   ctx.fillStyle = palette.textPrimary;
   ctx.font = '700 18px "JetBrains Mono", monospace';
-  ctx.fillText('ZENO // WEEKLY INTELLIGENCE BRIEF', padding, y + 16);
+  ctx.fillText('KINICH // WEEKLY INTELLIGENCE BRIEF', padding, y + 16);
 
   ctx.fillStyle = palette.textMuted;
   ctx.font = '500 13px "JetBrains Mono", monospace';
@@ -794,7 +794,7 @@ export function renderWeeklyReportCardToCanvas(
   ctx.font = '500 13px "Plus Jakarta Sans", -apple-system, sans-serif';
   ctx.fillText('Private conversation contents excluded by default', padding, footerY);
 
-  const rightWatermark = 'Explore with Kinich → kinich0x.vercel.app';
+  const rightWatermark = 'Explore with Kinich → kinich.app';
   ctx.font = '600 13px "JetBrains Mono", monospace';
   const rwW = ctx.measureText(rightWatermark).width;
   ctx.fillText(rightWatermark, width - padding - rwW, footerY);

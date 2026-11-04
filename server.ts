@@ -3740,13 +3740,20 @@ Return ONLY valid JSON matching this schema:
 
 export const app = express();
 app.set('trust proxy', getTrustProxySetting());
+const ALLOWED_ORIGINS = [
+  'https://kinich.app',
+  'https://zeno0x.vercel.app',
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+];
+
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  if (origin) {
+  if (origin && (ALLOWED_ORIGINS.includes(origin) || origin.endsWith('.vercel.app') || origin.includes('localhost'))) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Credentials', 'true');
   } else {
-    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Origin', 'https://kinich.app');
   }
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, PUT, DELETE, OPTIONS');
   res.setHeader(
@@ -3762,19 +3769,12 @@ app.use(express.urlencoded({ extended: true, limit: SERVER_LIMITS.JSON_BODY_LIMI
 // Shared cryptographic Firebase ID Token Verification + Fail-Safe Sliding-Window Rate Limiter
 app.use('/api', firebaseAuthMiddleware, rateLimitMiddleware);
 
-// Intentionally Public Route: Health & Route Security Manifest
+// Intentionally Public Route: Health
 app.get('/api/health', (_req, res) => {
   res.json({
-    success: true,
     status: 'ok',
-    projectId: getFirebaseProjectId(),
-    tregConfigured: Boolean(getTregToken()),
-    staging: getStagingConfigSummary(),
-    routes: {
-      protected: PROTECTED_API_ROUTES,
-      optionalAuth: OPTIONAL_AUTH_API_ROUTES,
-      public: PUBLIC_API_ROUTES,
-    },
+    time: new Date().toISOString(),
+    version: '1.0.0',
   });
 });
 
@@ -12460,6 +12460,12 @@ app.get('/api/tokenharbor/models', async (_req, res) => {
   } catch (err: any) {
     return sendNormalizedError(res, 502, 'tokenharbor/fetch-failed', sanitizeErrorMessage(err));
   }
+});
+
+// Referral link redirect route (/r/:code)
+app.get('/r/:code', (req, res) => {
+  const code = req.params.code;
+  return res.redirect(302, `/?ref=${encodeURIComponent(code)}`);
 });
 
 // Register Zeno Growth Engine Routes (Discover, Public Artifacts, Referrals, Creator Profiles, Analytics)

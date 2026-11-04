@@ -16,4 +16,4 @@ Allow: /cookies
 Allow: /contact
 Disallow: /api/
 
-Sitemap: https://zeno0x.vercel.app/sitemap.xml
+Sitemap: https://kinich.app/sitemap.xml

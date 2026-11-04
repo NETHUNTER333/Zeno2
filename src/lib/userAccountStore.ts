@@ -813,13 +813,13 @@ export const UserAccountStore = {
       throw err;
     }
   },
-  loginAsGuest(displayName = 'Guest Explorer', email = 'guest@kinich.ai') {
+  loginAsGuest(displayName = 'Guest Explorer', email = 'guest@kinich.app') {
     const current = this.getProfile();
     const guestProfile: UserProfile = {
       ...current,
       id: current.id || 'guest_' + Date.now().toString(36),
       displayName: displayName || current.displayName || 'Guest Explorer',
-      email: email || current.email || 'guest@kinich.ai',
+      email: email || current.email || 'guest@kinich.app',
       signinProvider: 'guest',
       accountStatus: 'verified',
     };
@@ -1281,7 +1281,6 @@ export const UserAccountStore = {
     const usage = this.getUsage();
     usage.deepResearchUsed += 1;
     saveToStorage(STORAGE_KEYS.USAGE, usage);
-    this.recordDailyInteraction(false);
     this.emitChange();
     this.pushUsageToServerAndFirestore(usage);
   },

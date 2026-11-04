@@ -1,6 +1,6 @@
 /**
  * Unified API Base for Kinich Web Client
- * Ensures that when deployed statically on Vercel (https://kinich0x.vercel.app),
+ * Ensures that when deployed statically on Vercel (https://kinich.app),
  * all backend API calls are correctly routed to the InstaCloud kinich-api container.
  */
 

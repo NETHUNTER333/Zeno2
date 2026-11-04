@@ -24,7 +24,7 @@ export const SourceCard: React.FC<SourceCardProps> = ({ source, onExtract }) => 
   const social = source.socialMeta || extractSocialMeta(source.url, source.title, source.snippet);
 
   return (
-    <div className="flex flex-col justify-between p-3 rounded-xl bg-slate-900/80 border border-slate-800 hover:border-sky-500/50 transition-all text-xs group relative hover:shadow-lg hover:shadow-sky-500/5 min-w-[230px] max-w-[270px] flex-shrink-0">
+    <div className="flex flex-col justify-between p-3 rounded-xl bg-slate-900/80 border border-slate-800 hover:border-sky-500/50 transition-all text-xs group relative hover:shadow-lg hover:shadow-sky-500/5 w-full">
       <div>
         <div className="flex items-center justify-between mb-2 gap-2">
           <div className="flex items-center gap-1.5 overflow-hidden">

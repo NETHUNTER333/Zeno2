@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { WebSearch } from './ui/web-search';
 import { Copy, Check, Bot, User, Globe, Sparkles, RefreshCw, Layers } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -90,21 +91,26 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ message, onExtractUrl,
           {/* Sources list */}
           {message.sources && message.sources.length > 0 && (
             <div className="mb-4">
-              <div className="flex items-center gap-2 mb-2 text-xs text-slate-400 font-medium">
-                <Globe className="w-3.5 h-3.5 text-sky-400" />
-                <span>
-                  Sources found via Treg ({message.sources.length})
-                </span>
-              </div>
-              <div className="flex gap-2.5 overflow-x-auto pb-2 scrollbar-thin">
-                {message.sources.map((src, idx) => (
-                  <SourceCard
-                    key={idx}
-                    source={src}
-                    onExtract={onExtractUrl}
-                  />
-                ))}
-              </div>
+              <WebSearch
+                sources={message.sources.map((s) => ({
+                  title: s.title,
+                  url: s.url,
+                  snippet: s.snippet,
+                  domain: s.domain,
+                  date: s.date,
+                  position: s.position,
+                  socialMeta: s.socialMeta,
+                }))}
+                status={message.isStreaming ? 'searching' : 'done'}
+                query={(message as any).searchQuery || message.searchQueries?.[0] || 'Web Search'}
+                defaultOpen={true}
+                isDark={true}
+                onSelectCitation={(src) => {
+                  if (src.url && onExtractUrl) {
+                    onExtractUrl(src.url);
+                  }
+                }}
+              />
             </div>
           )}
 
