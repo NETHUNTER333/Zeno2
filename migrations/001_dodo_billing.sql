@@ -69,3 +69,18 @@ CREATE TABLE IF NOT EXISTS processed_webhooks (
   event_type TEXT NOT NULL,
   processed_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS refunds (
+  dodo_refund_id TEXT PRIMARY KEY,
+  dodo_payment_id TEXT NOT NULL,
+  firebase_uid TEXT NOT NULL,
+  amount INTEGER NOT NULL DEFAULT 0,
+  currency TEXT NOT NULL DEFAULT 'USD',
+  status TEXT NOT NULL DEFAULT 'succeeded',
+  reason TEXT,
+  is_partial INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_refunds_uid ON refunds(firebase_uid, created_at DESC);
+

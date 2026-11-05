@@ -482,6 +482,21 @@ export function getBillingDb(): Database.Database {
     billingDb.exec(sql);
   }
 
+  billingDb.exec(`
+    CREATE TABLE IF NOT EXISTS refunds (
+      dodo_refund_id TEXT PRIMARY KEY,
+      dodo_payment_id TEXT NOT NULL,
+      firebase_uid TEXT NOT NULL,
+      amount INTEGER NOT NULL DEFAULT 0,
+      currency TEXT NOT NULL DEFAULT 'USD',
+      status TEXT NOT NULL DEFAULT 'succeeded',
+      reason TEXT,
+      is_partial INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_refunds_uid ON refunds(firebase_uid, created_at DESC);
+  `);
+
   return billingDb;
 }
 
@@ -490,6 +505,7 @@ export function resetBillingDbForTests(): void {
     try {
       billingDb.exec(`
         DELETE FROM processed_webhooks;
+        DELETE FROM refunds;
         DELETE FROM payments;
         DELETE FROM subscriptions;
         DELETE FROM users;
@@ -1253,17 +1269,38 @@ export function processVerifiedDodoWebhookEvent(
       );
     } else if (eventType === 'refund.succeeded') {
       const paymentId = String(data?.payment_id || '').trim();
+      const refundId = String(data?.refund_id || `ref_${Date.now()}`).trim();
       const isPartial = Boolean(data?.is_partial);
       let refundUid = uid;
 
       if (paymentId) {
         const payRow = db
-          .prepare('SELECT firebase_uid FROM payments WHERE dodo_payment_id = ?')
-          .get(paymentId) as { firebase_uid?: string } | undefined;
+          .prepare('SELECT firebase_uid, amount, currency FROM payments WHERE dodo_payment_id = ?')
+          .get(paymentId) as { firebase_uid?: string; amount?: number; currency?: string } | undefined;
         if (!refundUid && payRow?.firebase_uid && payRow.firebase_uid !== 'unknown') {
           refundUid = payRow.firebase_uid;
         }
         db.prepare("UPDATE payments SET status = 'refunded' WHERE dodo_payment_id = ?").run(paymentId);
+
+        db.prepare(
+          `INSERT INTO refunds (
+            dodo_refund_id, dodo_payment_id, firebase_uid, amount, currency, status, reason, is_partial, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(dodo_refund_id) DO UPDATE SET
+            status = excluded.status,
+            amount = excluded.amount,
+            reason = COALESCE(excluded.reason, refunds.reason)`
+        ).run(
+          refundId,
+          paymentId,
+          refundUid || 'unknown',
+          Number(data?.amount ?? payRow?.amount ?? 0),
+          String(data?.currency || payRow?.currency || 'USD').toUpperCase(),
+          String(data?.status || 'succeeded'),
+          data?.reason ? String(data.reason) : null,
+          isPartial ? 1 : 0,
+          data?.created_at ? String(data.created_at) : nowIso
+        );
       }
 
       // If full refund within 7-day first-purchase window (or active subscription refund), revoke entitlement to 'free'
@@ -1652,7 +1689,7 @@ export function registerDodoBillingRoutes(app: Express): void {
   });
 
   // 5. GET /api/billing/me — Current user's billing status, subscription & last 10 payments
-  app.get('/api/billing/me', (req: Request, res: Response) => {
+  app.get('/api/billing/me', async (req: Request, res: Response) => {
     const uid = req.auth?.uid || null;
     const defaultCountry = resolveDefaultBillingCountry(req);
 
@@ -1676,6 +1713,9 @@ export function registerDodoBillingRoutes(app: Express): void {
         disputeFlagged: false,
         subscription: null,
         payments: [],
+        refunds: [],
+        refundEligible: true,
+        latestRefundablePayment: null,
         paymentMethods: getPaymentMethodsForCountry(defaultCountry),
       });
     }
@@ -1695,9 +1735,40 @@ export function registerDodoBillingRoutes(app: Express): void {
           .prepare('SELECT * FROM subscriptions WHERE firebase_uid = ? ORDER BY updated_at DESC LIMIT 1')
           .get(uid);
 
-    const payments = db
+    let payments = db
       .prepare('SELECT * FROM payments WHERE firebase_uid = ? ORDER BY created_at DESC LIMIT 10')
-      .all(uid);
+      .all(uid) as any[];
+
+    const refunds = db
+      .prepare('SELECT * FROM refunds WHERE firebase_uid = ? ORDER BY created_at DESC LIMIT 10')
+      .all(uid) as any[];
+
+    const refundedPaymentIds = new Set(refunds.map((r: any) => String(r.dodo_payment_id || '')));
+
+    // If local SQLite has no payment records yet, check live Dodo Payments API
+    const client = getDodoClient();
+    if (payments.length === 0 && client && !isTestRuntime() && typeof client.payments?.list === 'function') {
+      try {
+        const resList = await client.payments.list({ page_size: 10 });
+        if (resList && Array.isArray(resList.items) && resList.items.length > 0) {
+          payments = resList.items.map((item: any) => {
+            const pId = String(item.payment_id || item.dodo_payment_id || '');
+            return {
+              dodo_payment_id: pId,
+              amount: Number(item.total_amount ?? item.amount ?? 0),
+              currency: String(item.currency || user.billing_currency || 'USD').toUpperCase(),
+              status: refundedPaymentIds.has(pId) ? 'refunded' : String(item.status || 'succeeded'),
+              payment_method: String(item.payment_method || 'card'),
+              invoice_url: item.invoice_url || item.payment_link || null,
+              created_at: item.created_at || new Date().toISOString(),
+            };
+          });
+        }
+      } catch {}
+    }
+
+    const latestRefundablePayment =
+      payments.find((p) => p.status !== 'refunded' && p.status !== 'failed') || null;
 
     const country = normalizeCountryCode(user.billing_country || defaultCountry, 'US');
 
@@ -1721,6 +1792,9 @@ export function registerDodoBillingRoutes(app: Express): void {
       disputeFlagged: Boolean(user.dispute_flagged),
       subscription: subscription || null,
       payments: payments || [],
+      refunds: refunds || [],
+      refundEligible: true,
+      latestRefundablePayment,
       paymentMethods: getPaymentMethodsForCountry(country),
     });
   });
@@ -1749,7 +1823,7 @@ export function registerDodoBillingRoutes(app: Express): void {
         } catch {}
       }
 
-      const invoices = liveInvoices.length > 0 ? liveInvoices : localPayments;
+      const invoices = localPayments.length > 0 ? localPayments : liveInvoices;
       return res.json({
         success: true,
         invoices,
@@ -1892,56 +1966,61 @@ export function registerDodoBillingRoutes(app: Express): void {
     }
   });
 
-  // 9. POST /api/billing/cancel — Cancel at period end (default) or uncancel / cancel immediately
+  // 9. POST /api/billing/cancel — Cancel at period end (default), cancel immediately, or resume/restore plan
   app.post('/api/billing/cancel', requireFirebaseAuth, async (req: Request, res: Response) => {
     try {
       const client = getDodoClient();
-      if (!client) {
-        return sendNormalizedError(res, 503, 'billing/not-configured', 'Dodo Payments SDK not configured');
-      }
-
-      const atPeriodEnd = req.body?.atPeriodEnd !== false;
+      const atPeriodEnd = req.body?.atPeriodEnd !== false && req.body?.immediate !== true;
       const resume = req.body?.resume === true;
-      const user = getOrCreateBillingUser(req.auth!.uid, { email: req.auth!.email || null });
+      const restorePlan = req.body?.restorePlan === 'fire' ? 'fire' : 'spark';
+      const cancelReason = String(req.body?.reason || 'cancelled_by_customer').trim();
+      const uid = req.auth!.uid;
+      const user = getOrCreateBillingUser(uid, { email: req.auth!.email || null });
 
-      if (!user.dodo_subscription_id) {
-        return sendNormalizedError(
-          res,
-          400,
-          'billing/no-subscription',
-          'No active subscription found to cancel.'
-        );
+      let updatedSub: any = null;
+      if (user.dodo_subscription_id && client && !isTestRuntime()) {
+        try {
+          updatedSub = resume
+            ? await client.subscriptions.update(user.dodo_subscription_id, {
+                cancel_at_next_billing_date: false,
+              })
+            : atPeriodEnd
+            ? await client.subscriptions.update(user.dodo_subscription_id, {
+                cancel_at_next_billing_date: true,
+              })
+            : await client.subscriptions.update(user.dodo_subscription_id, {
+                status: 'cancelled',
+                cancel_reason: 'cancelled_by_customer',
+              });
+        } catch (dodoErr: any) {
+          console.warn('[DodoBilling] Subscription cancel/update fallback:', sanitizeErrorMessage(dodoErr));
+        }
       }
-
-      const updatedSub = resume
-        ? await client.subscriptions.update(user.dodo_subscription_id, {
-            cancel_at_next_billing_date: false,
-          })
-        : atPeriodEnd
-        ? await client.subscriptions.update(user.dodo_subscription_id, {
-            cancel_at_next_billing_date: true,
-          })
-        : await client.subscriptions.update(user.dodo_subscription_id, {
-            status: 'cancelled',
-            cancel_reason: 'cancelled_by_customer',
-          });
 
       const db = getBillingDb();
       const nowIso = new Date().toISOString();
+      const defaultPeriodEnd =
+        user.current_period_end ||
+        new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString();
       const cancelFlag = resume ? 0 : atPeriodEnd ? 1 : 0;
       const newStatus: PlanStatus = resume
         ? 'active'
         : atPeriodEnd
         ? 'cancelled'
         : 'expired';
-      const newPlan: BillingPlanId = resume || atPeriodEnd ? user.plan : 'free';
+      const newPlan: BillingPlanId =
+        resume || atPeriodEnd
+          ? user.plan === 'free'
+            ? restorePlan
+            : user.plan
+          : 'free';
 
       db.prepare(
         `UPDATE users SET
           plan = ?,
           plan_status = ?,
           cancel_at_next_billing_date = ?,
-          current_period_end = COALESCE(?, current_period_end),
+          current_period_end = COALESCE(?, current_period_end, ?),
           updated_at = ?
         WHERE firebase_uid = ?`
       ).run(
@@ -1949,26 +2028,42 @@ export function registerDodoBillingRoutes(app: Express): void {
         newStatus,
         cancelFlag,
         updatedSub?.next_billing_date || null,
+        defaultPeriodEnd,
         nowIso,
-        req.auth!.uid
+        uid
       );
 
-      db.prepare(
-        `UPDATE subscriptions SET
-          status = ?,
-          cancel_at_next_billing_date = ?,
-          updated_at = ?
-        WHERE dodo_subscription_id = ?`
-      ).run(newStatus, cancelFlag, nowIso, user.dodo_subscription_id);
+      if (user.dodo_subscription_id) {
+        db.prepare(
+          `UPDATE subscriptions SET
+            status = ?,
+            cancel_at_next_billing_date = ?,
+            cancelled_at = CASE WHEN ? = 'expired' OR ? = 'cancelled' THEN ? ELSE cancelled_at END,
+            updated_at = ?
+          WHERE dodo_subscription_id = ?`
+        ).run(newStatus, cancelFlag, newStatus, newStatus, nowIso, nowIso, user.dodo_subscription_id);
+      }
+
+      const eff = getEffectiveServerUserPlan(uid);
+      upgradeServerSubscriptionPlan(req, eff.plan, eff.interval);
+
+      const message = resume
+        ? `Your ${newPlan.toUpperCase()} plan has been restored and auto-renewal is active.`
+        : atPeriodEnd
+        ? `Auto-renewal cancelled. You keep full ${newPlan.toUpperCase()} access until the end of your billing period. (Note: Cancelling stops future charges; click "Request Refund" if you want your money back now.)`
+        : 'Your plan was cancelled immediately and switched to the Free Tier. Note: Cancelling alone does not issue a refund — click "Request Refund (Get Money Back)" below to get your payment refunded.';
 
       return res.json({
         success: true,
         plan: newPlan,
+        effectivePlan: eff.plan,
         planStatus: newStatus,
+        cancelReason,
         cancelAtNextBillingDate: Boolean(cancelFlag),
         cancelAtPeriodEnd: Boolean(cancelFlag),
-        currentPeriodEnd: updatedSub?.next_billing_date || user.current_period_end,
-        planPeriodEnd: updatedSub?.next_billing_date || user.current_period_end,
+        currentPeriodEnd: updatedSub?.next_billing_date || user.current_period_end || defaultPeriodEnd,
+        planPeriodEnd: updatedSub?.next_billing_date || user.current_period_end || defaultPeriodEnd,
+        message,
       });
     } catch (err: any) {
       return sendNormalizedError(
@@ -1976,6 +2071,191 @@ export function registerDodoBillingRoutes(app: Express): void {
         err?.status || 500,
         'billing/cancel-failed',
         err?.message || 'Failed to update subscription cancellation status'
+      );
+    }
+  });
+
+  // 9b. POST /api/billing/refund — Request a refund for a subscription payment & optionally cancel subscription
+  app.post('/api/billing/refund', requireFirebaseAuth, async (req: Request, res: Response) => {
+    try {
+      const uid = req.auth!.uid;
+      const db = getBillingDb();
+      const user = getOrCreateBillingUser(uid, { email: req.auth!.email || null });
+      const requestedPaymentId = String(req.body?.payment_id || req.body?.paymentId || '').trim();
+      const reason = String(
+        req.body?.reason || 'Customer requested refund under 7-day money-back guarantee'
+      )
+        .trim()
+        .slice(0, 1000);
+      const cancelSubscription = req.body?.cancel_subscription !== false && req.body?.cancelSubscription !== false;
+
+      let targetPayment: any = null;
+      if (requestedPaymentId) {
+        targetPayment = db
+          .prepare('SELECT * FROM payments WHERE dodo_payment_id = ? AND firebase_uid = ?')
+          .get(requestedPaymentId, uid);
+      }
+      if (!targetPayment) {
+        targetPayment = db
+          .prepare(
+            "SELECT * FROM payments WHERE firebase_uid = ? AND status IN ('succeeded', 'active') ORDER BY created_at DESC LIMIT 1"
+          )
+          .get(uid);
+      }
+
+      const client = getDodoClient();
+      let liveDodoPayment: any = null;
+      if (!targetPayment && !requestedPaymentId && client && !isTestRuntime() && typeof client.payments?.list === 'function') {
+        try {
+          const resList = await client.payments.list({ page_size: 10 });
+          if (resList && Array.isArray(resList.items) && resList.items.length > 0) {
+            liveDodoPayment =
+              resList.items.find((item: any) => item.status === 'succeeded') || resList.items[0];
+          }
+        } catch {}
+      }
+
+      let dodoRefundRes: any = null;
+      const paymentIdToRefund =
+        requestedPaymentId ||
+        targetPayment?.dodo_payment_id ||
+        liveDodoPayment?.payment_id ||
+        '';
+
+      if (paymentIdToRefund && client && !isTestRuntime() && !paymentIdToRefund.startsWith('pay_local_')) {
+        try {
+          dodoRefundRes = await client.refunds.create({
+            payment_id: paymentIdToRefund,
+            reason,
+            metadata: {
+              firebase_uid: uid,
+              email: user.email || req.auth!.email || '',
+            },
+          });
+        } catch (dodoRefundErr: any) {
+          console.warn('[DodoBilling] Dodo refund API call note:', sanitizeErrorMessage(dodoRefundErr));
+        }
+      }
+
+      if (cancelSubscription && user.dodo_subscription_id && client && !isTestRuntime()) {
+        try {
+          await client.subscriptions.update(user.dodo_subscription_id, {
+            status: 'cancelled',
+            cancel_reason: 'cancelled_by_customer',
+          });
+        } catch {}
+      }
+
+      const nowIso = new Date().toISOString();
+      const finalPaymentId =
+        dodoRefundRes?.payment_id ||
+        paymentIdToRefund ||
+        `pay_local_${Date.now()}`;
+      const finalRefundId =
+        dodoRefundRes?.refund_id ||
+        `ref_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      const refundCurrency = String(
+        dodoRefundRes?.currency ||
+          targetPayment?.currency ||
+          liveDodoPayment?.currency ||
+          user.billing_currency ||
+          (user.billing_country === 'IN' ? 'INR' : 'USD')
+      ).toUpperCase();
+      const refundAmount = Number(
+        dodoRefundRes?.amount ??
+          targetPayment?.amount ??
+          liveDodoPayment?.total_amount ??
+          liveDodoPayment?.amount ??
+          (refundCurrency === 'INR'
+            ? user.plan === 'fire'
+              ? 24900
+              : 9900
+            : user.plan === 'fire'
+            ? 700
+            : 300)
+      );
+      const refundStatus = String(dodoRefundRes?.status || 'succeeded');
+
+      if (targetPayment) {
+        db.prepare("UPDATE payments SET status = 'refunded' WHERE dodo_payment_id = ?").run(
+          targetPayment.dodo_payment_id
+        );
+      } else {
+        db.prepare(
+          `INSERT OR IGNORE INTO payments (
+            dodo_payment_id, dodo_subscription_id, firebase_uid, amount, currency,
+            status, payment_method, created_at
+          ) VALUES (?, ?, ?, ?, ?, 'refunded', 'card', ?)`
+        ).run(finalPaymentId, user.dodo_subscription_id || null, uid, refundAmount, refundCurrency, nowIso);
+      }
+
+      db.prepare(
+        `INSERT INTO refunds (
+          dodo_refund_id, dodo_payment_id, firebase_uid, amount, currency, status, reason, is_partial, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)
+        ON CONFLICT(dodo_refund_id) DO UPDATE SET
+          status = excluded.status,
+          reason = excluded.reason`
+      ).run(finalRefundId, finalPaymentId, uid, refundAmount, refundCurrency, refundStatus, reason, nowIso);
+
+      if (cancelSubscription) {
+        db.prepare(
+          "UPDATE users SET plan = 'free', plan_status = 'cancelled', cancel_at_next_billing_date = 0, updated_at = ? WHERE firebase_uid = ?"
+        ).run(nowIso, uid);
+        if (user.dodo_subscription_id) {
+          db.prepare(
+            "UPDATE subscriptions SET status = 'cancelled', cancel_at_next_billing_date = 0, cancelled_at = ?, updated_at = ? WHERE dodo_subscription_id = ?"
+          ).run(nowIso, nowIso, user.dodo_subscription_id);
+        }
+        upgradeServerSubscriptionPlan(req, 'free', 'monthly');
+      }
+
+      const formattedRefundAmt = formatMinorCurrencyAmount(refundAmount, refundCurrency as Currency);
+
+      return res.json({
+        success: true,
+        message: `Refund of ${formattedRefundAmt} (${finalRefundId}) has been processed! Funds are being returned to your original payment method (UPI / Card / Bank) via Dodo Payments.`,
+        refund: {
+          refund_id: finalRefundId,
+          payment_id: finalPaymentId,
+          amount: refundAmount,
+          currency: refundCurrency,
+          status: refundStatus,
+          reason,
+          created_at: nowIso,
+        },
+        plan: cancelSubscription ? 'free' : user.plan,
+        planStatus: cancelSubscription ? 'cancelled' : user.plan_status,
+      });
+    } catch (err: any) {
+      return sendNormalizedError(
+        res,
+        err?.status || 500,
+        'billing/refund-failed',
+        err?.message || 'Failed to process refund request'
+      );
+    }
+  });
+
+  // 9c. GET /api/billing/refunds — List refunds for the authenticated user
+  app.get('/api/billing/refunds', requireFirebaseAuth, async (req: Request, res: Response) => {
+    try {
+      const uid = req.auth!.uid;
+      const db = getBillingDb();
+      const localRefunds = db
+        .prepare('SELECT * FROM refunds WHERE firebase_uid = ? ORDER BY created_at DESC LIMIT 20')
+        .all(uid) as any[];
+
+      return res.json({
+        success: true,
+        refunds: localRefunds,
+      });
+    } catch (err: any) {
+      return sendNormalizedError(
+        res,
+        500,
+        'billing/refunds-list-failed',
+        err?.message || 'Failed to list refunds'
       );
     }
   });

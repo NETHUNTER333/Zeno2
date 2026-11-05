@@ -24,6 +24,12 @@ import {
   Shield,
   MapPin,
   Navigation,
+  Receipt,
+  RotateCcw,
+  XCircle,
+  ExternalLink,
+  ShieldCheck,
+  X,
 } from 'lucide-react';
 import {
   getStoredLocationPref,
@@ -44,6 +50,7 @@ import { ChatThread } from './Sidebar';
 import { DeleteAccountButton } from './DeleteAccountButton';
 import { PricingModal } from './PricingModal';
 import { BillingHistorySection } from './BillingHistorySection';
+import { cancelUserSubscription, requestSubscriptionRefund } from '../lib/billing';
 import { auth, getAuthHeaders } from '../lib/firebase';
 import { SiteFooter } from './LegalAndInfoPages';
 import {
@@ -53,7 +60,688 @@ import {
   setStoredBackgroundGradientMode,
 } from '../lib/modelGradients';
 
-export type AccountTab = 'profile' | 'pricing' | 'chats_projects' | 'preferences' | 'database';
+export type AccountTab = 'profile' | 'billing' | 'pricing' | 'chats_projects' | 'preferences' | 'database';
+
+const CANCELLATION_SURVEY_REASONS = [
+  {
+    id: 'too_expensive',
+    label: "Too expensive / pricing doesn't fit my current budget",
+  },
+  {
+    id: 'not_using_enough',
+    label: 'Not using Kinich frequently enough to justify a monthly plan',
+  },
+  {
+    id: 'missing_features',
+    label: 'Missing specific features, integrations, or workflows I need',
+  },
+  {
+    id: 'found_alternative',
+    label: 'Switched to a different AI research or chat platform',
+  },
+  {
+    id: 'technical_issues',
+    label: 'Experienced technical, latency, or billing issues',
+  },
+  {
+    id: 'project_completed',
+    label: 'Completed my project / only needed temporary access',
+  },
+];
+
+export const CancelSubscriptionSection: React.FC<{
+  isDark: boolean;
+  onSubscriptionUpdated?: () => void;
+}> = ({ isDark, onSubscriptionUpdated }) => {
+  const [currentPlan, setCurrentPlan] = useState<'free' | 'spark' | 'fire'>(() =>
+    UserAccountStore.getNormalizedPlan()
+  );
+  const [billingMe, setBillingMe] = useState<any | null>(null);
+  const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
+  const [selectedSurveyReason, setSelectedSurveyReason] = useState<string>(
+    CANCELLATION_SURVEY_REASONS[0].id
+  );
+  const [surveyComments, setSurveyComments] = useState<string>('');
+  const [terminationMode, setTerminationMode] = useState<'period_end' | 'immediate'>('immediate');
+  const [isSubmittingCancel, setIsSubmittingCancel] = useState(false);
+  const [portalBusy, setPortalBusy] = useState(false);
+  const [feedbackBanner, setFeedbackBanner] = useState<{
+    type: 'success' | 'error';
+    text: string;
+  } | null>(null);
+
+  const loadSubscriptionState = async () => {
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch('/api/billing/me', { headers });
+      if (res.ok) {
+        const data = await res.json();
+        setBillingMe(data);
+        if (
+          data?.authenticated &&
+          (data.effectivePlan === 'spark' || data.effectivePlan === 'fire' || data.effectivePlan === 'free') &&
+          data.planStatus !== 'none'
+        ) {
+          setCurrentPlan(data.effectivePlan);
+        } else {
+          setCurrentPlan(UserAccountStore.getNormalizedPlan());
+        }
+      }
+    } catch {
+      setCurrentPlan(UserAccountStore.getNormalizedPlan());
+    }
+  };
+
+  useEffect(() => {
+    loadSubscriptionState();
+    const syncLocal = () => setCurrentPlan(UserAccountStore.getNormalizedPlan());
+    window.addEventListener('kinich-account-updated', syncLocal);
+    return () => window.removeEventListener('kinich-account-updated', syncLocal);
+  }, []);
+
+  const handleConfirmCancelSubscription = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmittingCancel(true);
+    setFeedbackBanner(null);
+
+    const reasonObj = CANCELLATION_SURVEY_REASONS.find((r) => r.id === selectedSurveyReason);
+    const fullReason = surveyComments.trim()
+      ? `${reasonObj?.label || selectedSurveyReason} — ${surveyComments.trim()}`
+      : reasonObj?.label || selectedSurveyReason;
+
+    try {
+      const isImmediate = terminationMode === 'immediate';
+      const result = await cancelUserSubscription({
+        atPeriodEnd: !isImmediate,
+        immediate: isImmediate,
+        resume: false,
+        reason: fullReason,
+      });
+
+      if (result.success || isImmediate) {
+        if (isImmediate) {
+          UserAccountStore.upgradePlan('free', 'monthly');
+          setCurrentPlan('free');
+        }
+        setIsCancelModalOpen(false);
+        setSurveyComments('');
+        setFeedbackBanner({
+          type: 'success',
+          text:
+            result.message ||
+            (isImmediate
+              ? 'Your subscription has been terminated via Dodo Payments and your account state is now Free Tier.'
+              : 'Your subscription cancellation is scheduled for the end of your current billing cycle.'),
+        });
+        await loadSubscriptionState();
+        onSubscriptionUpdated?.();
+      } else {
+        setFeedbackBanner({
+          type: 'error',
+          text: result.error || 'Unable to terminate subscription. Please try again.',
+        });
+      }
+    } catch (err: any) {
+      setFeedbackBanner({
+        type: 'error',
+        text: err?.message || 'Network error while terminating subscription.',
+      });
+    } finally {
+      setIsSubmittingCancel(false);
+    }
+  };
+
+  const handleRestoreSubscription = async () => {
+    setIsSubmittingCancel(true);
+    setFeedbackBanner(null);
+    try {
+      const result = await cancelUserSubscription({ resume: true });
+      const restored = result.plan && result.plan !== 'free' ? result.plan : 'spark';
+      UserAccountStore.upgradePlan(restored, 'monthly');
+      setCurrentPlan(restored);
+      setFeedbackBanner({
+        type: 'success',
+        text: result.message || `Your ${restored.toUpperCase()} subscription has been restored.`,
+      });
+      await loadSubscriptionState();
+      onSubscriptionUpdated?.();
+    } finally {
+      setIsSubmittingCancel(false);
+    }
+  };
+
+  const handleOpenDodoPortal = async () => {
+    setPortalBusy(true);
+    setFeedbackBanner(null);
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch('/api/billing/portal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...headers },
+      });
+      const data = await res.json();
+      if (res.ok && data?.url) {
+        window.location.href = String(data.url);
+        return;
+      }
+      setFeedbackBanner({
+        type: 'error',
+        text: data?.error || 'Dodo Customer Portal is available after your first live subscription checkout.',
+      });
+    } catch {
+      setFeedbackBanner({
+        type: 'error',
+        text: 'Could not open Dodo Customer Portal right now.',
+      });
+    } finally {
+      setPortalBusy(false);
+    }
+  };
+
+  const effectivePlan =
+    billingMe?.effectivePlan && billingMe.effectivePlan !== 'free'
+      ? billingMe.effectivePlan
+      : currentPlan;
+
+  return (
+    <div
+      className={`p-5 sm:p-6 rounded-2xl border space-y-4 transition-all ${
+        isDark ? 'bg-white/[0.02] border-white/10 text-white' : 'bg-white border-black/15 text-[#18181b] shadow-xs'
+      }`}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <div className="w-9 h-9 rounded-xl bg-red-500/10 border border-red-500/25 flex items-center justify-center text-red-400">
+            <XCircle className="w-4 h-4" />
+          </div>
+          <div>
+            <h3 className="text-sm sm:text-base font-bold tracking-tight">
+              Cancel Subscription &amp; Plan Termination
+            </h3>
+            <p className={`text-xs ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
+              Terminate your active Dodo Payments subscription at period end or immediately, or manage via the Dodo Portal.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {effectivePlan === 'free' && (
+            <button
+              type="button"
+              onClick={handleRestoreSubscription}
+              disabled={isSubmittingCancel}
+              className="px-3.5 py-2 rounded-xl border border-emerald-500/40 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 text-xs font-bold cursor-pointer transition-colors"
+            >
+              {isSubmittingCancel ? 'Restoring...' : 'Restore Spark Subscription'}
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={handleOpenDodoPortal}
+            disabled={portalBusy}
+            className={`px-3.5 py-2 rounded-xl border text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer transition-colors ${
+              isDark
+                ? 'bg-white/5 hover:bg-white/10 border-white/15 text-neutral-200'
+                : 'bg-neutral-100 hover:bg-neutral-200 border-black/15 text-neutral-800'
+            }`}
+          >
+            <ExternalLink className="w-3.5 h-3.5" />
+            <span>{portalBusy ? 'Opening Portal...' : 'Dodo Billing Portal'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setFeedbackBanner(null);
+              setIsCancelModalOpen(true);
+            }}
+            className="px-4 py-2 rounded-xl border border-red-500/40 bg-red-500/15 hover:bg-red-500/25 text-red-400 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer transition-colors"
+          >
+            <XCircle className="w-3.5 h-3.5" />
+            <span>Cancel Subscription</span>
+          </button>
+        </div>
+      </div>
+
+      {feedbackBanner && (
+        <div
+          className={`p-3.5 rounded-xl border text-xs flex items-center justify-between gap-3 ${
+            feedbackBanner.type === 'success'
+              ? 'border-emerald-500/35 bg-emerald-500/10 text-emerald-300'
+              : 'border-red-500/35 bg-red-500/10 text-red-300'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            {feedbackBanner.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            ) : (
+              <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+            )}
+            <span>{feedbackBanner.text}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setFeedbackBanner(null)}
+            className="text-[11px] font-semibold opacity-75 hover:opacity-100 cursor-pointer"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* Cancel Subscription Confirmation Modal with Reason-for-Cancellation Survey */}
+      {isCancelModalOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="cancel-subscription-modal-title"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm"
+        >
+          <div
+            className={`w-full max-w-lg rounded-2xl border p-6 space-y-5 shadow-2xl ${
+              isDark ? 'bg-[#121216] border-white/15 text-white' : 'bg-white border-black/15 text-[#18181b]'
+            }`}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-red-500/15 border border-red-500/30 flex items-center justify-center text-red-400 shrink-0">
+                  <AlertTriangle className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 id="cancel-subscription-modal-title" className="text-base font-bold">
+                    Confirm Subscription Cancellation
+                  </h4>
+                  <p className={`text-xs ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
+                    Current Active Plan: <strong>{effectivePlan.toUpperCase()}</strong>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCancelModalOpen(false)}
+                className="p-1.5 rounded-lg opacity-60 hover:opacity-100 cursor-pointer"
+                aria-label="Close modal"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmCancelSubscription} className="space-y-4">
+              {/* Reason-for-Cancellation Survey */}
+              <div className="space-y-2">
+                <label className="block text-xs font-bold uppercase tracking-wider opacity-80">
+                  Reason for Cancellation Survey
+                </label>
+                <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                  {CANCELLATION_SURVEY_REASONS.map((reason) => {
+                    const checked = selectedSurveyReason === reason.id;
+                    return (
+                      <label
+                        key={reason.id}
+                        className={`flex items-center gap-2.5 p-2.5 rounded-xl border text-xs cursor-pointer transition-all ${
+                          checked
+                            ? 'border-[#FC4C01] bg-[#FC4C01]/10 font-semibold'
+                            : isDark
+                            ? 'border-white/10 bg-white/[0.02] hover:bg-white/[0.05]'
+                            : 'border-black/10 bg-neutral-50 hover:bg-neutral-100'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="cancellation_survey_reason"
+                          value={reason.id}
+                          checked={checked}
+                          onChange={() => setSelectedSurveyReason(reason.id)}
+                          className="accent-[#FC4C01]"
+                        />
+                        <span>{reason.label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Additional Feedback */}
+              <div>
+                <label className="block text-xs font-semibold mb-1 opacity-80">
+                  Additional Feedback (Optional)
+                </label>
+                <textarea
+                  rows={2}
+                  value={surveyComments}
+                  onChange={(e) => setSurveyComments(e.target.value)}
+                  placeholder="Tell us how we can improve Kinich..."
+                  className={`w-full px-3 py-2 rounded-xl border text-xs outline-none ${
+                    isDark
+                      ? 'bg-black/40 border-white/15 text-white placeholder:text-neutral-500'
+                      : 'bg-neutral-50 border-black/15 text-black placeholder:text-neutral-400'
+                  }`}
+                />
+              </div>
+
+              {/* Termination Mode Choice */}
+              <div className="space-y-2 pt-1">
+                <label className="block text-xs font-bold uppercase tracking-wider opacity-80">
+                  When should cancellation take effect?
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setTerminationMode('period_end')}
+                    className={`p-3 rounded-xl border text-left text-xs cursor-pointer transition-all ${
+                      terminationMode === 'period_end'
+                        ? 'border-[#FC4C01] bg-[#FC4C01]/10'
+                        : isDark
+                        ? 'border-white/10 bg-white/[0.02]'
+                        : 'border-black/10 bg-neutral-50'
+                    }`}
+                  >
+                    <div className="font-bold">At End of Billing Period</div>
+                    <div className="text-[11px] opacity-70 mt-0.5">
+                      Keep {effectivePlan.toUpperCase()} features until your current cycle ends.
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTerminationMode('immediate')}
+                    className={`p-3 rounded-xl border text-left text-xs cursor-pointer transition-all ${
+                      terminationMode === 'immediate'
+                        ? 'border-red-500 bg-red-500/10'
+                        : isDark
+                        ? 'border-white/10 bg-white/[0.02]'
+                        : 'border-black/10 bg-neutral-50'
+                    }`}
+                  >
+                    <div className="font-bold text-red-400">Terminate Immediately</div>
+                    <div className="text-[11px] opacity-70 mt-0.5">
+                      End subscription right now and switch to Free Tier.
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-neutral-500/15">
+                <button
+                  type="button"
+                  onClick={() => setIsCancelModalOpen(false)}
+                  className={`px-4 py-2 rounded-xl border text-xs font-semibold cursor-pointer ${
+                    isDark ? 'border-white/15 text-neutral-300' : 'border-black/15 text-neutral-700'
+                  }`}
+                >
+                  Keep My Subscription
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingCancel}
+                  className="px-4 py-2 rounded-xl bg-red-500 hover:bg-red-600 text-white text-xs font-bold cursor-pointer transition-colors disabled:opacity-50"
+                >
+                  {isSubmittingCancel ? 'Terminating via Dodo API...' : 'Confirm & Terminate Subscription'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export const RefundPolicySection: React.FC<{
+  isDark: boolean;
+  onRefundProcessed?: () => void;
+}> = ({ isDark, onRefundProcessed }) => {
+  const [billingMe, setBillingMe] = useState<any | null>(null);
+  const [currentPlan, setCurrentPlan] = useState<'free' | 'spark' | 'fire'>(() =>
+    UserAccountStore.getNormalizedPlan()
+  );
+  const [refundReason, setRefundReason] = useState<string>(
+    '7-Day Money-Back Guarantee — Customer requested full refund'
+  );
+  const [selectedPaymentId, setSelectedPaymentId] = useState<string>('');
+  const [refundBusy, setRefundBusy] = useState<boolean>(false);
+  const [refundBanner, setRefundBanner] = useState<{
+    type: 'success' | 'error';
+    text: string;
+  } | null>(null);
+
+  const loadRefundEligibility = async () => {
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch('/api/billing/me', { headers });
+      if (res.ok) {
+        const data = await res.json();
+        setBillingMe(data);
+        const defaultPay =
+          data?.latestRefundablePayment?.dodo_payment_id ||
+          data?.payments?.find((p: any) => p.status !== 'refunded')?.dodo_payment_id ||
+          '';
+        if (defaultPay) setSelectedPaymentId(defaultPay);
+      }
+    } catch {}
+    setCurrentPlan(UserAccountStore.getNormalizedPlan());
+  };
+
+  useEffect(() => {
+    loadRefundEligibility();
+    const syncLocal = () => setCurrentPlan(UserAccountStore.getNormalizedPlan());
+    window.addEventListener('kinich-account-updated', syncLocal);
+    return () => window.removeEventListener('kinich-account-updated', syncLocal);
+  }, []);
+
+  const handleTriggerRefundRequest = async () => {
+    setRefundBusy(true);
+    setRefundBanner(null);
+    try {
+      const res = await requestSubscriptionRefund({
+        paymentId: selectedPaymentId || undefined,
+        reason: refundReason,
+        cancelSubscription: true,
+      });
+
+      if (res.success) {
+        UserAccountStore.upgradePlan('free', 'monthly');
+        setCurrentPlan('free');
+        setRefundBanner({
+          type: 'success',
+          text:
+            res.message ||
+            `Refund processed (${res.refund?.refund_id || 'confirmed'}) via Dodo Payments API! Funds are being returned to your original payment method.`,
+        });
+        await loadRefundEligibility();
+        onRefundProcessed?.();
+      } else {
+        setRefundBanner({
+          type: 'error',
+          text: res.error || 'Could not process refund request.',
+        });
+      }
+    } catch (err: any) {
+      setRefundBanner({
+        type: 'error',
+        text: err?.message || 'Network error while calling Dodo Payments Refund API.',
+      });
+    } finally {
+      setRefundBusy(false);
+    }
+  };
+
+  const latestRefunded = Array.isArray(billingMe?.refunds) && billingMe.refunds.length > 0
+    ? billingMe.refunds[0]
+    : null;
+  const refundablePayments = Array.isArray(billingMe?.payments)
+    ? billingMe.payments.filter((p: any) => p.status !== 'refunded')
+    : [];
+  const isEligible = Boolean(
+    billingMe?.refundEligible !== false || refundablePayments.length > 0 || currentPlan !== 'free'
+  );
+
+  return (
+    <div
+      className={`p-5 sm:p-6 rounded-2xl border space-y-4 transition-all ${
+        isDark ? 'bg-white/[0.02] border-white/10 text-white' : 'bg-white border-black/15 text-[#18181b] shadow-xs'
+      }`}
+    >
+      {/* Header & Eligibility Badge */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <div className="w-9 h-9 rounded-xl bg-[#FC4C01]/15 border border-[#FC4C01]/35 flex items-center justify-center text-[#FC4C01]">
+            <ShieldCheck className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className="text-sm sm:text-base font-bold tracking-tight">
+                Refund Policy &amp; 7-Day Money-Back Guarantee
+              </h3>
+              <span
+                className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase ${
+                  latestRefunded && refundablePayments.length === 0 && currentPlan === 'free'
+                    ? 'bg-sky-500/15 text-sky-400 border border-sky-500/30'
+                    : isEligible
+                    ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                    : 'bg-neutral-500/15 text-neutral-400 border border-neutral-500/30'
+                }`}
+              >
+                {latestRefunded && refundablePayments.length === 0 && currentPlan === 'free'
+                  ? `Refund Processed (${latestRefunded.dodo_refund_id})`
+                  : 'Eligible for 7-Day Full Refund'}
+              </span>
+            </div>
+            <p className={`text-xs mt-0.5 ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
+              Transparent refund eligibility and one-click Dodo Payments API refund processing.
+            </p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleTriggerRefundRequest}
+          disabled={refundBusy}
+          className="px-4 py-2 rounded-xl bg-[#FC4C01] hover:bg-[#e04300] text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer transition-colors shadow-xs disabled:opacity-50"
+        >
+          <RotateCcw className={`w-3.5 h-3.5 ${refundBusy ? 'animate-spin' : ''}`} />
+          <span>{refundBusy ? 'Processing Refund via Dodo API...' : 'Request Refund'}</span>
+        </button>
+      </div>
+
+      {/* Policy Explanation Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+        <div
+          className={`p-3.5 rounded-xl border ${
+            isDark ? 'bg-black/30 border-white/10' : 'bg-neutral-50 border-black/10'
+          }`}
+        >
+          <div className="font-bold text-[#FC4C01] mb-1">1. 7-Day Guarantee</div>
+          <p className={`text-[11px] leading-relaxed ${isDark ? 'text-neutral-300' : 'text-neutral-600'}`}>
+            First-time Spark (₹99 / $3) and Fire (₹249 / $7) subscribers are eligible for a 100% full refund within 7 calendar days of purchase—even if you already cancelled your plan.
+          </p>
+        </div>
+
+        <div
+          className={`p-3.5 rounded-xl border ${
+            isDark ? 'bg-black/30 border-white/10' : 'bg-neutral-50 border-black/10'
+          }`}
+        >
+          <div className="font-bold text-[#FC4C01] mb-1">2. Direct Dodo API Reversal</div>
+          <p className={`text-[11px] leading-relaxed ${isDark ? 'text-neutral-300' : 'text-neutral-600'}`}>
+            Clicking <strong>Request Refund</strong> sends an immediate refund instruction to the Dodo Payments API and reverses the charge to your original UPI, Card, NetBanking, or Wallet.
+          </p>
+        </div>
+
+        <div
+          className={`p-3.5 rounded-xl border ${
+            isDark ? 'bg-black/30 border-white/10' : 'bg-neutral-50 border-black/10'
+          }`}
+        >
+          <div className="font-bold text-[#FC4C01] mb-1">3. Settlement Speed</div>
+          <p className={`text-[11px] leading-relaxed ${isDark ? 'text-neutral-300' : 'text-neutral-600'}`}>
+            Refund IDs (<code>ref_...</code>) are issued immediately. UPI &amp; wallet refunds typically settle within 24–48 hours; credit/debit cards settle within 3–5 business days.
+          </p>
+        </div>
+      </div>
+
+      {/* Refund Selector Bar */}
+      <div
+        className={`p-3.5 rounded-xl border grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs ${
+          isDark ? 'bg-black/40 border-white/10' : 'bg-neutral-50 border-black/10'
+        }`}
+      >
+        <div>
+          <label className="block text-[10px] font-bold uppercase tracking-wider opacity-70 mb-1">
+            Subscription Charge / Invoice
+          </label>
+          <select
+            value={selectedPaymentId}
+            onChange={(e) => setSelectedPaymentId(e.target.value)}
+            className={`w-full px-3 py-1.5 rounded-lg border text-xs outline-none ${
+              isDark ? 'bg-[#18181b] border-white/15 text-white' : 'bg-white border-black/15 text-black'
+            }`}
+          >
+            {refundablePayments.length > 0 ? (
+              refundablePayments.map((p: any) => (
+                <option key={p.dodo_payment_id} value={p.dodo_payment_id}>
+                  {p.dodo_payment_id} — {((Number(p.amount) || 0) / 100).toFixed(2)} {p.currency || 'USD'}
+                </option>
+              ))
+            ) : (
+              <option value="">Most Recent Subscription Charge ({currentPlan.toUpperCase()})</option>
+            )}
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-[10px] font-bold uppercase tracking-wider opacity-70 mb-1">
+            Refund Reason
+          </label>
+          <select
+            value={refundReason}
+            onChange={(e) => setRefundReason(e.target.value)}
+            className={`w-full px-3 py-1.5 rounded-lg border text-xs outline-none ${
+              isDark ? 'bg-[#18181b] border-white/15 text-white' : 'bg-white border-black/15 text-black'
+            }`}
+          >
+            <option value="7-Day Money-Back Guarantee — Customer requested full refund">
+              7-Day Money-Back Guarantee (Full Refund)
+            </option>
+            <option value="Cancelled subscription and requesting money back">
+              Cancelled subscription and requesting money back
+            </option>
+            <option value="Accidental purchase or wrong billing interval">
+              Accidental purchase or wrong billing interval
+            </option>
+            <option value="Duplicate subscription charge">Duplicate subscription charge</option>
+          </select>
+        </div>
+      </div>
+
+      {refundBanner && (
+        <div
+          className={`p-3.5 rounded-xl border text-xs flex items-center justify-between gap-3 ${
+            refundBanner.type === 'success'
+              ? 'border-emerald-500/35 bg-emerald-500/10 text-emerald-300'
+              : 'border-red-500/35 bg-red-500/10 text-red-300'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            {refundBanner.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            ) : (
+              <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+            )}
+            <span>{refundBanner.text}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setRefundBanner(null)}
+            className="text-[11px] font-semibold opacity-75 hover:opacity-100 cursor-pointer"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
 
 interface AccountWorkspacePageProps {
   onBackToChat: () => void;
@@ -159,6 +847,7 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
 
   const navItems: { id: AccountTab; label: string; icon: React.ReactNode }[] = [
     { id: 'profile', label: 'Profile & Account', icon: <User className="w-4 h-4" /> },
+    { id: 'billing', label: 'Billing & Refunds', icon: <Receipt className="w-4 h-4 text-[#FC4C01]" /> },
     { id: 'pricing', label: 'Plans & Pricing ($3 / $7)', icon: <Zap className="w-4 h-4 text-[#FC4C01]" /> },
     { id: 'preferences', label: 'App Preferences', icon: <SlidersHorizontal className="w-4 h-4" /> },
     { id: 'chats_projects', label: 'Chat History & Export', icon: <FolderOpen className="w-4 h-4" /> },
@@ -470,6 +1159,24 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
               />
             )}
 
+            {/* Tab: Dedicated Billing, Cancellation & Refunds */}
+            {activeTab === 'billing' && (
+              <div className="space-y-6">
+                <div>
+                  <h2 className="text-xl sm:text-2xl font-bold tracking-tight">
+                    Billing, Refunds &amp; Subscription Cancellation
+                  </h2>
+                  <p className="text-xs sm:text-sm text-neutral-400 mt-1">
+                    Manage your Dodo Payments subscription, request a 7-day refund, cancel your plan, or download past invoices.
+                  </p>
+                </div>
+
+                <RefundPolicySection isDark={isDark} />
+                <CancelSubscriptionSection isDark={isDark} />
+                <BillingHistorySection isDark={isDark} />
+              </div>
+            )}
+
             {/* Tab: Profile, AI Model & Backend */}
             {activeTab === 'profile' && (
               <div className="space-y-6">
@@ -578,6 +1285,12 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
                     </div>
                   </div>
                 </div>
+
+                {/* Refund Policy & Eligibility Section */}
+                <RefundPolicySection isDark={isDark} />
+
+                {/* Cancel Subscription Section (with Survey & Confirmation Modal) */}
+                <CancelSubscriptionSection isDark={isDark} />
 
                 {/* Billing History & Past Invoices Component */}
                 <BillingHistorySection isDark={isDark} />

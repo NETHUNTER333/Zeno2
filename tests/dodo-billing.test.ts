@@ -169,9 +169,23 @@ describe('Dodo Payments Billing Engine & Webhook State Machine', () => {
         amount: 5000,
         currency: 'INR',
         status: 'succeeded',
+        reason: 'requested_by_customer',
       },
     });
     expect(getEffectiveServerUserPlan(uid).plan).toBe('spark');
+    const refundRow = getBillingDb()
+      .prepare('SELECT dodo_refund_id, amount, currency, reason, status FROM refunds WHERE dodo_refund_id = ?')
+      .get('ref_partial') as {
+      dodo_refund_id: string;
+      amount: number;
+      currency: string;
+      reason: string;
+      status: string;
+    };
+    expect(refundRow?.dodo_refund_id).toBe('ref_partial');
+    expect(refundRow?.amount).toBe(5000);
+    expect(refundRow?.currency).toBe('INR');
+    expect(refundRow?.status).toBe('succeeded');
 
     // 6. Dispute opened immediately revokes paid access and flags user
     processVerifiedDodoWebhookEvent('wh_5_dispute', {

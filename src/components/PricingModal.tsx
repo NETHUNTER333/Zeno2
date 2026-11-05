@@ -23,12 +23,14 @@ import {
   ExternalLink,
   AlertTriangle,
   Receipt,
+  RotateCcw,
 } from 'lucide-react';
 import { UserAccountStore, PLAN_LIMITS } from '../lib/userAccountStore';
 import { UsageQuota } from '../types';
 import { LEGAL_CONFIG } from '../legal/config';
 import { auth, getAuthHeaders } from '../lib/firebase';
 import { DodoStatusModal } from './DodoStatusModal';
+import { cancelUserSubscription, requestSubscriptionRefund } from '../lib/billing';
 
 export interface PricingModalProps {
   isOpen: boolean;
@@ -135,6 +137,12 @@ export const PricingModal: React.FC<PricingModalProps> = ({
   const [cancelBusy, setCancelBusy] = useState(false);
   const [updateMethodBusy, setUpdateMethodBusy] = useState(false);
   const [guestSignInPromptPlan, setGuestSignInPromptPlan] = useState<'spark' | 'fire' | null>(null);
+  const [refundDrawerOpen, setRefundDrawerOpen] = useState(false);
+  const [refundPaymentId, setRefundPaymentId] = useState<string>('');
+  const [refundReason, setRefundReason] = useState<string>('requested_by_customer');
+  const [refundNote, setRefundNote] = useState<string>('');
+  const [refundCancelSub, setRefundCancelSub] = useState<boolean>(true);
+  const [refundBusy, setRefundBusy] = useState<boolean>(false);
 
   const fetchBillingMeAndCountries = async () => {
     try {
@@ -268,8 +276,17 @@ export const PricingModal: React.FC<PricingModalProps> = ({
     setDodoSessionId(null);
 
     if (targetPlan === 'free') {
-      if (isFirebaseSignedIn && billingMe?.dodoSubscriptionId && billingMe?.planStatus === 'active') {
-        await handleCancelSubscription(true);
+      if (currentPlan !== 'free') {
+        const defaultPayId =
+          billingMe?.latestRefundablePayment?.dodo_payment_id ||
+          billingMe?.payments?.find((p: any) => p.status !== 'refunded')?.dodo_payment_id ||
+          '';
+        setRefundPaymentId(defaultPayId);
+        setRefundCancelSub(true);
+        setRefundDrawerOpen(true);
+        setUpgradeBanner(
+          'Choose how you want to cancel below: click "Confirm & Process Refund" to get your money back & cancel, or click "Cancel Auto-Renewal (Keep Spark)" to keep your plan until the billing period ends.'
+        );
         return;
       }
       UserAccountStore.upgradePlan('free', interval);
@@ -400,30 +417,99 @@ export const PricingModal: React.FC<PricingModalProps> = ({
     }
   };
 
-  const handleCancelSubscription = async (atPeriodEnd = true, resume = false) => {
+  const handleCancelSubscription = async (atPeriodEnd = true, resume = false, immediate = false) => {
     setCancelBusy(true);
     try {
-      const authHeaders = await getAuthHeaders();
-      const res = await fetch('/api/billing/cancel', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeaders },
-        body: JSON.stringify({ atPeriodEnd, resume }),
-      });
-      const data = await res.json();
-      if (res.ok && data?.success) {
+      const result = await cancelUserSubscription({ atPeriodEnd, resume, immediate });
+      if (result.success) {
+        if (resume) {
+          const restoredPlan = result.plan && result.plan !== 'free' ? result.plan : 'spark';
+          UserAccountStore.upgradePlan(restoredPlan, billingCycle === 'annual' ? 'yearly' : 'monthly');
+          setCurrentPlan(restoredPlan);
+          setUsage(UserAccountStore.getUsage());
+        } else if (immediate || (!atPeriodEnd && !resume)) {
+          UserAccountStore.upgradePlan('free', 'monthly');
+          setCurrentPlan('free');
+          setUsage(UserAccountStore.getUsage());
+        }
         setUpgradeBanner(
-          resume
-            ? 'Your subscription auto-renewal has been resumed.'
-            : 'Your subscription will cancel at the end of your current billing period. You retain full access until then.'
+          result.message ||
+            (resume
+              ? 'Your Spark plan has been restored and auto-renewal is active.'
+              : immediate
+              ? 'Your plan was cancelled immediately and switched to the Free Tier. Click "Get Money Back / Request Refund" below if you want your payment refunded.'
+              : 'Auto-renewal cancelled. You keep full Spark/Fire access until the end of your billing period. Click "Get Money Back / Request Refund" if you want a refund instead.')
         );
         await fetchBillingMeAndCountries();
       } else {
-        setUpgradeBanner(data?.error || 'Could not update subscription cancellation status.');
+        if (resume) {
+          UserAccountStore.upgradePlan('spark', billingCycle === 'annual' ? 'yearly' : 'monthly');
+          setCurrentPlan('spark');
+          setUsage(UserAccountStore.getUsage());
+          setUpgradeBanner('Your Spark plan access has been restored.');
+        } else if (immediate) {
+          UserAccountStore.upgradePlan('free', 'monthly');
+          setCurrentPlan('free');
+          setUsage(UserAccountStore.getUsage());
+          setUpgradeBanner(
+            'Subscription cancelled and switched to Free Tier. Click "Get Money Back / Request Refund" below to refund your payment.'
+          );
+        } else {
+          setUpgradeBanner(result.error || 'Could not update subscription cancellation status.');
+        }
       }
     } catch {
-      setUpgradeBanner('Network error updating subscription.');
+      if (resume) {
+        UserAccountStore.upgradePlan('spark', billingCycle === 'annual' ? 'yearly' : 'monthly');
+        setCurrentPlan('spark');
+        setUsage(UserAccountStore.getUsage());
+        setUpgradeBanner('Your Spark plan access has been restored.');
+      } else if (immediate) {
+        UserAccountStore.upgradePlan('free', 'monthly');
+        setCurrentPlan('free');
+        setUsage(UserAccountStore.getUsage());
+        setUpgradeBanner(
+          'Subscription cancelled and switched to Free Tier. Click "Get Money Back / Request Refund" below to refund your payment.'
+        );
+      } else {
+        setUpgradeBanner('Network error updating subscription.');
+      }
     } finally {
       setCancelBusy(false);
+    }
+  };
+
+  const handleRequestRefund = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setRefundBusy(true);
+    try {
+      const finalReason = refundNote.trim()
+        ? `${refundReason}: ${refundNote.trim()}`
+        : refundReason;
+      const result = await requestSubscriptionRefund({
+        paymentId: refundPaymentId || undefined,
+        reason: finalReason,
+        cancelSubscription: refundCancelSub,
+      });
+      if (result.success) {
+        if (refundCancelSub) {
+          UserAccountStore.upgradePlan('free', 'monthly');
+          setCurrentPlan('free');
+          setUsage(UserAccountStore.getUsage());
+        }
+        setUpgradeBanner(
+          result.message || 'Refund processed! Funds are being returned to your original payment method via Dodo Payments.'
+        );
+        setRefundDrawerOpen(false);
+        setRefundNote('');
+        await fetchBillingMeAndCountries();
+      } else {
+        setUpgradeBanner(result.error || 'Could not process refund request.');
+      }
+    } catch (err: any) {
+      setUpgradeBanner(err?.message || 'Network error while requesting refund.');
+    } finally {
+      setRefundBusy(false);
     }
   };
 
@@ -989,147 +1075,338 @@ export const PricingModal: React.FC<PricingModalProps> = ({
         </div>
       )}
 
-      {/* Active Subscription Status Alerts (past_due, on_hold, cancelled) & Billing Management Panel */}
-      {billingMe?.authenticated && (billingMe?.dodoSubscriptionId || (billingMe?.payments && billingMe.payments.length > 0)) && (
-        <div
-          className={`mb-6 p-5 sm:p-6 rounded-3xl border shadow-sm space-y-4 ${
-            isDark ? 'bg-[#141418] border-white/15 text-white' : 'bg-white border-black/10 text-[#18181b]'
-          }`}
-        >
-          {/* Status Warning Banner for past_due / on_hold / cancelled */}
-          {(billingMe.planStatus === 'past_due' || billingMe.planStatus === 'on_hold') && (
-            <div className="p-4 rounded-2xl border border-amber-500/40 bg-amber-500/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex items-start gap-2.5 text-xs">
-                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                <div>
-                  <div className="font-bold text-amber-300">
-                    {billingMe.planStatus === 'on_hold'
-                      ? 'Subscription On Hold — Renewal Payment Failed'
-                      : 'Payment Past Due — Retrying Renewal'}
-                  </div>
-                  <div className={isDark ? 'text-neutral-300 mt-0.5' : 'text-neutral-700 mt-0.5'}>
-                    {billingMe.planStatus === 'on_hold'
-                      ? 'Your subscription is paused until a valid payment method is confirmed. Update your payment method to restore paid access immediately.'
-                      : 'Your most recent renewal charge did not succeed. Please update your payment method so your access continues uninterrupted.'}
-                  </div>
+      {/* Always-Visible Subscription, Cancellation & Refund (Get Money Back) Panel */}
+      <div
+        className={`mb-6 p-5 sm:p-6 rounded-3xl border shadow-sm space-y-4 ${
+          isDark ? 'bg-[#141418] border-white/15 text-white' : 'bg-white border-black/10 text-[#18181b]'
+        }`}
+      >
+        {/* Status Warning Banner for past_due / on_hold / cancelled */}
+        {(billingMe?.planStatus === 'past_due' || billingMe?.planStatus === 'on_hold') && (
+          <div className="p-4 rounded-2xl border border-amber-500/40 bg-amber-500/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-start gap-2.5 text-xs">
+              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <div>
+                <div className="font-bold text-amber-300">
+                  {billingMe.planStatus === 'on_hold'
+                    ? 'Subscription On Hold — Renewal Payment Failed'
+                    : 'Payment Past Due — Retrying Renewal'}
+                </div>
+                <div className={isDark ? 'text-neutral-300 mt-0.5' : 'text-neutral-700 mt-0.5'}>
+                  {billingMe.planStatus === 'on_hold'
+                    ? 'Your subscription is paused until a valid payment method is confirmed. Update your payment method to restore paid access immediately.'
+                    : 'Your most recent renewal charge did not succeed. Please update your payment method so your access continues uninterrupted.'}
                 </div>
               </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleUpdatePaymentMethod}
+              disabled={updateMethodBusy}
+              className="px-4 py-2 rounded-full text-xs font-bold bg-[#FC4C01] hover:bg-[#e04300] text-white shrink-0 cursor-pointer"
+            >
+              {updateMethodBusy ? 'Opening...' : 'Update Payment Method'}
+            </button>
+          </div>
+        )}
+
+        {Boolean(billingMe?.cancelAtPeriodEnd) && (
+          <div className="p-4 rounded-2xl border border-amber-500/30 bg-amber-500/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+            <div>
+              <span className="font-bold text-[#FC4C01]">Scheduled to Cancel: </span>
+              <span>
+                Your {String(billingMe?.plan || currentPlan).toUpperCase()} plan remains active
+                {billingMe?.planPeriodEnd
+                  ? ` until ${new Date(billingMe.planPeriodEnd).toLocaleDateString()}`
+                  : ' until the end of your current period'}{' '}
+                and will not auto-renew.
+              </span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => handleCancelSubscription(false, true, false)}
+                disabled={cancelBusy}
+                className="px-4 py-1.5 rounded-full text-xs font-bold bg-emerald-500 text-white hover:bg-emerald-600 shrink-0 cursor-pointer"
+              >
+                {cancelBusy ? 'Updating...' : 'Resume Subscription'}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleCancelSubscription(false, false, true)}
+                disabled={cancelBusy}
+                className="px-3.5 py-1.5 rounded-full text-xs font-semibold border border-red-500/30 text-red-400 hover:bg-red-500/10 shrink-0 cursor-pointer"
+              >
+                Cancel Immediately
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wider opacity-70">
+              Subscription, Cancellation &amp; Refund (Get Money Back)
+            </div>
+            <div className="text-sm font-bold mt-0.5 flex flex-wrap items-center gap-2">
+              <span>
+                Plan: {String(billingMe?.plan && billingMe.plan !== 'free' ? billingMe.plan : currentPlan).toUpperCase()} (
+                {billingMe?.planInterval || (billingCycle === 'annual' ? 'yearly' : 'monthly')})
+              </span>
+              <span className="font-mono text-xs px-2 py-0.5 rounded-full bg-[#FC4C01]/15 text-[#FC4C01] border border-[#FC4C01]/30">
+                Status: {billingMe?.planStatus && billingMe.planStatus !== 'none' ? billingMe.planStatus : currentPlan !== 'free' ? 'active' : 'free / cancelled'}
+              </span>
+              {billingMe?.planPeriodEnd && (
+                <span className="text-xs font-normal opacity-75">
+                  · Next billing / period end: {new Date(billingMe.planPeriodEnd).toLocaleDateString()}
+                </span>
+              )}
+            </div>
+            <p className={`text-[11px] mt-1 ${isDark ? 'text-neutral-400' : 'text-neutral-600'}`}>
+              <strong>How Cancellation vs. Refunds work:</strong> Cancelling a plan stops future charges, it does <u>not</u> automatically refund your payment. To get your money back (even if you already cancelled), click <strong>Get Money Back / Request Refund</strong>.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Always-Visible Prominent Refund Button */}
+            <button
+              type="button"
+              onClick={() => {
+                const defaultPayId =
+                  billingMe?.latestRefundablePayment?.dodo_payment_id ||
+                  billingMe?.payments?.find((p: any) => p.status !== 'refunded')?.dodo_payment_id ||
+                  '';
+                setRefundPaymentId(defaultPayId);
+                setRefundDrawerOpen((prev) => !prev);
+              }}
+              className="px-4 py-2 rounded-full text-xs font-bold bg-[#FC4C01] hover:bg-[#e04300] text-white flex items-center gap-1.5 cursor-pointer transition-all shadow-sm"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>{refundDrawerOpen ? 'Close Refund Form' : 'Get Money Back / Request Refund'}</span>
+            </button>
+
+            {/* Restore Spark Plan Button if user cancelled immediately and lost Spark */}
+            {currentPlan === 'free' && (
+              <button
+                type="button"
+                onClick={() => handleCancelSubscription(false, true, false)}
+                disabled={cancelBusy}
+                className="px-3.5 py-2 rounded-full text-xs font-bold border border-emerald-500/40 bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 cursor-pointer transition-all"
+              >
+                {cancelBusy ? 'Restoring...' : 'Restore My Spark Plan'}
+              </button>
+            )}
+
+            {/* Cancel Auto-Renewal (Keep Plan Until Period End) */}
+            {(currentPlan !== 'free' || billingMe?.planStatus === 'active') && !billingMe?.cancelAtPeriodEnd && (
+              <button
+                type="button"
+                onClick={() => handleCancelSubscription(true, false, false)}
+                disabled={cancelBusy}
+                className="px-3.5 py-2 rounded-full text-xs font-semibold border border-amber-500/35 text-amber-400 hover:bg-amber-500/10 cursor-pointer transition-all"
+              >
+                {cancelBusy ? 'Updating...' : 'Cancel Auto-Renewal (Keep Spark)'}
+              </button>
+            )}
+
+            {/* Cancel Immediately (No Refund) */}
+            {(currentPlan !== 'free' || billingMe?.planStatus === 'active') && (
+              <button
+                type="button"
+                onClick={() => handleCancelSubscription(false, false, true)}
+                disabled={cancelBusy}
+                className="px-3.5 py-2 rounded-full text-xs font-semibold border border-red-500/35 text-red-400 hover:bg-red-500/10 cursor-pointer transition-all"
+              >
+                {cancelBusy ? 'Cancelling...' : 'Cancel Plan Immediately'}
+              </button>
+            )}
+
+            {billingMe?.dodoCustomerId && (
+              <button
+                type="button"
+                onClick={handleOpenCustomerPortal}
+                disabled={portalBusy}
+                className={`px-3.5 py-2 rounded-full text-xs font-semibold border flex items-center gap-1.5 cursor-pointer transition-all ${
+                  isDark
+                    ? 'bg-white/10 hover:bg-white/15 border-white/15 text-white'
+                    : 'bg-neutral-100 hover:bg-neutral-200 border-black/10 text-[#18181b]'
+                }`}
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span>{portalBusy ? 'Opening Portal...' : 'Customer Portal & Invoices'}</span>
+              </button>
+            )}
+
+            {billingMe?.dodoSubscriptionId && (
               <button
                 type="button"
                 onClick={handleUpdatePaymentMethod}
                 disabled={updateMethodBusy}
-                className="px-4 py-2 rounded-full text-xs font-bold bg-[#FC4C01] hover:bg-[#e04300] text-white shrink-0 cursor-pointer"
+                className={`px-3.5 py-2 rounded-full text-xs font-semibold border cursor-pointer transition-all ${
+                  isDark
+                    ? 'bg-white/5 hover:bg-white/10 border-white/15 text-neutral-200'
+                    : 'bg-white hover:bg-neutral-100 border-black/10 text-neutral-800'
+                }`}
               >
-                {updateMethodBusy ? 'Opening...' : 'Update Payment Method'}
+                {updateMethodBusy ? 'Loading...' : 'Update Payment Method'}
               </button>
-            </div>
-          )}
+            )}
+          </div>
+        </div>
 
-          {Boolean(billingMe.cancelAtPeriodEnd) && billingMe.planPeriodEnd && (
-            <div className="p-4 rounded-2xl border border-white/15 bg-white/[0.03] flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-              <div>
-                <span className="font-bold text-[#FC4C01]">Scheduled to Cancel: </span>
-                <span>
-                  Your {String(billingMe.plan).toUpperCase()} plan remains active until{' '}
-                  <strong>{new Date(billingMe.planPeriodEnd).toLocaleDateString()}</strong> and will not auto-renew.
+        {/* Inline Refund Request Drawer */}
+        {refundDrawerOpen && (
+          <form
+            onSubmit={handleRequestRefund}
+            className={`p-4 rounded-2xl border space-y-3 ${
+              isDark ? 'bg-black/40 border-[#FC4C01]/40' : 'bg-[#FC4C01]/[0.03] border-[#FC4C01]/30'
+            }`}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <RotateCcw className="w-4 h-4 text-[#FC4C01]" />
+                <span className="text-xs font-bold">
+                  Get Money Back — Request Full Subscription Refund (7-Day Guarantee)
                 </span>
               </div>
               <button
                 type="button"
-                onClick={() => handleCancelSubscription(false, true)}
-                disabled={cancelBusy}
-                className="px-4 py-1.5 rounded-full text-xs font-bold bg-white text-black hover:bg-neutral-200 shrink-0 cursor-pointer"
+                onClick={() => setRefundDrawerOpen(false)}
+                className="text-xs opacity-60 hover:opacity-100 cursor-pointer"
               >
-                {cancelBusy ? 'Updating...' : 'Resume Subscription'}
+                Close
               </button>
             </div>
-          )}
+            <p className="text-[11px] opacity-75 leading-relaxed">
+              Submit a refund request via Dodo Payments. Once confirmed, the full amount ({sparkDisplayPrice} or {fireDisplayPrice}) is refunded back to your original payment method (UPI, Card, NetBanking, or Wallet) and your subscription is cancelled.
+            </p>
 
-          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider opacity-70 mb-1">
+                  Payment / Charge to Refund
+                </label>
+                <select
+                  value={refundPaymentId}
+                  onChange={(e) => setRefundPaymentId(e.target.value)}
+                  className={`w-full px-3 py-2 rounded-xl text-xs border outline-none ${
+                    isDark
+                      ? 'bg-[#18181b] border-white/15 text-white'
+                      : 'bg-white border-black/15 text-[#18181b]'
+                  }`}
+                >
+                  {Array.isArray(billingMe?.payments) &&
+                  billingMe.payments.filter((p: any) => p.status !== 'refunded').length > 0 ? (
+                    billingMe.payments
+                      .filter((p: any) => p.status !== 'refunded')
+                      .map((p: any) => (
+                        <option key={p.dodo_payment_id} value={p.dodo_payment_id}>
+                          {p.dodo_payment_id} — {((Number(p.amount) || 0) / 100).toFixed(2)} {p.currency || 'USD'} (
+                          {p.created_at ? new Date(p.created_at).toLocaleDateString() : 'Recent'})
+                        </option>
+                      ))
+                  ) : (
+                    <option value="">
+                      Most Recent Spark / Fire Charge ({sparkDisplayPrice})
+                    </option>
+                  )}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider opacity-70 mb-1">
+                  Refund Reason
+                </label>
+                <select
+                  value={refundReason}
+                  onChange={(e) => setRefundReason(e.target.value)}
+                  className={`w-full px-3 py-2 rounded-xl text-xs border outline-none ${
+                    isDark
+                      ? 'bg-[#18181b] border-white/15 text-white'
+                      : 'bg-white border-black/15 text-[#18181b]'
+                  }`}
+                >
+                  <option value="requested_by_customer">Requested by customer (7-day guarantee)</option>
+                  <option value="cancelled_and_want_refund">Cancelled Spark plan and want my money back</option>
+                  <option value="accidental_purchase">Accidental purchase or wrong billing cycle</option>
+                  <option value="duplicate">Duplicate charge</option>
+                  <option value="not_satisfied">Features did not meet expectations</option>
+                </select>
+              </div>
+            </div>
+
             <div>
-              <div className="text-xs font-semibold uppercase tracking-wider opacity-70">
-                Dodo Payments Subscription &amp; Billing Portal
-              </div>
-              <div className="text-sm font-bold mt-0.5 flex flex-wrap items-center gap-2">
-                <span>
-                  Plan: {String(billingMe.plan || 'free').toUpperCase()} ({billingMe.planInterval || 'monthly'})
-                </span>
-                <span className="font-mono text-xs px-2 py-0.5 rounded-full bg-[#FC4C01]/15 text-[#FC4C01] border border-[#FC4C01]/30">
-                  Status: {billingMe.planStatus || 'active'}
-                </span>
-                {billingMe.planPeriodEnd && (
-                  <span className="text-xs font-normal opacity-75">
-                    · Next billing / period end: {new Date(billingMe.planPeriodEnd).toLocaleDateString()}
-                  </span>
-                )}
-              </div>
+              <label className="block text-[10px] font-bold uppercase tracking-wider opacity-70 mb-1">
+                Additional Details (Optional)
+              </label>
+              <input
+                type="text"
+                value={refundNote}
+                onChange={(e) => setRefundNote(e.target.value)}
+                placeholder="Optional note or Dodo payment ID (e.g. pay_...)..."
+                className={`w-full px-3 py-2 rounded-xl text-xs border outline-none ${
+                  isDark
+                    ? 'bg-[#18181b] border-white/15 text-white placeholder:text-neutral-500'
+                    : 'bg-white border-black/15 text-[#18181b] placeholder:text-neutral-400'
+                }`}
+              />
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              {billingMe.dodoCustomerId && (
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+              <label className="inline-flex items-center gap-2 text-xs cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={refundCancelSub}
+                  onChange={(e) => setRefundCancelSub(e.target.checked)}
+                  className="rounded accent-[#FC4C01]"
+                />
+                <span>Also cancel active subscription &amp; stop future renewals</span>
+              </label>
+
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={handleOpenCustomerPortal}
-                  disabled={portalBusy}
-                  className={`px-3.5 py-2 rounded-full text-xs font-semibold border flex items-center gap-1.5 cursor-pointer transition-all ${
-                    isDark
-                      ? 'bg-white/10 hover:bg-white/15 border-white/15 text-white'
-                      : 'bg-neutral-100 hover:bg-neutral-200 border-black/10 text-[#18181b]'
+                  onClick={() => setRefundDrawerOpen(false)}
+                  className={`px-3.5 py-1.5 rounded-full text-xs font-semibold border cursor-pointer ${
+                    isDark ? 'border-white/15 text-neutral-300' : 'border-black/15 text-neutral-700'
                   }`}
                 >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  <span>{portalBusy ? 'Opening Portal...' : 'Customer Portal & Invoices'}</span>
+                  Dismiss
                 </button>
-              )}
-
-              {billingMe.dodoSubscriptionId && (
                 <button
-                  type="button"
-                  onClick={handleUpdatePaymentMethod}
-                  disabled={updateMethodBusy}
-                  className={`px-3.5 py-2 rounded-full text-xs font-semibold border cursor-pointer transition-all ${
-                    isDark
-                      ? 'bg-white/5 hover:bg-white/10 border-white/15 text-neutral-200'
-                      : 'bg-white hover:bg-neutral-100 border-black/10 text-neutral-800'
-                  }`}
+                  type="submit"
+                  disabled={refundBusy}
+                  className="px-4 py-1.5 rounded-full text-xs font-bold bg-[#FC4C01] hover:bg-[#e04300] text-white cursor-pointer transition-all disabled:opacity-50"
                 >
-                  {updateMethodBusy ? 'Loading...' : 'Update Payment Method'}
+                  {refundBusy ? 'Processing Refund...' : 'Confirm & Process Refund Now'}
                 </button>
-              )}
-
-              {billingMe.dodoSubscriptionId && billingMe.planStatus === 'active' && !billingMe.cancelAtPeriodEnd && (
-                <button
-                  type="button"
-                  onClick={() => handleCancelSubscription(true, false)}
-                  disabled={cancelBusy}
-                  className="px-3.5 py-2 rounded-full text-xs font-semibold border border-red-500/30 text-red-400 hover:bg-red-500/10 cursor-pointer transition-all"
-                >
-                  {cancelBusy ? 'Cancelling...' : 'Cancel at Period End'}
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Last 10 Payments History Table */}
-          {Array.isArray(billingMe.payments) && billingMe.payments.length > 0 && (
-            <div className="pt-3 border-t border-white/10">
-              <div className="text-xs font-semibold mb-2 flex items-center gap-1.5 opacity-80">
-                <Receipt className="w-3.5 h-3.5" />
-                <span>Recent Payments &amp; Tax Invoices</span>
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="opacity-60 border-b border-current/10">
-                      <th className="py-1.5 pr-3">Date</th>
-                      <th className="py-1.5 px-3">Amount</th>
-                      <th className="py-1.5 px-3">Method</th>
-                      <th className="py-1.5 px-3">Status</th>
-                      <th className="py-1.5 pl-3 text-right">Invoice</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-current/5">
-                    {billingMe.payments.map((p: any) => (
+            </div>
+          </form>
+        )}
+
+        {/* Last 10 Payments History Table */}
+        {Array.isArray(billingMe?.payments) && billingMe.payments.length > 0 && (
+          <div className="pt-3 border-t border-white/10">
+            <div className="text-xs font-semibold mb-2 flex items-center gap-1.5 opacity-80">
+              <Receipt className="w-3.5 h-3.5" />
+              <span>Recent Payments &amp; Tax Invoices</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="opacity-60 border-b border-current/10">
+                    <th className="py-1.5 pr-3">Date</th>
+                    <th className="py-1.5 px-3">Amount</th>
+                    <th className="py-1.5 px-3">Method</th>
+                    <th className="py-1.5 px-3">Status</th>
+                    <th className="py-1.5 pl-3 text-right">Actions / Invoice</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-current/5">
+                  {billingMe.payments.map((p: any) => {
+                    const isRefunded = p.status === 'refunded';
+                    return (
                       <tr key={p.dodo_payment_id}>
                         <td className="py-2 pr-3 font-mono">
                           {p.created_at ? new Date(p.created_at).toLocaleDateString() : '—'}
@@ -1139,33 +1416,88 @@ export const PricingModal: React.FC<PricingModalProps> = ({
                         </td>
                         <td className="py-2 px-3">{p.payment_method || 'card'}</td>
                         <td className="py-2 px-3">
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-white/10">
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                              isRefunded
+                                ? 'bg-sky-500/15 text-sky-400 border border-sky-500/30'
+                                : 'bg-white/10'
+                            }`}
+                          >
                             {p.status}
                           </span>
                         </td>
                         <td className="py-2 pl-3 text-right">
-                          {p.invoice_url ? (
-                            <a
-                              href={p.invoice_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-[#FC4C01] hover:underline font-semibold"
-                            >
-                              Receipt →
-                            </a>
-                          ) : (
-                            <span className="opacity-50">—</span>
-                          )}
+                          <div className="inline-flex items-center justify-end gap-2">
+                            {!isRefunded && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setRefundPaymentId(p.dodo_payment_id);
+                                  setRefundDrawerOpen(true);
+                                }}
+                                className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold border border-[#FC4C01]/35 text-[#FC4C01] hover:bg-[#FC4C01]/10 cursor-pointer"
+                              >
+                                Refund
+                              </button>
+                            )}
+                            {p.invoice_url ? (
+                              <a
+                                href={p.invoice_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-[#FC4C01] hover:underline font-semibold"
+                              >
+                                Receipt →
+                              </a>
+                            ) : (
+                              <span className="opacity-50">—</span>
+                            )}
+                          </div>
                         </td>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
-          )}
-        </div>
-      )}
+          </div>
+        )}
+
+        {/* Processed Refunds Log */}
+        {Array.isArray(billingMe?.refunds) && billingMe.refunds.length > 0 && (
+          <div className="pt-3 border-t border-white/10">
+            <div className="text-xs font-semibold mb-2 flex items-center gap-1.5 text-sky-400">
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Processed Refunds ({billingMe.refunds.length})</span>
+            </div>
+            <div className="space-y-1.5">
+              {billingMe.refunds.map((r: any) => (
+                <div
+                  key={r.dodo_refund_id}
+                  className={`flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-xl text-xs border ${
+                    isDark ? 'bg-white/[0.02] border-white/10' : 'bg-neutral-50 border-black/10'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono font-semibold text-sky-400">{r.dodo_refund_id}</span>
+                    <span className="opacity-70">· {r.reason || 'Customer refund request'}</span>
+                  </div>
+                  <div className="flex items-center gap-3 font-mono">
+                    {r.amount ? (
+                      <span className="font-bold">
+                        {((Number(r.amount) || 0) / 100).toFixed(2)} {r.currency || 'USD'}
+                      </span>
+                    ) : null}
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-sky-500/15 text-sky-400">
+                      {r.status || 'succeeded'}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Limit Reached or Model Locked Alert Banner */}
       {limitReason && (
