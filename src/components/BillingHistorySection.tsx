@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Receipt, ExternalLink, RefreshCw, CheckCircle2, Clock } from 'lucide-react';
+import { fetchLast10Invoices } from '../lib/billing';
 import { getAuthHeaders } from '../lib/firebase';
 
 interface BillingHistorySectionProps {
@@ -16,17 +17,18 @@ export const BillingHistorySection: React.FC<BillingHistorySectionProps> = ({ is
     setLoading(true);
     setError(null);
     try {
-      const headers = await getAuthHeaders();
+      const [invoices, headers] = await Promise.all([
+        fetchLast10Invoices(),
+        getAuthHeaders().catch(() => ({})),
+      ]);
+      setPayments(invoices);
+
       const res = await fetch('/api/billing/me', { headers });
-      if (!res.ok) {
-        throw new Error(`Server returned ${res.status}`);
-      }
-      const data = await res.json();
-      if (Array.isArray(data?.payments)) {
-        setPayments(data.payments);
-      }
-      if (data?.subscription) {
-        setSubscription(data.subscription);
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.subscription) {
+          setSubscription(data.subscription);
+        }
       }
     } catch (err: any) {
       console.error('Failed to fetch billing history:', err);

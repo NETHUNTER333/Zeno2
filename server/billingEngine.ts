@@ -1628,6 +1628,45 @@ export function registerDodoBillingRoutes(app: Express): void {
     });
   });
 
+  // 5b. GET /api/billing/invoices — Fetch last 10 invoices using Dodo Payments API & SQLite database
+  app.get('/api/billing/invoices', requireFirebaseAuth, async (req: Request, res: Response) => {
+    try {
+      const uid = req.auth?.uid;
+      const db = getBillingDb();
+
+      let localPayments: any[] = [];
+      if (uid) {
+        localPayments = db
+          .prepare('SELECT * FROM payments WHERE firebase_uid = ? ORDER BY created_at DESC LIMIT 10')
+          .all(uid);
+      }
+
+      const client = getDodoClient();
+      let liveInvoices: any[] = [];
+      if (client && typeof client.payments?.list === 'function') {
+        try {
+          const resList = await client.payments.list({ page_size: 10 });
+          if (resList && Array.isArray(resList.items)) {
+            liveInvoices = resList.items;
+          }
+        } catch {}
+      }
+
+      const invoices = liveInvoices.length > 0 ? liveInvoices : localPayments;
+      return res.json({
+        success: true,
+        invoices,
+      });
+    } catch (err: any) {
+      return sendNormalizedError(
+        res,
+        500,
+        'billing/invoices-failed',
+        err?.message || 'Failed to fetch billing invoices'
+      );
+    }
+  });
+
   // 6. POST /api/billing/portal — Create dynamic Dodo Customer Portal session
   app.post('/api/billing/portal', requireFirebaseAuth, async (req: Request, res: Response) => {
     try {

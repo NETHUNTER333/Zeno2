@@ -76,6 +76,7 @@ export const OPTIONAL_AUTH_API_ROUTES = [
   '/quota/upgrade',
   '/billing/me',
   '/billing/country',
+  '/billing/invoices',
   '/payments/checkout',
   '/dodo/checkout-session',
   '/payments/customer',
