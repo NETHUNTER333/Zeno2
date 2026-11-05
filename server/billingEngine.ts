@@ -903,11 +903,6 @@ export async function previewPlanPriceForCountry(
   const productId = await resolveServerProductId(plan, interval);
   const client = getDodoClient();
 
-  // For INR, use the fixed local price table (Dodo's converted price won't match)
-  if (countryInfo.code === 'IN' && countryInfo.currency === 'INR') {
-    return buildLocalizedFallbackPreview(plan, interval, countryInfo, productId);
-  }
-
   if (client && productId.startsWith('pdt_') && !productId.startsWith('pdt_kinich_')) {
     try {
       const previewRes = await client.checkoutSessions.preview({
