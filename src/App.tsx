@@ -57,6 +57,12 @@ import {
   captureInboundReferral,
   claimPendingReferralAfterAuth,
 } from './lib/referralClient';
+import {
+  getStoredLocationPref,
+  getEffectiveLocationPayload,
+  ensureClientIpLocationResolved,
+  detectAndSaveHomeCityFromText,
+} from './lib/locationStore';
 import { ModelRadiantBackground } from './components/ModelRadiantBackground';
 import {
   BackgroundGradientMode,
@@ -549,7 +555,12 @@ export default function App() {
     return 'chat';
   });
   const [activeStudyVideo, setActiveStudyVideo] = useState<YouTubeVideoInfo | null>(null);
-  const [accountPageTab, setAccountPageTab] = useState<AccountTab>('profile');
+  const [accountPageTab, setAccountPageTab] = useState<AccountTab>(() => {
+    if (typeof window !== 'undefined' && window.location.pathname.toLowerCase().startsWith('/settings/billing')) {
+      return 'pricing';
+    }
+    return 'profile';
+  });
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
   const [userProfile, setUserProfile] = useState(() => UserAccountStore.getProfile());
   const [userSub, setUserSub] = useState(() => UserAccountStore.getSubscription());
@@ -641,12 +652,110 @@ export default function App() {
     attachments: any[];
   } | null>(null);
 
+  const [billingReturnState, setBillingReturnState] = useState<{
+    isOpen: boolean;
+    subscriptionId: string | null;
+    urlStatus: string | null;
+    pollingStatus: 'polling' | 'activated' | 'timeout';
+    activatedPlan: string | null;
+    billingCountry: string;
+  }>(() => {
+    if (typeof window !== 'undefined' && window.location.pathname.toLowerCase().startsWith('/billing/return')) {
+      const sp = new URLSearchParams(window.location.search);
+      let savedCountry = 'US';
+      try {
+        savedCountry = localStorage.getItem('kinich_billing_country') || 'US';
+      } catch {}
+      return {
+        isOpen: true,
+        subscriptionId: sp.get('subscription_id'),
+        urlStatus: sp.get('status'),
+        pollingStatus: 'polling',
+        activatedPlan: null,
+        billingCountry: savedCountry,
+      };
+    }
+    return {
+      isOpen: false,
+      subscriptionId: null,
+      urlStatus: null,
+      pollingStatus: 'polling',
+      activatedPlan: null,
+      billingCountry: 'US',
+    };
+  });
+
+  useEffect(() => {
+    if (!billingReturnState.isOpen || billingReturnState.pollingStatus !== 'polling') return;
+    let cancelled = false;
+    const startedAt = Date.now();
+
+    const poll = async () => {
+      if (cancelled) return;
+      try {
+        const authHeaders = await getAuthHeaders();
+        const res = await fetch('/api/billing/me', { headers: authHeaders });
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.billingCountry) {
+            setBillingReturnState((prev) => ({ ...prev, billingCountry: data.billingCountry }));
+          }
+          // NEVER grant access from URL params — ONLY when verified server state (updated by webhook) is active
+          if (
+            data?.authenticated &&
+            data?.planStatus === 'active' &&
+            (data?.effectivePlan === 'spark' || data?.effectivePlan === 'fire')
+          ) {
+            UserAccountStore.upgradePlan(
+              data.effectivePlan,
+              data.planInterval === 'yearly' ? 'yearly' : 'monthly'
+            );
+            setUserSub(UserAccountStore.getSubscription());
+            setBillingReturnState((prev) => ({
+              ...prev,
+              pollingStatus: 'activated',
+              activatedPlan: data.effectivePlan,
+            }));
+            return;
+          }
+        }
+      } catch {}
+
+      if (Date.now() - startedAt >= 60_000) {
+        if (!cancelled) {
+          setBillingReturnState((prev) => ({ ...prev, pollingStatus: 'timeout' }));
+        }
+      }
+    };
+
+    void poll();
+    const intervalId = window.setInterval(poll, 2000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [billingReturnState.isOpen, billingReturnState.pollingStatus]);
+
   const syncViewFromPathname = (pathname: string) => {
     const clean = (pathname || '/').toLowerCase();
     if (clean === '/study' || clean.startsWith('/study/')) {
       setIsSignedIn(true);
       setCurrentView('study');
       document.title = 'YouTube Study Workspace · Kinich';
+    } else if (clean.startsWith('/settings/billing')) {
+      setAccountPageTab('pricing');
+      setCurrentView('account');
+      document.title = 'Billing & Subscription · Kinich';
+    } else if (clean.startsWith('/billing/return')) {
+      const sp = new URLSearchParams(window.location.search);
+      setBillingReturnState((prev) => ({
+        ...prev,
+        isOpen: true,
+        subscriptionId: sp.get('subscription_id'),
+        urlStatus: sp.get('status'),
+        pollingStatus: 'polling',
+      }));
+      document.title = 'Activating Your Plan · Kinich';
     } else if (clean === '/account' || clean.startsWith('/account/') || clean === '/settings' || clean.startsWith('/settings/')) {
       setCurrentView('account');
       document.title = 'Account & Settings · Kinich';
@@ -667,6 +776,10 @@ export default function App() {
       document.title = 'Kinich — Deep Research, Real-Time Web Search & YouTube Study Workspace';
     }
   };
+
+  useEffect(() => {
+    void ensureClientIpLocationResolved();
+  }, []);
 
   useEffect(() => {
     if (legalOr404Route) return;
@@ -791,12 +904,15 @@ export default function App() {
               prev.forEach((t) => map.set(t.id, t));
               remoteThreads.forEach((rt: any) => {
                 if (rt && rt.id && Array.isArray(rt.messages)) {
-                  map.set(rt.id, {
-                    id: rt.id,
-                    title: rt.title || 'New Chat',
-                    createdAt: rt.createdAt || Date.now(),
-                    messages: rt.messages,
-                  });
+                  const existingLocal = map.get(rt.id);
+                  if (!existingLocal || existingLocal.messages.length === 0) {
+                    map.set(rt.id, {
+                      id: rt.id,
+                      title: rt.title || 'New Chat',
+                      createdAt: rt.createdAt || Date.now(),
+                      messages: rt.messages,
+                    });
+                  }
                 }
               });
               return Array.from(map.values()).sort((a, b) => b.createdAt - a.createdAt);
@@ -1111,6 +1227,31 @@ export default function App() {
                 let finalText = rawFullText;
                 let finalSources = baseSources;
                 if (finalText && baseSources.length > 0) {
+                  // Ensure bullet points or substantive paragraphs have inline [1]..[N] citations when sources exist
+                  if (!/\[\d{1,2}\](?!\()/.test(finalText)) {
+                    let citeCounter = 0;
+                    const lines: string[] = String(finalText).split(/\r?\n/);
+                    const hasBullets = lines.some((l: string) => /^(\s*[-*•]|\s*\d+\.)\s+/.test(l));
+                    finalText = lines
+                      .map((line: string) => {
+                        const trimmed = line.trim();
+                        if (!trimmed || /^#{1,6}\s/.test(trimmed) || trimmed.startsWith('```')) return line;
+                        if (hasBullets) {
+                          if (/^([-*•]|\d+\.)\s+/.test(trimmed) && !/\[\d{1,2}\]/.test(trimmed)) {
+                            const num = (citeCounter++ % baseSources.length) + 1;
+                            return `${line.replace(/([.!?])?\s*$/, '')} [${num}]${RegExp.$1 || '.'}`;
+                          }
+                          return line;
+                        }
+                        if (trimmed.length > 45 && !trimmed.endsWith(':') && !/\[\d{1,2}\]/.test(trimmed)) {
+                          const num = (citeCounter++ % baseSources.length) + 1;
+                          return `${line.replace(/([.!?])?\s*$/, '')} [${num}]${RegExp.$1 || '.'}`;
+                        }
+                        return line;
+                      })
+                      .join('\n');
+                  }
+
                   const oldToNew = new Map<number, number>();
                   const ordered: any[] = [];
                   const usedIdx = new Set<number>();
@@ -1170,18 +1311,18 @@ export default function App() {
                   ...m,
                   content: finalText,
                   sources: finalSources.length > 0 ? finalSources : undefined,
-                  sourcesNotLinked: Boolean(data.sourcesNotLinked),
-                  images: data.images,
-                  personaWiki: data.personaWiki,
-                  videos: data.videos,
-                  arxivPapers: data.arxivPapers,
-                  githubRepos: data.githubRepos,
-                  xPosts: data.xPosts,
+                  sourcesNotLinked: false,
+                  images: Array.isArray(data.images) && data.images.length > 0 ? data.images : undefined,
+                  personaWiki: data.personaWiki || undefined,
+                  videos: Array.isArray(data.videos) && data.videos.length > 0 ? data.videos : undefined,
+                  arxivPapers: Array.isArray(data.arxivPapers) && data.arxivPapers.length > 0 ? data.arxivPapers : undefined,
+                  githubRepos: Array.isArray(data.githubRepos) && data.githubRepos.length > 0 ? data.githubRepos : undefined,
+                  xPosts: Array.isArray(data.xPosts) && data.xPosts.length > 0 ? data.xPosts : undefined,
                   searchQueries:
                     Array.isArray(data.searchQueries) && data.searchQueries.length > 0
                       ? data.searchQueries
                       : m.searchQueries,
-                  toolsUsed: data.toolsUsed,
+                  toolsUsed: Array.isArray(data.toolsUsed) && data.toolsUsed.length > 0 ? data.toolsUsed : undefined,
                   timing: data.timing,
                   modelUsed: m.modelUsed || data.modelUsed,
                   isStreaming: false,
@@ -1262,6 +1403,9 @@ export default function App() {
     const query = promptText.trim();
     if (!query || isRunning) return;
 
+    // Automatically detect and persist home city if user states where they live (e.g. "I live in Ramagundam, Telangana")
+    detectAndSaveHomeCityFromText(query);
+
     // 0. Enforce one-time Guest First-Prompt Consent or Re-Consent if CONSENT_VERSION changed
     if (!bypassConsentGate && !hasValidUserConsent()) {
       setPendingConsentPrompt({ promptText: query, mode, attachments });
@@ -1335,7 +1479,12 @@ export default function App() {
       if (priorUserMsgs.length === 0) return rawQ;
 
       const lastUserTopic = priorUserMsgs[priorUserMsgs.length - 1]
+        .replace(
+          /\b(show\s+me\s+|fetch\s+|find\s+|get\s+|search\s+for\s+)?(images?|imgs?|photos?|pics?|pictures?|wallpapers?|gallery|portraits?)\s+(of|for|from|about)?\s*/gi,
+          ' '
+        )
         .replace(/[?!.]+$/g, '')
+        .replace(/\s+/g, ' ')
         .trim();
       if (!lastUserTopic) return rawQ;
 
@@ -1463,6 +1612,8 @@ export default function App() {
             searchMode: effectiveMode,
             nsfwMode,
             isResearchMode,
+            location: getEffectiveLocationPayload(),
+            clientClock: getClientRealTimeClock(),
           }),
         })
       )
@@ -1552,6 +1703,7 @@ export default function App() {
           pinnedInsights: UserAccountStore.getBookmarks().slice(0, 10),
           subscriptionPlan: UserAccountStore.getNormalizedPlan(),
           clientUsage: UserAccountStore.getUsage(),
+          location: getEffectiveLocationPayload(),
         }),
       });
 
@@ -1734,7 +1886,7 @@ export default function App() {
 
     const currentThreadId = activeThreadId;
 
-    // Set existing assistant message to streaming state in-place
+    // Set existing assistant message to streaming state in-place, clearing any previous media/gallery
     setThreads((prev) =>
       prev.map((t) =>
         t.id === currentThreadId
@@ -1748,10 +1900,13 @@ export default function App() {
                       isStreaming: true,
                       sources: undefined,
                       images: undefined,
+                      personaWiki: undefined,
                       videos: undefined,
                       arxivPapers: undefined,
                       githubRepos: undefined,
                       xPosts: undefined,
+                      searchQueries: undefined,
+                      toolsUsed: undefined,
                       timing: undefined,
                       modelUsed: targetModel.name,
                     }
@@ -1773,6 +1928,11 @@ export default function App() {
       const lastUserInContext = [...contextMessages].reverse().find((m) => m.role === 'user');
       const regenQuery = lastUserInContext ? stripInjectedClockNote(lastUserInContext.content) : '';
       const isRegenClockQuery = isDateOrTimeClockQuery(regenQuery);
+      const isRegenCasualOrGreeting =
+        /^[\p{Extended_Pictographic}\p{Emoji}\s\u200d\ufe0f👋✋✌️🙌🤝✨💌🎉❤️]+$/u.test(regenQuery.trim()) ||
+        /^(hi+|hey+|hello+|yo+|sup|wassup|whats up|howdy|greetings|good (morning|afternoon|evening|night)|how are you|thanks|thank you|thx|ty|ok|okay|k|cool|nice|great|awesome|got it|wave|hand wave|waving|bye|cya)$/i.test(
+          regenQuery.trim().toLowerCase()
+        );
 
       const response = await fetchKinichApi('/api/chat', {
         method: 'POST',
@@ -1795,11 +1955,13 @@ export default function App() {
               attachments: m.attachments,
             };
           }),
-          webSearch: isRegenClockQuery ? false : true,
+          webSearch: isRegenClockQuery || isRegenCasualOrGreeting ? false : true,
+          isRegenerate: true,
           searchMode: searchMode === 'news' ? 'news' : 'organic',
           model: targetModel.geminiModel,
           nsfwMode,
           clientClock,
+          location: getEffectiveLocationPayload(),
           systemPrompt: clockSystemPrompt,
           personalization: UserAccountStore.getPersonalization(),
           pinnedInsights: UserAccountStore.getBookmarks().slice(0, 10),
@@ -1836,6 +1998,9 @@ export default function App() {
       }
 
       data = enforceClientClockInReply(data, clientClock, isRegenClockQuery, regenQuery);
+      // Do not keep or re-attach the old image gallery when refreshing a reply
+      data.images = undefined;
+      data.personaWiki = undefined;
 
       await streamResponseIntoMessage(currentThreadId, assistantMsgId, data, controller.signal);
     } catch (err: any) {
@@ -1900,10 +2065,13 @@ export default function App() {
             isStreaming: true,
             sources: undefined,
             images: undefined,
+            personaWiki: undefined,
             videos: undefined,
             arxivPapers: undefined,
             githubRepos: undefined,
             xPosts: undefined,
+            searchQueries: undefined,
+            toolsUsed: undefined,
             timing: undefined,
           };
         } else {
@@ -1927,6 +2095,12 @@ export default function App() {
       const authHeaders = await getAuthHeaders();
       const clientClock = getClientRealTimeClock();
       const clockSystemPrompt = buildClientClockSystemDirective(clientClock);
+      const isEditClockQ = isDateOrTimeClockQuery(query);
+      const isEditCasual =
+        /^[\p{Extended_Pictographic}\p{Emoji}\s\u200d\ufe0f👋✋✌️🙌🤝✨💌🎉❤️]+$/u.test(query.trim()) ||
+        /^(hi+|hey+|hello+|yo+|sup|wassup|whats up|howdy|greetings|good (morning|afternoon|evening|night)|how are you|thanks|thank you|thx|ty|ok|okay|k|cool|nice|great|awesome|got it|wave|hand wave|waving|bye|cya)$/i.test(
+          query.trim().toLowerCase()
+        );
       const response = await fetchKinichApi('/api/chat', {
         method: 'POST',
         headers: authHeaders,
@@ -1937,11 +2111,12 @@ export default function App() {
             content: m.content,
             attachments: m.attachments,
           })),
-          webSearch: true,
+          webSearch: isEditClockQ || isEditCasual ? false : true,
           searchMode: searchMode === 'news' ? 'news' : 'organic',
           model: selectedModel.geminiModel,
           nsfwMode,
           clientClock,
+          location: getEffectiveLocationPayload(),
           systemPrompt: clockSystemPrompt,
           personalization: UserAccountStore.getPersonalization(),
           pinnedInsights: UserAccountStore.getBookmarks().slice(0, 10),
@@ -2595,7 +2770,7 @@ export default function App() {
             }}
           />
 
-          {/* Full-Page Pricing & Plans Modal (Spark $1 · Fire $5 — 10x Limits on $1 Plan) */}
+          {/* Full-Page Pricing & Plans Modal (Spark $3 · Fire $7) */}
           <PricingModal
             isOpen={pricingModalState.isOpen}
             onClose={() => setPricingModalState((prev) => ({ ...prev, isOpen: false }))}
@@ -2603,6 +2778,91 @@ export default function App() {
             limitReason={pricingModalState.limitReason}
             isDark={isDark}
           />
+
+          {/* Dodo Payments Checkout Return Handler (/billing/return) — Polls /api/billing/me, NEVER grants access from URL */}
+          {billingReturnState.isOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
+              <div
+                className={`w-full max-w-md rounded-3xl border p-6 sm:p-7 shadow-2xl space-y-4 ${
+                  isDark ? 'bg-[#141418] border-white/15 text-white' : 'bg-white border-black/10 text-[#18181b]'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="size-10 rounded-2xl bg-[#FC4C01]/15 border border-[#FC4C01]/35 flex items-center justify-center text-[#FC4C01] font-bold">
+                    ⚡
+                  </div>
+                  <div>
+                    <h3 className="text-base sm:text-lg font-bold tracking-tight">
+                      {billingReturnState.pollingStatus === 'activated'
+                        ? `Kinich ${String(billingReturnState.activatedPlan).toUpperCase()} Plan Active!`
+                        : 'Activating your plan...'}
+                    </h3>
+                    <p className={`text-xs ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
+                      {billingReturnState.subscriptionId
+                        ? `Subscription Reference: ${billingReturnState.subscriptionId}`
+                        : 'Verifying webhook confirmation with Dodo Payments'}
+                    </p>
+                  </div>
+                </div>
+
+                {billingReturnState.pollingStatus === 'polling' && (
+                  <div className="space-y-2.5 text-xs leading-relaxed">
+                    <div className="flex items-center gap-2 font-medium text-[#FC4C01]">
+                      <span className="size-2 rounded-full bg-[#FC4C01] animate-ping" />
+                      <span>Waiting for verified Dodo Payments webhook confirmation...</span>
+                    </div>
+                    {billingReturnState.billingCountry === 'IN' && (
+                      <div className="p-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 text-amber-200">
+                        Your bank may take a little while to confirm UPI AutoPay or RBI e-Mandate authorization. Your plan will activate automatically once confirmed.
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {billingReturnState.pollingStatus === 'activated' && (
+                  <p className="text-xs leading-relaxed text-emerald-400 font-medium">
+                    Your subscription has been cryptographically verified via Dodo Payments webhook and your daily limits are now unlocked.
+                  </p>
+                )}
+
+                {billingReturnState.pollingStatus === 'timeout' && (
+                  <div className="space-y-2 text-xs leading-relaxed">
+                    <p className={isDark ? 'text-neutral-300' : 'text-neutral-700'}>
+                      We are still waiting for your bank or payment provider to finalize the webhook notification. Your plan will unlock automatically as soon as Dodo Payments confirms the charge.
+                    </p>
+                    <p className="text-[#FC4C01] font-medium">
+                      Your bank may take a little while to confirm.
+                    </p>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBillingReturnState((prev) => ({ ...prev, isOpen: false }));
+                      navigateRoute('/settings/billing');
+                    }}
+                    className={`px-4 py-2 rounded-full text-xs font-semibold border cursor-pointer ${
+                      isDark ? 'border-white/15 hover:bg-white/10 text-white' : 'border-black/15 hover:bg-neutral-100 text-black'
+                    }`}
+                  >
+                    Open Billing Settings
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBillingReturnState((prev) => ({ ...prev, isOpen: false }));
+                      navigateRoute('/');
+                    }}
+                    className="px-4 py-2 rounded-full text-xs font-bold bg-[#FC4C01] hover:bg-[#e04300] text-white cursor-pointer"
+                  >
+                    Continue to Kinich
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Daily Streak Reminder Notification / Toast (Only active after user signs in) */}
           <StreakReminderToast

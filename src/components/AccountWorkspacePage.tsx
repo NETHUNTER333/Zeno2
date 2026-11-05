@@ -22,7 +22,17 @@ import {
   Award,
   Gift,
   Shield,
+  MapPin,
+  Navigation,
 } from 'lucide-react';
+import {
+  getStoredLocationPref,
+  saveStoredLocationPref,
+  clearStoredLocationPref,
+  setSavedHomeCity,
+  requestPreciseLocationOnTap,
+  UserLocation,
+} from '../lib/locationStore';
 import {
   UserAccountStore,
   DailyStreakData,
@@ -142,6 +152,7 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
   };
 
   const isDark = theme === 'dark';
+  const [locPref, setLocPref] = useState(() => getStoredLocationPref());
 
   const isAuthenticatedUser = Boolean(auth.currentUser && profile.signinProvider !== 'guest');
 
@@ -673,6 +684,128 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
 
                     <div className="text-[11px] text-neutral-400 font-mono">
                       Scheduled daily at {streak.reminderTime || '18:00'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Opt-in Location Awareness Settings Card */}
+                <div
+                  className={`p-5 rounded-2xl border space-y-4 ${
+                    isDark ? 'bg-white/[0.02] border-white/10' : 'bg-white border-black/10 shadow-xs'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-[#FC4C01]/15 border border-[#FC4C01]/40 flex items-center justify-center shrink-0">
+                        <MapPin className="w-4 h-4 text-[#FC4C01]" />
+                      </div>
+                      <div>
+                        <div className="text-sm font-bold flex items-center gap-2">
+                          <span>Location Awareness</span>
+                          <span className="px-2 py-0.5 rounded text-[10px] font-mono uppercase tracking-wider bg-[#FC4C01]/15 text-[#FC4C01] border border-[#FC4C01]/30">
+                            {locPref.usePreciseLocation
+                              ? `Precise: ${locPref.preciseLocation?.city || 'GPS'}`
+                              : locPref.homeCity
+                              ? `Saved: ${locPref.homeCity}`
+                              : 'IP Approximate (Default)'}
+                          </span>
+                        </div>
+                        <div className="text-xs text-neutral-400 mt-0.5">
+                          Kinich uses IP-based approximate location by default for local weather &amp; search. No permissions required.
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (locPref.usePreciseLocation) {
+                          saveStoredLocationPref({ usePreciseLocation: false, preciseLocation: null });
+                          setLocPref(getStoredLocationPref());
+                          triggerSuccessAlert('Precise location turned off');
+                        } else {
+                          try {
+                            const loc = await requestPreciseLocationOnTap();
+                            setLocPref(getStoredLocationPref());
+                            triggerSuccessAlert(`Precise location set to ${loc.city}`);
+                          } catch (err: any) {
+                            triggerSuccessAlert(err?.message || 'Could not fetch precise location');
+                          }
+                        }
+                      }}
+                      className={`w-11 h-6 rounded-full transition-colors relative shrink-0 cursor-pointer ${
+                        locPref.usePreciseLocation ? 'bg-[#FC4C01]' : isDark ? 'bg-neutral-700' : 'bg-neutral-300'
+                      }`}
+                      title="Toggle precise location (off by default)"
+                    >
+                      <span
+                        className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-transform ${
+                          locPref.usePreciseLocation ? 'translate-x-5' : ''
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  {/* Home City Memory Section (Priority: Precise > Home City > IP) */}
+                  <div className="pt-3 border-t border-neutral-500/10 space-y-2">
+                    <div className="text-xs font-semibold text-neutral-300 flex items-center justify-between">
+                      <span>Saved Home City (Memory)</span>
+                      {locPref.homeCity && (
+                        <span className="text-[10px] text-[#FC4C01] font-mono">Active Memory</span>
+                      )}
+                    </div>
+                    <div className="text-[11px] text-neutral-400">
+                      If you use a VPN or travel, Kinich uses your saved home city when IP location looks inaccurate.
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-1">
+                      <input
+                        type="text"
+                        defaultValue={locPref.homeCity || ''}
+                        placeholder="e.g. Hyderabad, India"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            const val = (e.currentTarget as HTMLInputElement).value.trim();
+                            setSavedHomeCity(val);
+                            setLocPref(getStoredLocationPref());
+                            triggerSuccessAlert(val ? `Saved home city: ${val}` : 'Cleared home city');
+                          }
+                        }}
+                        id="kinich-home-city-input"
+                        className={`flex-1 px-3 py-1.5 rounded-xl border text-xs outline-none transition ${
+                          isDark
+                            ? 'bg-[#141418] border-white/15 text-white focus:border-[#FC4C01]'
+                            : 'bg-white border-black/15 text-neutral-900 focus:border-[#FC4C01]'
+                        }`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const el = document.getElementById('kinich-home-city-input') as HTMLInputElement | null;
+                          const val = el?.value.trim() || '';
+                          setSavedHomeCity(val);
+                          setLocPref(getStoredLocationPref());
+                          triggerSuccessAlert(val ? `Saved home city: ${val}` : 'Cleared home city');
+                        }}
+                        className="px-3 py-1.5 rounded-xl bg-[#FC4C01] hover:bg-[#e04300] text-white text-xs font-semibold cursor-pointer transition shrink-0"
+                      >
+                        Save City
+                      </button>
+                      {locPref.homeCity && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const el = document.getElementById('kinich-home-city-input') as HTMLInputElement | null;
+                            if (el) el.value = '';
+                            setSavedHomeCity('');
+                            setLocPref(getStoredLocationPref());
+                            triggerSuccessAlert('Home city cleared');
+                          }}
+                          className="px-2.5 py-1.5 rounded-xl border border-rose-500/30 text-rose-400 hover:bg-rose-500/10 text-xs font-medium cursor-pointer transition shrink-0"
+                        >
+                          Clear
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>

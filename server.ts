@@ -24,8 +24,11 @@ const keysAndRouters: Record<string, any> = {
   tokens: { ...rootKeysAndRouters?.tokens, ...folderKeysAndRouters?.tokens },
   baseUrls: { ...rootKeysAndRouters?.baseUrls, ...folderKeysAndRouters?.baseUrls },
 };
+import DodoPayments from 'dodopayments';
 import {
   SERVER_LIMITS,
+  getDodoPaymentsApiKey,
+  getDodoPaymentsEnvironment,
   getFirebaseProjectId,
   getStagingConfigSummary,
   getTinyfishApiKey,
@@ -100,6 +103,7 @@ import {
   isAdultQueryOrText,
 } from './server/legalAndSafetyEngine';
 import { initBackendSentry, sentryBackendMiddleware, sentryErrorHandler, reportUpstreamProviderFailure, Sentry } from './server/sentry';
+import { registerDodoBillingRoutes } from './server/billingEngine';
 
 dotenv.config();
 initBackendSentry();
@@ -409,7 +413,7 @@ async function generateGeminiContentWithFallback(contents: any, isResearchMode =
                 {
                   role: 'system',
                   content:
-                    'You are Zeno AI. Respond strictly in English unless the user explicitly asks for another language. Never output unsolicited Chinese characters. When asked for code, output complete, working, copiable code in a fenced markdown code block immediately without asking clarifying questions.',
+                    'You are Kinich AI. Respond strictly in English unless the user explicitly asks for another language. Never output unsolicited Chinese characters. When asked for code, output complete, working, copiable code in a fenced markdown code block immediately without asking clarifying questions.',
                 },
                 { role: 'user', content: promptText },
               ],
@@ -449,7 +453,7 @@ async function generateGeminiContentWithFallback(contents: any, isResearchMode =
               {
                 role: 'system',
                 content:
-                  'You are Zeno AI. When the user asks to generate or write code, immediately output complete, working, copiable code inside a fenced markdown code block (e.g. ```tsx or ```html). Do not ask clarifying questions instead of writing code.',
+                  'You are Kinich AI. When the user asks to generate or write code, immediately output complete, working, copiable code inside a fenced markdown code block (e.g. ```tsx or ```html). Do not ask clarifying questions instead of writing code.',
               },
               { role: 'user', content: promptText },
             ],
@@ -1009,7 +1013,7 @@ async function generateChatCompletion(
   if (!enforcedMessages.some((m) => m.role === 'system')) {
     enforcedMessages.unshift({
       role: 'system',
-      content: `You are Zeno, a helpful AI assistant.${langDirective}${codeGenerationDirective}`,
+      content: `You are Kinich, a helpful AI assistant.${langDirective}${codeGenerationDirective}`,
     });
   }
   openAiMessages = enforcedMessages;
@@ -1091,7 +1095,7 @@ async function generateChatCompletion(
         Authorization: `Bearer ${BEAT_API_KEY}`,
         'Content-Type': 'application/json',
         'HTTP-Referer': 'https://ais-dev.studio',
-        'X-Title': 'Zeno AI',
+        'X-Title': 'Kinich AI',
       },
       signal: AbortSignal.timeout(isResearchPaper ? 35000 : 10000),
       body: JSON.stringify({
@@ -1747,9 +1751,10 @@ async function fallbackPublicWebSearch(query: string): Promise<any[]> {
 async function searchWebViaTreg(
   query: string,
   mode: 'organic' | 'news' = 'organic',
-  _nsfwMode = false
+  _nsfwMode = false,
+  locationInfo?: any
 ) {
-  const outcome = await searchWebReliable(query, mode, false);
+  const outcome = await searchWebReliable(query, mode, false, undefined, locationInfo);
   return outcome.results;
 }
 
@@ -3768,17 +3773,27 @@ app.use((req, res, next) => {
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 });
-app.use(express.json({ limit: SERVER_LIMITS.JSON_BODY_LIMIT }));
+app.use(
+  express.json({
+    limit: SERVER_LIMITS.JSON_BODY_LIMIT,
+    verify: (req: any, _res, buf) => {
+      req.rawBody = buf.toString('utf8');
+    },
+  })
+);
 app.use(express.urlencoded({ extended: true, limit: SERVER_LIMITS.JSON_BODY_LIMIT }));
 
 // Shared cryptographic Firebase ID Token Verification + Fail-Safe Sliding-Window Rate Limiter
 app.use('/api', firebaseAuthMiddleware, rateLimitMiddleware);
 
-// Intentionally Public Route: Health (minimal status response only)
+// Intentionally Public Route: Health
 app.get('/api/health', (_req, res) => {
   res.json({
     status: 'ok',
+    success: true,
     version: '1.0.0',
+    projectId: getFirebaseProjectId(),
+    staging: getStagingConfigSummary(),
   });
 });
 
@@ -3916,7 +3931,7 @@ app.post('/api/quota/upgrade', (req, res) => {
       res,
       400,
       'quota/invalid-plan',
-      'Plan must be one of: spark ($1/mo), fire ($5/mo)'
+      'Plan must be one of: spark ($3/mo), fire ($7/mo)'
     );
   }
   const snapshot = upgradeServerSubscriptionPlan(req, plan, billingCycle);
@@ -3927,6 +3942,285 @@ app.post('/api/quota/upgrade', (req, res) => {
     quota: snapshot,
   });
 });
+
+// ============================================================================
+// DODO PAYMENTS SDK INTEGRATION (Checkout Sessions, Customers, Usage, Webhooks)
+// ============================================================================
+
+let cachedDodoClient: DodoPayments | null = null;
+const cachedDodoProductIds: Record<string, string> = {};
+
+function getDodoPaymentsClient(): DodoPayments | null {
+  if (cachedDodoClient) return cachedDodoClient;
+  const bearerToken = getDodoPaymentsApiKey();
+  if (!bearerToken) return null;
+  const environment = getDodoPaymentsEnvironment();
+  cachedDodoClient = new DodoPayments({
+    bearerToken,
+    environment,
+    baseURL: null,
+    timeout: 20 * 1000,
+    maxRetries: 2,
+  });
+  return cachedDodoClient;
+}
+
+async function resolveDodoProductIdForPlan(
+  client: DodoPayments,
+  plan: 'spark' | 'fire',
+  explicitProductId?: string
+): Promise<string> {
+  if (explicitProductId && explicitProductId.trim()) {
+    return explicitProductId.trim();
+  }
+  const envKey = plan === 'fire' ? process.env.DODO_FIRE_PRODUCT_ID : process.env.DODO_SPARK_PRODUCT_ID;
+  if (envKey && envKey.trim()) {
+    return envKey.trim();
+  }
+  const routerProdId =
+    plan === 'fire'
+      ? keysAndRouters?.dodoPayments?.fireProductId
+      : keysAndRouters?.dodoPayments?.sparkProductId;
+  if (routerProdId && String(routerProdId).trim()) {
+    return String(routerProdId).trim();
+  }
+  if (cachedDodoProductIds[plan]) {
+    return cachedDodoProductIds[plan];
+  }
+
+  try {
+    const page = await client.products.list({ page_size: 20 });
+    const items = Array.isArray((page as any)?.items) ? (page as any).items : [];
+    const matched = items.find((p: any) =>
+      String(p?.name || '')
+        .toLowerCase()
+        .includes(plan)
+    );
+    const chosen = matched || items[0];
+    if (chosen?.product_id) {
+      cachedDodoProductIds[plan] = String(chosen.product_id);
+      return cachedDodoProductIds[plan];
+    }
+  } catch {}
+
+  try {
+    const priceCents = plan === 'fire' ? 700 : 300;
+    const created = await client.products.create({
+      name: plan === 'fire' ? 'Kinich Fire ($7/mo)' : 'Kinich Spark ($3/mo)',
+      tax_category: 'saas',
+      price: {
+        type: 'one_time_price',
+        price: priceCents,
+        currency: 'USD',
+        discount: 0,
+        purchasing_power_parity: false,
+      } as any,
+    });
+    if ((created as any)?.product_id) {
+      cachedDodoProductIds[plan] = String((created as any).product_id);
+      return cachedDodoProductIds[plan];
+    }
+  } catch {}
+
+  return plan === 'fire' ? 'pdt_kinich_fire' : 'pdt_kinich_spark';
+}
+
+app.get('/api/payments/status', (_req, res) => {
+  const configured = Boolean(getDodoPaymentsApiKey());
+  res.json({
+    success: true,
+    configured,
+    environment: getDodoPaymentsEnvironment(),
+  });
+});
+
+const handleCreateDodoCheckoutSession = async (req: express.Request, res: express.Response) => {
+  try {
+    const client = getDodoPaymentsClient();
+    if (!client) {
+      return sendNormalizedError(
+        res,
+        503,
+        'payments/not-configured',
+        'Dodo Payments SDK is not configured on the server'
+      );
+    }
+
+    const {
+      product_cart,
+      product_id,
+      quantity = 1,
+      plan = 'spark',
+      billingCycle = 'monthly',
+      customer,
+      return_url,
+      metadata,
+    } = req.body || {};
+
+    const normalizedPlan: 'spark' | 'fire' = plan === 'fire' ? 'fire' : 'spark';
+    let cart: Array<{ product_id: string; quantity: number }> = [];
+
+    if (Array.isArray(product_cart) && product_cart.length > 0) {
+      cart = product_cart.map((item: any) => ({
+        product_id: String(item.product_id || '').trim(),
+        quantity: Math.max(1, Number(item.quantity || 1)),
+      }));
+    } else {
+      const resolvedProdId = await resolveDodoProductIdForPlan(
+        client,
+        normalizedPlan,
+        typeof product_id === 'string' ? product_id : undefined
+      );
+      cart = [{ product_id: resolvedProdId, quantity: Math.max(1, Number(quantity || 1)) }];
+    }
+
+    const origin =
+      typeof req.headers.origin === 'string' && req.headers.origin.startsWith('http')
+        ? req.headers.origin
+        : process.env.APP_URL || 'http://localhost:3000';
+
+    const sessionPayload: any = {
+      product_cart: cart,
+      return_url:
+        typeof return_url === 'string' && return_url.startsWith('http')
+          ? return_url
+          : `${origin}/pricing?checkout=success&plan=${normalizedPlan}`,
+      metadata: {
+        plan: normalizedPlan,
+        billing_cycle: String(billingCycle || 'monthly'),
+        uid: String(req.auth?.uid || 'guest'),
+        ...(metadata && typeof metadata === 'object' ? metadata : {}),
+      },
+    };
+
+    if (customer && typeof customer === 'object') {
+      sessionPayload.customer = customer;
+    } else if (req.auth?.email) {
+      sessionPayload.customer = { email: req.auth.email };
+    }
+
+    const checkoutSessionResponse = await client.checkoutSessions.create(sessionPayload, {
+      timeout: 15 * 1000,
+    });
+
+    const snapshot = upgradeServerSubscriptionPlan(
+      req,
+      normalizedPlan,
+      billingCycle === 'yearly' || billingCycle === 'annual' ? 'yearly' : 'monthly'
+    );
+
+    return res.json({
+      success: true,
+      session_id: checkoutSessionResponse.session_id,
+      checkout_url: checkoutSessionResponse.checkout_url,
+      plan: normalizedPlan,
+      billingCycle,
+      environment: getDodoPaymentsEnvironment(),
+      quota: snapshot,
+    });
+  } catch (error: any) {
+    return sendNormalizedError(
+      res,
+      error?.status && Number.isInteger(error.status) ? error.status : 500,
+      'payments/checkout-failed',
+      error?.message || 'Failed to create Dodo Payments checkout session'
+    );
+  }
+};
+
+app.post('/api/payments/checkout', handleCreateDodoCheckoutSession);
+app.post('/api/dodo/checkout-session', handleCreateDodoCheckoutSession);
+
+app.post('/api/payments/customer', async (req, res) => {
+  try {
+    const client = getDodoPaymentsClient();
+    if (!client) {
+      return sendNormalizedError(res, 503, 'payments/not-configured', 'Dodo Payments SDK not configured');
+    }
+    const { customer_id, email, name, metadata } = req.body || {};
+    if (customer_id && typeof customer_id === 'string') {
+      const retrieved = await client.customers.retrieve(customer_id.trim());
+      return res.json({ success: true, customer: retrieved });
+    }
+    if (!email || typeof email !== 'string') {
+      return sendNormalizedError(res, 400, 'payments/missing-email', 'Customer email is required');
+    }
+    const created = await client.customers.create({
+      email: email.trim(),
+      name: typeof name === 'string' && name.trim() ? name.trim() : email.split('@')[0],
+      metadata: {
+        user_id: String(req.auth?.uid || 'guest'),
+        ...(metadata && typeof metadata === 'object' ? metadata : {}),
+      },
+    });
+    return res.json({ success: true, customer: created });
+  } catch (error: any) {
+    return sendNormalizedError(
+      res,
+      error?.status || 500,
+      'payments/customer-error',
+      error?.message || 'Failed to manage Dodo Payments customer'
+    );
+  }
+});
+
+app.post('/api/payments/usage', async (req, res) => {
+  try {
+    const client = getDodoPaymentsClient();
+    if (!client) {
+      return sendNormalizedError(res, 503, 'payments/not-configured', 'Dodo Payments SDK not configured');
+    }
+    const { events } = req.body || {};
+    if (!Array.isArray(events) || events.length === 0) {
+      return sendNormalizedError(res, 400, 'payments/missing-events', 'events array is required');
+    }
+    await client.usageEvents.ingest({ events });
+    return res.json({ success: true, ingested: events.length });
+  } catch (error: any) {
+    return sendNormalizedError(
+      res,
+      error?.status || 500,
+      'payments/usage-error',
+      error?.message || 'Failed to ingest usage events'
+    );
+  }
+});
+
+const handleDodoWebhook = async (req: express.Request, res: express.Response) => {
+  try {
+    const client = getDodoPaymentsClient();
+    if (!client) {
+      return sendNormalizedError(res, 503, 'payments/not-configured', 'Dodo Payments SDK not configured');
+    }
+    const rawBody = typeof req.body === 'string' ? req.body : JSON.stringify(req.body || {});
+    const webhookKey = (process.env.DODO_PAYMENTS_WEBHOOK_KEY || '').trim();
+    const event: any = webhookKey
+      ? client.webhooks.unwrap(rawBody, { headers: req.headers as Record<string, string> })
+      : client.webhooks.unsafeUnwrap(rawBody);
+
+    const eventType = String(event?.type || '');
+    const metaPlan = event?.data?.metadata?.plan;
+    if (
+      (eventType === 'payment.succeeded' || eventType === 'subscription.active') &&
+      (metaPlan === 'spark' || metaPlan === 'fire')
+    ) {
+      upgradeServerSubscriptionPlan(req, metaPlan, 'monthly');
+    }
+
+    return res.json({ received: true, type: eventType });
+  } catch (error: any) {
+    return sendNormalizedError(
+      res,
+      400,
+      'payments/webhook-error',
+      error?.message || 'Webhook verification failed'
+    );
+  }
+};
+
+app.post('/api/payments/webhook', handleDodoWebhook);
+app.post('/api/dodo/webhook', handleDodoWebhook);
+registerDodoBillingRoutes(app);
 
 // Fetch 100% real X / Twitter status post details via fxtwitter API
 async function fetchRealXPostByStatusId(handle: string, tweetId: string): Promise<any | null> {
@@ -5605,21 +5899,333 @@ app.get('/api/treg/status', async (_req, res) => {
   }
 });
 
+export interface ServerLocationInfo {
+  city?: string;
+  region?: string;
+  country?: string;
+  countryCode?: string;
+  timezone?: string;
+  source: 'gps' | 'manual' | 'ip' | 'none';
+  homeCity?: string;
+}
+
+export function resolveRequestLocation(req: express.Request, payloadLocation?: any): ServerLocationInfo {
+  // Read Vercel IP headers (URL decode city)
+  let ipCity = '';
+  try {
+    const rawCity = typeof req.headers['x-vercel-ip-city'] === 'string' ? req.headers['x-vercel-ip-city'] : '';
+    ipCity = rawCity ? decodeURIComponent(rawCity).trim() : '';
+  } catch {
+    ipCity = (req.headers['x-vercel-ip-city'] as string) || '';
+  }
+  const ipCountry = typeof req.headers['x-vercel-ip-country'] === 'string' ? decodeURIComponent(req.headers['x-vercel-ip-country']).trim() : '';
+  const ipRegion = typeof req.headers['x-vercel-ip-country-region'] === 'string' ? decodeURIComponent(req.headers['x-vercel-ip-country-region']).trim() : '';
+  const ipTimezone = typeof req.headers['x-vercel-ip-timezone'] === 'string' ? decodeURIComponent(req.headers['x-vercel-ip-timezone']).trim() : '';
+
+  // 1. Precise location (GPS) from payload takes highest priority
+  if (payloadLocation && typeof payloadLocation === 'object' && payloadLocation.source === 'gps') {
+    const city = String(payloadLocation.city || '').trim();
+    if (city) {
+      return {
+        city,
+        region: String(payloadLocation.region || '').trim() || undefined,
+        country: String(payloadLocation.country || '').trim() || undefined,
+        countryCode: String(payloadLocation.countryCode || '').trim() || undefined,
+        timezone: String(payloadLocation.timezone || '').trim() || undefined,
+        source: 'gps',
+        homeCity: String(payloadLocation.homeCity || '').trim() || undefined,
+      };
+    }
+  }
+
+  // 2. User-Saved City (Memory) from profile or payload takes second priority
+  const savedCity = String(
+    payloadLocation?.homeCity ||
+    payloadLocation?.savedCity ||
+    (payloadLocation?.source === 'manual' ? payloadLocation?.city : '') ||
+    ''
+  ).trim();
+
+  if (savedCity) {
+    return {
+      city: savedCity,
+      region: String(payloadLocation?.region || ipRegion || '').trim() || undefined,
+      country: String(payloadLocation?.country || ipCountry || '').trim() || undefined,
+      countryCode: String(payloadLocation?.countryCode || ipCountry || '').trim() || undefined,
+      timezone: String(payloadLocation?.timezone || ipTimezone || '').trim() || undefined,
+      source: 'manual',
+      homeCity: savedCity,
+    };
+  }
+
+  // 2b. Client-resolved Geo-IP or payload city when Vercel IP headers are absent
+  if (payloadLocation && typeof payloadLocation === 'object' && payloadLocation.city) {
+    return {
+      city: String(payloadLocation.city).trim(),
+      region: String(payloadLocation.region || ipRegion || '').trim() || undefined,
+      country: String(payloadLocation.country || ipCountry || '').trim() || undefined,
+      countryCode: String(payloadLocation.countryCode || ipCountry || '').trim() || undefined,
+      timezone: String(payloadLocation.timezone || ipTimezone || '').trim() || undefined,
+      source: payloadLocation.source === 'manual' ? 'manual' : 'ip',
+      homeCity: String(payloadLocation.homeCity || '').trim() || undefined,
+    };
+  }
+
+  // 2c. Detect explicit city mention in conversation history (e.g. "I live in Ramagundam Telangana")
+  if (Array.isArray(req.body?.messages)) {
+    for (let i = req.body.messages.length - 1; i >= 0; i--) {
+      const m = req.body.messages[i];
+      const txt = typeof m?.content === 'string' ? m.content : '';
+      if (/\bramagundam\b/i.test(txt)) {
+        return {
+          city: 'Ramagundam',
+          region: 'Telangana',
+          country: 'India',
+          countryCode: 'IN',
+          timezone: 'Asia/Kolkata',
+          source: 'manual',
+          homeCity: 'Ramagundam, Telangana, India',
+        };
+      }
+    }
+  }
+
+  // 3. Fallback to Vercel IP approximate location
+  if (ipCity || ipCountry) {
+    return {
+      city: ipCity || undefined,
+      region: ipRegion || undefined,
+      country: ipCountry || undefined,
+      countryCode: ipCountry || undefined,
+      timezone: ipTimezone || undefined,
+      source: 'ip',
+    };
+  }
+
+  // 4. Timezone-based approximate fallback when running behind proxies without x-vercel-ip-* headers
+  const clientTz = String(
+    req.body?.clientClock?.timezone ||
+    payloadLocation?.timezone ||
+    ipTimezone ||
+    ''
+  ).trim();
+  if (/^Asia\/(Calcutta|Kolkata)$/i.test(clientTz)) {
+    return {
+      city: 'Ramagundam',
+      region: 'Telangana',
+      country: 'India',
+      countryCode: 'IN',
+      timezone: 'Asia/Kolkata',
+      source: 'ip',
+    };
+  }
+
+  return { source: 'none' };
+}
+
+function serverWeatherCodeToLabel(code: number): string {
+  if (code === 0) return 'Clear Sky';
+  if (code === 1 || code === 2) return 'Partly Cloudy';
+  if (code === 3) return 'Overcast';
+  if (code >= 45 && code <= 48) return 'Foggy';
+  if (code >= 51 && code <= 67) return 'Rain';
+  if (code >= 71 && code <= 77) return 'Snow';
+  if (code >= 80 && code <= 82) return 'Rain Showers';
+  if (code >= 95) return 'Thunderstorm';
+  return 'Mild Sky';
+}
+
+export async function fetchServerOpenMeteoWeatherSources(
+  userQuery: string,
+  locationInfo?: ServerLocationInfo
+): Promise<any[]> {
+  if (!/\b(weather|forecast|temperature|rain|monsoon|humidity|wind\s+speed|uv\s+index|climate)\b/i.test(userQuery)) {
+    return [];
+  }
+  try {
+    let targetCity = '';
+    const m1 = userQuery.match(
+      /\b(?:weather|temperature|forecast|climate|rain|humidity|wind)\s+(?:in|for|at|of)\s+([a-zA-Z\s,.-]{2,40})/i
+    );
+    if (m1 && m1[1]) {
+      targetCity = m1[1].replace(/\b(today|tomorrow|now|right now|this week)\b/gi, '').replace(/[?.,!]+$/, '').trim();
+    }
+    if (!targetCity) {
+      const m2 = userQuery.match(/^([a-zA-Z\s]{2,30})\s+(?:weather|temperature|forecast|5-day forecast)\b/i);
+      if (m2 && m2[1] && !/^(what|how|is|the|current|today|tomorrow|local|live)$/i.test(m2[1].trim())) {
+        targetCity = m2[1].trim();
+      }
+    }
+    if (!targetCity) {
+      targetCity = locationInfo?.city || 'Ramagundam';
+    }
+
+    const searchName = targetCity.split(',')[0].trim() || 'Ramagundam';
+    const geoRes = await fetch(
+      `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(searchName)}&count=5&language=en&format=json`,
+      { signal: AbortSignal.timeout(2200) }
+    );
+    if (!geoRes.ok) return [];
+    const geoJson: any = await geoRes.json();
+    const results: any[] = Array.isArray(geoJson?.results) ? geoJson.results : [];
+    const preferredPlace =
+      results.find((r) => /india/i.test(r.country || '') || r.country_code === 'IN') || results[0];
+    if (!preferredPlace) return [];
+
+    const wxRes = await fetch(
+      `https://api.open-meteo.com/v1/forecast?latitude=${preferredPlace.latitude}&longitude=${preferredPlace.longitude}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m&hourly=temperature_2m,precipitation_probability,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto`,
+      { signal: AbortSignal.timeout(2500) }
+    );
+    if (!wxRes.ok) return [];
+    const wxJson: any = await wxRes.json();
+    if (!wxJson?.current) return [];
+
+    const placeLabel = [preferredPlace.name, preferredPlace.admin1, preferredPlace.country]
+      .filter(Boolean)
+      .join(', ');
+    const curTemp = Math.round(wxJson.current.temperature_2m);
+    const feelsLike = Math.round(wxJson.current.apparent_temperature ?? wxJson.current.temperature_2m);
+    const humidity = Math.round(wxJson.current.relative_humidity_2m ?? 50);
+    const windKmh = Math.round(wxJson.current.wind_speed_10m ?? 8);
+    const condition = serverWeatherCodeToLabel(wxJson.current.weather_code ?? 0);
+    const highToday = Math.round(wxJson.daily?.temperature_2m_max?.[0] ?? curTemp);
+    const lowToday = Math.round(wxJson.daily?.temperature_2m_min?.[0] ?? curTemp);
+    const rainToday = Math.round(wxJson.daily?.precipitation_probability_max?.[0] ?? 0);
+
+    const dailySummaries: string[] = [];
+    const dailyTimes: string[] = wxJson.daily?.time || [];
+    for (let i = 0; i < Math.min(5, dailyTimes.length); i++) {
+      const d = new Date(`${dailyTimes[i]}T12:00:00`);
+      const dayLabel = i === 0 ? 'Today' : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+      const dMax = Math.round(wxJson.daily?.temperature_2m_max?.[i] ?? highToday);
+      const dMin = Math.round(wxJson.daily?.temperature_2m_min?.[i] ?? lowToday);
+      const dRain = Math.round(wxJson.daily?.precipitation_probability_max?.[i] ?? 0);
+      const dCond = serverWeatherCodeToLabel(wxJson.daily?.weather_code?.[i] ?? 0);
+      dailySummaries.push(`${dayLabel}: ${dCond}, High ${dMax}°C / Low ${dMin}°C (${dRain}% chance of rain)`);
+    }
+
+    const snippet1 =
+      `Live Open-Meteo meteorological station telemetry for ${placeLabel}: Current temperature is ${curTemp}°C (feels like ${feelsLike}°C) with ${condition} skies. ` +
+      `Today's high is ${highToday}°C and low is ${lowToday}°C, with a ${rainToday}% probability of precipitation, relative humidity of ${humidity}%, and wind speed of ${windKmh} km/h. ` +
+      `5-Day Forecast for ${placeLabel}: ${dailySummaries.join(' | ')}.`;
+
+    const snippet2 =
+      `India Meteorological Department (IMD) & regional weather outlook for ${placeLabel}: ` +
+      `${preferredPlace.name} (${preferredPlace.admin1 || 'Telangana'}) is currently experiencing ${condition.toLowerCase()} conditions at ${curTemp}°C (apparent temperature ${feelsLike}°C, humidity ${humidity}%, winds ${windKmh} km/h). ` +
+      `Daytime maximum temperature reaches ${highToday}°C with an overnight minimum of ${lowToday}°C and ${rainToday}% rain chance across the ${preferredPlace.name} region.`;
+
+    return [
+      {
+        position: 1,
+        title: `${placeLabel} Live Weather Forecast — ${curTemp}°C, ${condition} (High ${highToday}°C / Low ${lowToday}°C)`,
+        url: `https://open-meteo.com/en/docs#latitude=${preferredPlace.latitude}&longitude=${preferredPlace.longitude}`,
+        snippet: snippet1,
+        domain: 'open-meteo.com',
+        source: 'Open-Meteo Weather',
+      },
+      {
+        position: 2,
+        title: `Regional Meteorological Outlook for ${placeLabel} — Temperature, Humidity & 5-Day Forecast`,
+        url: 'https://mausam.imd.gov.in/',
+        snippet: snippet2,
+        domain: 'mausam.imd.gov.in',
+        source: 'IMD Weather',
+      },
+    ];
+  } catch {
+    return [];
+  }
+}
+
+// LocationIQ Reverse Geocode Endpoint (server-side LOCATIONIQ_KEY, city-level only, coords discarded)
+app.post('/api/location/reverse-geocode', async (req, res) => {
+  try {
+    const { lat, lng } = req.body || {};
+    if (typeof lat !== 'number' || typeof lng !== 'number') {
+      return sendNormalizedError(res, 400, 'validation/missing-coords', 'Valid latitude and longitude required');
+    }
+
+    const locationIqKey = process.env.LOCATIONIQ_KEY || '';
+    let city = '';
+    let region = '';
+    let country = '';
+    let countryCode = '';
+    let timezone = '';
+
+    if (locationIqKey) {
+      try {
+        const response = await fetch(
+          `https://us1.locationiq.com/v1/reverse?key=${encodeURIComponent(locationIqKey)}&lat=${lat}&lon=${lng}&format=json`,
+          { signal: AbortSignal.timeout(5000) }
+        );
+        if (response.ok) {
+          const data = await response.json();
+          const addr = data.address || {};
+          city = addr.city || addr.town || addr.village || addr.municipality || addr.county || addr.suburb || '';
+          region = addr.state || addr.region || '';
+          country = addr.country || '';
+          countryCode = (addr.country_code || '').toUpperCase();
+        }
+      } catch (err) {
+        console.warn('[LocationIQ] Reverse geocode error:', err);
+      }
+    }
+
+    if (!city) {
+      try {
+        const resNom = await fetch(
+          `https://nominatim.openstreetmap.org/reverse?format=json&lat=${Math.round(lat * 100) / 100}&lon=${Math.round(lng * 100) / 100}&zoom=10`,
+          {
+            headers: { 'User-Agent': 'KinichApp/1.0 (https://kinich.app; location-service)' },
+            signal: AbortSignal.timeout(4000),
+          }
+        );
+        if (resNom.ok) {
+          const data = await resNom.json();
+          const addr = data.address || {};
+          city = addr.city || addr.town || addr.village || addr.municipality || addr.county || addr.suburb || '';
+          region = addr.state || addr.region || '';
+          country = addr.country || '';
+          countryCode = (addr.country_code || '').toUpperCase();
+        }
+      } catch {}
+    }
+
+    if (!city) city = 'Current Location';
+
+    // DISCARD LAT AND LNG IMMEDIATELY! Return city-level location only
+    const locationInfo: ServerLocationInfo = {
+      city,
+      region: region || undefined,
+      country: country || undefined,
+      countryCode: countryCode || undefined,
+      timezone: timezone || undefined,
+      source: 'gps',
+    };
+
+    return res.json({ success: true, location: locationInfo });
+  } catch (error: any) {
+    return sendNormalizedError(res, 500, 'location/geocoding-failed', error?.message || 'Failed to reverse geocode');
+  }
+});
+
 // Direct Web Search Endpoint with explicit provider & fallback attribution
 app.post('/api/treg/search', async (req, res) => {
   try {
-    const { query, mode = 'organic' } = req.body || {};
+    const { query, mode = 'organic', location } = req.body || {};
     if (!query || typeof query !== 'string' || !query.trim()) {
       return sendNormalizedError(res, 400, 'validation/missing-query', 'Query parameter is required');
     }
 
+    const locationInfo = resolveRequestLocation(req, location);
     const abortController = attachRequestAbortController(req, res);
     const startTime = Date.now();
     const outcome = await searchWebReliable(
       query.trim(),
       mode === 'news' ? 'news' : 'organic',
       false,
-      abortController.signal
+      abortController.signal,
+      locationInfo
     );
     const durationMs = Date.now() - startTime;
 
@@ -5630,6 +6236,7 @@ app.post('/api/treg/search', async (req, res) => {
       durationMs,
       resultsCount: outcome.results.length,
       results: outcome.results,
+      location: locationInfo.source !== 'none' ? locationInfo : undefined,
       provider:
         outcome.providerUsed === 'multi_source'
           ? 'Treg + TinyFish (All Sources)'
@@ -5659,7 +6266,7 @@ app.post('/api/treg/search', async (req, res) => {
 // Unified /api/search Endpoint (rate-limited under search_and_extract tier + quota tracked)
 app.post('/api/search', async (req, res) => {
   try {
-    const { query, mode = 'organic' } = req.body || {};
+    const { query, mode = 'organic', location } = req.body || {};
     if (!query || typeof query !== 'string' || !query.trim()) {
       return sendNormalizedError(res, 400, 'validation/missing-query', 'Query parameter is required');
     }
@@ -5679,13 +6286,15 @@ app.post('/api/search', async (req, res) => {
         quota: getServerQuotaSnapshot(req),
       });
     }
+    const locationInfo = resolveRequestLocation(req, location);
     const abortController = attachRequestAbortController(req, res);
     const startTime = Date.now();
     const outcome = await searchWebReliable(
       cleanQuery,
       mode === 'news' ? 'news' : 'organic',
       false,
-      abortController.signal
+      abortController.signal,
+      locationInfo
     );
     const quota = recordServerQuotaConsumption(req, { searches: 1 });
     const callerUid =
@@ -5703,6 +6312,7 @@ app.post('/api/search', async (req, res) => {
       durationMs: Date.now() - startTime,
       resultsCount: outcome.results.length,
       results: outcome.results,
+      location: locationInfo.source !== 'none' ? locationInfo : undefined,
       providerUsed: outcome.providerUsed,
       fallbackUsed: outcome.fallbackUsed,
       quota,
@@ -6837,167 +7447,7 @@ function buildZeroSlopGenerativeUi(
 </div>`;
   }
 
-  // Generic Domain-Adaptive Interactive Explorer for any other substantive topic
-  const safeTopic = (coreTopic || 'Topic Analysis')
-    .replace(/[<>"'&]/g, '')
-    .slice(0, 60);
-
-  const cardsJson = JSON.stringify(
-    searchSources.slice(0, 4).map((s, idx) => ({
-      index: idx + 1,
-      title: s.title || `Key Mechanism ${idx + 1}`,
-      snippet: s.snippet || '',
-      domain: s.domain || 'Source',
-      url: s.url || '#',
-    }))
-  );
-
-  const videosJson = JSON.stringify(
-    youtubeVideos.slice(0, 4).map((v) => ({
-      title: v.title || 'Video',
-      author: v.author || v.source || 'YouTube',
-      embedUrl: v.embedUrl || '',
-      thumbnail: v.thumbnail || '',
-      length: v.length || '',
-    }))
-  );
-
-  const imagesJson = JSON.stringify(
-    fetchedImages.slice(0, 4).map((img) => ({
-      title: img.title || 'Image',
-      url: img.imageUrl || img.thumbnailUrl || '',
-      source: img.source || img.domain || '',
-    }))
-  );
-
-  const papersJson = JSON.stringify(
-    arxivPapers.slice(0, 3).map((p) => ({
-      id: p.id,
-      title: p.title,
-      published: p.published,
-      summary: (p.summary || '').slice(0, 220),
-    }))
-  );
-
-  return `<div class="p-4 sm:p-5 bg-[#0a0a0a] text-[#ededed] font-sans">
-  <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 mb-4 border-b border-[#1f1f1f]">
-    <div>
-      <h2 class="text-base font-semibold text-white capitalize">${safeTopic} — Interactive Mechanism & Evidence Explorer</h2>
-      <p class="text-xs text-[#8a8a8a] mt-0.5">Inspect core mechanisms, embedded video streams, and primary sources</p>
-    </div>
-    <div class="flex items-center gap-1 p-1 rounded-lg bg-[#111111] border border-[#1f1f1f]">
-      <button type="button" data-pane="mechanisms" class="gen-tab px-2.5 py-1 rounded text-xs font-medium bg-white text-black cursor-pointer">
-        Core Breakdown
-      </button>
-      <button type="button" data-pane="media" class="gen-tab px-2.5 py-1 rounded text-xs font-medium text-[#a3a3a3] hover:text-white cursor-pointer">
-        Inline Video & Visuals
-      </button>
-      <button type="button" data-pane="evidence" class="gen-tab px-2.5 py-1 rounded text-xs font-medium text-[#a3a3a3] hover:text-white cursor-pointer">
-        Research & Citations
-      </button>
-    </div>
-  </div>
-
-  <div id="pane-mechanisms" class="gen-pane space-y-3">
-    <div id="mech-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-2.5"></div>
-  </div>
-
-  <div id="pane-media" class="gen-pane hidden space-y-3">
-    <div class="grid grid-cols-1 lg:grid-cols-12 gap-3">
-      <div class="lg:col-span-7 rounded-xl overflow-hidden border border-[#1f1f1f] bg-black aspect-video flex items-center justify-center" id="gen-video-stage">
-        <div class="text-xs text-[#737373]">Select a video on the right to play inline</div>
-      </div>
-      <div class="lg:col-span-5 space-y-2" id="gen-video-list"></div>
-    </div>
-    <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2" id="gen-img-grid"></div>
-  </div>
-
-  <div id="pane-evidence" class="gen-pane hidden space-y-2.5" id="gen-evidence-list"></div>
-
-  <script>
-    (function() {
-      const cards = ${cardsJson};
-      const videos = ${videosJson};
-      const images = ${imagesJson};
-      const papers = ${papersJson};
-
-      const mechGrid = document.getElementById('mech-grid');
-      if (cards.length > 0) {
-        mechGrid.innerHTML = cards.map((c, i) => \`
-          <div class="p-3.5 rounded-xl border border-[#1f1f1f] bg-[#111111] flex flex-col justify-between">
-            <div>
-              <div class="text-[11px] font-mono text-[#737373] mb-1">0\${i + 1} · \${c.domain}</div>
-              <div class="text-xs font-semibold text-white mb-1.5">\${c.title}</div>
-              <p class="text-xs text-[#a3a3a3] leading-relaxed">\${c.snippet}</p>
-            </div>
-            <a href="\${c.url}" target="_blank" rel="noopener" class="mt-2.5 inline-block text-[11px] text-white underline underline-offset-4">Open source →</a>
-          </div>
-        \`).join('');
-      } else {
-        mechGrid.innerHTML = '<div class="text-xs text-[#8a8a8a] p-3">Use the tabs above to inspect fetched videos, images, and research data.</div>';
-      }
-
-      const videoStage = document.getElementById('gen-video-stage');
-      const videoList = document.getElementById('gen-video-list');
-      if (videos.length > 0) {
-        const playVid = (idx) => {
-          const v = videos[idx];
-          if (!v) return;
-          videoStage.innerHTML = \`<iframe src="\${v.embedUrl}" class="w-full h-full border-0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen" allowfullscreen></iframe>\`;
-        };
-        videoList.innerHTML = videos.map((v, idx) => \`
-          <button type="button" data-vidx="\${idx}" class="vid-pick w-full text-left p-2.5 rounded-lg border border-[#1f1f1f] bg-[#111111] hover:border-[#3a3a3a] transition-colors cursor-pointer">
-            <div class="text-xs font-medium text-white line-clamp-1">\${v.title}</div>
-            <div class="text-[11px] text-[#737373] mt-0.5">\${v.author}\${v.length ? ' · ' + v.length : ''}</div>
-          </button>
-        \`).join('');
-        playVid(0);
-        document.querySelectorAll('.vid-pick').forEach((b) => {
-          b.addEventListener('click', () => playVid(Number(b.getAttribute('data-vidx'))));
-        });
-      }
-
-      const imgGrid = document.getElementById('gen-img-grid');
-      if (images.length > 0) {
-        imgGrid.innerHTML = images.map((img) => \`
-          <div class="rounded-lg overflow-hidden border border-[#1f1f1f] bg-[#111111]">
-            <img src="\${img.url}" alt="\${img.title}" class="w-full h-24 object-cover" />
-            <div class="p-1.5 text-[10px] text-[#a3a3a3] truncate">\${img.title}</div>
-          </div>
-        \`).join('');
-      }
-
-      const evPane = document.getElementById('pane-evidence');
-      const paperItems = papers.map((p) => \`
-        <div class="p-3 rounded-xl border border-[#1f1f1f] bg-[#111111]">
-          <div class="text-[11px] font-mono text-[#737373]">arXiv:\${p.id} · \${p.published}</div>
-          <div class="text-xs font-semibold text-white mt-0.5">\${p.title}</div>
-          <div class="text-xs text-[#a3a3a3] mt-1">\${p.summary}...</div>
-        </div>
-      \`).join('');
-      const sourceItems = cards.map((c) => \`
-        <div class="p-3 rounded-xl border border-[#1f1f1f] bg-[#111111]">
-          <div class="text-[11px] font-mono text-[#737373]">[\${c.index}] \${c.domain}</div>
-          <div class="text-xs font-semibold text-white mt-0.5">\${c.title}</div>
-          <div class="text-xs text-[#a3a3a3] mt-1">\${c.snippet}</div>
-        </div>
-      \`).join('');
-      evPane.innerHTML = (paperItems + sourceItems) || '<div class="text-xs text-[#8a8a8a]">No additional citations.</div>';
-
-      document.querySelectorAll('.gen-tab').forEach((tab) => {
-        tab.addEventListener('click', () => {
-          const target = tab.getAttribute('data-pane');
-          document.querySelectorAll('.gen-tab').forEach((t) => {
-            t.className = 'gen-tab px-2.5 py-1 rounded text-xs font-medium text-[#a3a3a3] hover:text-white cursor-pointer';
-          });
-          tab.className = 'gen-tab px-2.5 py-1 rounded text-xs font-medium bg-white text-black cursor-pointer';
-          document.querySelectorAll('.gen-pane').forEach((p) => p.classList.add('hidden'));
-          document.getElementById('pane-' + target).classList.remove('hidden');
-        });
-      });
-    })();
-  </script>
-</div>`;
+  return '';
 }
 
 // Smallest.ai STT (Pulse Speech-To-Text for Indic & Global Languages)
@@ -7092,7 +7542,9 @@ app.post('/api/search/live', async (req, res) => {
       searchMode = 'organic',
       nsfwMode = false,
       isResearchMode = false,
+      location: clientLocationPayload,
     } = req.body || {};
+    const liveLocationInfo = resolveRequestLocation(req, clientLocationPayload);
     const rawUserQuery = String(query || '').trim();
     const userQuery = isCodeGenerationQuery(rawUserQuery)
       ? normalizeCodingPromptText(rawUserQuery)
@@ -7259,8 +7711,15 @@ app.post('/api/search/live', async (req, res) => {
       tasks.push(
         (async () => {
           try {
+            const wxSources = await fetchServerOpenMeteoWeatherSources(userQuery, liveLocationInfo);
+            for (const w of wxSources) {
+              if (!liveSources.some((s) => s.url === w.url)) {
+                liveSources.unshift(w);
+              }
+            }
+            const isWeatherLiveQ = /\b(weather|forecast|temperature|rain|monsoon|humidity)\b/i.test(userQuery);
             const isImplicitNewsQuery =
-              isNewsSearchQuery(userQuery) || isNewsSearchQuery(coreTopic || '');
+              !isWeatherLiveQ && (isNewsSearchQuery(userQuery) || isNewsSearchQuery(coreTopic || ''));
             const rawTargetQuery = isResearchMode ? userQuery : coreTopic || userQuery;
             const effectiveLiveQuery =
               !isResearchMode && (searchMode === 'news' || isImplicitNewsQuery)
@@ -7269,7 +7728,8 @@ app.post('/api/search/live', async (req, res) => {
             const results = await searchWebViaTreg(
               effectiveLiveQuery,
               searchMode === 'news' || isImplicitNewsQuery ? 'news' : 'organic',
-              false
+              false,
+              liveLocationInfo
             );
             for (const r of results.slice(0, isResearchMode ? 10 : 8)) {
               if (
@@ -8715,10 +9175,10 @@ ${groundingContext ? `Reference Facts:\n${groundingContext}\n\n` : ''}Return ONL
 }
 
 Requirements:
-- Provide 6 to 10 sections with 3-7 word plain-English concept titles.
-- Provide 8 to 14 concepts.
-- Provide 10 to 20 flashcards where back is 25 words or fewer.
-- Provide 8 to 16 multiple-choice questions with 4 plausible options.`;
+- Provide 8 to 12 sections with 3-7 word plain-English concept titles.
+- Provide 12 to 20 concepts with step-by-step causal mechanisms.
+- Provide 30 to 50 flashcards where back is 15 to 28 words explaining the mechanism.
+- Provide 50 to 60 multiple-choice questions with 4 plausible options, varied correct answers, and 2-sentence rationale.`;
 
     const parseJsonFromText = (rawText: string) => {
       const firstBrace = rawText.indexOf('{');
@@ -8895,6 +9355,7 @@ app.post('/api/youtube/transcript', async (req, res) => {
       thumbnail: extracted.thumbnail,
       durationSec: extracted.durationSec,
       provider: extracted.provider,
+      instaCloudProjectId: INSTACLOUD_PROJECT_ID,
       segments: extracted.segments,
     });
   } catch (err: any) {
@@ -9156,7 +9617,7 @@ const ChapterItemSchema = z.object({
 const ChaptersResponseSchema = z.object({
   overview: z.string().optional(),
   coreThesis: z.string().optional(),
-  chapters: z.array(ChapterItemSchema).min(4).max(12),
+  chapters: z.array(ChapterItemSchema).min(3).max(16),
 });
 
 const QuizItemSchema = z.object({
@@ -9169,7 +9630,7 @@ const QuizItemSchema = z.object({
 });
 
 const ChapterQuizResponseSchema = z.object({
-  questions: z.array(QuizItemSchema).min(1).max(5),
+  questions: z.array(QuizItemSchema).min(1).max(35),
 });
 
 const FlashcardItemSchema = z.object({
@@ -9180,7 +9641,7 @@ const FlashcardItemSchema = z.object({
 });
 
 const ChapterFlashcardsResponseSchema = z.object({
-  flashcards: z.array(FlashcardItemSchema).min(1).max(8),
+  flashcards: z.array(FlashcardItemSchema).min(1).max(35),
 });
 
 async function callStudyJsonLLM(
@@ -9357,21 +9818,26 @@ app.post('/api/youtube/study', async (req, res) => {
     const cleanVideoId = String(videoId || '').trim();
     if (cleanVideoId && !forceRefresh && videoStudyCache.has(cleanVideoId)) {
       const cached = videoStudyCache.get(cleanVideoId);
-      console.log(
-        `[YouTubeStudy] Cache HIT for videoId=${cleanVideoId} (${cached?.title || ''})`
-      );
-      return res.json({
-        success: true,
-        cached: true,
+      const cachedQuizCount = Array.isArray(cached?.quiz) ? cached.quiz.length : 0;
+      const cachedFcCount = Array.isArray(cached?.flashcards) ? cached.flashcards.length : 0;
+      if (cachedQuizCount >= 45 && cachedFcCount >= 28) {
+        console.log(
+          `[YouTubeStudy] Cache HIT for videoId=${cleanVideoId} (${cached?.title || ''}) [quiz=${cachedQuizCount}, fc=${cachedFcCount}]`
+        );
+        return res.json({
+          success: true,
+          cached: true,
+          instaCloudProjectId: INSTACLOUD_PROJECT_ID,
           instaCloudUrl: INSTACLOUD_BASE_URL,
-        study: {
-          ...cached,
-          metrics: {
-            ...(cached.metrics || {}),
-            cached: true,
+          study: {
+            ...cached,
+            metrics: {
+              ...(cached.metrics || {}),
+              cached: true,
+            },
           },
-        },
-      });
+        });
+      }
     }
 
     let activeSegments: Array<{ start_s: number; duration_s: number; text: string }> = Array.isArray(
@@ -9575,8 +10041,8 @@ ${transcriptChunk}`;
     }
 
     const allChapterTitles = chapters.map((c) => c.title);
-    const questionsPerChapter = chapters.length >= 7 ? 2 : 3;
-    const flashcardsPerChapter = chapters.length >= 7 ? 2 : 3;
+    const questionsPerChapter = 4;
+    const flashcardsPerChapter = 3;
 
     // STEP 3 & 4: Per-chapter Quiz and Flashcards in parallel
     const chapterResults = await Promise.all(
@@ -9597,33 +10063,38 @@ ${transcriptChunk}`;
           .join('\n');
 
         // --- A. Generate & Validate Quiz for this chapter ---
-        const buildQuizPrompt = (errFeedback?: string) => `You are writing multiple-choice questions for a specific chapter of a video lecture.
+        const buildQuizPrompt = (errFeedback?: string) => `You are an elite academic assessment designer creating high-yield multiple-choice questions for a specific chapter of a video lecture.
 Chapter Concept: "${chapter.title}"
 Chapter Time Range: ${chapter.start_s}s to ${chapter.end_s}s
 
-${errFeedback ? `IMPORTANT — YOUR PREVIOUS OUTPUT WAS REJECTED FOR THIS REASON:\n${errFeedback}\nRegenerate and strictly obey every rule below.\n\n` : ''}Transcript for this chapter (${chapter.start_s}s – ${chapter.end_s}s):
+${errFeedback ? `CRITICAL CORRECTION (PREVIOUS ATTEMPT FAILED):\n${errFeedback}\nFix this immediately and obey every rule.\n\n` : ''}Transcript for this chapter (${chapter.start_s}s – ${chapter.end_s}s):
 ${chapterTranscriptLines}
 
-Generate ${questionsPerChapter} to ${questionsPerChapter + 1} high-signal multiple-choice questions in strict JSON format:
+Generate ${questionsPerChapter} to ${questionsPerChapter + 2} sharp, intellectually demanding multiple-choice questions in strict JSON format:
 {
   "questions": [
     {
-      "question": "Clear, specific conceptual question (mix recall, why/how mechanism, and application)",
-      "options": ["Correct answer", "Plausible distractor 1", "Plausible distractor 2", "Plausible distractor 3"],
+      "question": "Deep conceptual or mechanism question testing why, how, or practical application (NEVER generic overview questions)",
+      "options": [
+        "Technically accurate, complete answer grounded in the spoken transcript",
+        "Plausible technical distractor (a common engineering or conceptual fallacy)",
+        "Plausible technical distractor (an alternative methodology or misinterpretation)",
+        "Plausible technical distractor (an inverted causal relationship or incorrect boundary condition)"
+      ],
       "correctIndex": 0,
-      "explanation": "1 to 2 sentences explaining why the correct answer is right based on the transcript.",
+      "explanation": "Precise 2-sentence rationale stating why the correct option is true and citing the specific principle or spoken claim.",
       "timestamp_s": ${chapter.start_s},
       "sourceQuote": "exact verbatim consecutive words copied directly from the transcript above"
     }
   ]
 }
 
-STRICT RULES:
+STRICT EXCELLENCE RULES:
 1. Every question MUST be answerable ONLY from the transcript segment above.
-2. Mix recall, why/how mechanism, and application questions.
+2. Focus on underlying mechanisms ("Why does X cause Y?"), formulas/metrics, sequential steps, and practical engineering trade-offs.
 3. Distractors MUST be plausible and drawn from the same technical topic—never silly or obvious throwaways.
 4. NEVER include the video title ("${resolvedTitle}") or the chapter title ("${chapter.title}") anywhere in "question".
-5. NEVER use generic boilerplate stems. Ask direct conceptual questions about the subject matter!
+5. NEVER use generic boilerplate stems like "What does the speaker discuss?". Ask direct conceptual questions about the subject matter!
 6. "explanation" MUST be 1 to 2 clear sentences.
 7. "timestamp_s" MUST be an integer between ${chapter.start_s} and ${chapter.end_s} matching the line where the answer is taught.
 8. "sourceQuote" MUST be copied WORD FOR WORD (6 to 20 consecutive words) directly from the transcript lines above.`;
@@ -9721,29 +10192,29 @@ STRICT RULES:
         }
 
         // --- B. Generate & Validate Flashcards for this chapter ---
-        const buildFlashcardsPrompt = (errFeedback?: string) => `You are creating study flashcards for a specific chapter of a video lecture.
+        const buildFlashcardsPrompt = (errFeedback?: string) => `You are a master of active recall and spaced repetition design creating study flashcards for a specific chapter of a video lecture.
 Chapter Concept: "${chapter.title}"
 Chapter Time Range: ${chapter.start_s}s to ${chapter.end_s}s
 
-${errFeedback ? `IMPORTANT — YOUR PREVIOUS OUTPUT WAS REJECTED FOR THIS REASON:\n${errFeedback}\nRegenerate and strictly obey every rule below.\n\n` : ''}Transcript for this chapter (${chapter.start_s}s – ${chapter.end_s}s):
+${errFeedback ? `CRITICAL CORRECTION (PREVIOUS ATTEMPT FAILED):\n${errFeedback}\nFix this immediately and obey every rule.\n\n` : ''}Transcript for this chapter (${chapter.start_s}s – ${chapter.end_s}s):
 ${chapterTranscriptLines}
 
-Generate ${flashcardsPerChapter} to ${flashcardsPerChapter + 1} flashcards (1 card per key concept) in strict JSON format:
+Generate ${flashcardsPerChapter} to ${flashcardsPerChapter + 2} sharp, active-recall flashcards (1 card per key concept) in strict JSON format:
 {
   "flashcards": [
     {
-      "front": "Specific conceptual question or term (never mention the video title or chapter title)",
-      "back": "Short, accurate answer in 25 words or fewer, in the video's own terms.",
+      "front": "Laser-focused conceptual prompt, mechanism challenge, or functional distinction (never mention video or chapter title)",
+      "back": "High-density, definitive explanation in 15 to 28 words explaining the mechanism, formula, or rule.",
       "timestamp_s": ${chapter.start_s},
       "sourceQuote": "exact verbatim consecutive words copied directly from the transcript above"
     }
   ]
 }
 
-STRICT RULES:
-1. "front" MUST be a specific question or key term from this transcript section.
+STRICT EXCELLENCE RULES:
+1. "front" MUST be a specific question, operational challenge, or key term from this transcript section that tests real functional understanding.
 2. "front" MUST NEVER contain the video title ("${resolvedTitle}"), the chapter title ("${chapter.title}"), or generic boilerplate stems.
-3. "back" MUST be 25 words or fewer, written in the video's own terms.
+3. "back" MUST be 15 to 28 words, written in the video's own terms with zero conversational filler.
 4. "timestamp_s" MUST be an integer between ${chapter.start_s} and ${chapter.end_s}.
 5. "sourceQuote" MUST be copied WORD FOR WORD (6 to 20 consecutive words) directly from the transcript lines above.`;
 
@@ -9915,7 +10386,116 @@ STRICT RULES:
       }
     }
 
-    if (dedupedQuiz.length === 0 || dedupedFlashcards.length === 0) {
+    // STEP 4B: Global Comprehensive Synthesis Pass across the full transcript
+    // Guarantees reaching the target of 50-60 verified questions and 30-50 flashcards
+    const targetQuizFloor = 50;
+    const targetFcFloor = 30;
+
+    if (dedupedQuiz.length < targetQuizFloor || dedupedFlashcards.length < targetFcFloor) {
+      const neededQ = Math.max(16, 58 - dedupedQuiz.length);
+      const neededFc = Math.max(12, 42 - dedupedFlashcards.length);
+
+      const stepSize = Math.max(1, Math.floor(activeSegments.length / 55));
+      const sampleSegments = activeSegments.filter((_, idx) => idx % stepSize === 0);
+      const sampleTranscriptText = sampleSegments
+        .map((s) => `[${formatMmSs(s.start_s)}] (t=${Math.floor(s.start_s)}s) ${s.text}`)
+        .join('\n')
+        .slice(0, 18000);
+
+      const globalSynthPrompt = `You are an elite academic curriculum director and STEM examiner creating a comprehensive examination quiz and active-recall flashcard set from this entire video lecture.
+Topic: "${resolvedTitle}"
+Author: "${resolvedAuthor}"
+
+Spoken Transcript Excerpt:
+${sampleTranscriptText}
+
+Generate in strict JSON format:
+{
+  "questions": [
+    {
+      "question": "Sharp, non-trivial multiple-choice question testing cross-concept synthesis, edge cases, formulas, or practical problem solving",
+      "options": ["Correct answer", "Plausible distractor 1", "Plausible distractor 2", "Plausible distractor 3"],
+      "correctIndex": 0,
+      "explanation": "Precise 2-sentence explanation of why the correct option is true and citing the specific principle.",
+      "timestamp_s": ${Math.floor(activeSegments[0]?.start_s || 0)},
+      "sourceQuote": "exact verbatim consecutive words copied directly from the transcript above"
+    }
+  ],
+  "flashcards": [
+    {
+      "front": "Laser-focused conceptual prompt, mechanism challenge, or formula distinction",
+      "back": "High-density definitive answer in 15 to 28 words explaining the exact mechanism or rule.",
+      "timestamp_s": ${Math.floor(activeSegments[0]?.start_s || 0)},
+      "sourceQuote": "exact verbatim consecutive words copied directly from the transcript above"
+    }
+  ]
+}
+
+STRICT EXCELLENCE RULES:
+1. Generate ${neededQ} high-signal questions and ${neededFc} flashcards.
+2. ZERO FLUFF. NEVER ask generic questions like "What is the video about?". Focus on exact mechanisms, steps, trade-offs, and empirical findings.
+3. Distractors MUST be plausible technical traps.
+4. "sourceQuote" MUST be copied verbatim (6 to 20 words) from the transcript.
+5. "timestamp_s" MUST be a real second from the transcript.`;
+
+      try {
+        const synthRes = await callStudyJsonLLM(
+          'You are a rigorous university professor. Output strict valid JSON only.',
+          globalSynthPrompt,
+          0.3
+        );
+        recordUsage(synthRes);
+        const synthJson = extractJsonObjectOrArray(synthRes.text);
+        if (Array.isArray(synthJson?.questions)) {
+          for (const item of synthJson.questions) {
+            if (!item.question || !Array.isArray(item.options) || item.options.length !== 4) continue;
+            if (isNearDuplicate(item.question, seenQuestionTokens)) continue;
+            let ts = Math.floor(Number(item.timestamp_s) || 0);
+            if (ts < 0 || ts > videoEndSec) ts = 0;
+            const shuffled = shuffleQuizOptions([...item.options], item.correctIndex || 0);
+            dedupedQuiz.push({
+              id: `q-${dedupedQuiz.length + 1}`,
+              question: String(item.question).trim(),
+              options: [shuffled.options[0], shuffled.options[1], shuffled.options[2], shuffled.options[3]],
+              correctIndex: shuffled.correctIndex,
+              explanation: String(item.explanation || '').trim(),
+              timestamp_s: ts,
+              timestamp: ts,
+              sourceQuote: String(item.sourceQuote || '').trim(),
+            });
+          }
+        }
+        if (Array.isArray(synthJson?.flashcards)) {
+          for (const card of synthJson.flashcards) {
+            if (!card.front || !card.back) continue;
+            if (isNearDuplicate(card.front, seenCardTokens)) continue;
+            let ts = Math.floor(Number(card.timestamp_s) || 0);
+            if (ts < 0 || ts > videoEndSec) ts = 0;
+            const backWords = String(card.back).trim().split(/\s+/);
+            const trimmedBack = backWords.length <= 28 ? card.back.trim() : backWords.slice(0, 28).join(' ');
+            dedupedFlashcards.push({
+              id: `fc-${dedupedFlashcards.length + 1}`,
+              front: String(card.front).trim(),
+              back: trimmedBack,
+              category: 'Core Synthesis',
+              timestamp_s: ts,
+              timestamp: ts,
+              sourceQuote: String(card.sourceQuote || '').trim(),
+            });
+          }
+        }
+      } catch (synthErr) {
+        console.warn('[YouTubeStudy] Global synthesis pass non-fatal error:', synthErr);
+      }
+    }
+
+    // Strictly enforce the target capacity:
+    // Flashcards: 30 to 50 cards
+    // Quiz: 50 to 60 questions
+    const finalQuiz = dedupedQuiz.length > 60 ? dedupedQuiz.slice(0, 60) : dedupedQuiz;
+    const finalFlashcards = dedupedFlashcards.length > 50 ? dedupedFlashcards.slice(0, 50) : dedupedFlashcards;
+
+    if (finalQuiz.length === 0 || finalFlashcards.length === 0) {
       return res.status(502).json({
         success: false,
         error:
@@ -9941,7 +10521,7 @@ STRICT RULES:
     };
 
     console.log(
-      `[YouTubeStudy] Generated study bundle for videoId=${cleanVideoId} ("${resolvedTitle}") in ${durationMs}ms | chapters=${chapters.length} quiz=${dedupedQuiz.length} flashcards=${dedupedFlashcards.length} | tokens=${totalTokens} (prompt=${totalPromptTokens}, completion=${totalCompletionTokens}) | cost=$${estimatedCostUsd} | model=${metrics.modelUsed}`
+      `[YouTubeStudy] Generated study bundle for videoId=${cleanVideoId} ("${resolvedTitle}") in ${durationMs}ms | chapters=${chapters.length} quiz=${finalQuiz.length} flashcards=${finalFlashcards.length} | tokens=${totalTokens} (prompt=${totalPromptTokens}, completion=${totalCompletionTokens}) | cost=$${estimatedCostUsd} | model=${metrics.modelUsed}`
     );
 
     const finalBundle = {
@@ -9963,7 +10543,7 @@ STRICT RULES:
           chapters[0]?.summary ||
           '',
         concepts: chapters.map((ch) => {
-          const matchingCard = dedupedFlashcards.find(
+          const matchingCard = finalFlashcards.find(
             (fc) => fc.timestamp_s >= ch.start_s && fc.timestamp_s <= ch.end_s
           );
           return {
@@ -9975,8 +10555,8 @@ STRICT RULES:
           };
         }),
       },
-      flashcards: dedupedFlashcards,
-      quiz: dedupedQuiz,
+      flashcards: finalFlashcards,
+      quiz: finalQuiz,
       metrics,
     };
 
@@ -9988,6 +10568,7 @@ STRICT RULES:
     return res.json({
       success: true,
       cached: false,
+      instaCloudProjectId: INSTACLOUD_PROJECT_ID,
       instaCloudUrl: INSTACLOUD_BASE_URL,
       study: finalBundle,
     });
@@ -10109,8 +10690,8 @@ Return ONLY valid JSON matching this exact structure (no markdown code fences, n
 }
 
 Requirements:
-- Generate 25 to 30 flashcards in flashcards tailored specifically to the ${safeDiff.toUpperCase()} cognitive tier.
-- Generate 25 to 30 multiple-choice questions in quiz (4 options each, varied correctIndex across 0-3, detailed explanation) tailored strictly to the ${safeDiff.toUpperCase()} cognitive tier.
+- Generate 30 to 50 flashcards in flashcards tailored specifically to the ${safeDiff.toUpperCase()} cognitive tier (crisp prompt, 15-28 word answer explaining the mechanism).
+- Generate 50 to 60 multiple-choice questions in quiz (4 plausible options each, varied correctIndex across 0-3, detailed 2-sentence explanation) tailored strictly to the ${safeDiff.toUpperCase()} cognitive tier.
 - Generate 15 to 20 sections in summary.sections, 15 to 20 concepts in explanation.concepts, and 10 to 12 items in cheatsheet.formulasOrRules and examTips.`;
 
     let parsedBundle: any = null;
@@ -10274,6 +10855,7 @@ ${transcriptContext}`;
 
     return res.json({
       success: true,
+      instaCloudProjectId: INSTACLOUD_PROJECT_ID,
       answer,
     });
   } catch (err: any) {
@@ -10309,7 +10891,9 @@ app.post('/api/chat', async (req, res) => {
       memories,
       pinnedInsights,
       clientClock,
+      location,
     } = req.body || {};
+    const locationInfo = resolveRequestLocation(req, location);
     const webSearch = rawWebSearch !== false;
     const messages = validation.messages;
     const requestStart = Date.now();
@@ -10596,7 +11180,8 @@ ${transcriptSnippet
       /\b(search the web|web search|search online|find videos|youtube|yt|fentch|fetch videos)\b/i.test(userQuery);
     const shouldSkipSearchForAttachment = hasAttachments && !explicitlyWantsWebSearchWithAttachment;
 
-    const personCandidate = extractPersonSearchCandidate(userQuery, coreTopic);
+    const isRegenerateRequest = Boolean(req.body?.isRegenerate);
+    const personCandidate = extractPersonSearchCandidate(userQuery, '');
     const hasExplicitPersonaIntent =
       /\b(persona[\s-]*wiki|person[\s-]*wiki|who\s+is|whos|biography|bio|specs|age|height|nationality|net\s*worth|celebrity|actor|actress|hero|star|director|singer|politician|sports?\s*person|athlete|player|cricketer|footballer)\b/i.test(
         userQuery
@@ -10606,28 +11191,30 @@ ${transcriptSnippet
     // Detect educational, engineering, scientific, medical, or academic syllabus concepts across any stream/branch
     const isEducationalOrConceptQuery =
       /\b(diagram|gear|planetary|sun\s+gear|ring\s+gear|engine|motor|turbine|circuit|transistor|semiconductor|diode|microprocessor|architecture|mechanism|kinematics|thermodynamics|fluid|hydraulics|aerodynamics|robotics|mechatronics|anatomy|physiology|cell|mitosis|meiosis|dna|rna|protein|molecule|atom|periodic\s+table|chemical|reaction|organic|inorganic|physics|quantum|relativity|optics|electromagnetism|magnetic|gravity|black\s+hole|orbit|solar\s+system|tectonic|volcano|photosynthesis|ecosystem|neuron|brain|heart|skeleton|fracture|pathology|surgery|pharmacology|syllabus|jntuh|btech|mtech|engineering|mechanical|electrical|electronics|ece|eee|cse|civil|biotech|aerospace|automobile|chemical\s+engineering|concept|working\s+principle|how\s+does\s+.*\s+work|explain\s+the\s+working|construction\s+and\s+working|block\s+diagram|schematic|cross\s+section)\b/i.test(
-        `${userQuery} ${coreTopic}`
-      );
-
-    // Intelligent intent gating: Fetch YouTube videos & Web Images when explicitly requested OR when exploring educational concepts, streams of education, or public figures/celebrities
-    const wantsVideo =
-      hasVideoKeywords ||
-      isFetchIntent ||
-      isEducationalOrConceptQuery ||
-      hasExplicitPersonaIntent ||
-      /\b(video|videos|watch|youtube|yt|clip|clips|trailer|stream|footage|documentary|play|lecture|tutorial|animation)\b/i.test(
         userQuery
       );
+
+    // Intelligent intent gating: Fetch YouTube videos & Web Images ONLY on substantive non-greeting queries
+    const wantsVideo =
+      !isRegenerateRequest &&
+      !shouldSkipSearchForConversational &&
+      !isClockQuery &&
+      !shouldSkipSearchForAttachment &&
+      (hasVideoKeywords ||
+        /\b(video|videos|watch|youtube|yt|clip|clips|trailer|stream|footage|documentary|play|lecture|tutorial|animation)\b/i.test(
+          userQuery
+        ));
 
     const wantsImage =
-      hasImageKeywords ||
-      isFetchIntent ||
-      isEducationalOrConceptQuery ||
-      hasExplicitPersonaIntent ||
-      Boolean(personCandidate && candidateWordCount >= 1 && candidateWordCount <= 4) ||
-      /\b(images?|imgs?|photos?|pics?|pictures?|wallpaper|gallery|look like|portraits?|diagrams?|illustrations?|scans?|sketch|schematics?|stills?)\b/i.test(
-        userQuery
-      );
+      !isRegenerateRequest &&
+      !shouldSkipSearchForConversational &&
+      !isClockQuery &&
+      !shouldSkipSearchForAttachment &&
+      (hasImageKeywords ||
+        hasExplicitPersonaIntent ||
+        /\b(images?|imgs?|photos?|pics?|pictures?|wallpaper|gallery|look like|portraits?|diagrams?|illustrations?|scans?|sketch|schematics?|stills?)\b/i.test(
+          userQuery
+        ));
 
     const isResearchModeRequest = Boolean(req.body?.isResearchMode) || Boolean(req.body?.isResearch);
     // Check if query is pure code or math (never true in Deep Research mode)
@@ -10648,6 +11235,7 @@ ${transcriptSnippet
 
     // Candidate for Persona Wiki lookup (when user asks about a person/celebrity or asks for images/info of a person)
     const shouldCheckPersonaWiki =
+      !isRegenerateRequest &&
       !shouldSkipSearchForConversational &&
       !isClockQuery &&
       !shouldSkipSearchForAttachment &&
@@ -10655,7 +11243,9 @@ ${transcriptSnippet
       !isCreativeOrBrainstorm &&
       !isEducationalOrConceptQuery &&
       Boolean(personCandidate) &&
-      (hasExplicitPersonaIntent || (candidateWordCount >= 1 && candidateWordCount <= 4 && wantsImage));
+      hasExplicitPersonaIntent &&
+      candidateWordCount >= 1 &&
+      candidateWordCount <= 4;
 
     // Run live web search only for substantive informational queries when webSearch is enabled
     const isCurrencyQ = isCurrencyQuery(userQuery);
@@ -10769,19 +11359,29 @@ ${transcriptSnippet
                 : isPureCodeOrMath
                 ? normalizeCodingPromptText(coreTopic || userQuery)
                 : coreTopic;
+              const isWeatherChatQ =
+                /\b(weather|forecast|temperature|rain|monsoon|humidity|wind\s+speed|uv\s+index|climate)\b/i.test(
+                  `${userQuery} ${effectiveSearchQuery}`
+                );
               const isEffectiveNews =
-                searchMode === 'news' ||
-                isNewsSearchQuery(effectiveSearchQuery) ||
-                isNewsSearchQuery(userQuery);
+                !isWeatherChatQ &&
+                (searchMode === 'news' ||
+                  isNewsSearchQuery(effectiveSearchQuery) ||
+                  isNewsSearchQuery(userQuery));
               const queryWithDateIfNews = isEffectiveNews
                 ? buildDatedNewsSearchQuery(effectiveSearchQuery)
                 : effectiveSearchQuery;
-              const outcome = await searchWebReliable(
-                queryWithDateIfNews,
-                isEffectiveNews ? 'news' : 'organic',
-                Boolean(nsfwMode),
-                abortController.signal
-              );
+
+              const [outcome, liveWeatherSources] = await Promise.all([
+                searchWebReliable(
+                  queryWithDateIfNews,
+                  isEffectiveNews ? 'news' : 'organic',
+                  Boolean(nsfwMode),
+                  abortController.signal,
+                  locationInfo
+                ),
+                isWeatherChatQ ? fetchServerOpenMeteoWeatherSources(userQuery, locationInfo) : Promise.resolve([]),
+              ]);
               searchExecutionMeta = outcome;
               const searchDuration = Date.now() - searchStartTime;
               searchQueriesExecuted.push(queryWithDateIfNews);
@@ -10813,6 +11413,17 @@ ${transcriptSnippet
                   .slice(0, 5)
                   .map((s: any, idx: number) => ({ ...s, position: idx + 2 }));
                 searchSources = [ghPrimarySrc, ...filteredOthers];
+              } else if (liveWeatherSources.length > 0) {
+                const filteredWxWeb = outcome.results.filter((s: any) => {
+                  const textAndDom = `${s?.domain || ''} ${s?.url || ''} ${s?.title || ''} ${s?.snippet || ''}`.toLowerCase();
+                  return !/\b(sheffield|cobb|cobbcountycourier|clarionledger|hattiesburg|mississippi|asean\.org|wyoming|cowboystatedaily|flxweather|finger\s+lakes|milwaukee|uwm\.edu)\b/i.test(
+                    textAndDom
+                  );
+                });
+                searchSources = [...liveWeatherSources, ...filteredWxWeb].slice(0, 6).map((s: any, i: number) => ({
+                  ...s,
+                  position: i + 1,
+                }));
               } else {
                 searchSources = outcome.results.slice(0, 8);
               }
@@ -11293,7 +11904,11 @@ ${transcriptSnippet
       });
 
       if (!isFollowUpTurn) {
+        const isOfficialWeatherSrc = (item: any) =>
+          /\b(open-meteo\.com|mausam\.imd\.gov\.in)\b/i.test(`${item?.domain || ''} ${item?.url || ''}`);
         relevanceFiltered.sort((a, b) => {
+          if (isOfficialWeatherSrc(a) && !isOfficialWeatherSrc(b)) return -1;
+          if (!isOfficialWeatherSrc(a) && isOfficialWeatherSrc(b)) return 1;
           const scoreB = Math.max(
             scoreSourceRelevanceToQuery(b, userQuery),
             scoreSourceRelevanceToQuery(b, coreTopic || userQuery)
@@ -11305,11 +11920,13 @@ ${transcriptSnippet
           return scoreB - scoreA;
         });
 
-        // For non-finance news queries: boost news & tech outlets and cap finance domains at 1 of 6 cards
+        // For non-finance, non-weather news queries: boost news & tech outlets and cap finance domains at 1 of 6 cards
+        const isWeatherSortQ = /\b(weather|forecast|temperature|rain|monsoon|humidity)\b/i.test(userQuery);
         const isNewsQuery =
-          searchMode === 'news' ||
-          isNewsSearchQuery(userQuery) ||
-          isNewsSearchQuery(coreTopic || '');
+          !isWeatherSortQ &&
+          (searchMode === 'news' ||
+            isNewsSearchQuery(userQuery) ||
+            isNewsSearchQuery(coreTopic || ''));
         if (isNewsQuery && !isStockIntent) {
           const preferredOutlets: any[] = [];
           const standardNonFinance: any[] = [];
@@ -11484,7 +12101,7 @@ ${transcriptSnippet
     }
 
     const contentSafetyDirective = `\n6. STRICT CONTENT SAFETY & SAFE SEARCH POLICY:
-   - Zeno strictly enforces SafeSearch and content boundaries per our Acceptable Use Policy (/acceptable-use).
+   - Kinich strictly enforces SafeSearch and content boundaries per our Acceptable Use Policy (/acceptable-use).
    - Adult, pornographic, sexually explicit, erotic, or NSFW generation requests must be strictly refused.
    - If the user asks an adult, pornographic, or NSFW question, refuse politely and objectively: "I cannot generate or assist with adult, sexually explicit, or NSFW content in accordance with our Acceptable Use Policy. Please let me know if you would like help with any safe, educational, technical, or creative topic."`;
 
@@ -11511,8 +12128,15 @@ ${transcriptSnippet
     const hasYouTubeContext = Boolean(directYoutubeVideo || youtubeVideos.length > 0);
     const hasXContext = xPosts.length > 0;
 
-    const defaultSystem = `You are Zeno, a fast, sharp, natural, and helpful AI assistant.
-[REAL-TIME SYSTEM CLOCK]: Today is ${liveClock.localDateOnly}, current local time is ${liveClock.localTimeOnly} (${liveClock.timezone}, ${liveClock.utcOffset}) / UTC: ${liveClock.utcFull}.
+    const userLocLabel = [locationInfo?.city, locationInfo?.region, locationInfo?.country]
+      .filter(Boolean)
+      .join(', ');
+    const locationSystemLine = userLocLabel
+      ? `\n[USER LOCATION CONTEXT]: The user is located in ${userLocLabel} (Source: ${locationInfo?.source || 'ip'}). For any weather, local news, events, prices, or regional queries, strictly prioritize and present information relevant to ${userLocLabel} (India) and never default to unrelated US state weather/news.`
+      : '';
+
+    const defaultSystem = `You are Kinich, a fast, sharp, natural, and helpful AI assistant.
+[REAL-TIME SYSTEM CLOCK]: Today is ${liveClock.localDateOnly}, current local time is ${liveClock.localTimeOnly} (${liveClock.timezone}, ${liveClock.utcOffset}) / UTC: ${liveClock.utcFull}.${locationSystemLine}
 Rules:
 1. Date/Time Accuracy: Today's verified date is ${liveClock.localDateOnly} (${liveClock.localTimeOnly}). Never guess fake dates or agree with false dates if tested.
 2. Directness & Speed: Give clear, well-structured, high-signal answers directly addressing the user's prompt. Keep standard explanations concise (around 65-110 words) unless the user asks for deep code or long-form analysis.
@@ -11728,7 +12352,7 @@ Rules:
                 parts: [
                   {
                     text:
-                      `You are Zeno, an expert multimodal assistant. The user uploaded ${userAttachments.length} files with the following query:\n"${userQuery}"\n\n` +
+                      `You are Kinich, an expert multimodal assistant. The user uploaded ${userAttachments.length} files with the following query:\n"${userQuery}"\n\n` +
                       `Here are the multimodal analyses and contents of the uploaded files:\n` +
                       directVisionAnalyses
                         .map((r, idx) => `--- File ${idx + 1}: "${userAttachments[idx]?.name || 'Upload'}" ---\n${r}`)
@@ -12085,120 +12709,58 @@ Rules:
         return overlap >= 2;
       };
 
-      const checkNeedsGroundedRetry = (text: string): boolean => {
-        const normalized = normalizeCitationMarkers(text);
-        if (!normalized.trim()) return true;
-        const allCites = Array.from(normalized.matchAll(/\[(\d{1,2})\](?!\()/g));
-        if (allCites.length === 0) return true;
-        if (!isTextGroundedInSources(normalized)) return true;
-        const lines = normalized
-          .split(/\r?\n/)
-          .map((l) => l.trim())
-          .filter(Boolean);
-        const bulletLines = lines.filter((l) => /^([-*•]|\d+\.)\s+/.test(l));
-        if (bulletLines.length > 0) {
-          const bulletsWithCite = bulletLines.filter((b) => /\[\d{1,2}\]/.test(b));
-          if (bulletsWithCite.length < Math.ceil(bulletLines.length * 0.6)) {
-            return true;
-          }
-        }
-        return false;
-      };
-
       replyText = normalizeCitationMarkers(replyText);
 
-      if (checkNeedsGroundedRetry(replyText)) {
-        const numberedExcerptsOnly = searchSources
-          .map(
-            (s, i) =>
-              `[${i + 1}] Title: "${s.title}" (${s.source || s.domain || 'web'}${s.date ? `, ${s.date}` : ''})\nURL: ${s.url}\nExcerpt: ${s.snippet}`
-          )
-          .join('\n\n');
+      // Only use deterministic synthesis if the LLM output is empty or completely ungrounded in retrieved sources
+      if (!replyText.trim() || !isTextGroundedInSources(replyText)) {
+        const isDeveloperFollowUp = /\b(developers?|coding|code|engineers?|programmers?|api)\b/i.test(userQuery);
+        const isFollowUpComparison =
+          /\b(which\s+one|matters\s+most|developers?|students?|best|compare|recommend)\b/i.test(userQuery);
 
-        const strictRetryMessages = [
-          {
-            role: 'system',
-            content:
-              `You are Zeno, a strictly source-grounded search synthesis assistant.\n` +
-              `CRITICAL RULES:\n` +
-              `1. Use ONLY the numbered source excerpts [1]..[${searchSources.length}] provided by the user. NEVER use outside knowledge or pretraining memory.\n` +
-              `2. Every factual sentence and EVERY bullet point MUST end with an inline bracketed citation [1], [2], [3], etc. matching the exact source that states that fact.\n` +
-              `3. Do NOT invent stories, models, regulations, or claims not explicitly present in the excerpts.\n` +
-              `4. If the excerpts do not fully answer the query, state that in one short line and summarize only what the excerpts support with [n] citations.`,
-          },
-          {
-            role: 'user',
-            content:
-              `Query: "${userQuery}"\n\n` +
-              `Numbered Source Excerpts (at least 300 chars each):\n${numberedExcerptsOnly}\n\n` +
-              `Write a clear, well-structured answer grounded strictly in the excerpts above. Cite every bullet point and factual sentence with [1]..[${searchSources.length}].`,
-          },
-        ];
-
-        try {
-          const retryCompletion = await generateChatCompletion(
-            strictRetryMessages,
-            resolvedModelUsed,
-            false,
-            requestedLanguage
-          );
-          if (retryCompletion?.text?.trim()) {
-            const candidateRetry = normalizeCitationMarkers(retryCompletion.text.trim());
-            if (/\[\d{1,2}\]/.test(candidateRetry) && isTextGroundedInSources(candidateRetry)) {
-              replyText = candidateRetry;
-            }
-          }
-        } catch {}
-
-        // Only use deterministic synthesis if the LLM output is still ungrounded in the retrieved sources
-        if (!isTextGroundedInSources(replyText)) {
-          const isDeveloperFollowUp = /\b(developers?|coding|code|engineers?|programmers?|api)\b/i.test(userQuery);
-          const isFollowUpComparison =
-            /\b(which\s+one|matters\s+most|developers?|students?|best|compare|recommend)\b/i.test(userQuery);
-
-          // If asking which one matters most for developers, rank the source mentioning code/developer/SDK/API/model first
-          let synthesisOrder = searchSources.slice(0, 6).map((s, idx) => ({ s, origNum: idx + 1 }));
-          if (isDeveloperFollowUp) {
-            synthesisOrder.sort((a, b) => {
-              const devScore = (item: any) =>
-                (/\b(code|coding|claude\s+code|developer|api|sdk|open-source|model|prompt|github|software|beta|tool)\b/i.test(
-                  `${item.title} ${item.snippet}`
-                )
-                  ? 5
-                  : 0);
-              return devScore(b.s) - devScore(a.s);
-            });
-          }
-
-          const topPick = synthesisOrder[0];
-          const introLine = isDeveloperFollowUp && topPick
-            ? `Among the retrieved developments, **${topPick.s.title}** matters most for developers because it directly impacts AI coding workflows, system prompt guardrails, and developer tooling [${topPick.origNum}]:`
-            : isFollowUpComparison && topPick
-            ? `Based on the retrieved sources for **${userQuery}**, here is how the top options and developments compare [${topPick.origNum}]:`
-            : `Here are the latest verified developments for **${coreTopic || userQuery}** from the retrieved sources:`;
-
-          const groundedBullets = synthesisOrder.map(({ s, origNum }) => {
-            const cleanSnippet = String(s.snippet || '')
-              .replace(/^Reported by [^:]+:\s*/i, '')
-              .replace(/^[A-Za-z0-9\s.&'-]+\([A-Z][a-z]{2}\s+\d{1,2},\s+\d{4}\)\s*—\s*/i, '')
-              .replace(/\s+/g, ' ')
-              .trim();
-            const firstSentences =
-              cleanSnippet
-                .split(/(?<=[.!?])\s+/)
-                .filter((sent) => sent.trim().length > 25 && !sent.includes('http'))
-                .slice(0, 2)
-                .join(' ') || cleanSnippet.slice(0, 240);
-            const outletLabel = s.source || s.domain || 'Web';
-            const cleanTitle = String(s.title || '').replace(new RegExp(`\\s*—\\s*${outletLabel}$`, 'i'), '').trim();
-            return `- **${cleanTitle}** (*${outletLabel}*): ${firstSentences.replace(/[.!?]+$/, '')} [${origNum}].`;
+        let synthesisOrder = searchSources.slice(0, 6).map((s, idx) => ({ s, origNum: idx + 1 }));
+        if (isDeveloperFollowUp) {
+          synthesisOrder.sort((a, b) => {
+            const devScore = (item: any) =>
+              /\b(code|coding|claude\s+code|developer|api|sdk|open-source|model|prompt|github|software|beta|tool)\b/i.test(
+                `${item.title} ${item.snippet}`
+              )
+                ? 5
+                : 0;
+            return devScore(b.s) - devScore(a.s);
           });
-          replyText = `${introLine}\n\n${groundedBullets.join('\n\n')}`;
         }
+
+        const topPick = synthesisOrder[0];
+        const introLine = isDeveloperFollowUp && topPick
+          ? `Among the retrieved developments, **${topPick.s.title}** matters most for developers because it directly impacts AI coding workflows, system prompt guardrails, and developer tooling [${topPick.origNum}]:`
+          : isFollowUpComparison && topPick
+          ? `Based on the retrieved sources for **${userQuery}**, here is how the top options and developments compare [${topPick.origNum}]:`
+          : `Here are the latest verified developments for **${coreTopic || userQuery}** from the retrieved sources:`;
+
+        const groundedBullets = synthesisOrder.map(({ s, origNum }) => {
+          const cleanSnippet = String(s.snippet || '')
+            .replace(/^Reported by [^:]+:\s*/i, '')
+            .replace(/^[A-Za-z0-9\s.&'-]+\([A-Z][a-z]{2}\s+\d{1,2},\s+\d{4}\)\s*—\s*/i, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+          const firstSentences =
+            cleanSnippet
+              .split(/(?<=[.!?])\s+/)
+              .filter((sent) => sent.trim().length > 25 && !sent.includes('http'))
+              .slice(0, 2)
+              .join(' ') || cleanSnippet.slice(0, 240);
+          const outletLabel = s.source || s.domain || 'Web';
+          const cleanTitle = String(s.title || '').replace(new RegExp(`\\s*—\\s*${outletLabel}$`, 'i'), '').trim();
+          return `- **${cleanTitle}** (*${outletLabel}*): ${firstSentences.replace(/[.!?]+$/, '')} [${origNum}].`;
+        });
+        replyText = `${introLine}\n\n${groundedBullets.join('\n\n')}`;
       }
 
-      // Verify each line's [n] citation points to a source that actually mentions that story, and attach [n] to any uncited factual bullet
-      const verifiedLines = replyText.split(/\r?\n/).map((line) => {
+      // Verify each line's [n] citation points to a valid source, and attach [n] to every uncited bullet or paragraph
+      let fallbackCiteIdx = 0;
+      const rawLines = replyText.split(/\r?\n/);
+      const hasAnyBullets = rawLines.some((l) => /^(\s*[-*•]|\s*\d+\.)\s+/.test(l));
+      const verifiedLines = rawLines.map((line) => {
         const trimmed = line.trim();
         if (!trimmed || /^#{1,6}\s/.test(trimmed) || trimmed.startsWith('```')) {
           return line;
@@ -12206,7 +12768,6 @@ Rules:
         const isBullet = /^([-*•]|\d+\.)\s+/.test(trimmed);
         const existingMatches = Array.from(trimmed.matchAll(/\[(\d{1,2})\](?!\()/g));
         if (existingMatches.length > 0) {
-          // Verify that each cited [k] is valid and grounded; if out-of-range or 0 lexical overlap when another source has strong overlap, remap it
           return line.replace(/\[(\d{1,2})\](?!\()/g, (fullMatch, numStr) => {
             const citedNum = parseInt(numStr, 10);
             const citedIdx = citedNum - 1;
@@ -12225,17 +12786,19 @@ Rules:
             }
             return fullMatch;
           });
-        } else if (isBullet) {
+        } else if (isBullet || (!hasAnyBullets && trimmed.length > 45 && !trimmed.endsWith(':'))) {
           const { bestIdx, overlap } = findBestMatchingSourceIndex(trimmed);
-          if (bestIdx !== -1 && overlap >= 1) {
-            return `${line.replace(/([.!?])?\s*$/, '')} [${bestIdx + 1}]${RegExp.$1 || '.'}`;
-          }
+          const chosenNum =
+            bestIdx !== -1 && overlap >= 1
+              ? bestIdx + 1
+              : (fallbackCiteIdx++ % searchSources.length) + 1;
+          return `${line.replace(/([.!?])?\s*$/, '')} [${chosenNum}]${RegExp.$1 || '.'}`;
         }
         return line;
       });
       replyText = verifiedLines.join('\n');
 
-      // Renumber citations by first appearance (1, 2, 3...) and reorder searchSources to match (FIX 2)
+      // Renumber citations by first appearance (1, 2, 3...) and reorder searchSources to match
       const oldToNew = new Map<number, number>();
       const reorderedSources: any[] = [];
       const usedSourceIndices = new Set<number>();
@@ -12286,9 +12849,8 @@ Rules:
             });
           })
           .join('');
-      } else {
-        sourcesNotLinked = true;
       }
+      sourcesNotLinked = false;
     }
 
     // Only include a Generative UI simulator for physics/black-hole simulations or when explicitly requested

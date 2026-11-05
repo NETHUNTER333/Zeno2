@@ -241,13 +241,22 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
   const searchQueriesKey = (message.searchQueries || []).join('|');
 
   useEffect(() => {
-    if (message.images && message.images.length > 0) {
-      setDisplayedImages((prev) => {
-        if (prev.length === 0) return message.images!.slice(0, 4);
-        return prev;
-      });
+    if (!message.isStreaming && message.images && message.images.length > 0) {
+      setDisplayedImages(message.images.slice(0, 4));
+      setHasMoreImages(true);
+    } else {
+      setDisplayedImages([]);
+      setActiveImageIndex(null);
+      setHasMoreImages(false);
     }
-  }, [message.images]);
+  }, [message.id, message.images, message.isStreaming]);
+
+  useEffect(() => {
+    if (!message.videos || message.videos.length === 0) {
+      setActiveVideoIndex(null);
+      setResolvedVideos({});
+    }
+  }, [message.videos]);
 
   const handleLoadMoreImages = async () => {
     if (isLoadingMoreImages) return;
@@ -1021,23 +1030,6 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
             />
           )}
 
-          {!message.isStreaming &&
-            orderedMessageSources &&
-            orderedMessageSources.length > 0 &&
-            cleanedContent &&
-            (message.sourcesNotLinked || !/\[\d{1,2}\]/.test(cleanedContent)) && (
-              <div
-                data-testid="sources-not-linked-note"
-                className={`mb-2 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${
-                  isDark
-                    ? 'border-white/[0.12] bg-white/[0.04] text-neutral-400'
-                    : 'border-black/[0.08] bg-black/[0.03] text-neutral-600'
-                }`}
-              >
-                <span>Sources not linked</span>
-              </div>
-            )}
-
           {/* @kobra/weather: Intelligently triggered when query asks for weather/temperature/forecast */}
           {(() => {
             const wxLoc = detectWeatherLocationInQuery(message.searchQueries?.[0] || '');
@@ -1046,17 +1038,18 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
           })()}
 
           {/* @kobra/image-generation: Intelligently triggered when query requests image generation */}
-          {(() => {
-            const imgPrompt = detectImageGenerationIntent(message.searchQueries?.[0] || '');
-            if (!imgPrompt) return null;
-            return (
-              <ImageGenerationCard
-                prompt={imgPrompt}
-                isDark={isDark}
-                fallbackImages={message.images}
-              />
-            );
-          })()}
+          {!message.isStreaming &&
+            (() => {
+              const imgPrompt = detectImageGenerationIntent(message.searchQueries?.[0] || '');
+              if (!imgPrompt) return null;
+              return (
+                <ImageGenerationCard
+                  prompt={imgPrompt}
+                  isDark={isDark}
+                  fallbackImages={message.images}
+                />
+              );
+            })()}
 
           {/* Fast single-line loading indicator only while waiting for text when WebSearch spinner isn't already active */}
           {message.isStreaming &&
@@ -1076,7 +1069,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
             )}
 
           {/* Persona Wiki Interactive Profile Card (Athletes, Celebrities, Politicians, Public Figures on any scale) */}
-          {message.personaWiki && (
+          {!message.isStreaming && message.personaWiki && (
             <PersonaWikiCard
               persona={message.personaWiki}
               isDark={isDark}
@@ -1085,7 +1078,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
           )}
 
           {/* Collapsible Interactive Web Image Gallery (4 initial images + Load More) */}
-          {displayedImages.length > 0 && (
+          {!message.isStreaming && displayedImages.length > 0 && (
             <div className={`my-2.5 ${isImageGalleryExpanded ? `pb-3 border-b ${isDark ? 'border-[#1f1f1f]' : 'border-[#e5e5e5]'}` : ''}`}>
               <div className="flex items-center justify-between gap-2">
                 <button
@@ -2494,7 +2487,12 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                 {onRetry && (
                   <button
                     type="button"
-                    onClick={() => onRetry()}
+                    onClick={() => {
+                      setDisplayedImages([]);
+                      setActiveImageIndex(null);
+                      setHasMoreImages(false);
+                      onRetry();
+                    }}
                     className={`p-1 rounded transition-colors cursor-pointer ${
                       isDark ? 'hover:text-white' : 'hover:text-[#0d0d0d]'
                     }`}

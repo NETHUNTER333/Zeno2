@@ -37,11 +37,23 @@ export const GrokLogo: React.FC<GrokLogoProps> = ({
         isDark ? 'text-white' : 'text-[#0d0d0d]'
       } ${className}`}
     >
-      <img
-        src="/assets/aistudio/kinich-icon-1024_544040c6.png"
-        alt="Kinich Logo"
-        className={`${iconSize} rounded-xl object-cover shrink-0`}
-      />
+      <div
+        className={`${iconSize} relative rounded-xl overflow-hidden shrink-0 border ${
+          isDark
+            ? 'border-white/15 shadow-[0_0_18px_rgba(252,76,1,0.35)]'
+            : 'border-black/10 shadow-[0_4px_14px_rgba(252,76,1,0.22)]'
+        }`}
+        style={{
+          background:
+            'radial-gradient(circle 85% at 92% 92%, #fffbe6 0%, #ffd447 22%, #ff8826 48%, #fc4c01 66%, #120905 78%, #070606 100%)',
+        }}
+      >
+        <img
+          src="/assets/aistudio/kinich-icon-1024_544040c6.png"
+          alt="Kinich Logo"
+          className="w-full h-full object-cover mix-blend-screen opacity-95"
+        />
+      </div>
 
       {showText && (
         <span className={`${textSize} font-bold tracking-tight font-sans`}>

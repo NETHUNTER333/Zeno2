@@ -168,10 +168,10 @@ export function escapeHtmlEntities(str: string): string {
 const SEEDED_ARTIFACTS: ServerPublicArtifact[] = [
   {
     id: 'art_transformer_attention_guide',
-    ownerId: 'zeno_editorial',
-    authorName: 'Zeno Research Team',
-    authorUsername: 'zeno_research',
-    authorBio: 'Curated reference synthesis and study guides built with Zeno.',
+    ownerId: 'kinich_editorial',
+    authorName: 'Kinich Research Team',
+    authorUsername: 'kinich_research',
+    authorBio: 'Curated reference synthesis and study guides built with Kinich.',
     showAuthorAttribution: true,
     title: 'Scaled Dot-Product & Multi-Head Attention: Mathematical Study Guide',
     summary:
@@ -218,9 +218,9 @@ Grouped-Query Attention (GQA) reduces $H_{kv}$ by sharing key/value heads across
   },
   {
     id: 'art_distributed_rate_limiter_ts',
-    ownerId: 'zeno_editorial',
-    authorName: 'Zeno Systems Lab',
-    authorUsername: 'zeno_systems',
+    ownerId: 'kinich_editorial',
+    authorName: 'Kinich Systems Lab',
+    authorUsername: 'kinich_systems',
     authorBio: 'Production architecture patterns and systems engineering notes.',
     showAuthorAttribution: true,
     title: 'Atomic Token Bucket & Sliding Window Rate Limiting in Redis + TypeScript',
@@ -281,14 +281,14 @@ return {1, 0}
   },
   {
     id: 'art_scientific_literature_synthesis',
-    ownerId: 'zeno_editorial',
-    authorName: 'Zeno Research Team',
-    authorUsername: 'zeno_research',
-    authorBio: 'Curated reference synthesis and study guides built with Zeno.',
+    ownerId: 'kinich_editorial',
+    authorName: 'Kinich Research Team',
+    authorUsername: 'kinich_research',
+    authorBio: 'Curated reference synthesis and study guides built with Kinich.',
     showAuthorAttribution: true,
     title: 'How to Synthesize a 40-Page Research Paper in 15 Minutes',
     summary:
-      'A structured 3-pass reading workflow combining abstract claim extraction, methodology auditing, and active-recall quiz verification inside Zeno PDF Studio.',
+      'A structured 3-pass reading workflow combining abstract claim extraction, methodology auditing, and active-recall quiz verification inside Kinich PDF Studio.',
     content: `## The Three-Pass Literature Audit
 
 Reading dense academic preprints linearly from page 1 to page 40 wastes cognitive bandwidth before you know whether the paper's empirical claims hold up.
@@ -303,7 +303,7 @@ Reading dense academic preprints linearly from page 1 to page 40 wastes cognitiv
 - Verify whether baseline comparisons use identical parameter budgets and training compute.
 
 ### Pass 3: Active Recall Verification (5 Minutes)
-- Upload the PDF into **Zeno Study Studio**.
+- Upload the PDF into **Kinich Study Studio**.
 - Generate a **Hard Mastery Quiz** and **Concept & Math Breakdown** to test whether you can reconstruct the paper's core equation and failure modes without looking at the text.`,
     category: 'Research',
     tags: ['literature-review', 'arxiv', 'research-methods', 'pdf-studio', 'study-workflow'],
@@ -318,9 +318,9 @@ Reading dense academic preprints linearly from page 1 to page 40 wastes cognitiv
   },
   {
     id: 'art_spaced_repetition_active_recall',
-    ownerId: 'zeno_editorial',
-    authorName: 'Zeno Learning Lab',
-    authorUsername: 'zeno_learning',
+    ownerId: 'kinich_editorial',
+    authorName: 'Kinich Learning Lab',
+    authorUsername: 'kinich_learning',
     authorBio: 'Evidence-based learning frameworks and exam preparation workflows.',
     showAuthorAttribution: true,
     title: 'Active Recall vs. Passive Highlighting: Exam Mastery Protocol',
@@ -330,7 +330,7 @@ Reading dense academic preprints linearly from page 1 to page 40 wastes cognitiv
 
 Fluency with a highlighted page is recognition, not retrieval. Cognitive psychology experiments (Roediger & Karpicke, 2006) demonstrate that retrieval practice—forcing your brain to reconstruct an answer from scratch—doubles long-term retention after 7 days compared to repeated study.
 
-## The Zeno 3-Tier Mastery Loop
+## The Kinich 3-Tier Mastery Loop
 1. **Easy Tier (Foundational Recall)**: Verify definitions, terminology, and primary thesis statements.
 2. **Medium Tier (Mechanism & Cause-Effect)**: Explain *how* changing variable $X$ alters system output $Y$.
 3. **Hard Tier (Edge Cases & Synthesis)**: Diagnose failure modes, boundary assumptions, and trade-offs between competing approaches.`,
@@ -347,9 +347,9 @@ Fluency with a highlighted page is recognition, not retrieval. Cognitive psychol
   },
   {
     id: 'art_webgpu_wasm_browser_inference',
-    ownerId: 'zeno_editorial',
-    authorName: 'Zeno Systems Lab',
-    authorUsername: 'zeno_systems',
+    ownerId: 'kinich_editorial',
+    authorName: 'Kinich Systems Lab',
+    authorUsername: 'kinich_systems',
     authorBio: 'Production architecture patterns and systems engineering notes.',
     showAuthorAttribution: true,
     title: 'On-Device Browser AI: WebGPU Compute Shaders & WebAssembly SIMD',
@@ -376,9 +376,9 @@ Running compact neural models (such as 30M–1B parameter speech and embedding m
   },
   {
     id: 'art_technical_rfc_writing_framework',
-    ownerId: 'zeno_editorial',
-    authorName: 'Zeno Editorial',
-    authorUsername: 'zeno_editorial',
+    ownerId: 'kinich_editorial',
+    authorName: 'Kinich Editorial',
+    authorUsername: 'kinich_editorial',
     authorBio: 'Clarity-first technical writing and engineering RFC templates.',
     showAuthorAttribution: true,
     title: 'Engineering RFC & Technical Design Doc Framework',
@@ -404,9 +404,9 @@ Running compact neural models (such as 30M–1B parameter speech and embedding m
   },
   {
     id: 'art_deep_work_research_sprint',
-    ownerId: 'zeno_editorial',
-    authorName: 'Zeno Productivity',
-    authorUsername: 'zeno_productivity',
+    ownerId: 'kinich_editorial',
+    authorName: 'Kinich Productivity',
+    authorUsername: 'kinich_productivity',
     authorBio: 'Workflows for focused research, note synthesis, and decision clarity.',
     showAuthorAttribution: true,
     title: 'The 45-Minute Deep Research & Vault Synthesis Sprint',
@@ -437,9 +437,9 @@ Save the final structured synthesis into a dedicated **Knowledge Vault Collectio
   },
   {
     id: 'art_organic_chemistry_mechanisms_sheet',
-    ownerId: 'zeno_editorial',
-    authorName: 'Zeno Study Studio',
-    authorUsername: 'zeno_study',
+    ownerId: 'kinich_editorial',
+    authorName: 'Kinich Study Studio',
+    authorUsername: 'kinich_study',
     authorBio: 'High-yield study sheets and university STEM exam guides.',
     showAuthorAttribution: true,
     title: 'SN1, SN2, E1 & E2 Reaction Mechanisms Decision Matrix',
@@ -603,11 +603,11 @@ function ensureSeededArtifacts(): void {
     for (const item of SEEDED_ARTIFACTS) {
       artifactsStore.set(item.id, { ...item });
     }
-    creatorProfilesStore.set('zeno_editorial', {
-      uid: 'zeno_editorial',
-      displayName: 'Zeno Research Team',
-      username: 'zeno_research',
-      bio: 'Curated reference synthesis, systems architecture notes, and study guides built with Zeno.',
+    creatorProfilesStore.set('kinich_editorial', {
+      uid: 'kinich_editorial',
+      displayName: 'Kinich Research Team',
+      username: 'kinich_research',
+      bio: 'Curated reference synthesis, systems architecture notes, and study guides built with Kinich.',
       isPublic: true,
       featuredArtifactIds: SEEDED_ARTIFACTS.slice(0, 4).map((a) => a.id),
       updatedAt: 1761490000000,
@@ -735,7 +735,7 @@ export function listPublicArtifacts(params: {
 function sanitizeArtifactForPublicResponse(art: ServerPublicArtifact): ServerPublicArtifact {
   return {
     ...art,
-    authorName: art.showAuthorAttribution ? art.authorName : 'Zeno Contributor',
+    authorName: art.showAuthorAttribution ? art.authorName : 'Kinich Contributor',
     authorUsername: art.showAuthorAttribution ? art.authorUsername : undefined,
     authorBio: art.showAuthorAttribution ? art.authorBio : undefined,
   };
@@ -854,7 +854,7 @@ export function createOrUpdateArtifact(
       visibility,
       outputType,
       showAuthorAttribution: payload?.showAuthorAttribution !== false,
-      authorName: sanitizePlainString(payload?.authorName || existing.authorName || 'Zeno Researcher', 80),
+      authorName: sanitizePlainString(payload?.authorName || existing.authorName || 'Kinich Researcher', 80),
       authorUsername: sanitizePlainString(payload?.authorUsername || existing.authorUsername || '', 50) || undefined,
       authorBio: sanitizePlainString(payload?.authorBio || existing.authorBio || '', 200) || undefined,
       sources: sources.length > 0 ? sources : existing.sources,
@@ -869,7 +869,7 @@ export function createOrUpdateArtifact(
   const created: ServerPublicArtifact = {
     id: newId,
     ownerId: ownerUid,
-    authorName: sanitizePlainString(payload?.authorName || 'Zeno Researcher', 80) || 'Zeno Researcher',
+    authorName: sanitizePlainString(payload?.authorName || 'Kinich Researcher', 80) || 'Kinich Researcher',
     authorUsername: sanitizePlainString(payload?.authorUsername || '', 50) || undefined,
     authorBio: sanitizePlainString(payload?.authorBio || '', 200) || undefined,
     showAuthorAttribution: payload?.showAuthorAttribution !== false,
@@ -1251,24 +1251,24 @@ export function injectSocialMetaIntoHtml(
   const shareId = typeof query.share === 'string' ? query.share.trim() : '';
   const refCode = typeof query.ref === 'string' ? query.ref.trim() : '';
 
-  let pageTitle = 'Zeno — AI Research, Learning & Multi-Model Workspace';
+  let pageTitle = 'Kinich — AI Research, Learning & Multi-Model Workspace';
   let pageDescription =
-    'Explore ideas, synthesize academic papers, build study guides, and organize knowledge in Zeno.';
+    'Explore ideas, synthesize academic papers, build study guides, and organize knowledge in Kinich.';
 
   if (artifactId) {
     const art = getArtifactForMeta(artifactId);
     if (art) {
-      pageTitle = `${art.title} · Zeno Public Research Page`;
-      pageDescription = `${art.summary} — Published in ${art.category} on Zeno.`;
+      pageTitle = `${art.title} · Kinich Public Research Page`;
+      pageDescription = `${art.summary} — Published in ${art.category} on Kinich.`;
     }
   } else if (shareId && isValidSafeId(shareId)) {
-    pageTitle = 'Shared Research Snapshot · Zeno';
+    pageTitle = 'Shared Research Snapshot · Kinich';
     pageDescription =
-      'View this verified read-only research snapshot with cited sources and fork it into your Zeno workspace.';
+      'View this verified read-only research snapshot with cited sources and fork it into your Kinich workspace.';
   } else if (refCode && isValidSafeId(refCode, 32)) {
-    pageTitle = 'You’ve Been Invited with a Zeno Pass · Zeno AI Research Platform';
+    pageTitle = 'You’ve Been Invited with a Kinich Pass · Kinich AI Research Platform';
     pageDescription =
-      'Accept your Zeno Pass to explore AI research, PDF study studios, and personal knowledge vaults.';
+      'Accept your Kinich Pass to explore AI research, PDF study studios, and personal knowledge vaults.';
   } else {
     return rawHtml;
   }
@@ -1336,7 +1336,7 @@ export function registerGrowthEngineRoutes(app: Router): void {
     const visitorKey = `${req.ip || 'anon'}_${req.headers['user-agent']?.slice(0, 32) || ''}`;
     const lookup = getArtifactById(id, resolveRequesterUid(req), visitorKey);
     if (lookup.status === 'not_found') {
-      return sendNormalizedError(res, 404, 'growth/artifact-not-found', 'The requested Zeno resource was not found or has been removed.');
+      return sendNormalizedError(res, 404, 'growth/artifact-not-found', 'The requested Kinich resource was not found or has been removed.');
     }
     if (lookup.status === 'forbidden') {
       return sendNormalizedError(res, 403, 'growth/artifact-private', 'This resource is private and only accessible to its creator.');
@@ -1489,7 +1489,7 @@ export function registerGrowthEngineRoutes(app: Router): void {
       return sendNormalizedError(res, 401, 'growth/unauthorized', 'Authentication required to update creator profile.');
     }
 
-    const displayName = sanitizePlainString(req.body?.displayName, 80) || 'Zeno Creator';
+    const displayName = sanitizePlainString(req.body?.displayName, 80) || 'Kinich Creator';
     const username = sanitizePlainString(req.body?.username, 40).replace(/[^a-zA-Z0-9_-]/g, '').toLowerCase() || 'creator';
     const bio = sanitizePlainString(req.body?.bio, 280);
     const isPublic = Boolean(req.body?.isPublic);
@@ -1766,11 +1766,11 @@ export function registerGrowthEngineRoutes(app: Router): void {
       const displayName =
         profile?.displayName ||
         seeded?.displayName ||
-        (isMe ? 'You (Zeno Explorer)' : `Researcher ${rec.referralCode.slice(3, 7).toUpperCase()}`);
+        (isMe ? 'You (Kinich Explorer)' : `Researcher ${rec.referralCode.slice(3, 7).toUpperCase()}`);
       const username =
         profile?.username ||
         seeded?.username ||
-        (isMe ? 'you' : `zeno_${rec.referralCode.slice(3, 8)}`);
+        (isMe ? 'you' : `kinich_${rec.referralCode.slice(3, 8)}`);
       const conversionRate =
         rec.visitsCount > 0
           ? Math.min(100, Math.round((rec.validatedSignupsCount / rec.visitsCount) * 100))
@@ -1836,11 +1836,11 @@ export function registerGrowthEngineRoutes(app: Router): void {
       if (!agg) {
         agg = {
           uid: art.ownerId,
-          displayName: art.authorName || 'Zeno Contributor',
+          displayName: art.authorName || 'Kinich Contributor',
           username: art.authorUsername || authorKey.replace(/[^a-zA-Z0-9_]/g, '').toLowerCase(),
           bio:
             art.authorBio ||
-            'Publishing peer-reviewed study syntheses and workflows on Zeno Discover.',
+            'Publishing peer-reviewed study syntheses and workflows on Kinich Discover.',
           publishedCount: 0,
           totalSaves: 0,
           totalForks: 0,
@@ -1971,7 +1971,7 @@ export function registerGrowthEngineRoutes(app: Router): void {
         },
         signal: AbortSignal.timeout(3500),
         body: JSON.stringify({
-          _subject: `[Zeno Feedback · ${category.toUpperCase()}] ${subject} (${rating}/5★)`,
+          _subject: `[Kinich Feedback · ${category.toUpperCase()}] ${subject} (${rating}/5★)`,
           category,
           rating: `${rating} / 5`,
           subject,

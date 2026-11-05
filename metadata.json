@@ -1,7 +1,10 @@
 {
   "name": "Kinich",
   "description": "An AI assistant supercharged with real-time web search and live agent tools powered by Treg and Google Gemini.",
-  "requestFramePermissions": [],
+  "requestFramePermissions": [
+    "geolocation",
+    "microphone"
+  ],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
   ]

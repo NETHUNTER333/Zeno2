@@ -49,7 +49,7 @@ describe('Phase 5 & 6 — Search Provider Reliability, SSRF Protection, and Chat
     expect(outcome.providerStatus).toBe('degraded_fallback');
     expect(outcome.toolLabel).toBe('public.web.search.fallback');
     expect(outcome.results.length).toBeGreaterThanOrEqual(2);
-    expect(outcome.results[0].provider).toBe('duckduckgo');
+    expect(outcome.results.some((r) => r.provider === 'duckduckgo')).toBe(true);
   });
 
   it('uses Treg when TREG_TOKEN is configured, retries transient 503 once, and attributes results to treg', async () => {

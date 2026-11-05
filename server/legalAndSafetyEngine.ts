@@ -199,15 +199,22 @@ export function resolveSpaClientRouteMeta(pathname: string): SpaRouteMeta | null
     return {
       title: 'Plans & Pricing · Kinich',
       description:
-        'Compare Kinich Free, Spark ($3/mo), and Fire ($7/mo) plans with a 7-day refund guarantee.',
+        'Compare Kinich Free, Spark ($3/mo or $29/yr), and Fire ($7/mo or $67/yr) plans with a 7-day refund guarantee.',
       canonicalPath: '/pricing',
     };
   }
-  if (clean === '/account' || clean === '/settings') {
+  if (clean === '/billing/return' || clean.startsWith('/billing/')) {
     return {
-      title: 'Account & Workspace Settings · Kinich',
+      title: 'Activating Your Plan · Kinich Billing',
+      description: 'Confirming your Kinich subscription with Dodo Payments.',
+      canonicalPath: '/billing/return',
+    };
+  }
+  if (clean === '/account' || clean === '/settings' || clean === '/settings/billing') {
+    return {
+      title: 'Account & Billing Settings · Kinich',
       description:
-        'Manage your Kinich account, subscription plan, usage limits, referrals, and privacy controls.',
+        'Manage your Kinich account, subscription plan, invoices, usage limits, referrals, and privacy controls.',
       canonicalPath: clean,
     };
   }
@@ -259,7 +266,7 @@ export function isKnownSpaClientRoute(pathname: string): boolean {
 
 export function renderPrerenderedSpaRouteHtml(baseHtml: string, pathname: string): string {
   const meta = resolveSpaClientRouteMeta(pathname) || {
-    title: 'Zeno — AI Search, Deep Research & YouTube Study Workspace',
+    title: 'Kinich — AI Search, Deep Research & YouTube Study Workspace',
     description:
       'Real-time AI search, multi-source Deep Research, and interactive YouTube Study Workspace with flashcards, quizzes, and mind maps.',
     canonicalPath: '/',
@@ -906,7 +913,7 @@ export async function moderateUploadedAttachment(
       allowed: false,
       category: 'nsfw',
       reason:
-        'Upload blocked: 18+/NSFW, sexually explicit, or intimate imagery is strictly prohibited on Zeno (/acceptable-use). The file was immediately discarded and not stored.',
+        'Upload blocked: 18+/NSFW, sexually explicit, or intimate imagery is strictly prohibited on Kinich (/acceptable-use). The file was immediately discarded and not stored.',
       policyUrl,
       ...strikes,
     };
@@ -948,7 +955,7 @@ export async function moderateUploadedAttachment(
       allowed: false,
       category: 'human_face',
       reason:
-        'Upload blocked: Do not upload images of people (selfies, portraits, or photos of identifiable individuals). Zeno is strictly for documents, notes, diagrams, slides, and educational study material (/acceptable-use). The image was discarded and not stored.',
+        'Upload blocked: Do not upload images of people (selfies, portraits, or photos of identifiable individuals). Kinich is strictly for documents, notes, diagrams, slides, and educational study material (/acceptable-use). The image was discarded and not stored.',
       policyUrl,
       ...strikes,
     };
@@ -979,7 +986,7 @@ export async function moderateUploadedAttachment(
             allowed: false,
             category: 'nsfw',
             reason:
-              'Upload blocked: Sexually explicit or NSFW imagery is prohibited on Zeno (/acceptable-use). The file was discarded and not stored.',
+              'Upload blocked: Sexually explicit or NSFW imagery is prohibited on Kinich (/acceptable-use). The file was discarded and not stored.',
             policyUrl,
             ...strikes,
           };
@@ -990,7 +997,7 @@ export async function moderateUploadedAttachment(
             allowed: false,
             category: 'sensitive_id',
             reason:
-              'Upload blocked: Government ID cards (Aadhaar, PAN, passport, driver licence) and payment cards are prohibited on Zeno (/acceptable-use). The file was discarded and not stored.',
+              'Upload blocked: Government ID cards (Aadhaar, PAN, passport, driver licence) and payment cards are prohibited on Kinich (/acceptable-use). The file was discarded and not stored.',
             policyUrl,
             ...strikes,
           };
@@ -1001,7 +1008,7 @@ export async function moderateUploadedAttachment(
             allowed: false,
             category: 'human_face',
             reason:
-              'Upload blocked: Do not upload photos of real people or faces. Zeno is strictly for documents, notes, diagrams, and educational study material (/acceptable-use). The image was discarded and not stored.',
+              'Upload blocked: Do not upload photos of real people or faces. Kinich is strictly for documents, notes, diagrams, and educational study material (/acceptable-use). The image was discarded and not stored.',
             policyUrl,
             ...strikes,
           };
@@ -1097,7 +1104,7 @@ If you are feeling overwhelmed, hopeless, or having thoughts of self-harm or sui
 - **United Kingdom:** Call **111** or **116 123** (Samaritans)
 - **International Crisis Helplines (Every Country):** [https://findahelpline.com](https://findahelpline.com)
 
-*Zeno cannot provide methods or instructions for self-harm ([Acceptable Use Policy](/acceptable-use)). Please connect with a trained counselor at one of the resources above.*`,
+*Kinich cannot provide methods or instructions for self-harm ([Acceptable Use Policy](/acceptable-use)). Please connect with a trained counselor at one of the resources above.*`,
     };
   }
 
@@ -1110,7 +1117,7 @@ If you are feeling overwhelmed, hopeless, or having thoughts of self-harm or sui
     return {
       allowed: false,
       category: 'csam',
-      refusalMessage: `**Request Refused — Zero-Tolerance Policy Violation:** Zeno strictly prohibits any content involving the sexualization or exploitation of minors (CSAM/CSAE). Violating accounts are permanently terminated and reported to NCMEC and Indian cybercrime authorities under the POCSO Act and IT Act Section 67B. Please review our [Acceptable Use Policy](/acceptable-use).`,
+      refusalMessage: `**Request Refused — Zero-Tolerance Policy Violation:** Kinich strictly prohibits any content involving the sexualization or exploitation of minors (CSAM/CSAE). Violating accounts are permanently terminated and reported to NCMEC and Indian cybercrime authorities under the POCSO Act and IT Act Section 67B. Please review our [Acceptable Use Policy](/acceptable-use).`,
     };
   }
 
@@ -1123,7 +1130,7 @@ If you are feeling overwhelmed, hopeless, or having thoughts of self-harm or sui
     return {
       allowed: false,
       category: 'ncii_deepfake',
-      refusalMessage: `**Request Refused:** Generating non-consensual intimate imagery, deepfakes, or sexually explicit depictions of real people violates Zeno's [Acceptable Use Policy](/acceptable-use).`,
+      refusalMessage: `**Request Refused:** Generating non-consensual intimate imagery, deepfakes, or sexually explicit depictions of real people violates Kinich's [Acceptable Use Policy](/acceptable-use).`,
     };
   }
 
@@ -1132,7 +1139,7 @@ If you are feeling overwhelmed, hopeless, or having thoughts of self-harm or sui
     return {
       allowed: false,
       category: 'nsfw',
-      refusalMessage: `**Request Refused:** Zeno strictly prohibits adult, pornographic, and sexually explicit content in accordance with our [Acceptable Use Policy](/acceptable-use). All SafeSearch and adult content filters are permanently active and cannot be bypassed. Please feel free to ask any educational, technical, or research question instead.`,
+      refusalMessage: `**Request Refused:** Kinich strictly prohibits adult, pornographic, and sexually explicit content in accordance with our [Acceptable Use Policy](/acceptable-use). All SafeSearch and adult content filters are permanently active and cannot be bypassed. Please feel free to ask any educational, technical, or research question instead.`,
     };
   }
 
@@ -1171,7 +1178,7 @@ If you are feeling overwhelmed, hopeless, or having thoughts of self-harm or sui
     return {
       allowed: false,
       category: 'exam_cheating',
-      refusalMessage: `**Request Refused:** Zeno cannot be used to cheat during a live or proctored examination or to bypass exam proctoring software ([Acceptable Use Policy](/acceptable-use)). Once your exam is complete, I would be happy to help you review the underlying concepts and practice problems.`,
+      refusalMessage: `**Request Refused:** Kinich cannot be used to cheat during a live or proctored examination or to bypass exam proctoring software ([Acceptable Use Policy](/acceptable-use)). Once your exam is complete, I would be happy to help you review the underlying concepts and practice problems.`,
     };
   }
 
@@ -1294,7 +1301,7 @@ export function registerLegalAndSafetyRoutes(
       });
     }
 
-    const cleanName = String(name || 'Zeno User').trim().slice(0, 120);
+    const cleanName = String(name || 'Kinich User').trim().slice(0, 120);
     const cleanEmail = String(email || '').trim().slice(0, 200);
     const cleanTopic = String(category || topic || 'Other').trim().slice(0, 80);
     const cleanMessage = String(message || '').trim().slice(0, 5000);

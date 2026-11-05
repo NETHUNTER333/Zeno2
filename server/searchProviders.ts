@@ -689,7 +689,7 @@ export async function searchScholarlyLiterature(
         cleanQ
       )}&format=json&resultType=core&pageSize=${Math.min(10, maxResults)}`;
       const res = await fetch(epmcUrl, {
-        headers: { Accept: 'application/json', 'User-Agent': 'ZenoResearch/1.0' },
+        headers: { Accept: 'application/json', 'User-Agent': 'KinichResearch/1.0' },
         signal: signal || AbortSignal.timeout(4000),
       });
       if (!res.ok) return items;
@@ -763,7 +763,7 @@ export async function searchScholarlyLiterature(
 
       const arxivUrl = `https://export.arxiv.org/api/query?search_query=${encodeURIComponent(arxivRawExpr)}&sortBy=relevance&sortOrder=descending&max_results=10`;
       const res = await fetch(arxivUrl, {
-        headers: { 'User-Agent': 'ZenoResearch/1.0' },
+        headers: { 'User-Agent': 'KinichResearch/1.0' },
         signal: signal || AbortSignal.timeout(4000),
       });
       if (!res.ok) return items;
@@ -808,7 +808,7 @@ export async function searchScholarlyLiterature(
         searchStr
       )}&per-page=${Math.min(10, maxResults + 2)}&filter=has_abstract:true`;
       const res = await fetch(oaUrl, {
-        headers: { Accept: 'application/json', 'User-Agent': 'ZenoResearch/1.0 (mailto:research@zeno.ai)' },
+        headers: { Accept: 'application/json', 'User-Agent': 'KinichResearch/1.0 (mailto:research@kinich.app)' },
         signal: signal || AbortSignal.timeout(4000),
       });
       if (!res.ok) return items;
@@ -909,10 +909,22 @@ export async function searchScholarlyLiterature(
  */
 export async function fallbackPublicWebSearchWithStatus(
   query: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  locationInfo?: LocationInfoParam
 ): Promise<{ results: SearchResultItem[]; error?: string; hadProviderFailure: boolean }> {
   const errors: string[] = [];
   let succeededProviders = 0;
+
+  let glParam = (locationInfo?.countryCode || 'US').toUpperCase();
+  if (locationInfo?.country && !locationInfo?.countryCode) {
+    if (/india/i.test(locationInfo.country)) glParam = 'IN';
+    else if (/united states|usa/i.test(locationInfo.country)) glParam = 'US';
+    else if (/united kingdom|uk/i.test(locationInfo.country)) glParam = 'GB';
+    else if (/germany/i.test(locationInfo.country)) glParam = 'DE';
+  }
+  const hlParam = glParam === 'IN' ? 'en' : 'en-US';
+  const ceidParam = `${glParam}:en`;
+
   const isNewsOrLatest = /\b(latest|news|today|recent|update|updates|current|breaking|2025|2026|headline|headlines)\b/i.test(
     query
   );
@@ -1027,13 +1039,13 @@ export async function fallbackPublicWebSearchWithStatus(
 
       const feedPromises: Promise<SearchResultItem[]>[] = [
         (async () => {
-          const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(googleNewsSearchExpr)}&hl=en-US&gl=US&ceid=US:en`;
+          const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(googleNewsSearchExpr)}&hl=${hlParam}&gl=${glParam}&ceid=${ceidParam}`;
           const res = await fetch(rssUrl, {
             headers: {
               'User-Agent':
                 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
               Accept: 'application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8',
-              'Accept-Language': 'en-US,en;q=0.9',
+              'Accept-Language': `${hlParam},en;q=0.9`,
             },
             signal: signal || AbortSignal.timeout(3_200),
           });
@@ -1045,13 +1057,13 @@ export async function fallbackPublicWebSearchWithStatus(
           const generalExpr = !isStockQ
             ? `${query.replace(/\([^)]*\)/g, '').trim()} -stock -stocks -earnings -shares -zacks -seekingalpha`
             : query;
-          const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(generalExpr)}&hl=en-US&gl=US&ceid=US:en`;
+          const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(generalExpr)}&hl=${hlParam}&gl=${glParam}&ceid=${ceidParam}`;
           const res = await fetch(rssUrl, {
             headers: {
               'User-Agent':
                 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
               Accept: 'application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8',
-              'Accept-Language': 'en-US,en;q=0.9',
+              'Accept-Language': `${hlParam},en;q=0.9`,
             },
             signal: signal || AbortSignal.timeout(3_200),
           });
@@ -1077,11 +1089,11 @@ export async function fallbackPublicWebSearchWithStatus(
     return items;
   };
 
-  // 2. Bing Web RSS (organic multi-domain web results, forced US-English)
+  // 2. Bing Web RSS (organic multi-domain web results with dynamic country code)
   const fetchBingWebRss = async (): Promise<SearchResultItem[]> => {
     const items: SearchResultItem[] = [];
     try {
-      const bingUrl = `https://www.bing.com/search?q=${encodeURIComponent(query)}&setlang=en-US&cc=US&ensearch=1&format=rss`;
+      const bingUrl = `https://www.bing.com/search?q=${encodeURIComponent(query)}&setlang=${hlParam}&cc=${glParam}&format=rss`;
       const res = await fetch(bingUrl, {
         headers: {
           'User-Agent':
@@ -1132,18 +1144,20 @@ export async function fallbackPublicWebSearchWithStatus(
     return items;
   };
 
-  // 3. DuckDuckGo HTML organic search (forced US-English region kl=us-en & Strict SafeSearch kp=1)
+  // 3. DuckDuckGo HTML organic search (regional kl=in-en for India or kl=us-en & Strict SafeSearch kp=1)
   const fetchDuckDuckGoHtml = async (): Promise<SearchResultItem[]> => {
     const items: SearchResultItem[] = [];
+    const ddgKl = glParam === 'IN' ? 'in-en' : 'us-en';
+    const acceptLang = glParam === 'IN' ? 'en-IN,en-US;q=0.9,en;q=0.8' : 'en-US,en;q=0.9';
     try {
       const ddgRes = await fetch(
-        `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}&kl=us-en&kp=1`,
+        `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}&kl=${ddgKl}&kp=1`,
         {
           headers: {
             'User-Agent':
               'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-            'Accept-Language': 'en-US,en;q=0.9',
-            Cookie: 'kl=us-en; kp=1',
+            'Accept-Language': acceptLang,
+            Cookie: `kl=${ddgKl}; kp=1`,
           },
           signal: signal || AbortSignal.timeout(3_500),
         }
@@ -1202,7 +1216,7 @@ export async function fallbackPublicWebSearchWithStatus(
       const hnRes = await fetch(
         `https://hn.algolia.com/api/v1/search?query=${encodeURIComponent(query)}&tags=story&hitsPerPage=5`,
         {
-          headers: { 'User-Agent': 'ZenoSearch/1.0' },
+          headers: { 'User-Agent': 'KinichSearch/1.0' },
           signal: signal || AbortSignal.timeout(3_000),
         }
       );
@@ -1255,7 +1269,7 @@ export async function fallbackPublicWebSearchWithStatus(
         `https://www.reddit.com/search.json?q=${encodeURIComponent(query)}&sort=relevance&t=year&limit=3`,
         {
           headers: {
-            'User-Agent': 'Mozilla/5.0 (compatible; ZenoSearch/1.0; +https://ais-dev.studio)',
+            'User-Agent': 'Mozilla/5.0 (compatible; KinichSearch/1.0; +https://kinich.app)',
             Accept: 'application/json',
           },
           signal: signal || AbortSignal.timeout(3_000),
@@ -1300,7 +1314,7 @@ export async function fallbackPublicWebSearchWithStatus(
       const seRes = await fetch(
         `https://api.stackexchange.com/2.3/search/advanced?order=desc&sort=relevance&q=${encodeURIComponent(query)}&site=stackoverflow&pagesize=2`,
         {
-          headers: { 'User-Agent': 'ZenoSearch/1.0' },
+          headers: { 'User-Agent': 'KinichSearch/1.0' },
           signal: signal || AbortSignal.timeout(3_000),
         }
       );
@@ -1333,7 +1347,7 @@ export async function fallbackPublicWebSearchWithStatus(
       const wikiRes = await fetch(
         `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&utf8=&format=json&srlimit=1`,
         {
-          headers: { 'User-Agent': 'ZenoAI/1.0' },
+          headers: { 'User-Agent': 'KinichAI/1.0' },
           signal: signal || AbortSignal.timeout(2_800),
         }
       );
@@ -1406,6 +1420,7 @@ export async function fallbackPublicWebSearchWithStatus(
 
   // Deduplicate by URL and diversify by domain, filtering out off-topic and finance/stock pages on non-stock queries
   const isStockQ = isStockOrFinanceSearchQuery(query);
+  const isWeatherOrLocalQ = /\b(weather|forecast|temperature|rain|monsoon|humidity|aqi|near\s+me|local\s+news)\b/i.test(query);
   const scoredPool = combinedPool
     .filter((item) => {
       if (isUnsolicitedNonEnglishResult(item, query) || isBoilerplateOrJunkSearchResult(item, query)) {
@@ -1413,6 +1428,17 @@ export async function fallbackPublicWebSearchWithStatus(
       }
       if (!isStockQ && isFinanceOrStockPage(item)) {
         return false;
+      }
+      // When user is in India (glParam === 'IN') and asks a weather/local query, exclude unrelated US/UK/ASEAN regional weather columns
+      if (glParam === 'IN' && isWeatherOrLocalQ) {
+        const domAndText = `${item.domain || ''} ${item.url || ''} ${item.title || ''} ${item.snippet || ''}`.toLowerCase();
+        if (
+          /\b(cowboystatedaily\.com|flxweather\.com|uwm\.edu|cobbcountycourier\.com|clarionledger\.com|hattiesburgamerican\.com|asean\.org|wyoming|finger\s+lakes|milwaukee|sheffield|cobb\s+county|mississippi|hattiesburg)\b/i.test(
+            domAndText
+          )
+        ) {
+          return false;
+        }
       }
       const rel = scoreSourceRelevanceToQuery(item, query);
       return rel >= 1.0;
@@ -1486,7 +1512,7 @@ export async function callTinyfishSearch(
       method: 'GET',
       headers: {
         'X-API-Key': apiKey,
-        'User-Agent': 'Zeno-AI/1.0',
+        'User-Agent': 'Kinich-AI/1.0',
         Accept: 'application/json',
       },
       signal: controller.signal,
@@ -1544,15 +1570,26 @@ const inFlightSearches = new Map<string, Promise<SearchExecutionOutcome>>();
  * - Genuinely empty search results (`providerStatus: 'empty_results'`)
  * - Total provider unavailability (`providerStatus: 'unavailable'`)
  */
+export interface LocationInfoParam {
+  city?: string;
+  region?: string;
+  country?: string;
+  countryCode?: string;
+  timezone?: string;
+  source?: string;
+}
+
 export async function searchWebReliable(
   query: string,
   mode: 'organic' | 'news' = 'organic',
   _nsfwMode = false,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  locationInfo?: LocationInfoParam
 ): Promise<SearchExecutionOutcome> {
   const trimmed = String(query || '').trim();
   const isTestEnv = process.env.NODE_ENV === 'test' || process.env.VITEST === 'true';
-  const cacheKey = `${mode}:${_nsfwMode ? '1' : '0'}:${trimmed.toLowerCase()}`;
+  const locKey = locationInfo?.city ? `:${locationInfo.city.toLowerCase()}` : locationInfo?.countryCode ? `:${locationInfo.countryCode.toLowerCase()}` : '';
+  const cacheKey = `${mode}:${_nsfwMode ? '1' : '0'}${locKey}:${trimmed.toLowerCase()}`;
 
   if (!isTestEnv && trimmed) {
     const cached = searchOutcomeCache.get(cacheKey);
@@ -1580,7 +1617,7 @@ export async function searchWebReliable(
         providerStatus: 'empty_results',
         tregConfigured,
         tinyfishConfigured,
-        toolLabel: isAdultQueryOrText(trimmed) ? 'zeno.safesearch.strict' : tregConfigured
+        toolLabel: isAdultQueryOrText(trimmed) ? 'kinich.safesearch.strict' : tregConfigured
           ? endpointId
           : tinyfishConfigured
           ? 'tinyfish.search'
@@ -1606,20 +1643,59 @@ export async function searchWebReliable(
 
     const tasks: Promise<void>[] = [];
 
-    const isNewsModeOrQuery = mode === 'news' || isNewsSearchQuery(trimmed);
+    const isWeatherQuery =
+      /\b(weather|forecast|temperature|rain|monsoon|humidity|wind\s+speed|uv\s+index|air\s+quality|aqi)\b/i.test(
+        trimmed
+      );
+    const isNewsModeOrQuery = !isWeatherQuery && (mode === 'news' || isNewsSearchQuery(trimmed));
     const isStockQuery = isStockOrFinanceSearchQuery(trimmed);
+    const isLocalOrNewsQuery =
+      isWeatherQuery ||
+      isNewsModeOrQuery ||
+      /\b(weather|near me|nearby|prices?|news|events?|restaurants?|hospitals?|cinemas?|malls?|stores?|flight|temperature|forecast|in my city|local|today|latest)\b/i.test(
+        trimmed
+      );
+
+    let enrichedQuery = trimmed;
+    if (isLocalOrNewsQuery && locationInfo) {
+      const city = locationInfo.city || '';
+      const region = locationInfo.region || '';
+      const countryStr = locationInfo.country || locationInfo.countryCode || '';
+      if (city && !new RegExp(`\\b${city}\\b`, 'i').test(trimmed)) {
+        if (/\b(near me|nearby)\b/i.test(trimmed)) {
+          enrichedQuery = trimmed.replace(/\b(near me|nearby)\b/gi, `in ${city}${region ? ` ${region}` : ''}`);
+        } else if (isWeatherQuery) {
+          enrichedQuery = `${city}${region ? ` ${region}` : ''}${countryStr ? ` ${countryStr}` : ''} ${trimmed}`;
+        } else {
+          enrichedQuery = `${trimmed} ${city}${region ? ` ${region}` : ''}${countryStr ? ` ${countryStr}` : ''}`;
+        }
+      } else if (countryStr && !new RegExp(`\\b${countryStr}\\b`, 'i').test(trimmed)) {
+        enrichedQuery = `${trimmed} ${countryStr}`;
+      }
+    }
+
     const upstreamQuery =
       !isTestEnv && isNewsModeOrQuery && !isStockQuery
-        ? `${buildDatedNewsSearchQuery(trimmed)} -stock -earnings -zacks -seekingalpha`
-        : trimmed;
+        ? `${buildDatedNewsSearchQuery(enrichedQuery)} -stock -earnings -zacks -seekingalpha`
+        : enrichedQuery;
 
     if (tregConfigured) {
       tasks.push(
         (async () => {
           try {
+            const tregPayload: Record<string, any> = { q: upstreamQuery, safe: 'active', adult: '0' };
+            const cCode = (locationInfo?.countryCode || locationInfo?.country || '').toLowerCase();
+            if (cCode) {
+              tregPayload.gl = cCode.length === 2 ? cCode : cCode === 'india' ? 'in' : 'us';
+              tregPayload.hl = 'en';
+            }
+            if (locationInfo?.city) {
+              tregPayload.location = locationInfo.city;
+            }
+
             const data = await callTregEndpointReliable(
               endpointId,
-              { q: upstreamQuery, safe: 'active', adult: '0' },
+              tregPayload,
               { signal }
             );
             const rawResults = Array.isArray(data?.output?.results) ? data.output.results : [];
@@ -1694,17 +1770,20 @@ export async function searchWebReliable(
       tinyfishError = 'TINYFISH_API_KEY not configured';
     }
 
-    // For news queries in non-test runtime, also fetch preferred news outlets in parallel so we always have >=4 reputable non-stock news articles with rich excerpts
+    // For news or weather queries in non-test runtime, also fetch public regional sources with enrichedQuery
     let preferredNewsResults: SearchResultItem[] = [];
-    if (!isTestEnv && isNewsModeOrQuery && !isStockQuery) {
+    if (!isTestEnv && (isNewsModeOrQuery || isWeatherQuery) && !isStockQuery) {
       tasks.push(
         (async () => {
           try {
-            const pubNews = await fallbackPublicWebSearchWithStatus(trimmed, signal);
+            const pubNews = await fallbackPublicWebSearchWithStatus(enrichedQuery, signal, locationInfo);
             preferredNewsResults = pubNews.results.filter(
               (item) =>
                 !isFinanceOrStockPage(item) &&
-                scoreSourceRelevanceToQuery(item, trimmed) >= 1.2
+                Math.max(
+                  scoreSourceRelevanceToQuery(item, trimmed),
+                  scoreSourceRelevanceToQuery(item, enrichedQuery)
+                ) >= 1.2
             );
           } catch {}
         })()
@@ -1816,8 +1895,8 @@ export async function searchWebReliable(
     }
   }
 
-  // Fallback to public search when neither primary provider succeeded
-  const fallback = await fallbackPublicWebSearchWithStatus(trimmed, signal);
+  // Fallback to public search when neither primary provider succeeded (pass enrichedQuery + locationInfo so regional gl=IN is preserved!)
+  const fallback = await fallbackPublicWebSearchWithStatus(enrichedQuery, signal, locationInfo);
 
   if (fallback.hadProviderFailure && fallback.results.length === 0) {
     return {
@@ -1901,11 +1980,11 @@ export async function extractUrlSafely(
     try {
       const [metaRes, readmeRes] = await Promise.allSettled([
         fetch(`https://api.github.com/repos/${owner}/${repo}`, {
-          headers: { 'User-Agent': 'Zeno-Reader/1.0', Accept: 'application/vnd.github.v3+json' },
+          headers: { 'User-Agent': 'Kinich-Reader/1.0', Accept: 'application/vnd.github.v3+json' },
           signal: AbortSignal.timeout(3500),
         }),
         fetch(`https://api.github.com/repos/${owner}/${repo}/readme`, {
-          headers: { 'User-Agent': 'Zeno-Reader/1.0', Accept: 'application/vnd.github.v3.raw' },
+          headers: { 'User-Agent': 'Kinich-Reader/1.0', Accept: 'application/vnd.github.v3.raw' },
           signal: AbortSignal.timeout(4000),
         }),
       ]);

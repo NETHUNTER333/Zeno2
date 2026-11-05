@@ -49,6 +49,11 @@ export const PROTECTED_API_ROUTES = [
   '/auth/verify',
   '/user/quota',
   '/treg/call',
+  '/billing/checkout',
+  '/billing/portal',
+  '/billing/change-plan',
+  '/billing/update-payment-method',
+  '/billing/cancel',
 ] as const;
 
 export const OPTIONAL_AUTH_API_ROUTES = [
@@ -69,6 +74,12 @@ export const OPTIONAL_AUTH_API_ROUTES = [
   '/quota/status',
   '/quota/sync',
   '/quota/upgrade',
+  '/billing/me',
+  '/billing/country',
+  '/payments/checkout',
+  '/dodo/checkout-session',
+  '/payments/customer',
+  '/payments/usage',
   '/referral/me',
   '/referral/claim',
   '/growth/referrals/me',
@@ -84,6 +95,12 @@ export const OPTIONAL_AUTH_API_ROUTES = [
 export const PUBLIC_API_ROUTES = [
   '/health',
   '/admin/health',
+  '/webhooks/dodo',
+  '/billing/preview',
+  '/billing/countries',
+  '/payments/status',
+  '/payments/webhook',
+  '/dodo/webhook',
   '/share/snapshot',
   '/tokenharbor/models',
   '/treg/status',

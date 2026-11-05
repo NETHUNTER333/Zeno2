@@ -863,7 +863,6 @@ export const GrokModelPicker: React.FC<GrokModelPickerProps> = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [tierFilter, setTierFilter] = useState<'all' | 'free' | 'spark' | 'fire'>('all');
-  const [searchQuery, setSearchQuery] = useState('');
   const [, setCurrentPlan] = useState<'free' | 'spark' | 'fire'>(() =>
     UserAccountStore.getNormalizedPlan()
   );
@@ -890,13 +889,6 @@ export const GrokModelPicker: React.FC<GrokModelPickerProps> = ({
 
   const filteredModels = GROK_MODELS.filter((m) => {
     if (tierFilter !== 'all' && getModelRequiredTier(m) !== tierFilter) return false;
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      return (
-        m.name.toLowerCase().includes(q) ||
-        m.description.toLowerCase().includes(q)
-      );
-    }
     return true;
   });
 
@@ -955,19 +947,8 @@ export const GrokModelPicker: React.FC<GrokModelPickerProps> = ({
               : 'bg-white/80 border-black/[0.1] text-[#0d0d0d] shadow-[0_16px_48px_rgba(0,0,0,0.16)]'
           }`}
         >
-          {/* Compact Search + Tier Filter */}
-          <div className="space-y-1 pb-1.5 mb-1 border-b border-black/10 dark:border-white/10 shrink-0">
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search models..."
-              className={`w-full px-2 py-1 rounded-lg text-[10px] outline-none border ${
-                isDark
-                  ? 'bg-white/[0.04] border-white/[0.08] text-white placeholder:text-white/35 focus:border-white/20'
-                  : 'bg-black/[0.03] border-black/[0.08] text-black placeholder:text-black/40 focus:border-black/20'
-              }`}
-            />
+          {/* Tier Filter */}
+          <div className="pb-1.5 mb-1 border-b border-black/10 dark:border-white/10 shrink-0">
             <div className="flex items-center gap-0.5">
               {(
                 [

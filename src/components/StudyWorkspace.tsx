@@ -40,6 +40,11 @@ import {
   Clock,
   Filter,
   ArrowUp,
+  Send,
+  Sparkles,
+  Sliders,
+  Type,
+  RotateCcw,
 } from 'lucide-react';
 import {
   YouTubeTranscriptSegment,
@@ -346,6 +351,21 @@ export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
   const [isEditingSummary, setIsEditingSummary] = useState<boolean>(false);
   const [editableSummaryText, setEditableSummaryText] = useState<string>('');
   const [copiedSummary, setCopiedSummary] = useState<boolean>(false);
+
+  // Reading Mode State for Summary
+  const [isReadingMode, setIsReadingMode] = useState<boolean>(false);
+  const [readingFontSize, setReadingFontSize] = useState<'sm' | 'base' | 'lg' | 'xl' | '2xl'>('base');
+  const [readingLineHeight, setReadingLineHeight] = useState<'compact' | 'normal' | 'relaxed' | 'spacious'>('relaxed');
+  const [readingFontFamily, setReadingFontFamily] = useState<'sans' | 'serif' | 'mono'>('sans');
+
+  // Summary Follow-Up Assistant State
+  const [summaryFollowUpQuery, setSummaryFollowUpQuery] = useState<string>('');
+  const [summaryFollowUpLoading, setSummaryFollowUpLoading] = useState<boolean>(false);
+  const [summaryFollowUpTurns, setSummaryFollowUpTurns] = useState<
+    Array<{ id: string; role: 'user' | 'assistant'; text: string; timestamp: number }>
+  >([]);
+  const [summaryFollowUpError, setSummaryFollowUpError] = useState<string | null>(null);
+  const [copiedFollowUpTurnId, setCopiedFollowUpTurnId] = useState<string | null>(null);
 
   // Lesson Plan State
   const [completedModules, setCompletedModules] = useState<Record<string, boolean>>({});
@@ -1478,6 +1498,340 @@ ${fullTranscriptText}`;
   const iconBoxClass = isDark
     ? 'bg-white/[0.05] border border-white/[0.08] text-neutral-200'
     : 'bg-black/[0.035] border border-black/[0.07] text-neutral-800';
+
+  // Summary reading stats and typography computed classes
+  const summaryWordCount = useMemo(() => {
+    if (!studyBundle) return 0;
+    const allText = [
+      studyBundle.summary.overview,
+      aiExhaustiveSummary,
+      ...statementBreakdown.map((s) => `${s.heading} ${s.elaboration}`),
+      ...studyBundle.explanation.concepts.map((c) => `${c.term} ${c.definition}`),
+    ]
+      .filter(Boolean)
+      .join(' ');
+    return allText.trim().split(/\s+/).filter(Boolean).length;
+  }, [studyBundle, aiExhaustiveSummary, statementBreakdown]);
+
+  const summaryEstimatedReadingMinutes = useMemo(() => {
+    return Math.max(1, Math.ceil(summaryWordCount / 200));
+  }, [summaryWordCount]);
+
+  const readingFontFamilyClass = useMemo(() => {
+    switch (readingFontFamily) {
+      case 'serif':
+        return 'font-serif';
+      case 'mono':
+        return 'font-mono';
+      case 'sans':
+      default:
+        return 'font-sans';
+    }
+  }, [readingFontFamily]);
+
+  const readingSizeClass = useMemo(() => {
+    switch (readingFontSize) {
+      case 'sm':
+        return 'text-sm';
+      case 'lg':
+        return 'text-lg';
+      case 'xl':
+        return 'text-xl';
+      case '2xl':
+        return 'text-2xl';
+      case 'base':
+      default:
+        return 'text-base';
+    }
+  }, [readingFontSize]);
+
+  const readingLhClass = useMemo(() => {
+    switch (readingLineHeight) {
+      case 'compact':
+        return 'leading-normal';
+      case 'normal':
+        return 'leading-relaxed';
+      case 'spacious':
+        return 'leading-[2.25]';
+      case 'relaxed':
+      default:
+        return 'leading-loose';
+    }
+  }, [readingLineHeight]);
+
+  const handleSendSummaryFollowUp = async (overridePrompt?: string) => {
+    const rawPrompt = overridePrompt || summaryFollowUpQuery;
+    const cleanPrompt = rawPrompt.trim();
+    if (!cleanPrompt || summaryFollowUpLoading) return;
+
+    const userTurn = {
+      id: `fu-u-${Date.now()}`,
+      role: 'user' as const,
+      text: cleanPrompt,
+      timestamp: Date.now(),
+    };
+
+    setSummaryFollowUpTurns((prev) => [...prev, userTurn]);
+    setSummaryFollowUpQuery('');
+    setSummaryFollowUpLoading(true);
+    setSummaryFollowUpError(null);
+
+    try {
+      const authHeaders = await getAuthHeaders();
+      const contextPieces = [
+        `Title: ${resolvedTitle}`,
+        studyBundle?.summary?.overview ? `Overview:\n${studyBundle.summary.overview}` : '',
+        aiExhaustiveSummary ? `Deep Synthesis:\n${aiExhaustiveSummary}` : '',
+        statementBreakdown.length > 0
+          ? `Key Points Breakdown:\n${statementBreakdown.map((s) => `${s.heading}: ${s.elaboration}`).join('\n\n')}`
+          : '',
+        studyBundle?.explanation?.concepts && studyBundle.explanation.concepts.length > 0
+          ? `Key Concepts:\n${studyBundle.explanation.concepts.map((c) => `${c.term}: ${c.definition}`).join('\n')}`
+          : '',
+      ]
+        .filter(Boolean)
+        .join('\n\n')
+        .slice(0, 16000);
+
+      const res = await fetch('/api/study/ai-assistant', {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({
+          prompt: cleanPrompt,
+          topic: resolvedTitle,
+          mode: 'chat',
+          context: contextPieces,
+          webSearch: true,
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error(`Server returned ${res.status}`);
+      }
+
+      const data = await res.json();
+      const reply =
+        data?.text ||
+        data?.reply ||
+        'I reviewed the summary, but was not able to generate an expanded explanation. Please try asking in another way.';
+
+      setSummaryFollowUpTurns((prev) => [
+        ...prev,
+        {
+          id: `fu-a-${Date.now()}`,
+          role: 'assistant',
+          text: reply,
+          timestamp: Date.now(),
+        },
+      ]);
+    } catch (err: any) {
+      console.error('Summary follow-up request failed:', err);
+      setSummaryFollowUpError('Unable to generate answer. Please check your connection and try again.');
+    } finally {
+      setSummaryFollowUpLoading(false);
+    }
+  };
+
+  const renderSummaryFollowUpSection = () => (
+    <div
+      className={`p-5 sm:p-7 rounded-3xl border transition-all space-y-5 ${borderSubtle} ${bgCard} shadow-sm`}
+    >
+      {/* Header */}
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-2xl bg-amber-500/10 border border-amber-500/25 flex items-center justify-center text-amber-500 shrink-0 shadow-xs">
+            <Sparkles className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="text-sm sm:text-base font-semibold tracking-tight">
+              Summary Follow-Up Assistant
+            </h3>
+            <p className={`text-xs ${textMuted}`}>
+              Ask anything about this summary, explore analogies, or clarify tough points.
+            </p>
+          </div>
+        </div>
+
+        {summaryFollowUpTurns.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setSummaryFollowUpTurns([])}
+            className={`text-xs px-2.5 py-1 rounded-xl border inline-flex items-center gap-1.5 cursor-pointer hover:opacity-80 transition-colors ${borderSubtle} ${textMuted}`}
+            title="Reset conversation"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Reset</span>
+          </button>
+        )}
+      </div>
+
+      {/* Suggested prompt chips */}
+      {summaryFollowUpTurns.length === 0 && (
+        <div className="space-y-2 pt-1">
+          <div className={`text-[11px] font-medium tracking-wide uppercase ${textMuted}`}>
+            Suggested follow-up questions:
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {[
+              'Explain the core mechanism in simple words',
+              'Give 2 real-world examples of this',
+              'What could be tested on an exam from this?',
+              'Summarize the 3 biggest takeaways',
+            ].map((chip, idx) => (
+              <button
+                key={idx}
+                type="button"
+                disabled={summaryFollowUpLoading}
+                onClick={() => handleSendSummaryFollowUp(chip)}
+                className={`text-xs px-3 py-1.5 rounded-xl border text-left cursor-pointer transition-all hover:scale-[1.01] active:scale-[0.99] ${
+                  isDark
+                    ? 'bg-white/[0.03] hover:bg-white/[0.08] border-white/[0.08]'
+                    : 'bg-black/[0.02] hover:bg-black/[0.05] border-black/[0.08]'
+                }`}
+              >
+                💡 {chip}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Thread */}
+      {summaryFollowUpTurns.length > 0 && (
+        <div className="space-y-4 pt-2">
+          {summaryFollowUpTurns.map((turn) => (
+            <div
+              key={turn.id}
+              className={`flex flex-col ${turn.role === 'user' ? 'items-end' : 'items-start'} space-y-1`}
+            >
+              <div className="flex items-center gap-2 px-1 text-[11px]">
+                <span className={`font-medium ${turn.role === 'user' ? textMuted : 'text-amber-500'}`}>
+                  {turn.role === 'user' ? 'You' : 'Kinich Study AI'}
+                </span>
+                <span className={textMuted}>
+                  {new Date(turn.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </div>
+
+              {turn.role === 'user' ? (
+                <div
+                  className={`max-w-[85%] px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-medium ${
+                    isDark ? 'bg-neutral-800 text-white' : 'bg-neutral-100 text-neutral-900'
+                  }`}
+                >
+                  {turn.text}
+                </div>
+              ) : (
+                <div
+                  className={`w-full p-4 sm:p-5 rounded-2xl border text-xs sm:text-sm leading-relaxed relative group ${
+                    isDark ? 'bg-neutral-900/60 border-neutral-800' : 'bg-neutral-50/80 border-neutral-200'
+                  }`}
+                >
+                  <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(turn.text);
+                        setCopiedFollowUpTurnId(turn.id);
+                        setTimeout(() => setCopiedFollowUpTurnId(null), 2000);
+                      }}
+                      className={`p-1.5 rounded-lg border text-xs inline-flex items-center gap-1 cursor-pointer ${borderSubtle} ${bgCard}`}
+                      title="Copy response"
+                    >
+                      {copiedFollowUpTurnId === turn.id ? (
+                        <Check className="w-3.5 h-3.5 text-green-500" />
+                      ) : (
+                        <Copy className="w-3.5 h-3.5" />
+                      )}
+                    </button>
+                  </div>
+                  <MathMarkdown content={turn.text} isDark={isDark} />
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Loading state */}
+      {summaryFollowUpLoading && (
+        <div
+          className={`p-4 rounded-2xl border flex items-center gap-3 text-xs ${borderSubtle} ${bgSubtle}`}
+        >
+          <Loader2 className="w-4 h-4 animate-spin text-amber-500 shrink-0" />
+          <span className={textMuted}>
+            Analyzing summary context and synthesizing grounded answer...
+          </span>
+        </div>
+      )}
+
+      {/* Error state */}
+      {summaryFollowUpError && (
+        <div className="p-3 rounded-2xl border border-red-500/20 bg-red-500/10 text-red-400 text-xs flex items-center justify-between">
+          <span>{summaryFollowUpError}</span>
+          <button
+            type="button"
+            onClick={() => handleSendSummaryFollowUp()}
+            className="underline font-medium cursor-pointer ml-2"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
+      {/* Composer */}
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          handleSendSummaryFollowUp();
+        }}
+        className={`relative flex flex-col gap-2 p-3 sm:p-3.5 rounded-2xl border transition-all focus-within:ring-1 focus-within:ring-amber-500/30 ${borderSubtle} ${
+          isDark ? 'bg-neutral-900/40' : 'bg-neutral-50'
+        }`}
+      >
+        <textarea
+          rows={2}
+          value={summaryFollowUpQuery}
+          onChange={(e) => setSummaryFollowUpQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              handleSendSummaryFollowUp();
+            }
+          }}
+          placeholder="Ask a follow-up about this summary (e.g. 'Can you explain this with a real-life analogy?')..."
+          className="w-full bg-transparent border-0 text-xs sm:text-sm outline-none resize-none leading-relaxed placeholder:text-neutral-400"
+        />
+
+        <div className="flex items-center justify-between pt-1">
+          <span className={`text-[11px] ${textMuted} flex items-center gap-1`}>
+            <span>Press</span>
+            <kbd className="px-1.5 py-0.5 rounded border border-neutral-300 dark:border-neutral-700 font-mono text-[10px]">
+              Enter
+            </kbd>
+            <span>to ask</span>
+          </span>
+
+          <button
+            type="submit"
+            disabled={!summaryFollowUpQuery.trim() || summaryFollowUpLoading}
+            className={`h-8 px-4 rounded-xl text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-all ${
+              isDark
+                ? 'bg-white text-black hover:bg-neutral-200'
+                : 'bg-black text-white hover:bg-neutral-800'
+            }`}
+          >
+            {summaryFollowUpLoading ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Send className="w-3.5 h-3.5" />
+            )}
+            <span>Ask</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  );
 
   const activeTranscriptList =
     selectedLang.code !== 'en' && translatedSegments[selectedLang.code]
@@ -2890,7 +3244,254 @@ ${fullTranscriptText}`;
                 {/* =========================================================== */}
                 {/* TAB 2: SUMMARY (Clean, Simple, Usable + Fetched Videos)     */}
                 {/* =========================================================== */}
-                {activeTabObj?.type === 'summary' && studyBundle && (
+                {activeTabObj?.type === 'summary' && studyBundle && isReadingMode && (
+                  <div className="w-full pb-20">
+                    {/* Floating / Sticky Reading Mode Controls Bar */}
+                    <div
+                      className={`sticky top-0 z-20 backdrop-blur-md border-b ${borderSubtle} py-3 px-4 sm:px-6 mb-8 ${
+                        isDark ? 'bg-[#09090b]/90 shadow-lg shadow-black/20' : 'bg-[#fafafa]/90 shadow-sm'
+                      }`}
+                    >
+                      <div className="max-w-3xl mx-auto flex flex-wrap items-center justify-between gap-3">
+                        {/* Badge and Reading Stats */}
+                        <div className="flex items-center gap-2.5">
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-500/15 text-amber-500 border border-amber-500/30">
+                            <BookOpen className="w-3.5 h-3.5" />
+                            <span>Reading Mode</span>
+                          </span>
+                          <span className={`text-xs ${textMuted} hidden sm:inline`}>
+                            {summaryEstimatedReadingMinutes} min read • {summaryWordCount} words
+                          </span>
+                        </div>
+
+                        {/* Typography Tooling */}
+                        <div className="flex flex-wrap items-center gap-2 text-xs">
+                          {/* Font Family Selector */}
+                          <div
+                            className={`flex items-center p-0.5 rounded-xl border ${borderSubtle} ${bgCard}`}
+                            title="Font Family"
+                          >
+                            {(['sans', 'serif', 'mono'] as const).map((ff) => (
+                              <button
+                                key={ff}
+                                type="button"
+                                onClick={() => setReadingFontFamily(ff)}
+                                className={`px-2.5 py-1 rounded-lg capitalize font-medium cursor-pointer transition-all ${
+                                  readingFontFamily === ff
+                                    ? isDark
+                                      ? 'bg-neutral-800 text-white shadow-xs'
+                                      : 'bg-neutral-200 text-black shadow-xs'
+                                    : textMuted
+                                }`}
+                              >
+                                {ff}
+                              </button>
+                            ))}
+                          </div>
+
+                          {/* Font Size Selector */}
+                          <div
+                            className={`flex items-center p-0.5 rounded-xl border ${borderSubtle} ${bgCard}`}
+                            title="Font Size"
+                          >
+                            <span className={`px-2 text-[11px] font-semibold ${textMuted}`}>Size</span>
+                            {(['sm', 'base', 'lg', 'xl'] as const).map((sz) => (
+                              <button
+                                key={sz}
+                                type="button"
+                                onClick={() => setReadingFontSize(sz)}
+                                className={`px-2 py-1 rounded-lg text-xs font-medium cursor-pointer transition-all ${
+                                  readingFontSize === sz
+                                    ? isDark
+                                      ? 'bg-neutral-800 text-white shadow-xs'
+                                      : 'bg-neutral-200 text-black shadow-xs'
+                                    : textMuted
+                                }`}
+                              >
+                                {sz === 'sm' ? 'S' : sz === 'base' ? 'M' : sz === 'lg' ? 'L' : 'XL'}
+                              </button>
+                            ))}
+                          </div>
+
+                          {/* Line Height Selector */}
+                          <div
+                            className={`flex items-center p-0.5 rounded-xl border ${borderSubtle} ${bgCard}`}
+                            title="Line Spacing"
+                          >
+                            <span className={`px-2 text-[11px] font-semibold ${textMuted}`}>Line</span>
+                            {(['compact', 'normal', 'relaxed', 'spacious'] as const).map((lh) => (
+                              <button
+                                key={lh}
+                                type="button"
+                                onClick={() => setReadingLineHeight(lh)}
+                                className={`px-2 py-1 rounded-lg text-xs font-medium cursor-pointer transition-all ${
+                                  readingLineHeight === lh
+                                    ? isDark
+                                      ? 'bg-neutral-800 text-white shadow-xs'
+                                      : 'bg-neutral-200 text-black shadow-xs'
+                                    : textMuted
+                                }`}
+                              >
+                                {lh === 'compact' ? '1.5' : lh === 'normal' ? '1.75' : lh === 'relaxed' ? '2.0' : '2.3'}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Exit Button */}
+                        <button
+                          type="button"
+                          onClick={() => setIsReadingMode(false)}
+                          className={`h-8 px-3 rounded-xl border text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer hover:opacity-80 transition-colors ${borderSubtle}`}
+                        >
+                          <X className="w-3.5 h-3.5" />
+                          <span>Exit Reading</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Distraction-Free Typography Layout */}
+                    <div
+                      className={`max-w-2xl sm:max-w-3xl mx-auto px-5 sm:px-8 space-y-10 transition-all ${readingFontFamilyClass}`}
+                    >
+                      {/* Document Header */}
+                      <header className="space-y-3 pb-8 border-b border-dashed border-neutral-300 dark:border-neutral-800">
+                        <div className="flex items-center gap-2 text-xs">
+                          <span className="uppercase tracking-wider font-semibold text-amber-500">
+                            Study Guide & Synopsis
+                          </span>
+                          <span className={textMuted}>•</span>
+                          <span className={textMuted}>{summaryEstimatedReadingMinutes} min read</span>
+                          <span className={textMuted}>•</span>
+                          <span className={textMuted}>{summaryWordCount} words</span>
+                        </div>
+                        <h1 className="text-2xl sm:text-4xl font-bold tracking-tight leading-tight">
+                          {resolvedTitle}
+                        </h1>
+                      </header>
+
+                      {/* Lead Overview */}
+                      <section className="space-y-3">
+                        <div className="text-xs font-bold uppercase tracking-widest text-neutral-400">
+                          Overview
+                        </div>
+                        <p
+                          className={`${readingSizeClass} ${readingLhClass} first-letter:text-4xl first-letter:font-extrabold first-letter:mr-2 first-letter:float-left first-letter:leading-none text-neutral-900 dark:text-neutral-100`}
+                        >
+                          {studyBundle.summary.overview}
+                        </p>
+                      </section>
+
+                      {/* In-Depth Guide if present */}
+                      {aiExhaustiveSummary && (
+                        <section className="space-y-4 pt-6 border-t border-neutral-200 dark:border-neutral-800/80">
+                          <div className="text-xs font-bold uppercase tracking-widest text-neutral-400">
+                            Comprehensive Synthesis
+                          </div>
+                          <div className={`${readingSizeClass} ${readingLhClass} space-y-4`}>
+                            <MathMarkdown content={aiExhaustiveSummary} isDark={isDark} />
+                          </div>
+                        </section>
+                      )}
+
+                      {/* Statement Breakdown / Sections */}
+                      {statementBreakdown.length > 0 && (
+                        <section className="space-y-6 pt-6 border-t border-neutral-200 dark:border-neutral-800/80">
+                          <div className="text-xs font-bold uppercase tracking-widest text-neutral-400">
+                            Detailed Key Points
+                          </div>
+                          <div className="space-y-6">
+                            {statementBreakdown.map((st, sIdx) => (
+                              <article
+                                key={st.index ?? sIdx}
+                                className="space-y-2.5 pb-6 border-b border-neutral-200/60 dark:border-neutral-800/50 last:border-0"
+                              >
+                                <h3 className="text-lg sm:text-xl font-bold tracking-tight text-neutral-900 dark:text-neutral-100">
+                                  {st.heading}
+                                </h3>
+                                {st.claim && st.claim !== st.elaboration && (
+                                  <div
+                                    className={`font-semibold ${readingSizeClass} text-neutral-800 dark:text-neutral-200`}
+                                  >
+                                    {st.claim}
+                                  </div>
+                                )}
+                                <p className={`${readingSizeClass} ${readingLhClass} ${textMuted}`}>
+                                  {st.elaboration}
+                                </p>
+                              </article>
+                            ))}
+                          </div>
+                        </section>
+                      )}
+
+                      {/* Key Concepts / Terms */}
+                      {studyBundle.explanation.concepts.length > 0 && (
+                        <section className="space-y-4 pt-6 border-t border-neutral-200 dark:border-neutral-800/80">
+                          <div className="text-xs font-bold uppercase tracking-widest text-neutral-400">
+                            Core Terminology & Concepts
+                          </div>
+                          <dl className="space-y-4">
+                            {studyBundle.explanation.concepts.map((concept, cIdx) => (
+                              <div
+                                key={cIdx}
+                                className="p-4 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-900/30 space-y-1.5"
+                              >
+                                <dt className="font-bold text-sm sm:text-base text-neutral-900 dark:text-neutral-100">
+                                  {concept.term}
+                                </dt>
+                                <dd className={`${readingSizeClass} ${readingLhClass} text-neutral-700 dark:text-neutral-300`}>
+                                  {concept.definition}
+                                </dd>
+                                {concept.mechanism && concept.mechanism !== concept.definition && (
+                                  <dd className={`text-xs italic ${textMuted} pt-1`}>
+                                    Mechanism: {concept.mechanism}
+                                  </dd>
+                                )}
+                              </div>
+                            ))}
+                          </dl>
+                        </section>
+                      )}
+
+                      {/* Elite Follow-Up Assistant inside Reading Mode */}
+                      <section className="pt-8 border-t border-neutral-300 dark:border-neutral-800">
+                        {renderSummaryFollowUpSection()}
+                      </section>
+
+                      {/* Reading Mode Footer */}
+                      <div className="flex flex-wrap items-center justify-between gap-3 pt-6 border-t border-dashed border-neutral-300 dark:border-neutral-800">
+                        <span className={`text-xs ${textMuted}`}>
+                          Finished reading "{resolvedTitle}"
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setIsReadingMode(false)}
+                            className={`px-3 py-1.5 rounded-xl border text-xs font-medium cursor-pointer ${borderSubtle}`}
+                          >
+                            Exit Reading Mode
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsReadingMode(false);
+                              openOrFocusTab('quiz', 'Quiz');
+                            }}
+                            className={`px-3.5 py-1.5 rounded-xl border text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer ${
+                              isDark ? 'bg-white text-black' : 'bg-black text-white'
+                            }`}
+                          >
+                            <span>Take Quiz</span>
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {activeTabObj?.type === 'summary' && studyBundle && !isReadingMode && (
                   <div className="max-w-3xl mx-auto px-4 sm:px-6 pt-5 pb-4 space-y-5">
                     {/* Header & Actions */}
                     <div
@@ -2901,6 +3502,20 @@ ${fullTranscriptText}`;
                       </h2>
 
                       <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setIsReadingMode(true)}
+                          className={`h-8 inline-flex items-center gap-1.5 px-3.5 rounded-full border text-xs font-medium cursor-pointer transition-colors ${
+                            isDark
+                              ? 'bg-amber-500/10 text-amber-300 border-amber-500/30 hover:bg-amber-500/20'
+                              : 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100'
+                          }`}
+                          title="Transform summary into clean, distraction-free reading typography"
+                        >
+                          <BookOpen className="w-3.5 h-3.5" />
+                          <span>Reading Mode</span>
+                        </button>
+
                         <button
                           type="button"
                           onClick={handleToggleListenSummary}
@@ -3166,6 +3781,9 @@ ${fullTranscriptText}`;
                             </div>
                           </section>
                         )}
+
+                        {/* Elite Follow-Up Assistant inside Summary */}
+                        {renderSummaryFollowUpSection()}
 
                         {/* Bottom Actions Row */}
                         <div className={`flex items-center justify-between pt-4 border-t ${borderSubtle}`}>

@@ -382,15 +382,14 @@ export const StreakModal: React.FC<StreakModalProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-sm font-semibold tracking-tight">
-                  Streaks, Badges & Consistency
+                  Streaks, Milestones & Consistency
                 </h2>
                 <span className="text-xs font-mono tabular-nums font-semibold text-[#FC4C01]">
-                  {streak.currentStreak} {streak.currentStreak === 1 ? 'Day' : 'Days'} ·{' '}
-                  {unlockedBadgesCount}/{badges.length} Badges
+                  {streak.currentStreak} {streak.currentStreak === 1 ? 'Day' : 'Days'}
                 </span>
               </div>
               <p className={`text-[11px] ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
-                Calendar heatmap, achievement badges, milestone rewards & streak shield protection
+                Calendar heatmap, milestone message rewards & streak shield protection
               </p>
             </div>
           </div>
@@ -411,7 +410,7 @@ export const StreakModal: React.FC<StreakModalProps> = ({
 
         {/* Top KPI Strip */}
         <div
-          className={`grid grid-cols-4 border-b ${
+          className={`grid grid-cols-3 border-b ${
             isDark ? 'border-white/10 bg-[#0d0d0d]' : 'border-black/10 bg-neutral-50/40'
           }`}
         >
@@ -442,22 +441,6 @@ export const StreakModal: React.FC<StreakModalProps> = ({
             </div>
           </div>
 
-          <div
-            className={`px-4 py-3 border-r ${
-              isDark ? 'border-white/10' : 'border-black/10'
-            }`}
-          >
-            <div className={`text-[10px] uppercase tracking-wider ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
-              Badges Earned
-            </div>
-            <div className="text-base font-semibold font-mono tabular-nums mt-0.5 flex items-center gap-1">
-              <span>
-                {unlockedBadgesCount}/{badges.length}
-              </span>
-              <Award className="w-3.5 h-3.5 text-[#FC4C01]" />
-            </div>
-          </div>
-
           <div className="px-4 py-3">
             <div className={`text-[10px] uppercase tracking-wider ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
               Consistency
@@ -483,12 +466,6 @@ export const StreakModal: React.FC<StreakModalProps> = ({
                 icon: <CalendarIcon className="w-3.5 h-3.5" />,
                 label: 'Streak Calendar',
                 badgeCount: 0,
-              },
-              {
-                id: 'badges' as const,
-                icon: <Award className="w-3.5 h-3.5" />,
-                label: `Badges (${unlockedBadgesCount}/${badges.length})`,
-                badgeCount: unclaimedBadgesCount,
               },
               {
                 id: 'milestones' as const,
@@ -804,224 +781,6 @@ export const StreakModal: React.FC<StreakModalProps> = ({
                     {selectedDayInfo.cnt} {selectedDayInfo.cnt === 1 ? 'action' : 'actions'}
                   </span>
                 </div>
-              </div>
-            </>
-          )}
-
-          {activeTab === 'badges' && (
-            <>
-              {/* Badges Overview & Category Filter */}
-              <div
-                className={`p-3.5 rounded-xl border space-y-3 ${
-                  isDark ? 'bg-[#0f0f0f] border-white/10' : 'bg-neutral-50 border-black/10'
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <div>
-                    <div className="text-xs font-semibold flex items-center gap-1.5">
-                      <Award className="w-4 h-4 text-[#FC4C01]" />
-                      <span>Achievement Badges Vault</span>
-                    </div>
-                    <div
-                      className={`text-[11px] mt-0.5 ${
-                        isDark ? 'text-neutral-400' : 'text-neutral-500'
-                      }`}
-                    >
-                      Unlock badges across streaks, AI exploration, and study sessions to claim bonus quota & shields.
-                    </div>
-                  </div>
-                  <div className="text-right font-mono tabular-nums shrink-0">
-                    <span className="text-xs font-semibold text-[#FC4C01]">
-                      {unlockedBadgesCount} / {badges.length}
-                    </span>
-                    <div
-                      className={`text-[10px] ${
-                        isDark ? 'text-neutral-500' : 'text-neutral-400'
-                      }`}
-                    >
-                      Unlocked
-                    </div>
-                  </div>
-                </div>
-
-                {/* Category Filter Buttons */}
-                <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                  {(
-                    [
-                      { id: 'all', label: 'All Badges' },
-                      { id: 'streak', label: 'Streaks' },
-                      { id: 'mastery', label: 'Mastery' },
-                      { id: 'exploration', label: 'Exploration' },
-                      { id: 'curation', label: 'Shields & Pins' },
-                    ] as const
-                  ).map((cat) => {
-                    const isAct = badgeCategory === cat.id;
-                    return (
-                      <button
-                        key={cat.id}
-                        type="button"
-                        onClick={() => setBadgeCategory(cat.id)}
-                        className={`px-2.5 py-1 rounded-lg border text-[11px] font-medium transition-colors cursor-pointer ${
-                          isAct
-                            ? 'bg-[#FC4C01] border-[#FC4C01] text-white'
-                            : isDark
-                            ? 'bg-white/[0.03] border-white/10 text-neutral-300 hover:border-white/25'
-                            : 'bg-white border-black/10 text-neutral-700 hover:border-black/25'
-                        }`}
-                      >
-                        {cat.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Badges Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {filteredBadges.map((b) => {
-                  const tierLabel =
-                    b.tier === 'obsidian'
-                      ? 'OBSIDIAN'
-                      : b.tier === 'gold'
-                      ? 'GOLD'
-                      : b.tier === 'silver'
-                      ? 'SILVER'
-                      : 'BRONZE';
-
-                  return (
-                    <div
-                      key={b.id}
-                      className={`p-3.5 rounded-xl border flex flex-col justify-between gap-3 transition-all ${
-                        b.isUnlocked
-                          ? b.isFeatured
-                            ? 'bg-[#FC4C01]/[0.09] border-[#FC4C01]/60'
-                            : isDark
-                            ? 'bg-white/[0.03] border-white/15'
-                            : 'bg-white border-black/15'
-                          : isDark
-                          ? 'bg-[#0c0c0c] border-white/[0.06] opacity-75'
-                          : 'bg-neutral-50/70 border-black/[0.07] opacity-80'
-                      }`}
-                    >
-                      <div className="space-y-2">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <div
-                              className={`w-9 h-9 rounded-xl border flex items-center justify-center shrink-0 ${
-                                b.isUnlocked
-                                  ? 'bg-[#FC4C01]/15 border-[#FC4C01]/40'
-                                  : isDark
-                                  ? 'bg-white/[0.03] border-white/10 opacity-60'
-                                  : 'bg-neutral-100 border-black/10 opacity-60'
-                              }`}
-                            >
-                              {renderBadgeIcon(b.iconName)}
-                            </div>
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-xs font-semibold truncate">{b.title}</span>
-                                {b.isFeatured && (
-                                  <span className="text-[9px] font-mono uppercase px-1.5 py-0.2 rounded bg-[#FC4C01] text-white shrink-0">
-                                    Equipped
-                                  </span>
-                                )}
-                              </div>
-                              <div className="text-[10px] font-mono uppercase tracking-wider text-[#FC4C01]/90">
-                                {tierLabel} · {b.category}
-                              </div>
-                            </div>
-                          </div>
-
-                          <span
-                            className={`text-[10px] font-mono tabular-nums shrink-0 ${
-                              b.isUnlocked
-                                ? 'text-[#FC4C01] font-semibold'
-                                : isDark
-                                ? 'text-neutral-500'
-                                : 'text-neutral-400'
-                            }`}
-                          >
-                            {Math.min(b.currentValue, b.targetValue)}/{b.targetValue}
-                          </span>
-                        </div>
-
-                        <p
-                          className={`text-[11px] leading-snug ${
-                            isDark ? 'text-neutral-400' : 'text-neutral-500'
-                          }`}
-                        >
-                          {b.subtitle}
-                        </p>
-
-                        {/* Progress Bar */}
-                        <div
-                          className={`w-full h-1.5 rounded-full overflow-hidden ${
-                            isDark ? 'bg-white/10' : 'bg-black/10'
-                          }`}
-                        >
-                          <div
-                            className="h-full bg-[#FC4C01] transition-all duration-300"
-                            style={{ width: `${b.progressPct}%` }}
-                          />
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-between gap-2 pt-2 border-t border-white/[0.06]">
-                        <div className="text-[10px] font-mono tabular-nums text-[#FC4C01]">
-                          +{b.bonusMessages} Msgs · +{b.bonusUploads} Uploads
-                          {b.bonusShields > 0 ? ` · +${b.bonusShields} Shield` : ''}
-                        </div>
-
-                        <div className="flex items-center gap-1.5 shrink-0">
-
-                          {b.isUnlocked && !b.isFeatured && (
-                            <button
-                              type="button"
-                              onClick={() => handleEquipBadge(b.id, b.title)}
-                              className={`px-2 py-1 rounded-lg border text-[10px] font-medium transition-colors cursor-pointer ${
-                                isDark
-                                  ? 'border-white/15 hover:bg-white/10 text-neutral-200'
-                                  : 'border-black/15 hover:bg-black/5 text-neutral-800'
-                              }`}
-                            >
-                              Equip
-                            </button>
-                          )}
-
-                          {b.isClaimed ? (
-                            <span
-                              className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg border text-[10px] font-mono ${
-                                isDark
-                                  ? 'bg-white/[0.04] border-white/10 text-neutral-400'
-                                  : 'bg-neutral-100 border-black/10 text-neutral-500'
-                              }`}
-                            >
-                              <Check className="w-3 h-3 text-[#FC4C01]" />
-                              <span>Claimed</span>
-                            </span>
-                          ) : b.isUnlocked ? (
-                            <button
-                              type="button"
-                              onClick={() => handleClaimBadge(b.id)}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#FC4C01] hover:bg-[#e04300] text-white text-[10.5px] font-semibold transition-colors cursor-pointer"
-                            >
-                              <Gift className="w-3 h-3" />
-                              <span>Claim</span>
-                            </button>
-                          ) : (
-                            <span
-                              className={`text-[10px] font-mono tabular-nums ${
-                                isDark ? 'text-neutral-500' : 'text-neutral-400'
-                              }`}
-                            >
-                              Locked ({b.progressPct}%)
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
               </div>
             </>
           )}

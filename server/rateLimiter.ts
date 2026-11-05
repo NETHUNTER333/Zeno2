@@ -742,17 +742,42 @@ export function normalizePlanTier(raw: unknown): SubscriptionPlanTier {
   return 'free';
 }
 
+export type BillingEntitlementResolver = (uid: string) => {
+  plan: SubscriptionPlanTier;
+  interval: 'monthly' | 'yearly';
+  status: string;
+  hasBillingRecord: boolean;
+};
+
+let billingEntitlementResolver: BillingEntitlementResolver | null = null;
+
+export function registerBillingEntitlementResolver(resolver: BillingEntitlementResolver): void {
+  billingEntitlementResolver = resolver;
+}
+
 function getOrInitDailyQuotaRecord(req: Request): ServerDailyQuotaRecord {
   const uid = req.auth?.uid || null;
   const clientIp = resolveTrustedClientIp(req);
   const principalKey = uid ? `uid:${uid}` : `ip:${clientIp}`;
   const today = getUtcDateKey();
 
-  const savedPlan = planByPrincipal.get(principalKey) ||
+  let savedPlan = planByPrincipal.get(principalKey) ||
     (uid && clientIp ? planByPrincipal.get(`ip:${clientIp}`) : undefined) || {
       plan: 'spark' as SubscriptionPlanTier,
       billingCycle: 'monthly' as const,
     };
+
+  if (uid && billingEntitlementResolver) {
+    try {
+      const billingEff = billingEntitlementResolver(uid);
+      if (billingEff.hasBillingRecord && billingEff.status !== 'none') {
+        savedPlan = {
+          plan: billingEff.plan,
+          billingCycle: billingEff.interval,
+        };
+      }
+    } catch {}
+  }
 
   let record = quotaRecordsByPrincipal.get(principalKey);
   if (!record || record.quotaDate !== today) {
@@ -825,7 +850,23 @@ export function syncServerQuotaFromClient(
   const clientIp = resolveTrustedClientIp(req);
   const principalKey = uid ? `uid:${uid}` : `ip:${clientIp}`;
 
-  if (payload.plan === 'free' || payload.plan === 'spark' || payload.plan === 'fire') {
+  const hasAuthoritativeBillingStatus = Boolean(
+    uid &&
+      billingEntitlementResolver &&
+      (() => {
+        try {
+          const eff = billingEntitlementResolver(uid);
+          return eff.hasBillingRecord && eff.status !== 'none';
+        } catch {
+          return false;
+        }
+      })()
+  );
+
+  if (
+    !hasAuthoritativeBillingStatus &&
+    (payload.plan === 'free' || payload.plan === 'spark' || payload.plan === 'fire')
+  ) {
     const incomingPlan = normalizePlanTier(payload.plan);
     rec.plan = incomingPlan;
     planByPrincipal.set(principalKey, {
@@ -913,7 +954,21 @@ export function verifyChatQuotaBeforeExecution(
   if (req.body?.clientUsage && typeof req.body.clientUsage === 'object') {
     syncServerQuotaFromClient(req, req.body.clientUsage);
   }
-  if (req.body?.subscriptionPlan) {
+  const uid = req.auth?.uid || null;
+  const hasBillingRecord = Boolean(
+    uid &&
+      billingEntitlementResolver &&
+      (() => {
+        try {
+          const eff = billingEntitlementResolver(uid);
+          return eff.hasBillingRecord && eff.status !== 'none';
+        } catch {
+          return false;
+        }
+      })()
+  );
+
+  if (req.body?.subscriptionPlan && !hasBillingRecord) {
     const incomingPlan = normalizePlanTier(req.body.subscriptionPlan);
     const current = getOrInitDailyQuotaRecord(req);
     if (incomingPlan !== current.plan) {

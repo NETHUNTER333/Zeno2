@@ -1144,93 +1144,74 @@ export const Sidebar: React.FC<SidebarProps> = ({
           )}
         </div>
 
-        {/* Active Plan & Upload Quota Card — Session-Dismissible Promo (shown ONLY to signed-in Free users) */}
-        {!isPlanPromoDismissed && (
-          <div className="px-3 pb-2.5">
-            {(() => {
-              const isSignedIn = Boolean(
-                auth?.currentUser ||
-                (userProfile?.email && userProfile.email.includes('@'))
-              );
-              const planCheck: any = UserAccountStore.getNormalizedPlan(userSub.plan);
-              if (!isSignedIn || planCheck !== 'free') return null;
-              return (
-                <div
-                  className={`relative w-full p-3.5 rounded-2xl border text-left transition-all ${
-                    isDark
-                      ? 'bg-white/[0.04] hover:bg-white/[0.08] border-white/15 text-white'
-                      : 'bg-white hover:bg-neutral-50 border-black/10 text-[#18181b] shadow-2xs'
-                  }`}
-                >
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (onOpenPricing) {
-                        onOpenPricing(undefined);
-                      } else if (typeof window !== 'undefined') {
-                        window.dispatchEvent(
-                          new CustomEvent('kinich-open-pricing', {
-                            detail: {},
-                          })
-                        );
-                      }
-                      if (window.innerWidth < 768) onClose();
-                    }}
-                    className="w-full text-left cursor-pointer pr-6"
-                  >
-                    <div className="flex items-center justify-between gap-2 mb-1.5">
-                      <span className="font-semibold text-xs tracking-tight">
-                        {planCheck === 'fire'
-                          ? 'Fire Plan ($7)'
-                          : planCheck === 'spark'
-                          ? 'Spark Plan ($3 · 10x)'
-                          : 'Choose Plan ($3 / $7)'}
-                      </span>
-                      <span
-                        className={`text-[10px] px-2.5 py-0.5 rounded-full font-semibold ${
-                          isDark
-                            ? 'bg-white text-[#18181b]'
-                            : 'bg-[#18181b] text-white'
-                        }`}
-                      >
-                        {planCheck === 'fire' ? 'Active' : planCheck === 'spark' ? 'Upgrade $7' : 'Start $3'}
-                      </span>
-                    </div>
-                    <div className={`flex items-center justify-between text-[10.5px] font-mono ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
-                      <span>
-                        Uploads: {usageQuota.filesUploaded}/
-                        {usageQuota.fileUploadLimit >= 999999 ? '∞' : usageQuota.fileUploadLimit}
-                      </span>
-                      <span>
-                        Msgs: {usageQuota.messagesUsed}/
-                        {usageQuota.messageLimit >= 999999 ? '∞' : usageQuota.messageLimit}
-                      </span>
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setIsPlanPromoDismissed(true);
-                      try {
-                        sessionStorage.setItem('kinich_plan_promo_dismissed', '1');
-                      } catch {}
-                    }}
-                    aria-label="Dismiss plan promo"
-                    title="Dismiss for this session"
-                    className={`absolute top-2.5 right-2 p-1 rounded-full transition-colors cursor-pointer ${
+        {/* Permanent Pricing & Quota Pill in Sidebar */}
+        <div className="px-3 pb-2.5">
+          {(() => {
+            const planCheck: any = UserAccountStore.getNormalizedPlan(userSub.plan);
+            return (
+              <button
+                type="button"
+                onClick={() => {
+                  if (onOpenPricing) {
+                    onOpenPricing(undefined);
+                  } else if (typeof window !== 'undefined') {
+                    window.dispatchEvent(
+                      new CustomEvent('kinich-open-pricing', {
+                        detail: {},
+                      })
+                    );
+                  }
+                  if (window.innerWidth < 768) onClose();
+                }}
+                className={`relative w-full p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
+                  isDark
+                    ? 'bg-white/[0.04] hover:bg-white/[0.08] border-white/15 text-white'
+                    : 'bg-white hover:bg-neutral-50 border-black/10 text-[#18181b] shadow-2xs'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <span className="font-semibold text-xs tracking-tight flex items-center gap-1.5">
+                    <Zap className="w-3.5 h-3.5 text-[#FC4C01] fill-[#FC4C01]/20 shrink-0" />
+                    <span>
+                      {planCheck === 'fire'
+                        ? 'Fire Plan ($7)'
+                        : planCheck === 'spark'
+                        ? 'Spark Plan ($3 · 10x)'
+                        : 'Plans & Pricing ($3 / $7)'}
+                    </span>
+                  </span>
+                  <span
+                    className={`text-[10px] px-2.5 py-0.5 rounded-full font-semibold shrink-0 ${
                       isDark
-                        ? 'text-neutral-400 hover:text-white hover:bg-white/10'
-                        : 'text-neutral-500 hover:text-black hover:bg-black/10'
+                        ? 'bg-white text-[#18181b]'
+                        : 'bg-[#18181b] text-white'
                     }`}
                   >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
+                    {planCheck === 'fire'
+                      ? 'Active'
+                      : planCheck === 'spark'
+                      ? 'Upgrade $7'
+                      : 'Start $3'}
+                  </span>
                 </div>
-              );
-            })()}
-          </div>
-        )}
+                <div
+                  className={`flex items-center justify-between text-[10.5px] font-mono ${
+                    isDark ? 'text-neutral-400' : 'text-neutral-500'
+                  }`}
+                >
+                  <span>
+                    Uploads: {usageQuota.filesUploaded}/
+                    {usageQuota.fileUploadLimit >= 999999 ? '∞' : usageQuota.fileUploadLimit}
+                  </span>
+                  <span>
+                    Msgs: {usageQuota.messagesUsed}/
+                    {usageQuota.messageLimit >= 999999 ? '∞' : usageQuota.messageLimit}
+                  </span>
+                </div>
+              </button>
+            );
+          })()}
+        </div>
 
         {/* User Account, Streak Status & Unified Profile Backend Row */}
         <div

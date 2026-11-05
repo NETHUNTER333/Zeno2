@@ -19,7 +19,8 @@ import {
 } from 'lucide-react';
 import { SearchSource, ArxivPaper, SearchMode, ChatAttachment } from '../types';
 import { getAuthHeaders } from '../lib/firebase';
-import { ShimmerText, ThinkingStep } from './ui/thinking-state';
+import AILoadingState from './kokonutui/ai-loading';
+import { ThinkingStep } from './ui/thinking-state';
 import {
   CodeBlock,
   CodeBlockHeader,
@@ -2039,20 +2040,9 @@ STRICT RULES:
                   </div>
 
                   {/* Sources Carousel for this turn */}
-                  {(turnSources.length > 0 || isCurrentTurnSearching) && (
+                  {turnSources.length > 0 && (
                     <div className="mb-3.5">
-                      {isCurrentTurnSearching && turnSources.length === 0 && (
-                        <div className="mb-2">
-                          <ShimmerText
-                            text="Searching verified sources..."
-                            isDark={isDark}
-                            className="text-xs font-medium"
-                          />
-                        </div>
-                      )}
-
-                      {turnSources.length > 0 && (
-                        <div className="flex items-stretch gap-2 overflow-x-auto pb-1.5 scrollbar-none">
+                      <div className="flex items-stretch gap-2 overflow-x-auto pb-1.5 scrollbar-none">
                           {turnSources.map((src, idx) => {
                             const isCardHighlighted = hoveredSourceIds.includes(src.id);
                             const faviconUrl = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(
@@ -2117,7 +2107,6 @@ STRICT RULES:
                             );
                           })}
                         </div>
-                      )}
                     </div>
                   )}
 
@@ -2129,90 +2118,68 @@ STRICT RULES:
                     }`}
                   >
                     {blocks.length === 0 && (isCurrentTurnSearching || isCurrentTurnStreaming) ? (
-                      <div
-                        className={`p-4 rounded-xl border space-y-3 ${
-                          isDark
-                            ? 'bg-white/[0.02] border-white/[0.08]'
-                            : 'bg-black/[0.02] border-black/[0.08]'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <ShimmerText
-                            text={
-                              isCurrentTurnSearching
-                                ? 'Stage 1/4 · Searching academic & live web indexes...'
-                                : researchElapsedSec < 4
-                                ? `Stage 2/4 · Cross-verifying ${turnSources.length || 'live'} sources & extracting passages...`
-                                : researchElapsedSec < 9
-                                ? `Stage 3/4 · Mapping evidence sources [S1..S${Math.max(1, turnSources.length)}] to report citations...`
-                                : 'Stage 4/4 · Synthesizing structured research report...'
-                            }
-                            isDark={isDark}
-                            className="text-xs font-medium"
-                          />
-                          <span
-                            className={`text-[11px] font-mono tabular-nums px-2 py-0.5 rounded border shrink-0 ${
-                              isDark
-                                ? 'bg-white/[0.05] border-white/[0.1] text-neutral-300'
-                                : 'bg-black/[0.04] border-black/[0.1] text-neutral-700'
-                            }`}
-                          >
-                            {String(Math.floor(researchElapsedSec / 60)).padStart(2, '0')}:
-                            {String(researchElapsedSec % 60).padStart(2, '0')}s
-                          </span>
-                        </div>
-                        <div
-                          className={`w-full h-1.5 rounded-full overflow-hidden ${
-                            isDark ? 'bg-white/[0.07]' : 'bg-black/[0.07]'
-                          }`}
-                        >
-                          <div
-                            className={`h-full transition-all duration-500 rounded-full ${
-                              isDark ? 'bg-white' : 'bg-neutral-900'
-                            }`}
-                            style={{
-                              width: `${Math.min(
-                                94,
-                                isCurrentTurnSearching
-                                  ? 26
-                                  : 38 + Math.min(56, researchElapsedSec * 5)
-                              )}%`,
-                            }}
-                          />
-                        </div>
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 pt-0.5 text-[11px]">
-                          {[
-                            { label: '1. Literature Search', done: !isCurrentTurnSearching },
+                      <div className="py-2 w-full">
+                        <AILoadingState
+                          steps={[
                             {
-                              label: `2. ${turnSources.length || 'Live'} Sources Indexed`,
-                              done: !isCurrentTurnSearching && researchElapsedSec >= 2,
+                              id: 'academic-search',
+                              label: 'Searching academic & live web indexes',
+                              status: isCurrentTurnSearching ? 'running' : 'done',
+                              detail: [
+                                'querying Google Scholar, PubMed, ArXiv & live indexes',
+                                'fetching peer-reviewed literature & empirical data',
+                                'extracting primary sources & DOI citations',
+                              ],
+                              durationMs: !isCurrentTurnSearching
+                                ? Math.min(researchElapsedSec * 1000, 2800)
+                                : undefined,
                             },
                             {
-                              label: '3. Citation Mapping',
-                              done: !isCurrentTurnSearching && researchElapsedSec >= 5,
+                              id: 'index-sources',
+                              label: `${turnSources.length > 0 ? `${turnSources.length} verified sources` : 'Live sources'} indexed`,
+                              status: isCurrentTurnSearching
+                                ? 'pending'
+                                : researchElapsedSec < 3
+                                ? 'running'
+                                : 'done',
+                              detail: [
+                                'inspecting study design, sample size & methodology',
+                                'verifying statistical significance & peer-review metrics',
+                                'ranking by empirical relevance and domain authority',
+                              ],
+                              durationMs: researchElapsedSec >= 3 ? 1600 : undefined,
                             },
                             {
-                              label: '4. Final Report',
-                              done: false,
+                              id: 'citation-mapping',
+                              label: 'Cross-verifying claims & citation mapping',
+                              status:
+                                isCurrentTurnSearching || researchElapsedSec < 3
+                                  ? 'pending'
+                                  : researchElapsedSec < 7
+                                  ? 'running'
+                                  : 'done',
+                              detail: [
+                                'grounding findings against extracted passage coordinates',
+                                'resolving primary literature claims and counter-evidence',
+                                'linking inline citations [S1..Sn]',
+                              ],
+                              durationMs: researchElapsedSec >= 7 ? 2100 : undefined,
                             },
-                          ].map((st, sIdx) => (
-                            <div
-                              key={sIdx}
-                              className={`px-2 py-1 rounded border truncate font-mono text-[10px] ${
-                                st.done
-                                  ? isDark
-                                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
-                                    : 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                                  : isDark
-                                  ? 'bg-white/[0.02] border-white/[0.06] text-neutral-400'
-                                  : 'bg-white border-black/[0.06] text-neutral-500'
-                              }`}
-                            >
-                              {st.done ? '✓ ' : '⋯ '}
-                              {st.label}
-                            </div>
-                          ))}
-                        </div>
+                            {
+                              id: 'synthesizing-report',
+                              label: 'Synthesizing structured research report',
+                              status:
+                                isCurrentTurnSearching || researchElapsedSec < 7
+                                  ? 'pending'
+                                  : 'running',
+                              detail: [
+                                'structuring comprehensive findings and synthesis',
+                                'formatting verified evidence table & executive brief',
+                              ],
+                            },
+                          ]}
+                          className="w-full"
+                        />
                       </div>
                     ) : (
                       blocks.map((block, bIdx) => {

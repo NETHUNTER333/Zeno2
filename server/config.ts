@@ -199,6 +199,97 @@ export function validateSafePublicUrl(rawUrl: string): { valid: boolean; url?: U
   return { valid: true, url: parsed };
 }
 
+export function getDodoPaymentsApiKey(): string {
+  const envVal = (process.env.DODO_PAYMENTS_API_KEY || '').trim();
+  if (envVal) return envVal;
+  const localKeys = loadLocalRouterKeys();
+  return String(
+    localKeys?.tokens?.dodoPayments ||
+      localKeys?.dodoPayments?.apiKey ||
+      localKeys?.DODO_PAYMENTS_API_KEY ||
+      ''
+  ).trim();
+}
+
+export function getDodoPaymentsWebhookKey(): string {
+  const envVal = (process.env.DODO_PAYMENTS_WEBHOOK_KEY || '').trim();
+  if (envVal) return envVal;
+  const localKeys = loadLocalRouterKeys();
+  return String(
+    localKeys?.dodoPayments?.webhookKey ||
+      localKeys?.DODO_PAYMENTS_WEBHOOK_KEY ||
+      ''
+  ).trim();
+}
+
+export function getDodoPaymentsEnvironment(): 'test_mode' | 'live_mode' {
+  const rawEnv = (process.env.DODO_PAYMENTS_ENVIRONMENT || '').trim().toLowerCase();
+  if (rawEnv === 'live_mode' || rawEnv === 'live') return 'live_mode';
+  if (rawEnv === 'test_mode' || rawEnv === 'test') return 'test_mode';
+  const localKeys = loadLocalRouterKeys();
+  const cfgEnv = String(
+    localKeys?.dodoPayments?.environment ||
+      localKeys?.DODO_PAYMENTS_ENVIRONMENT ||
+      ''
+  ).trim().toLowerCase();
+  if (cfgEnv === 'live_mode' || cfgEnv === 'live') return 'live_mode';
+  if (cfgEnv === 'test_mode' || cfgEnv === 'test') return 'test_mode';
+  const key = getDodoPaymentsApiKey();
+  if (key.startsWith('dodo_live_')) return 'live_mode';
+  return 'test_mode';
+}
+
+export interface DodoProductIdMap {
+  spark_monthly: string;
+  spark_yearly: string;
+  fire_monthly: string;
+  fire_yearly: string;
+}
+
+export function getDodoProductIds(): DodoProductIdMap {
+  const localKeys = loadLocalRouterKeys();
+  const dodoCfg = localKeys?.dodoPayments || {};
+  return {
+    spark_monthly: String(
+      process.env.DODO_PRODUCT_SPARK_MONTHLY ||
+        process.env.DODO_SPARK_PRODUCT_ID ||
+        dodoCfg.sparkMonthlyProductId ||
+        dodoCfg.sparkProductId ||
+        ''
+    ).trim(),
+    spark_yearly: String(
+      process.env.DODO_PRODUCT_SPARK_YEARLY ||
+        dodoCfg.sparkYearlyProductId ||
+        ''
+    ).trim(),
+    fire_monthly: String(
+      process.env.DODO_PRODUCT_FIRE_MONTHLY ||
+        process.env.DODO_FIRE_PRODUCT_ID ||
+        dodoCfg.fireMonthlyProductId ||
+        dodoCfg.fireProductId ||
+        ''
+    ).trim(),
+    fire_yearly: String(
+      process.env.DODO_PRODUCT_FIRE_YEARLY ||
+        dodoCfg.fireYearlyProductId ||
+        ''
+    ).trim(),
+  };
+}
+
+export function getAppBaseUrl(req?: Request): string {
+  const envUrl = (process.env.APP_URL || '').trim().replace(/\/+$/, '');
+  if (envUrl && envUrl !== 'MY_APP_URL' && envUrl.startsWith('http')) {
+    return envUrl;
+  }
+  const origin = req?.headers?.origin;
+  if (typeof origin === 'string' && origin.startsWith('http')) {
+    return origin.replace(/\/+$/, '');
+  }
+  return 'https://kinich.app';
+}
+
+
 /**
  * Redacts any potential Bearer tokens, API keys, Redis connection URIs, private keys,
  * or authorization strings from error messages.
@@ -210,7 +301,7 @@ export function sanitizeErrorMessage(raw: unknown): string {
     .replace(/AIza[0-9A-Za-z\-_]{30,}/g, '[REDACTED_API_KEY]')
     .replace(/rediss?:\/\/[^\s"'<>]+/gi, 'redis://[REDACTED_REDIS_URI]')
     .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, '[REDACTED_PRIVATE_KEY]')
-    .replace(/\b(sk|gsk|treg)_[A-Za-z0-9\-_]{12,}/g, '[REDACTED_TOKEN]')
+    .replace(/\b(sk|gsk|treg|dodo_test|dodo_live)_[A-Za-z0-9\-_.]{12,}/g, '[REDACTED_TOKEN]')
     .slice(0, 500);
 }
 

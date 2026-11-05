@@ -18,10 +18,17 @@ import {
   Cpu,
   HardDrive,
   ChevronDown,
+  Search,
+  CreditCard,
+  ExternalLink,
+  AlertTriangle,
+  Receipt,
 } from 'lucide-react';
 import { UserAccountStore, PLAN_LIMITS } from '../lib/userAccountStore';
 import { UsageQuota } from '../types';
 import { LEGAL_CONFIG } from '../legal/config';
+import { auth, getAuthHeaders } from '../lib/firebase';
+import { DodoStatusModal } from './DodoStatusModal';
 
 export interface PricingModalProps {
   isOpen: boolean;
@@ -71,10 +78,127 @@ export const PricingModal: React.FC<PricingModalProps> = ({
     return plan === 'fire' ? 2 : plan === 'spark' ? 1 : 0;
   });
   const [upgradeBanner, setUpgradeBanner] = useState<string | null>(null);
+  const [dodoCheckoutUrl, setDodoCheckoutUrl] = useState<string | null>(null);
+  const [dodoSessionId, setDodoSessionId] = useState<string | null>(null);
   const [matrixTab, setMatrixTab] = useState<'all' | 'models' | 'quotas'>('all');
+  const [mobileMatrixPlan, setMobileMatrixPlan] = useState<'spark' | 'fire' | 'free' | 'compare'>('spark');
   const [mobileExpandedPlan, setMobileExpandedPlan] = useState<'spark' | 'fire' | 'free' | null>('spark');
   const [resetCountdown, setResetCountdown] = useState<string>(() => getUtcResetCountdown());
   const [isSyncingQuota, setIsSyncingQuota] = useState(false);
+  const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
+
+  // Dodo Payments Country, Localized Price Preview, Payment Methods & Billing State
+  const [countries, setCountries] = useState<
+    Array<{ code: string; name: string; flag: string; currency: string; symbol: string }>
+  >([]);
+  const [selectedCountry, setSelectedCountry] = useState<string>(() => {
+    try {
+      return localStorage.getItem('kinich_billing_country') || 'US';
+    } catch {
+      return 'US';
+    }
+  });
+  const [countryDropdownOpen, setCountryDropdownOpen] = useState(false);
+  const [countrySearchQuery, setCountrySearchQuery] = useState('');
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [pricePreviews, setPricePreviews] = useState<Record<string, any>>({});
+  const [paymentMethodsInfo, setPaymentMethodsInfo] = useState<{
+    subscriptionMethods: Array<{ id: string; label: string; prominent?: boolean; note?: string }>;
+    oneTimeOnlyMethods: Array<{ id: string; label: string }>;
+    mandateNote?: string;
+  } | null>(null);
+  const [billingMe, setBillingMe] = useState<any | null>(null);
+  const [checkoutBusyPlan, setCheckoutBusyPlan] = useState<'spark' | 'fire' | null>(null);
+  const [portalBusy, setPortalBusy] = useState(false);
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const [updateMethodBusy, setUpdateMethodBusy] = useState(false);
+  const [guestSignInPromptPlan, setGuestSignInPromptPlan] = useState<'spark' | 'fire' | null>(null);
+
+  const fetchBillingMeAndCountries = async () => {
+    try {
+      const authHeaders = await getAuthHeaders();
+      const [countriesRes, meRes] = await Promise.all([
+        fetch('/api/billing/countries'),
+        fetch('/api/billing/me', { headers: authHeaders }),
+      ]);
+      let resolvedCountry = selectedCountry;
+      if (countriesRes.ok) {
+        const cData = await countriesRes.json();
+        if (Array.isArray(cData?.countries)) {
+          setCountries(cData.countries);
+        }
+        if (
+          cData?.defaultCountry &&
+          !localStorage.getItem('kinich_billing_country')
+        ) {
+          resolvedCountry = cData.defaultCountry;
+        }
+      }
+      if (meRes.ok) {
+        const meData = await meRes.json();
+        setBillingMe(meData);
+        if (meData?.billingCountry && !localStorage.getItem('kinich_billing_country')) {
+          resolvedCountry = meData.billingCountry;
+        }
+        if (
+          meData?.authenticated &&
+          (meData.effectivePlan === 'spark' || meData.effectivePlan === 'fire' || meData.effectivePlan === 'free') &&
+          meData.planStatus !== 'none'
+        ) {
+          setCurrentPlan(meData.effectivePlan);
+        }
+      }
+      if (resolvedCountry !== selectedCountry) {
+        setSelectedCountry(resolvedCountry);
+      }
+      await fetchPricePreviewForCountry(resolvedCountry);
+    } catch {}
+  };
+
+  const fetchPricePreviewForCountry = async (countryCode: string) => {
+    setPreviewLoading(true);
+    try {
+      const res = await fetch('/api/billing/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ country: countryCode }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.previews) {
+          setPricePreviews(data.previews);
+        }
+        if (data?.paymentMethods) {
+          setPaymentMethodsInfo(data.paymentMethods);
+        }
+      }
+    } catch {}
+    setPreviewLoading(false);
+  };
+
+  const handleSelectCountry = async (code: string) => {
+    setSelectedCountry(code);
+    setCountryDropdownOpen(false);
+    setCountrySearchQuery('');
+    try {
+      localStorage.setItem('kinich_billing_country', code);
+    } catch {}
+    fetchPricePreviewForCountry(code);
+    try {
+      const authHeaders = await getAuthHeaders();
+      await fetch('/api/billing/country', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        body: JSON.stringify({ country: code }),
+      });
+    } catch {}
+  };
+
+  useEffect(() => {
+    if (isOpen || embedded) {
+      fetchBillingMeAndCountries();
+    }
+  }, [isOpen, embedded]);
 
   useEffect(() => {
     if (initialHighlightPlan === 'fire') {
@@ -111,22 +235,174 @@ export const PricingModal: React.FC<PricingModalProps> = ({
 
   if (!isOpen && !embedded) return null;
 
-  const handleSelectPlan = (targetPlan: 'free' | 'spark' | 'fire') => {
-    UserAccountStore.upgradePlan(
-      targetPlan,
-      billingCycle === 'annual' ? 'yearly' : 'monthly'
-    );
-    setCurrentPlan(targetPlan);
-    setUsage(UserAccountStore.getUsage());
+  const isFirebaseSignedIn = Boolean(
+    auth.currentUser && UserAccountStore.getProfile().signinProvider !== 'guest'
+  );
+
+  const handleSelectPlan = async (targetPlan: 'free' | 'spark' | 'fire') => {
+    const interval: 'monthly' | 'yearly' = billingCycle === 'annual' ? 'yearly' : 'monthly';
     setActiveCardIndex(targetPlan === 'fire' ? 2 : targetPlan === 'spark' ? 1 : 0);
-    const label =
-      targetPlan === 'free'
-        ? 'Free Tier (5 daily chats, 3 file uploads, 5 web searches, 3 deep research, 5 PDF study)'
-        : targetPlan === 'spark'
-        ? 'Spark ($3/mo · 10x Daily Limits)'
-        : 'Fire ($7/mo · Unlimited Frontier Access)';
-    setUpgradeBanner(`Active plan updated to ${label}. Your daily allowances and model locks are now synced.`);
-    setTimeout(() => setUpgradeBanner(null), 4500);
+    setDodoCheckoutUrl(null);
+    setDodoSessionId(null);
+
+    if (targetPlan === 'free') {
+      if (isFirebaseSignedIn && billingMe?.dodoSubscriptionId && billingMe?.planStatus === 'active') {
+        await handleCancelSubscription(true);
+        return;
+      }
+      UserAccountStore.upgradePlan('free', interval);
+      setCurrentPlan('free');
+      setUsage(UserAccountStore.getUsage());
+      setUpgradeBanner(
+        'Active plan set to Free Tier (5 daily chats, 3 file uploads, 5 web searches, 3 deep research, 5 PDF study).'
+      );
+      setTimeout(() => setUpgradeBanner(null), 7000);
+      return;
+    }
+
+    // Paid plans (Spark / Fire): Require a signed-in Firebase user before checkout
+    if (!isFirebaseSignedIn) {
+      setGuestSignInPromptPlan(targetPlan);
+      setUpgradeBanner(
+        `Please sign in with your Kinich account first to subscribe to ${
+          targetPlan === 'fire' ? 'Fire ($7/mo)' : 'Spark ($3/mo)'
+        }. Your selection will resume immediately after sign-in.`
+      );
+      return;
+    }
+
+    setGuestSignInPromptPlan(null);
+    setCheckoutBusyPlan(targetPlan);
+
+    try {
+      const authHeaders = await getAuthHeaders();
+      const profile = UserAccountStore.getProfile();
+
+      // If user already has an active Dodo subscription, use change-plan endpoint
+      if (billingMe?.dodoSubscriptionId && billingMe?.planStatus === 'active') {
+        const changeRes = await fetch('/api/billing/change-plan', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeaders },
+          body: JSON.stringify({ plan: targetPlan, interval }),
+        });
+        const changeData = await changeRes.json();
+        if (changeRes.ok && changeData?.success) {
+          if (changeData.payment_link) {
+            window.location.href = changeData.payment_link;
+            return;
+          }
+          setUpgradeBanner(
+            `Plan change to ${targetPlan.toUpperCase()} (${interval}) submitted to Dodo Payments. Your entitlements will update as soon as confirmed.`
+          );
+          await fetchBillingMeAndCountries();
+          setCheckoutBusyPlan(null);
+          return;
+        }
+      }
+
+      // Create new Dodo Checkout Session via /api/billing/checkout
+      const resp = await fetch('/api/billing/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        body: JSON.stringify({
+          plan: targetPlan,
+          interval,
+          country: selectedCountry,
+          email: profile?.email || auth.currentUser?.email || undefined,
+          name: profile?.displayName || auth.currentUser?.displayName || undefined,
+        }),
+      });
+
+      const data = await resp.json();
+      if (resp.ok && data?.checkout_url) {
+        setDodoCheckoutUrl(String(data.checkout_url));
+        if (data?.session_id) setDodoSessionId(String(data.session_id));
+        setUpgradeBanner(
+          `Redirecting to Dodo Payments secure checkout for Kinich ${
+            targetPlan === 'fire' ? 'Fire' : 'Spark'
+          } (${interval})...`
+        );
+        window.location.href = String(data.checkout_url);
+        return;
+      } else {
+        setUpgradeBanner(
+          data?.error || 'Could not initiate Dodo checkout session. Please try again.'
+        );
+      }
+    } catch (err: any) {
+      setUpgradeBanner(err?.message || 'Network error while creating checkout session.');
+    } finally {
+      setCheckoutBusyPlan(null);
+    }
+  };
+
+  const handleOpenCustomerPortal = async () => {
+    setPortalBusy(true);
+    try {
+      const authHeaders = await getAuthHeaders();
+      const res = await fetch('/api/billing/portal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+      });
+      const data = await res.json();
+      if (res.ok && data?.url) {
+        window.location.href = String(data.url);
+        return;
+      }
+      setUpgradeBanner(data?.error || 'Customer portal is available after your first subscription checkout.');
+    } catch {
+      setUpgradeBanner('Unable to open Dodo Customer Portal right now.');
+    } finally {
+      setPortalBusy(false);
+    }
+  };
+
+  const handleUpdatePaymentMethod = async () => {
+    setUpdateMethodBusy(true);
+    try {
+      const authHeaders = await getAuthHeaders();
+      const res = await fetch('/api/billing/update-payment-method', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+      });
+      const data = await res.json();
+      if (res.ok && data?.payment_link) {
+        window.location.href = String(data.payment_link);
+        return;
+      }
+      setUpgradeBanner(data?.error || 'Could not generate payment method update link.');
+    } catch {
+      setUpgradeBanner('Failed to request payment method update.');
+    } finally {
+      setUpdateMethodBusy(false);
+    }
+  };
+
+  const handleCancelSubscription = async (atPeriodEnd = true, resume = false) => {
+    setCancelBusy(true);
+    try {
+      const authHeaders = await getAuthHeaders();
+      const res = await fetch('/api/billing/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        body: JSON.stringify({ atPeriodEnd, resume }),
+      });
+      const data = await res.json();
+      if (res.ok && data?.success) {
+        setUpgradeBanner(
+          resume
+            ? 'Your subscription auto-renewal has been resumed.'
+            : 'Your subscription will cancel at the end of your current billing period. You retain full access until then.'
+        );
+        await fetchBillingMeAndCountries();
+      } else {
+        setUpgradeBanner(data?.error || 'Could not update subscription cancellation status.');
+      }
+    } catch {
+      setUpgradeBanner('Network error updating subscription.');
+    } finally {
+      setCancelBusy(false);
+    }
   };
 
   const handleManualSyncQuota = async () => {
@@ -185,39 +461,37 @@ export const PricingModal: React.FC<PricingModalProps> = ({
   const activeBadgeClass = 'bg-[#FC4C01] text-white border border-[#FC4C01]';
 
   const freeFeatures: PlanFeatureRow[] = [
-    { text: '3 File Uploads / day (up to 2 files/msg)', included: true },
-    { text: '5 Daily AI Prompts (Chats)', included: true },
-    { text: 'Free Default (DeepSeek V4.1 Flash) & MoonMath Vision', included: true },
-    { text: '5 Daily Web Searches & 5 PDF Study sessions', included: true },
-    { text: '3 Daily Autonomous Deep Research runs', included: true },
-    { text: 'Spark ($3) & Fire ($7) Flagship Models', included: false },
-    { text: '10x Quota Boost & Unlimited Inference', included: false },
+    { text: '5 Daily AI Prompts (resets every midnight UTC)', included: true },
+    { text: '3 File & Vision Uploads / day (up to 2 files/msg)', included: true },
+    { text: 'Fast Reasoning: DeepSeek V3.2 Flash (1M context)', included: true },
+    { text: '5 Live Web Searches & 5 Document Study runs / day', included: true },
+    { text: '3 Autonomous Deep Research reports / day', included: true },
+    { text: 'Advanced Reasoning & Frontier Flagship Models', included: false },
+    { text: '10x Daily Limit Boost & Unlimited Inference', included: false },
   ];
 
   const sparkFeatures: PlanFeatureRow[] = [
-    { text: '250 File Uploads / day (10x boost — up to 25/msg)', included: true },
-    { text: '1,500 Daily AI Prompts (10x limit boost)', included: true },
-    { text: '750 Real-Time Web & News Searches / day (10x boost)', included: true },
-    { text: '100 Autonomous Deep Research runs / day (10x boost)', included: true },
-    { text: '200 PDF Study & YouTube Transcript runs / day (10x boost)', included: true },
-    { text: '10M Token daily capacity & 2,000 tool executions / day', included: true },
-    { text: 'Spark Models (Claude 4.6, GPT-6 Luna, DeepSeek V4.1, Qwen 3.8, Kimi K3)', included: true },
-    { text: '50 GB Cloud Storage & Knowledge Vault saves', included: true },
-    { text: 'Fire Flagship Models (Opus 5.5, GPT-6.1 Sol, GPT-6 Astra)', included: false },
-    { text: 'Unlimited Uploads, Prompts & Zero-Queue Priority', included: false },
+    { text: '1,500 Daily Prompts (10x boost · 1M context)', included: true },
+    { text: '250 File Uploads / day (up to 25 files/msg)', included: true },
+    { text: '750 Real-Time Web & News Searches / day', included: true },
+    { text: '100 Autonomous Deep Research reports / day', included: true },
+    { text: '200 PDF Study & YouTube Studio sessions / day', included: true },
+    { text: 'Advanced Models: DeepSeek R1, Claude 3.7 Sonnet, Qwen 2.5', included: true },
+    { text: '10M Daily Token Capacity & 10 GB Vault Storage', included: true },
+    { text: 'Frontier Flagships (Claude 3.7 Thinking, GPT-4.5)', included: false },
+    { text: 'Unlimited Messages & Zero-Queue Priority', included: false },
   ];
 
   const fireFeatures: PlanFeatureRow[] = [
-    { text: 'Unlimited File Uploads (all formats & sizes, up to 50/msg)', included: true },
-    { text: 'Unlimited Daily Prompts & Autonomous Deep Research runs', included: true },
-    { text: 'Unlimited Real-Time Web, News & ArXiv Search', included: true },
+    { text: 'Unlimited Daily Prompts & Messages (No Cap)', included: true },
+    { text: 'Unlimited File Uploads (all formats, up to 50/msg)', included: true },
+    { text: 'Unlimited Real-Time Web, News & Academic Search', included: true },
+    { text: 'Unlimited Deep Research Reports & Synthesis', included: true },
     { text: 'Unlimited PDF Studio, Quiz Studio & Document Intelligence', included: true },
-    { text: 'All Spark Models (Claude 4.6, GPT-6 Luna, DeepSeek V4.1, Qwen 3.8, Kimi K3)', included: true },
-    { text: 'Fire Flagship Models (Claude Opus 5.5, GPT-6.1 Sol, GPT-6 Astra)', included: true },
-    { text: 'Gemini 4 Argon Pro, DeepSeek V4 Pro Max & 2.4T MoE', included: true },
-    { text: 'Priority Zero-Queue Inference & 25M Daily Token Capacity', included: true },
-    { text: '100 GB Cloud Storage & Vault Sync', included: true },
-    { text: 'Dedicated Multi-Agent Compute Cluster', included: true },
+    { text: 'All Advanced Models (DeepSeek R1, Claude 3.7 Sonnet, Qwen 2.5)', included: true },
+    { text: 'Frontier Flagships: Claude 3.7 Sonnet (Thinking), GPT-4.5, Grok 3', included: true },
+    { text: 'Priority Zero-Queue Compute & Dedicated Ingestion', included: true },
+    { text: '25M Daily Token Capacity & 30 GB Vault Storage', included: true },
   ];
 
   const allowanceCards = [
@@ -264,74 +538,134 @@ export const PricingModal: React.FC<PricingModalProps> = ({
 
   const comparisonRows = [
     {
+      id: 'fast-chat',
       category: 'models' as const,
-      feature: 'Default Fast Chat (DeepSeek V4.1 Flash)',
-      free: 'Included (Free)',
-      spark: 'Included (10x Speed)',
-      fire: 'Unlimited Priority',
+      categoryLabel: 'AI Models & Intelligence',
+      feature: 'Fast Reasoning & Chat',
+      subtext: 'DeepSeek V3.2 Flash · 1M context',
+      free: 'Standard Speed',
+      spark: 'High-Priority 10x Speed',
+      fire: 'Zero-Queue Priority',
+      freeTag: { label: 'Included', variant: 'included' as const },
+      sparkTag: { label: '10x Speed', variant: 'included' as const },
+      fireTag: { label: 'Priority', variant: 'highlight' as const },
     },
     {
+      id: 'multimodal-vision',
       category: 'models' as const,
-      feature: 'MoonMath Vision & Multimodal (GLM-5.3 Flash)',
-      free: 'Included (Free)',
-      spark: 'Included (High-Res)',
-      fire: 'Unlimited High-Res',
+      categoryLabel: 'AI Models & Intelligence',
+      feature: 'Multimodal & Vision Analysis',
+      subtext: 'High-resolution image, chart & diagram OCR',
+      free: 'Standard Res',
+      spark: 'High Resolution',
+      fire: 'Max Resolution',
+      freeTag: { label: 'Included', variant: 'included' as const },
+      sparkTag: { label: 'High-Res', variant: 'included' as const },
+      fireTag: { label: 'Max-Res', variant: 'highlight' as const },
     },
     {
+      id: 'advanced-reasoning',
       category: 'models' as const,
-      feature: 'Spark Reasoning Models (Claude 4.6, GPT-6 Luna, Kimi K3, Qwen 3.8)',
+      categoryLabel: 'AI Models & Intelligence',
+      feature: 'Advanced Reasoning Models',
+      subtext: 'DeepSeek R1, Claude 3.7 Sonnet, Qwen 2.5',
       free: 'Locked ($3 Spark)',
       spark: 'Unlocked (1,500/day)',
       fire: 'Unlocked (Unlimited)',
+      freeTag: { label: 'Locked ($3)', variant: 'locked' as const },
+      sparkTag: { label: 'Unlocked · 1,500/day', variant: 'unlocked' as const },
+      fireTag: { label: 'Unlimited', variant: 'highlight' as const },
     },
     {
+      id: 'frontier-flagship',
       category: 'models' as const,
-      feature: 'Fire Frontier Flagships (Claude Opus 5.5, GPT-6.1 Sol, GPT-6 Astra, Grok 4.7)',
+      categoryLabel: 'AI Models & Intelligence',
+      feature: 'Frontier Flagships',
+      subtext: 'Claude 3.7 Sonnet (Thinking), GPT-4.5, Grok 3',
       free: 'Locked ($7 Fire)',
       spark: 'Locked ($7 Fire)',
       fire: 'Unlocked (Unlimited)',
+      freeTag: { label: 'Locked ($7)', variant: 'locked' as const },
+      sparkTag: { label: 'Locked ($7)', variant: 'locked' as const },
+      fireTag: { label: 'Unlocked', variant: 'highlight' as const },
     },
     {
+      id: 'daily-prompts',
       category: 'quotas' as const,
-      feature: 'Daily AI Prompts (Messages)',
+      categoryLabel: 'Daily Quotas & Limits',
+      feature: 'Daily Messages & Prompts',
+      subtext: 'Resets daily at 00:00 UTC',
       free: '5 / day',
-      spark: '1,500 / day (10x)',
+      spark: '1,500 / day',
       fire: 'Unlimited',
+      freeTag: { label: '5 / day', variant: 'neutral' as const },
+      sparkTag: { label: '1,500 / day', variant: 'unlocked' as const },
+      fireTag: { label: 'Unlimited', variant: 'highlight' as const },
     },
     {
+      id: 'file-uploads',
       category: 'quotas' as const,
-      feature: 'Daily File & Vision Uploads',
+      categoryLabel: 'Daily Quotas & Limits',
+      feature: 'File & Document Uploads',
+      subtext: 'PDFs, spreadsheets, code & images',
       free: '3 / day (2/msg)',
       spark: '250 / day (25/msg)',
       fire: 'Unlimited (50/msg)',
+      freeTag: { label: '3 / day', variant: 'neutral' as const },
+      sparkTag: { label: '250 / day', variant: 'unlocked' as const },
+      fireTag: { label: 'Unlimited', variant: 'highlight' as const },
     },
     {
+      id: 'web-search',
       category: 'quotas' as const,
-      feature: 'Live Web, Image & YouTube Search',
+      categoryLabel: 'Daily Quotas & Limits',
+      feature: 'Live Web & News Search',
+      subtext: 'Real-time verified source citations',
       free: '5 / day',
-      spark: '750 / day (10x)',
+      spark: '750 / day',
       fire: 'Unlimited',
+      freeTag: { label: '5 / day', variant: 'neutral' as const },
+      sparkTag: { label: '750 / day', variant: 'unlocked' as const },
+      fireTag: { label: 'Unlimited', variant: 'highlight' as const },
     },
     {
+      id: 'deep-research',
       category: 'quotas' as const,
-      feature: 'Autonomous Deep Research Runs',
+      categoryLabel: 'Daily Quotas & Limits',
+      feature: 'Autonomous Deep Research',
+      subtext: 'Multi-source synthesis reports',
       free: '3 / day',
-      spark: '100 / day (10x)',
+      spark: '100 / day',
       fire: 'Unlimited',
+      freeTag: { label: '3 / day', variant: 'neutral' as const },
+      sparkTag: { label: '100 / day', variant: 'unlocked' as const },
+      fireTag: { label: 'Unlimited', variant: 'highlight' as const },
     },
     {
+      id: 'study-studio',
       category: 'quotas' as const,
-      feature: 'PDF Studio, Flashcards & Exam Quizzes',
+      categoryLabel: 'Daily Quotas & Limits',
+      feature: 'PDF Studio & Exam Quizzes',
+      subtext: 'Interactive quizzes, flashcards & summaries',
       free: '5 / day',
-      spark: '200 / day (10x)',
+      spark: '200 / day',
       fire: 'Unlimited',
+      freeTag: { label: '5 / day', variant: 'neutral' as const },
+      sparkTag: { label: '200 / day', variant: 'unlocked' as const },
+      fireTag: { label: 'Unlimited', variant: 'highlight' as const },
     },
     {
+      id: 'tokens-vault',
       category: 'quotas' as const,
+      categoryLabel: 'Daily Quotas & Limits',
       feature: 'Daily Token Allowance & Cloud Vault',
+      subtext: 'Workspace storage & document persistence',
       free: '250K tokens · 100 MB',
-      spark: '10M tokens · 50 GB',
-      fire: '25M tokens · 100 GB',
+      spark: '10M tokens · 10 GB',
+      fire: '25M tokens · 30 GB',
+      freeTag: { label: '100 MB', variant: 'neutral' as const },
+      sparkTag: { label: '10 GB Vault', variant: 'unlocked' as const },
+      fireTag: { label: '30 GB Vault', variant: 'highlight' as const },
     },
   ];
 
@@ -346,7 +680,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
   );
   const storageUsedMb = ((usage.storageBytesUsed || 4_200_000) / (1024 * 1024)).toFixed(1);
   const storageLimitLabel =
-    currentPlan === 'fire' ? '100 GB' : currentPlan === 'spark' ? '50 GB' : '100 MB';
+    currentPlan === 'fire' ? '30 GB' : currentPlan === 'spark' ? '10 GB' : '100 MB';
 
   const innerContent = (
     <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
@@ -416,7 +750,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
       </div>
 
       {/* Pricing Title Row + 3-Step Indicator */}
-      <div className="flex items-center justify-between gap-4 mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
         <div>
           <div className="flex flex-wrap items-center gap-2.5 mb-1">
             <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight">Plans & Access</h1>
@@ -464,6 +798,353 @@ export const PricingModal: React.FC<PricingModalProps> = ({
         </div>
       </div>
 
+      {/* Country Selector + Adaptive Currency & Local Payment Method Badges Bar */}
+      <div
+        className={`mb-6 p-4 sm:p-5 rounded-3xl border flex flex-col lg:flex-row lg:items-center justify-between gap-4 shadow-sm ${
+          isDark ? 'bg-[#141418] border-white/12 text-white' : 'bg-white border-black/10 text-[#18181b]'
+        }`}
+      >
+        {/* Searchable Country Dropdown */}
+        <div className="relative shrink-0">
+          <div className={`text-[11px] font-semibold uppercase tracking-wider mb-1.5 ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
+            Billing Country & Local Currency
+          </div>
+          <button
+            type="button"
+            onClick={() => setCountryDropdownOpen((prev) => !prev)}
+            className={`w-full sm:w-72 px-3.5 py-2.5 rounded-2xl border flex items-center justify-between gap-2 text-xs font-semibold transition-all cursor-pointer ${
+              isDark
+                ? 'bg-[#18181b] border-white/15 hover:border-white/30 text-white'
+                : 'bg-[#fafafa] border-black/15 hover:border-black/30 text-[#18181b]'
+            }`}
+            data-testid="country-selector-button"
+          >
+            {(() => {
+              const activeC = countries.find((c) => c.code === selectedCountry) || {
+                code: selectedCountry,
+                name: selectedCountry === 'IN' ? 'India' : selectedCountry === 'US' ? 'United States' : selectedCountry,
+                flag: selectedCountry === 'IN' ? '🇮🇳' : '🌐',
+                currency: selectedCountry === 'IN' ? 'INR' : 'USD',
+              };
+              return (
+                <span className="flex items-center gap-2 truncate">
+                  <span className="text-base leading-none">{activeC.flag}</span>
+                  <span className="truncate">{activeC.name}</span>
+                  <span className={`font-mono text-[10px] px-1.5 py-0.5 rounded ${isDark ? 'bg-white/10 text-neutral-300' : 'bg-black/5 text-neutral-600'}`}>
+                    {activeC.code} · {activeC.currency}
+                  </span>
+                </span>
+              );
+            })()}
+            <ChevronDown className={`w-4 h-4 shrink-0 transition-transform ${countryDropdownOpen ? 'rotate-180' : ''}`} />
+          </button>
+
+          {countryDropdownOpen && (
+            <div
+              className={`absolute left-0 mt-2 w-full sm:w-80 rounded-2xl border shadow-2xl z-40 p-2 ${
+                isDark ? 'bg-[#18181b] border-white/15 text-white' : 'bg-white border-black/15 text-[#18181b]'
+              }`}
+            >
+              <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border mb-2 ${isDark ? 'bg-black/40 border-white/10' : 'bg-neutral-50 border-black/10'}`}>
+                <Search className="w-3.5 h-3.5 opacity-60 shrink-0" />
+                <input
+                  type="text"
+                  value={countrySearchQuery}
+                  onChange={(e) => setCountrySearchQuery(e.target.value)}
+                  placeholder="Search country or ISO code (e.g. India, IN)..."
+                  className="w-full bg-transparent text-xs outline-none"
+                  autoFocus
+                />
+              </div>
+              <div className="max-h-56 overflow-y-auto space-y-0.5 pr-1">
+                {countries
+                  .filter((c) => {
+                    const q = countrySearchQuery.trim().toLowerCase();
+                    if (!q) return true;
+                    return (
+                      c.name.toLowerCase().includes(q) ||
+                      c.code.toLowerCase().includes(q) ||
+                      c.currency.toLowerCase().includes(q)
+                    );
+                  })
+                  .map((c) => (
+                    <button
+                      key={c.code}
+                      type="button"
+                      onClick={() => handleSelectCountry(c.code)}
+                      className={`w-full px-3 py-2 rounded-xl text-left text-xs flex items-center justify-between gap-2 transition-colors cursor-pointer ${
+                        c.code === selectedCountry
+                          ? 'bg-[#FC4C01] text-white font-semibold'
+                          : isDark
+                          ? 'hover:bg-white/10 text-neutral-200'
+                          : 'hover:bg-neutral-100 text-neutral-800'
+                      }`}
+                    >
+                      <span className="flex items-center gap-2 truncate">
+                        <span>{c.flag}</span>
+                        <span className="truncate">{c.name}</span>
+                      </span>
+                      <span className="font-mono text-[10px] opacity-80 shrink-0">
+                        {c.code} ({c.currency})
+                      </span>
+                    </button>
+                  ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Supported Recurring Payment Method Badges for Selected Country */}
+        <div className="flex-1">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
+            <span className={`text-[11px] font-semibold uppercase tracking-wider ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
+              Supported Subscription Methods ({selectedCountry})
+            </span>
+            {selectedCountry === 'IN' && (
+              <span className="text-[11px] font-semibold text-[#FC4C01]">
+                UPI AutoPay &amp; RuPay e-Mandates Supported
+              </span>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5" data-testid="payment-method-badges">
+            {(paymentMethodsInfo?.subscriptionMethods || [
+              { id: 'credit_debit', label: 'Credit / Debit Cards', prominent: true },
+              { id: 'apple_pay', label: 'Apple Pay' },
+            ]).map((m) => (
+              <span
+                key={m.id}
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold border ${
+                  m.prominent
+                    ? 'bg-[#FC4C01]/15 text-[#FC4C01] border-[#FC4C01]/35'
+                    : isDark
+                    ? 'bg-white/[0.05] text-neutral-200 border-white/10'
+                    : 'bg-neutral-100 text-neutral-800 border-black/10'
+                }`}
+              >
+                <CreditCard className="w-3 h-3 opacity-75 shrink-0" />
+                <span>{m.label}</span>
+              </span>
+            ))}
+          </div>
+          {paymentMethodsInfo?.mandateNote && (
+            <p className={`text-[11px] mt-1.5 ${isDark ? 'text-neutral-400' : 'text-neutral-600'}`}>
+              {paymentMethodsInfo.mandateNote}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* Guest Sign-In Required Prompt when guest clicks Upgrade */}
+      {guestSignInPromptPlan && !isFirebaseSignedIn && (
+        <div
+          className={`mb-6 p-5 rounded-3xl border flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm ${
+            isDark ? 'bg-[#18181b] border-[#FC4C01]/50 text-white' : 'bg-white border-[#FC4C01]/50 text-[#18181b]'
+          }`}
+        >
+          <div className="space-y-1">
+            <div className="text-xs sm:text-sm font-bold flex items-center gap-2">
+              <Lock className="w-4 h-4 text-[#FC4C01] shrink-0" />
+              <span>
+                Sign in required to subscribe to Kinich {guestSignInPromptPlan === 'fire' ? 'Fire ($7/mo)' : 'Spark ($3/mo)'}
+              </span>
+            </div>
+            <p className={`text-xs ${isDark ? 'text-neutral-400' : 'text-neutral-600'}`}>
+              Subscriptions and entitlements are bound to your verified Firebase account so your plan syncs across devices.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                window.dispatchEvent(new CustomEvent('kinich-navigate-route', { detail: { path: '/account' } }));
+              }}
+              className="px-4 py-2 rounded-full text-xs font-bold bg-[#FC4C01] hover:bg-[#e04300] text-white cursor-pointer transition-all"
+            >
+              Sign In / Create Account →
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Active Subscription Status Alerts (past_due, on_hold, cancelled) & Billing Management Panel */}
+      {billingMe?.authenticated && (billingMe?.dodoSubscriptionId || (billingMe?.payments && billingMe.payments.length > 0)) && (
+        <div
+          className={`mb-6 p-5 sm:p-6 rounded-3xl border shadow-sm space-y-4 ${
+            isDark ? 'bg-[#141418] border-white/15 text-white' : 'bg-white border-black/10 text-[#18181b]'
+          }`}
+        >
+          {/* Status Warning Banner for past_due / on_hold / cancelled */}
+          {(billingMe.planStatus === 'past_due' || billingMe.planStatus === 'on_hold') && (
+            <div className="p-4 rounded-2xl border border-amber-500/40 bg-amber-500/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-start gap-2.5 text-xs">
+                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-bold text-amber-300">
+                    {billingMe.planStatus === 'on_hold'
+                      ? 'Subscription On Hold — Renewal Payment Failed'
+                      : 'Payment Past Due — Retrying Renewal'}
+                  </div>
+                  <div className={isDark ? 'text-neutral-300 mt-0.5' : 'text-neutral-700 mt-0.5'}>
+                    {billingMe.planStatus === 'on_hold'
+                      ? 'Your subscription is paused until a valid payment method is confirmed. Update your payment method to restore paid access immediately.'
+                      : 'Your most recent renewal charge did not succeed. Please update your payment method so your access continues uninterrupted.'}
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleUpdatePaymentMethod}
+                disabled={updateMethodBusy}
+                className="px-4 py-2 rounded-full text-xs font-bold bg-[#FC4C01] hover:bg-[#e04300] text-white shrink-0 cursor-pointer"
+              >
+                {updateMethodBusy ? 'Opening...' : 'Update Payment Method'}
+              </button>
+            </div>
+          )}
+
+          {Boolean(billingMe.cancelAtPeriodEnd) && billingMe.planPeriodEnd && (
+            <div className="p-4 rounded-2xl border border-white/15 bg-white/[0.03] flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+              <div>
+                <span className="font-bold text-[#FC4C01]">Scheduled to Cancel: </span>
+                <span>
+                  Your {String(billingMe.plan).toUpperCase()} plan remains active until{' '}
+                  <strong>{new Date(billingMe.planPeriodEnd).toLocaleDateString()}</strong> and will not auto-renew.
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleCancelSubscription(false, true)}
+                disabled={cancelBusy}
+                className="px-4 py-1.5 rounded-full text-xs font-bold bg-white text-black hover:bg-neutral-200 shrink-0 cursor-pointer"
+              >
+                {cancelBusy ? 'Updating...' : 'Resume Subscription'}
+              </button>
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wider opacity-70">
+                Dodo Payments Subscription &amp; Billing Portal
+              </div>
+              <div className="text-sm font-bold mt-0.5 flex flex-wrap items-center gap-2">
+                <span>
+                  Plan: {String(billingMe.plan || 'free').toUpperCase()} ({billingMe.planInterval || 'monthly'})
+                </span>
+                <span className="font-mono text-xs px-2 py-0.5 rounded-full bg-[#FC4C01]/15 text-[#FC4C01] border border-[#FC4C01]/30">
+                  Status: {billingMe.planStatus || 'active'}
+                </span>
+                {billingMe.planPeriodEnd && (
+                  <span className="text-xs font-normal opacity-75">
+                    · Next billing / period end: {new Date(billingMe.planPeriodEnd).toLocaleDateString()}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {billingMe.dodoCustomerId && (
+                <button
+                  type="button"
+                  onClick={handleOpenCustomerPortal}
+                  disabled={portalBusy}
+                  className={`px-3.5 py-2 rounded-full text-xs font-semibold border flex items-center gap-1.5 cursor-pointer transition-all ${
+                    isDark
+                      ? 'bg-white/10 hover:bg-white/15 border-white/15 text-white'
+                      : 'bg-neutral-100 hover:bg-neutral-200 border-black/10 text-[#18181b]'
+                  }`}
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>{portalBusy ? 'Opening Portal...' : 'Customer Portal & Invoices'}</span>
+                </button>
+              )}
+
+              {billingMe.dodoSubscriptionId && (
+                <button
+                  type="button"
+                  onClick={handleUpdatePaymentMethod}
+                  disabled={updateMethodBusy}
+                  className={`px-3.5 py-2 rounded-full text-xs font-semibold border cursor-pointer transition-all ${
+                    isDark
+                      ? 'bg-white/5 hover:bg-white/10 border-white/15 text-neutral-200'
+                      : 'bg-white hover:bg-neutral-100 border-black/10 text-neutral-800'
+                  }`}
+                >
+                  {updateMethodBusy ? 'Loading...' : 'Update Payment Method'}
+                </button>
+              )}
+
+              {billingMe.dodoSubscriptionId && billingMe.planStatus === 'active' && !billingMe.cancelAtPeriodEnd && (
+                <button
+                  type="button"
+                  onClick={() => handleCancelSubscription(true, false)}
+                  disabled={cancelBusy}
+                  className="px-3.5 py-2 rounded-full text-xs font-semibold border border-red-500/30 text-red-400 hover:bg-red-500/10 cursor-pointer transition-all"
+                >
+                  {cancelBusy ? 'Cancelling...' : 'Cancel at Period End'}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Last 10 Payments History Table */}
+          {Array.isArray(billingMe.payments) && billingMe.payments.length > 0 && (
+            <div className="pt-3 border-t border-white/10">
+              <div className="text-xs font-semibold mb-2 flex items-center gap-1.5 opacity-80">
+                <Receipt className="w-3.5 h-3.5" />
+                <span>Recent Payments &amp; Tax Invoices</span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="opacity-60 border-b border-current/10">
+                      <th className="py-1.5 pr-3">Date</th>
+                      <th className="py-1.5 px-3">Amount</th>
+                      <th className="py-1.5 px-3">Method</th>
+                      <th className="py-1.5 px-3">Status</th>
+                      <th className="py-1.5 pl-3 text-right">Invoice</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-current/5">
+                    {billingMe.payments.map((p: any) => (
+                      <tr key={p.dodo_payment_id}>
+                        <td className="py-2 pr-3 font-mono">
+                          {p.created_at ? new Date(p.created_at).toLocaleDateString() : '—'}
+                        </td>
+                        <td className="py-2 px-3 font-mono font-semibold">
+                          {((Number(p.amount) || 0) / 100).toFixed(2)} {p.currency || 'USD'}
+                        </td>
+                        <td className="py-2 px-3">{p.payment_method || 'card'}</td>
+                        <td className="py-2 px-3">
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-white/10">
+                            {p.status}
+                          </span>
+                        </td>
+                        <td className="py-2 pl-3 text-right">
+                          {p.invoice_url ? (
+                            <a
+                              href={p.invoice_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[#FC4C01] hover:underline font-semibold"
+                            >
+                              Receipt →
+                            </a>
+                          ) : (
+                            <span className="opacity-50">—</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Limit Reached or Model Locked Alert Banner */}
       {limitReason && (
         <div
@@ -502,21 +1183,46 @@ export const PricingModal: React.FC<PricingModalProps> = ({
               : 'bg-[#18181b] text-white border-[#18181b]'
           }`}
         >
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2.5 flex-wrap">
             <Check className="w-4 h-4 shrink-0" />
             <span>{upgradeBanner}</span>
+            {dodoSessionId && (
+              <span className="font-mono text-[11px] opacity-75">
+                ({dodoSessionId})
+              </span>
+            )}
           </div>
-          {!embedded && (
+          <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={onClose}
-              className={`px-4 py-1.5 rounded-full font-semibold text-xs cursor-pointer transition-opacity hover:opacity-90 ${
-                isDark ? 'bg-black text-white' : 'bg-white text-black'
-              }`}
+              onClick={() => setIsStatusModalOpen(true)}
+              className="px-3 py-1.5 rounded-full font-medium text-xs border border-current opacity-80 hover:opacity-100 transition-opacity inline-flex items-center gap-1.5 cursor-pointer"
             >
-              Continue to Workspace
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Gateway Live Status</span>
             </button>
-          )}
+            {dodoCheckoutUrl && (
+              <a
+                href={dodoCheckoutUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-4 py-1.5 rounded-full font-semibold text-xs bg-[#FC4C01] text-white hover:bg-[#e04300] transition-colors"
+              >
+                Open Dodo Checkout →
+              </a>
+            )}
+            {!embedded && (
+              <button
+                type="button"
+                onClick={onClose}
+                className={`px-4 py-1.5 rounded-full font-semibold text-xs cursor-pointer transition-opacity hover:opacity-90 ${
+                  isDark ? 'bg-black text-white' : 'bg-white text-black'
+                }`}
+              >
+                Continue to Workspace
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -737,7 +1443,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
       </div>
 
       {/* 3 Pricing Cards: Free ($0), Spark ($3), Fire ($7) — Uniform 2-badge system & flex-1 aligned layout */}
-      <div className="grid grid-cols-1 md:grid-cols-3 max-w-6xl mx-auto gap-6 items-stretch mb-10">
+      <div className="grid grid-cols-1 md:grid-cols-3 max-w-6xl mx-auto gap-6 items-stretch mb-4">
         {/* ==================== CARD 0: FREE PLAN ($0) ==================== */}
         <div
           onClick={() => setActiveCardIndex(0)}
@@ -782,8 +1488,8 @@ export const PricingModal: React.FC<PricingModalProps> = ({
             }`}
           >
             Get started with <strong>5 daily chats</strong>, <strong>3 file uploads</strong>,{' '}
-            <strong>3 deep research runs</strong>, and <strong>5 PDF study sessions</strong> on
-            our free default and MoonMath vision models.
+            <strong>3 deep research runs</strong>, and <strong>5 PDF study sessions</strong> with
+            fast multimodal reasoning.
           </p>
 
           <div
@@ -879,24 +1585,45 @@ export const PricingModal: React.FC<PricingModalProps> = ({
             </div>
           </div>
 
-          <div className="flex items-baseline gap-2.5 mt-1 mb-3 min-h-[48px]">
-            <span className="text-4xl sm:text-5xl font-bold tracking-tight tabular-nums">
-              {billingCycle === 'annual' ? `$${LEGAL_CONFIG.SPARK_YEARLY_PRICE_USD}/yr` : '$3/mo'}
-            </span>
-            <span className={`text-xs font-medium ${isDark ? 'text-neutral-300' : 'text-neutral-600'}`}>
-              {billingCycle === 'annual'
-                ? `(≈$${LEGAL_CONFIG.SPARK_YEARLY_MONTHLY_EQUIV_USD}/mo)`
-                : '· billed monthly'}
-            </span>
-          </div>
+          {(() => {
+            const previewKey = billingCycle === 'annual' ? 'spark_yearly' : 'spark_monthly';
+            const p = pricePreviews[previewKey];
+            return (
+              <div className="mt-1 mb-3 min-h-[58px]">
+                {previewLoading ? (
+                  <div className="h-10 w-44 rounded-xl bg-white/10 animate-pulse" />
+                ) : (
+                  <div className="flex items-baseline gap-2.5 flex-wrap">
+                    <span className="text-4xl sm:text-5xl font-bold tracking-tight tabular-nums">
+                      {p?.formattedTotal
+                        ? `${p.formattedTotal}/${billingCycle === 'annual' ? 'yr' : 'mo'}`
+                        : billingCycle === 'annual'
+                        ? `$${LEGAL_CONFIG.SPARK_YEARLY_PRICE_USD}/yr`
+                        : '$3/mo'}
+                    </span>
+                    <span className={`text-xs font-medium ${isDark ? 'text-neutral-300' : 'text-neutral-600'}`}>
+                      {billingCycle === 'annual'
+                        ? `(≈$${LEGAL_CONFIG.SPARK_YEARLY_MONTHLY_EQUIV_USD}/mo USD)`
+                        : '· billed monthly'}
+                    </span>
+                  </div>
+                )}
+                {!previewLoading && p && (
+                  <div className={`text-[11px] mt-1 font-mono ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
+                    Base ${p.usdReferencePrice} USD · Tax: {p.formattedTax || '$0.00'} ({p.currency})
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           <p
             className={`text-xs leading-relaxed mb-5 min-h-[38px] ${
               isDark ? 'text-neutral-300' : 'text-neutral-600'
             }`}
           >
-            The high-volume daily research plan with <strong>10x increased quotas</strong> across
-            file uploads, prompts, and autonomous research.
+            High-volume research plan with <strong>10x quotas</strong> across
+            file uploads, daily prompts, real-time web search, and deep research.
           </p>
 
           <div
@@ -942,14 +1669,14 @@ export const PricingModal: React.FC<PricingModalProps> = ({
             ))}
           </ul>
 
-          <div className="pt-2 mt-auto flex justify-center">
+          <div className="pt-2 mt-auto flex flex-col items-center gap-2">
             <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
                 handleSelectPlan('spark');
               }}
-              disabled={currentPlan === 'spark'}
+              disabled={currentPlan === 'spark' || checkoutBusyPlan === 'spark'}
               className={`w-full max-w-[260px] py-3 px-6 rounded-full text-xs font-bold transition-all cursor-pointer shadow-sm ${
                 currentPlan === 'spark'
                   ? 'bg-[#FC4C01]/15 text-[#FC4C01] border border-[#FC4C01]/35 cursor-default'
@@ -958,7 +1685,14 @@ export const PricingModal: React.FC<PricingModalProps> = ({
                   : 'bg-[#18181b] hover:bg-neutral-800 text-white active:scale-95'
               }`}
             >
-              {currentPlan === 'spark' ? 'Active Spark Plan' : 'Start Spark — $3/mo (10x Limits)'}
+              {checkoutBusyPlan === 'spark'
+                ? 'Creating Dodo Checkout...'
+                : currentPlan === 'spark'
+                ? 'Active Spark Plan'
+                : `Start Spark — ${
+                    pricePreviews[billingCycle === 'annual' ? 'spark_yearly' : 'spark_monthly']?.formattedTotal ||
+                    (billingCycle === 'annual' ? '$29/yr' : '$3/mo')
+                  }`}
             </button>
           </div>
         </div>
@@ -992,24 +1726,45 @@ export const PricingModal: React.FC<PricingModalProps> = ({
             </div>
           </div>
 
-          <div className="flex items-baseline gap-2.5 mt-1 mb-3 min-h-[48px]">
-            <span className="text-4xl sm:text-5xl font-bold tracking-tight tabular-nums">
-              {billingCycle === 'annual' ? `$${LEGAL_CONFIG.FIRE_YEARLY_PRICE_USD}/yr` : '$7/mo'}
-            </span>
-            <span className={`text-xs font-medium ${isDark ? 'text-neutral-300' : 'text-neutral-600'}`}>
-              {billingCycle === 'annual'
-                ? `(≈$${LEGAL_CONFIG.FIRE_YEARLY_MONTHLY_EQUIV_USD}/mo)`
-                : '· billed monthly'}
-            </span>
-          </div>
+          {(() => {
+            const previewKey = billingCycle === 'annual' ? 'fire_yearly' : 'fire_monthly';
+            const p = pricePreviews[previewKey];
+            return (
+              <div className="mt-1 mb-3 min-h-[58px]">
+                {previewLoading ? (
+                  <div className="h-10 w-44 rounded-xl bg-white/10 animate-pulse" />
+                ) : (
+                  <div className="flex items-baseline gap-2.5 flex-wrap">
+                    <span className="text-4xl sm:text-5xl font-bold tracking-tight tabular-nums">
+                      {p?.formattedTotal
+                        ? `${p.formattedTotal}/${billingCycle === 'annual' ? 'yr' : 'mo'}`
+                        : billingCycle === 'annual'
+                        ? `$${LEGAL_CONFIG.FIRE_YEARLY_PRICE_USD}/yr`
+                        : '$7/mo'}
+                    </span>
+                    <span className={`text-xs font-medium ${isDark ? 'text-neutral-300' : 'text-neutral-600'}`}>
+                      {billingCycle === 'annual'
+                        ? `(≈$${LEGAL_CONFIG.FIRE_YEARLY_MONTHLY_EQUIV_USD}/mo USD)`
+                        : '· billed monthly'}
+                    </span>
+                  </div>
+                )}
+                {!previewLoading && p && (
+                  <div className={`text-[11px] mt-1 font-mono ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
+                    Base ${p.usdReferencePrice} USD · Tax: {p.formattedTax || '$0.00'} ({p.currency})
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           <p
             className={`text-xs leading-relaxed mb-5 min-h-[38px] ${
               isDark ? 'text-neutral-300' : 'text-neutral-600'
             }`}
           >
-            Maximize research performance with unlimited file uploads, all flagship Opus 5.5,
-            GPT-6.1 Sol &amp; Astra models, and dedicated multi-agent compute.
+            Maximize research performance with unlimited prompts, uncapped file uploads,
+            frontier reasoning models, and zero-queue priority.
           </p>
 
           <div
@@ -1029,46 +1784,69 @@ export const PricingModal: React.FC<PricingModalProps> = ({
             ))}
           </ul>
 
-          <div className="pt-2 mt-auto flex justify-center">
+          <div className="pt-2 mt-auto flex flex-col items-center gap-2">
             <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
                 handleSelectPlan('fire');
               }}
-              disabled={currentPlan === 'fire'}
+              disabled={currentPlan === 'fire' || checkoutBusyPlan === 'fire'}
               className={`w-full max-w-[260px] py-3 px-6 rounded-full text-xs font-bold transition-all cursor-pointer shadow-sm ${
                 currentPlan === 'fire'
                   ? 'bg-[#FC4C01]/15 text-[#FC4C01] border border-[#FC4C01]/35 cursor-default'
                   : 'bg-[#FC4C01] hover:bg-[#e04300] text-white active:scale-95'
               }`}
             >
-              {currentPlan === 'fire' ? 'Active Fire Plan' : 'Start Fire — $7/mo (Unlimited)'}
+              {checkoutBusyPlan === 'fire'
+                ? 'Creating Dodo Checkout...'
+                : currentPlan === 'fire'
+                ? 'Active Fire Plan'
+                : `Start Fire — ${
+                    pricePreviews[billingCycle === 'annual' ? 'fire_yearly' : 'fire_monthly']?.formattedTotal ||
+                    (billingCycle === 'annual' ? '$67/yr' : '$7/mo')
+                  }`}
             </button>
           </div>
         </div>
       </div>
 
+      {/* Merchant of Record Disclosure & Real-Time Gateway Status */}
+      <div className={`text-center text-xs mb-10 flex flex-col sm:flex-row items-center justify-center gap-3 ${isDark ? 'text-neutral-400' : 'text-neutral-600'}`}>
+        <span>
+          Payments processed securely by <strong>Dodo Payments</strong>, our Merchant of Record. Local taxes, VAT/GST, and currency conversion are calculated automatically at checkout.
+        </span>
+        <button
+          type="button"
+          onClick={() => setIsStatusModalOpen(true)}
+          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-neutral-800/80 hover:bg-neutral-700/80 border border-neutral-700/70 text-neutral-300 hover:text-white transition text-[11px] font-medium shrink-0 cursor-pointer shadow-sm"
+          title="Check real-time payment gateway status and response latency"
+        >
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          <span>Gateway Status: Operational</span>
+        </button>
+      </div>
+
       {/* Interactive Plan & Model Access Comparison Matrix */}
       <div
-        className={`rounded-3xl border p-5 sm:p-7 shadow-sm ${
+        className={`rounded-3xl border p-5 sm:p-7 shadow-sm transition-all ${
           isDark ? 'bg-[#141418] border-white/12 text-white' : 'bg-white border-black/10 text-[#18181b]'
         }`}
       >
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <div>
             <h3 className="text-lg sm:text-xl font-bold tracking-tight">
-              Plan Quotas & Model Access Matrix
+              Plan Quotas &amp; Model Access Matrix
             </h3>
-            <p className={`text-xs mt-0.5 ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
-              Compare exact daily limits and AI model unlocks across Free ($0), Spark ($3/mo), and Fire ($7/mo).
+            <p className={`text-xs mt-1 ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
+              Compare daily limits, reasoning model tiers, and storage across plans.
             </p>
           </div>
 
-          {/* Filter Tabs */}
+          {/* Filter Category Tabs */}
           <div
-            className={`inline-flex items-center p-1 rounded-full border self-start ${
-              isDark ? 'bg-[#18181b] border-white/10' : 'bg-neutral-100 border-black/10'
+            className={`inline-flex items-center p-1 rounded-xl border self-start ${
+              isDark ? 'bg-black/40 border-white/10' : 'bg-neutral-100 border-black/10'
             }`}
           >
             {[
@@ -1080,11 +1858,11 @@ export const PricingModal: React.FC<PricingModalProps> = ({
                 key={tab.id}
                 type="button"
                 onClick={() => setMatrixTab(tab.id)}
-                className={`px-3 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer ${
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                   matrixTab === tab.id
                     ? isDark
-                      ? 'bg-white text-black'
-                      : 'bg-[#18181b] text-white'
+                      ? 'bg-white text-black shadow-xs'
+                      : 'bg-[#18181b] text-white shadow-xs'
                     : isDark
                     ? 'text-neutral-400 hover:text-white'
                     : 'text-neutral-600 hover:text-black'
@@ -1096,43 +1874,232 @@ export const PricingModal: React.FC<PricingModalProps> = ({
           </div>
         </div>
 
-        {/* Mobile Accordion View per Plan (<md) */}
-        <div className="md:hidden space-y-2.5">
-          {(['free', 'spark', 'fire'] as const).map((planKey) => {
-            const isExpanded = mobileExpandedPlan === planKey;
-            const planTitle = planKey === 'fire' ? 'Fire ($7/mo · Unlimited)' : planKey === 'spark' ? 'Spark ($3/mo · 10x)' : 'Free Tier ($0)';
-            const accentColor = planKey === 'fire' ? 'text-orange-400' : planKey === 'spark' ? 'text-amber-400' : '';
-            return (
-              <div
-                key={planKey}
-                className={`rounded-2xl border overflow-hidden transition-all ${
-                  isDark ? 'bg-[#18181b] border-white/10' : 'bg-neutral-50 border-black/10'
-                }`}
-              >
+        {/* Mobile View: High-fidelity Plan Switcher with No Cramped Wrapping */}
+        <div className="md:hidden space-y-4">
+          <div
+            className={`p-1 rounded-2xl border flex items-center gap-1 ${
+              isDark ? 'bg-black/50 border-white/10' : 'bg-neutral-100 border-black/10'
+            }`}
+          >
+            {[
+              { id: 'spark' as const, label: 'Spark ($3)' },
+              { id: 'fire' as const, label: 'Fire ($7)' },
+              { id: 'free' as const, label: 'Free ($0)' },
+              { id: 'compare' as const, label: 'All Plans' },
+            ].map((tab) => {
+              const isSelected = mobileMatrixPlan === tab.id;
+              return (
                 <button
+                  key={tab.id}
                   type="button"
-                  onClick={() => setMobileExpandedPlan(isExpanded ? null : planKey)}
-                  className="w-full p-3.5 flex items-center justify-between text-xs font-bold cursor-pointer"
+                  onClick={() => setMobileMatrixPlan(tab.id)}
+                  className={`flex-1 py-2 px-1.5 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                    isSelected
+                      ? tab.id === 'spark'
+                        ? 'bg-[#FC4C01] text-white shadow-xs'
+                        : tab.id === 'fire'
+                        ? isDark
+                          ? 'bg-white text-black shadow-xs'
+                          : 'bg-[#18181b] text-white shadow-xs'
+                        : isDark
+                        ? 'bg-white/20 text-white shadow-xs'
+                        : 'bg-white text-neutral-900 shadow-xs'
+                      : isDark
+                      ? 'text-neutral-400 hover:text-white'
+                      : 'text-neutral-600 hover:text-black'
+                  }`}
                 >
-                  <span className={accentColor}>{planTitle}</span>
-                  <ChevronDown className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                  <span className="truncate">{tab.label}</span>
                 </button>
-                {isExpanded && (
-                  <div className={`px-3.5 pb-3.5 pt-1 space-y-2.5 border-t text-xs ${isDark ? 'border-white/10 text-neutral-300' : 'border-black/10 text-neutral-700'}`}>
-                    {visibleComparisonRows.map((row, rIdx) => {
-                      const val = planKey === 'free' ? row.free : planKey === 'spark' ? row.spark : row.fire;
-                      return (
-                        <div key={rIdx} className="flex items-center justify-between gap-2 py-1 border-b border-current/5 last:border-0">
-                          <span className="font-medium opacity-80">{row.feature}</span>
-                          <span className="font-mono font-semibold text-right">{val}</span>
+              );
+            })}
+          </div>
+
+          {/* When a specific plan is picked on mobile */}
+          {mobileMatrixPlan !== 'compare' ? (
+            <div className="space-y-2.5">
+              {visibleComparisonRows.map((row) => {
+                const val =
+                  mobileMatrixPlan === 'free'
+                    ? row.free
+                    : mobileMatrixPlan === 'spark'
+                    ? row.spark
+                    : row.fire;
+                const tag =
+                  mobileMatrixPlan === 'free'
+                    ? row.freeTag
+                    : mobileMatrixPlan === 'spark'
+                    ? row.sparkTag
+                    : row.fireTag;
+                const isLocked = tag?.variant === 'locked';
+
+                return (
+                  <div
+                    key={row.id}
+                    className={`p-3.5 rounded-2xl border transition-all ${
+                      isDark ? 'bg-white/[0.03] border-white/8' : 'bg-neutral-50/90 border-black/8'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs font-semibold tracking-tight text-foreground">
+                          {row.feature}
                         </div>
-                      );
-                    })}
+                        {row.subtext && (
+                          <div
+                            className={`text-[11px] mt-0.5 leading-snug ${
+                              isDark ? 'text-neutral-400' : 'text-neutral-500'
+                            }`}
+                          >
+                            {row.subtext}
+                          </div>
+                        )}
+                      </div>
+
+                      <span
+                        className={`shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold tracking-tight ${
+                          tag?.variant === 'highlight'
+                            ? 'bg-[#FC4C01] text-white shadow-2xs'
+                            : tag?.variant === 'unlocked'
+                            ? isDark
+                              ? 'bg-amber-400/15 text-amber-300 border border-amber-400/30'
+                              : 'bg-amber-50 text-amber-800 border border-amber-200'
+                            : tag?.variant === 'included'
+                            ? isDark
+                              ? 'bg-emerald-400/15 text-emerald-300 border border-emerald-400/30'
+                              : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                            : tag?.variant === 'locked'
+                            ? isDark
+                              ? 'bg-white/5 text-neutral-400 border border-white/10'
+                              : 'bg-neutral-100 text-neutral-500 border border-neutral-200'
+                            : isDark
+                            ? 'bg-white/10 text-neutral-200 border border-white/10'
+                            : 'bg-neutral-200 text-neutral-800'
+                        }`}
+                      >
+                        {isLocked && <Lock className="w-3 h-3 shrink-0" />}
+                        <span>{val}</span>
+                      </span>
+                    </div>
                   </div>
-                )}
-              </div>
-            );
-          })}
+                );
+              })}
+            </div>
+          ) : (
+            /* Multi-Plan Accordion View when "All Plans" is selected on mobile */
+            <div className="space-y-3">
+              {(['spark', 'fire', 'free'] as const).map((planKey) => {
+                const isExpanded = mobileExpandedPlan === planKey;
+                const planTitle =
+                  planKey === 'fire'
+                    ? 'Fire ($7/mo · Unlimited Flagship)'
+                    : planKey === 'spark'
+                    ? 'Spark ($3/mo · 10x Limits)'
+                    : 'Free Tier ($0 · Standard)';
+                const accentColor =
+                  planKey === 'fire'
+                    ? 'text-orange-400'
+                    : planKey === 'spark'
+                    ? 'text-amber-400'
+                    : '';
+
+                return (
+                  <div
+                    key={planKey}
+                    className={`rounded-2xl border overflow-hidden transition-all ${
+                      isDark ? 'bg-white/[0.03] border-white/10' : 'bg-neutral-50 border-black/10'
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setMobileExpandedPlan(isExpanded ? null : planKey)}
+                      className="w-full p-4 flex items-center justify-between text-xs font-bold cursor-pointer"
+                    >
+                      <span className={accentColor}>{planTitle}</span>
+                      <ChevronDown
+                        className={`w-4 h-4 transition-transform duration-200 ${
+                          isExpanded ? 'rotate-180' : ''
+                        }`}
+                      />
+                    </button>
+                    {isExpanded && (
+                      <div
+                        className={`px-3.5 pb-3.5 pt-1 space-y-2 border-t text-xs ${
+                          isDark
+                            ? 'border-white/10 text-neutral-300'
+                            : 'border-black/10 text-neutral-700'
+                        }`}
+                      >
+                        {visibleComparisonRows.map((row) => {
+                          const val =
+                            planKey === 'free'
+                              ? row.free
+                              : planKey === 'spark'
+                              ? row.spark
+                              : row.fire;
+                          const tag =
+                            planKey === 'free'
+                              ? row.freeTag
+                              : planKey === 'spark'
+                              ? row.sparkTag
+                              : row.fireTag;
+                          const isLocked = tag?.variant === 'locked';
+
+                          return (
+                            <div
+                              key={row.id}
+                              className={`p-3 rounded-xl border flex items-center justify-between gap-3 ${
+                                isDark
+                                  ? 'bg-black/30 border-white/6'
+                                  : 'bg-white border-black/6'
+                              }`}
+                            >
+                              <div className="min-w-0 flex-1">
+                                <span className="font-semibold text-xs tracking-tight block truncate">
+                                  {row.feature}
+                                </span>
+                                {row.subtext && (
+                                  <span
+                                    className={`text-[10.5px] block truncate ${
+                                      isDark ? 'text-neutral-400' : 'text-neutral-500'
+                                    }`}
+                                  >
+                                    {row.subtext}
+                                  </span>
+                                )}
+                              </div>
+                              <span
+                                className={`shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold ${
+                                  tag?.variant === 'highlight'
+                                    ? 'bg-[#FC4C01] text-white'
+                                    : tag?.variant === 'unlocked'
+                                    ? isDark
+                                      ? 'text-amber-300 bg-amber-400/10'
+                                      : 'text-amber-700 bg-amber-50'
+                                    : tag?.variant === 'included'
+                                    ? isDark
+                                      ? 'text-emerald-300 bg-emerald-400/10'
+                                      : 'text-emerald-700 bg-emerald-50'
+                                    : tag?.variant === 'locked'
+                                    ? 'text-neutral-500'
+                                    : isDark
+                                    ? 'text-neutral-200'
+                                    : 'text-neutral-800'
+                                }`}
+                              >
+                                {isLocked && <Lock className="w-3 h-3 shrink-0" />}
+                                <span>{val}</span>
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Desktop Comparison Table (md+) */}
@@ -1144,48 +2111,85 @@ export const PricingModal: React.FC<PricingModalProps> = ({
                   isDark ? 'border-white/10 text-neutral-400' : 'border-black/10 text-neutral-500'
                 }`}
               >
-                <th className="py-3 pr-4 font-semibold">Feature / Capability</th>
-                <th className="py-3 px-3 font-semibold">Free Tier ($0)</th>
-                <th className="py-3 px-3 font-semibold text-amber-400">Spark ($3/mo)</th>
-                <th className="py-3 pl-3 font-semibold text-orange-400">Fire ($7/mo)</th>
+                <th className="py-3.5 pr-4 font-semibold text-xs tracking-tight">Feature &amp; Capability</th>
+                <th className="py-3.5 px-4 font-semibold text-xs tracking-tight">Free Tier ($0)</th>
+                <th className="py-3.5 px-4 font-semibold text-xs tracking-tight text-amber-500 dark:text-amber-400">
+                  Spark ($3/mo · Popular)
+                </th>
+                <th className="py-3.5 pl-4 font-semibold text-xs tracking-tight text-[#FC4C01]">
+                  Fire ($7/mo · Unlimited)
+                </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/5">
-              {visibleComparisonRows.map((row, idx) => {
-                const isFreeLocked = row.free.startsWith('Locked');
-                const isSparkLocked = row.spark.startsWith('Locked');
+            <tbody className={`divide-y ${isDark ? 'divide-white/6' : 'divide-black/6'}`}>
+              {visibleComparisonRows.map((row) => {
+                const isFreeLocked = row.freeTag?.variant === 'locked';
+                const isSparkLocked = row.sparkTag?.variant === 'locked';
                 return (
                   <tr
-                    key={idx}
-                    className={
+                    key={row.id}
+                    className={`transition-colors ${
                       isDark ? 'hover:bg-white/[0.02]' : 'hover:bg-black/[0.02]'
-                    }
+                    }`}
                   >
-                    <td className="py-3 pr-4 font-medium">{row.feature}</td>
-                    <td className="py-3 px-3 font-mono">
+                    <td className="py-3.5 pr-4">
+                      <div className="font-semibold text-xs tracking-tight">{row.feature}</div>
+                      {row.subtext && (
+                        <div
+                          className={`text-[11px] mt-0.5 ${
+                            isDark ? 'text-neutral-400' : 'text-neutral-500'
+                          }`}
+                        >
+                          {row.subtext}
+                        </div>
+                      )}
+                    </td>
+
+                    <td className="py-3.5 px-4">
                       {isFreeLocked ? (
-                        <span className="inline-flex items-center gap-1 text-neutral-500">
-                          <Lock className="w-3 h-3" />
+                        <span className="inline-flex items-center gap-1.5 text-neutral-500">
+                          <Lock className="w-3.5 h-3.5 shrink-0 opacity-70" />
+                          <span>{row.free}</span>
+                        </span>
+                      ) : row.freeTag?.variant === 'included' ? (
+                        <span className="inline-flex items-center gap-1.5 text-emerald-500 font-semibold">
+                          <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                          <span>{row.free}</span>
+                        </span>
+                      ) : (
+                        <span className={isDark ? 'text-neutral-300' : 'text-neutral-700'}>
                           {row.free}
                         </span>
-                      ) : (
-                        <span>{row.free}</span>
                       )}
                     </td>
-                    <td className="py-3 px-3 font-mono">
+
+                    <td className="py-3.5 px-4">
                       {isSparkLocked ? (
-                        <span className="inline-flex items-center gap-1 text-neutral-500">
-                          <Lock className="w-3 h-3" />
-                          {row.spark}
+                        <span className="inline-flex items-center gap-1.5 text-neutral-500">
+                          <Lock className="w-3.5 h-3.5 shrink-0 opacity-70" />
+                          <span>{row.spark}</span>
+                        </span>
+                      ) : row.sparkTag?.variant === 'included' ? (
+                        <span className="inline-flex items-center gap-1.5 text-emerald-500 font-semibold">
+                          <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                          <span>{row.spark}</span>
                         </span>
                       ) : (
-                        <span className={isDark ? 'text-white font-semibold' : 'text-black font-semibold'}>
+                        <span
+                          className={`font-semibold ${
+                            isDark ? 'text-amber-300' : 'text-amber-800'
+                          }`}
+                        >
                           {row.spark}
                         </span>
                       )}
                     </td>
-                    <td className="py-3 pl-3 font-mono font-semibold text-orange-400">
-                      {row.fire}
+
+                    <td className="py-3.5 pl-4 font-semibold text-[#FC4C01]">
+                      <span className="inline-flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 shrink-0" />
+                        <span>{row.fire}</span>
+                      </span>
                     </td>
                   </tr>
                 );
@@ -1194,6 +2198,13 @@ export const PricingModal: React.FC<PricingModalProps> = ({
           </table>
         </div>
       </div>
+
+      {/* Real-time Dodo Payments Status & Reassurance Modal */}
+      <DodoStatusModal
+        isOpen={isStatusModalOpen}
+        onClose={() => setIsStatusModalOpen(false)}
+        onContinueCheckout={checkoutBusyPlan ? () => handleSelectPlan(checkoutBusyPlan) : undefined}
+      />
     </div>
   );
 

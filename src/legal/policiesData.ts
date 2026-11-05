@@ -460,12 +460,28 @@ export const LEGAL_DOCUMENTS: Record<LegalDocId, PolicyDocument> = {
               'Account Data, Contact Form submissions',
               'Legal obligation (DPDP Act & IT Rules 2021) & performance of a contract',
             ],
+            [
+              'Opt-in location awareness for local news, weather & regional search',
+              'Coarse City-Level Location Data (or Edge IP header fallback)',
+              'Affirmative consent & performance of a contract',
+            ],
           ],
         },
       },
       {
-        id: 'ai-processing',
+        id: 'location-data',
         number: '04',
+        title: 'Location Data Handling & Privacy Controls',
+        paragraphs: [
+          `Default IP Approximate Location: By default, Kinich reads coarse, city-level IP geolocation headers provided by edge proxy servers (x-vercel-ip-city, x-vercel-ip-country-region, x-vercel-ip-country, x-vercel-ip-timezone) to refine weather forecasts and local search results without requiring browser location permissions. Raw IP addresses are never logged or stored.`,
+          `Optional Precise Location (Off by Default): Precise location is strictly optional and off by default. It can be toggled in Settings or triggered on demand via the "Use precise location" button. Exact GPS coordinates (latitude and longitude) are sent to server-side reverse-geocoding (LocationIQ) only for that specific request and are immediately discarded. Only city-level location is retained.`,
+          `Saved Home City Memory: Signed-in users may save a home city in their profile settings ("I live in..."). When active, your saved home city takes priority over IP location when IP data looks inaccurate (e.g., while connected to a VPN). You can edit or clear your home city at any time in Settings.`,
+          `No Third-Party Account Data: Kinich does NOT access, read, or parse Gmail, Google Workspace, or any third-party email/contact data for location inference or tracking under any circumstances.`,
+        ],
+      },
+      {
+        id: 'ai-processing',
+        number: '05',
         title: 'AI Model Processing & Third-Party Inference Providers',
         paragraphs: [
           `When you submit a prompt, document, or study request, ${LEGAL_CONFIG.TRADE_NAME} sends the relevant prompt context to third-party AI model providers (such as Google Gemini API, DeepSeek, and OpenRouter/TokenHarbor/MoonMath/IteraCompute API gateways) to generate your answer, quiz, or summary. When you use the YouTube Study workspace, we retrieve publicly available captions/transcripts for the video ID you specify.`,
