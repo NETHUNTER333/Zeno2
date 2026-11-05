@@ -114,7 +114,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
 
   const PRICE_TABLE: Record<string, { spark: { monthly: string; yearly: string; monthlyEquiv: string }; fire: { monthly: string; yearly: string; monthlyEquiv: string } }> = {
     USD: { spark: { monthly: '$3/mo', yearly: '$29/yr', monthlyEquiv: '2.42' }, fire: { monthly: '$7/mo', yearly: '$67/yr', monthlyEquiv: '5.58' } },
-    INR: { spark: { monthly: '₹99/mo + GST', yearly: '₹949/yr + GST', monthlyEquiv: '80' }, fire: { monthly: '₹249/mo + GST', yearly: '₹2,399/yr + GST', monthlyEquiv: '200' } },
+    INR: { spark: { monthly: '₹99/mo + GST', yearly: '₹949/yr + GST', monthlyEquiv: '₹79' }, fire: { monthly: '₹249/mo + GST', yearly: '₹2,399/yr + GST', monthlyEquiv: '₹200' } },
   };
   const getPriceTable = () => {
     const c = countries.find((x) => x.code === selectedCountry);
@@ -791,7 +791,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
             )}
           </div>
           <p className={`text-xs sm:text-sm ${isDark ? 'text-neutral-400' : 'text-neutral-600'}`}>
-            Start on the Free Tier ($0), upgrade to Spark ({pt.spark.monthly}) for 10x daily limits, or unlock Fire ({pt.fire.monthly}) for unlimited frontier models.
+            Start on the Free Tier ({selectedCountry === 'IN' ? '₹0' : '$0'}), upgrade to Spark ({pt.spark.monthly}) for 10x daily limits, or unlock Fire ({pt.fire.monthly}) for unlimited frontier models.
           </p>
         </div>
 
@@ -1497,7 +1497,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
 
           <div className="flex items-baseline gap-2.5 mt-1 mb-3 min-h-[48px]">
             <span className="text-4xl sm:text-5xl font-bold tracking-tight tabular-nums">
-              $0
+              {selectedCountry === 'IN' ? '₹0' : '$0'}
             </span>
             <span className={`text-xs font-medium ${isDark ? 'text-neutral-400' : 'text-neutral-600'}`}>
               forever free · no credit card
@@ -1626,7 +1626,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
                     </span>
                   </div>
                 )}
-                {!previewLoading && p && (
+                {!previewLoading && p && selectedCountry !== 'IN' && (
                   <div className={`text-[11px] mt-1 font-mono ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
                     Base ${p.usdReferencePrice} USD · Tax: {p.formattedTax || '$0.00'} ({p.currency})
                   </div>
@@ -1763,7 +1763,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
                     </span>
                   </div>
                 )}
-                {!previewLoading && p && (
+                {!previewLoading && p && selectedCountry !== 'IN' && (
                   <div className={`text-[11px] mt-1 font-mono ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
                     Base ${p.usdReferencePrice} USD · Tax: {p.formattedTax || '$0.00'} ({p.currency})
                   </div>

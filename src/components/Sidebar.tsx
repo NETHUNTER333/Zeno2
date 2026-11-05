@@ -554,7 +554,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
       items.push({
         id: 'action-pricing',
         label: 'Plans & Pricing',
-        sublabel: 'Spark ($3/mo) · Fire ($7/mo)',
+        sublabel: (() => {
+          const c = localStorage.getItem('kinich_billing_country') || 'US';
+          return c === 'IN' ? 'Spark (₹99/mo) · Fire (₹249/mo)' : 'Spark ($3/mo) · Fire ($7/mo)';
+        })(),
         icon: <Zap className="w-3.5 h-3.5 text-current" />,
         onClick: () => {
           if (onOpenPricing) {
