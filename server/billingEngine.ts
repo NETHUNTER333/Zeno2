@@ -710,20 +710,13 @@ function saveCachedProducts(): void {
 
 loadCachedProducts();
 
-function isInrCountryOrCurrency(rawCountryOrCurrency?: unknown): boolean {
-  const val = String(rawCountryOrCurrency || '').trim().toUpperCase();
-  return val === 'IN' || val === 'INR';
-}
 
 export async function resolveServerProductId(
   plan: PaidPlanId,
-  interval: BillingInterval,
-  rawCountryOrCurrency?: unknown
+  interval: BillingInterval
 ): Promise<string> {
   loadCachedProducts();
-  const baseKey = `${plan}_${interval}` as const;
-  const useInr = isInrCountryOrCurrency(rawCountryOrCurrency);
-  const key: ProductCacheKey = useInr ? (`${baseKey}_inr` as ProductCacheKey) : baseKey;
+  const key = `${plan}_${interval}` as const;
   const envIds = getDodoProductIds();
   if (envIds[key]) {
     return envIds[key];
@@ -733,16 +726,7 @@ export async function resolveServerProductId(
   }
 
   const client = getDodoClient();
-  const spec = PLAN_CATALOG[baseKey];
-  const inrPriceMinor =
-    plan === 'spark'
-      ? interval === 'yearly'
-        ? CURRENCY_PRICE_TABLE.INR.spark.yearly * 100
-        : CURRENCY_PRICE_TABLE.INR.spark.monthly * 100
-      : interval === 'yearly'
-      ? CURRENCY_PRICE_TABLE.INR.fire.yearly * 100
-      : CURRENCY_PRICE_TABLE.INR.fire.monthly * 100;
-  const targetProductName = useInr ? `${spec.name.replace(/\)$/, ' · INR)')}` : spec.name;
+  const spec = PLAN_CATALOG[key];
 
   if (client && !isTestRuntime()) {
     try {
@@ -750,26 +734,24 @@ export async function resolveServerProductId(
       const items = Array.isArray((listPage as any)?.items) ? (listPage as any).items : [];
       for (const p of items) {
         const pName = String(p?.name || '').toLowerCase();
-        if (pName === targetProductName.toLowerCase() && p?.product_id) {
+        if (pName === spec.name.toLowerCase() && p?.product_id) {
           runtimeProductIds[key] = String(p.product_id);
           saveCachedProducts();
           return runtimeProductIds[key]!;
         }
       }
 
-      // Create recurring subscription product with 20-year subscription period
-      // (CRITICAL Dodo requirement: subscription_period_interval must be longer than payment_frequency_interval)
       const created = await client.products.create({
-        name: targetProductName,
+        name: spec.name,
         description: spec.description,
         tax_category: 'saas',
         price: {
           type: 'recurring_price',
-          currency: useInr ? 'INR' : 'USD',
-          price: useInr ? inrPriceMinor : spec.usdPriceCents,
+          currency: 'USD',
+          price: spec.usdPriceCents,
           discount: 0,
           purchasing_power_parity: false,
-          tax_inclusive: useInr ? true : false,
+          tax_inclusive: false,
           payment_frequency_count: spec.paymentFrequencyCount,
           payment_frequency_interval: spec.paymentFrequencyInterval,
           subscription_period_count: spec.subscriptionPeriodCount,
@@ -802,9 +784,7 @@ export function mapProductIdToPlanAndInterval(
   if (
     pid &&
     (pid === envIds.fire_yearly ||
-      pid === envIds.fire_yearly_inr ||
       pid === runtimeProductIds.fire_yearly ||
-      pid === runtimeProductIds.fire_yearly_inr ||
       pid.includes('fire_yearly'))
   ) {
     return { plan: 'fire', interval: 'yearly' };
@@ -812,9 +792,7 @@ export function mapProductIdToPlanAndInterval(
   if (
     pid &&
     (pid === envIds.fire_monthly ||
-      pid === envIds.fire_monthly_inr ||
       pid === runtimeProductIds.fire_monthly ||
-      pid === runtimeProductIds.fire_monthly_inr ||
       pid.includes('fire'))
   ) {
     return { plan: 'fire', interval: metaInterval === 'yearly' ? 'yearly' : 'monthly' };
@@ -822,9 +800,7 @@ export function mapProductIdToPlanAndInterval(
   if (
     pid &&
     (pid === envIds.spark_yearly ||
-      pid === envIds.spark_yearly_inr ||
       pid === runtimeProductIds.spark_yearly ||
-      pid === runtimeProductIds.spark_yearly_inr ||
       pid.includes('spark_yearly'))
   ) {
     return { plan: 'spark', interval: 'yearly' };
@@ -832,9 +808,7 @@ export function mapProductIdToPlanAndInterval(
   if (
     pid &&
     (pid === envIds.spark_monthly ||
-      pid === envIds.spark_monthly_inr ||
       pid === runtimeProductIds.spark_monthly ||
-      pid === runtimeProductIds.spark_monthly_inr ||
       pid.includes('spark'))
   ) {
     return { plan: 'spark', interval: metaInterval === 'yearly' ? 'yearly' : 'monthly' };
@@ -926,7 +900,7 @@ export async function previewPlanPriceForCountry(
   rawCountry: unknown
 ): Promise<PlanPricePreviewItem> {
   const countryInfo = getCountryInfo(rawCountry);
-  const productId = await resolveServerProductId(plan, interval, countryInfo.code);
+  const productId = await resolveServerProductId(plan, interval);
   const client = getDodoClient();
 
   // For INR, use the fixed local price table (Dodo's converted price won't match)
@@ -1616,7 +1590,7 @@ export function registerDodoBillingRoutes(app: Express): void {
       ).run(country, countryInfo.currency, new Date().toISOString(), uid);
 
       // Server-authoritative product_id lookup (uses INR products when country === 'IN')
-      const productId = await resolveServerProductId(plan, interval, country);
+      const productId = await resolveServerProductId(plan, interval);
       const appBaseUrl = getAppBaseUrl(req);
 
       const customerEmail =
@@ -1860,7 +1834,7 @@ export function registerDodoBillingRoutes(app: Express): void {
         );
       }
 
-      const productId = await resolveServerProductId(plan, interval, user.billing_country);
+      const productId = await resolveServerProductId(plan, interval);
       const changeRes = await client.subscriptions.changePlan(user.dodo_subscription_id, {
         product_id: productId,
         quantity: 1,
