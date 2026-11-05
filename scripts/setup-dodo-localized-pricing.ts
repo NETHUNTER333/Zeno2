@@ -34,7 +34,22 @@ async function main() {
 
     console.log(`\n=== ${key} (${productId}) ===`);
 
-    // 1. List existing localized price rules (create automatically enables by_country mode)
+    // 1. Ensure pricing_mode is set to by_country (required before creating localized prices)
+    try {
+      const product = await client.products.retrieve(productId);
+      const pricingMode = (product as any)?.pricing_mode;
+      if (pricingMode !== 'by_country') {
+        console.log(`  Setting pricing_mode to by_country...`);
+        await client.products.update(productId, { pricing_mode: 'by_country' } as any);
+        console.log(`  ✓ pricing_mode set to by_country`);
+      } else {
+        console.log(`  ✓ pricing_mode already by_country`);
+      }
+    } catch (err: any) {
+      console.warn(`  ⚠ Could not check/update pricing_mode: ${err?.message}`);
+    }
+
+    // 2. List existing localized price rules (create automatically enables by_country mode)
     let existingRules: any[] = [];
     try {
       const rules = await (client.products as any).localizedPrices.list(productId);
