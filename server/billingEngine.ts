@@ -342,6 +342,8 @@ export const PLAN_CATALOG: Record<
     description: string;
     usdPriceCents: number;
     usdDisplay: string;
+    inrPriceCents?: number;
+    inrDisplay?: string;
     paymentFrequencyCount: number;
     paymentFrequencyInterval: 'Month' | 'Year';
     subscriptionPeriodCount: number;
@@ -356,6 +358,8 @@ export const PLAN_CATALOG: Record<
     description: 'Kinich Spark AI subscription — 1,500 daily messages, 250 daily uploads, and Spark models.',
     usdPriceCents: 300, // $3.00
     usdDisplay: '$3/month',
+    inrPriceCents: 9900, // ₹99.00
+    inrDisplay: '₹99/month',
     paymentFrequencyCount: 1,
     paymentFrequencyInterval: 'Month',
     subscriptionPeriodCount: 20,
@@ -369,6 +373,8 @@ export const PLAN_CATALOG: Record<
     description: 'Kinich Spark AI annual subscription — save 19% ($29/year).',
     usdPriceCents: 2900, // $29.00
     usdDisplay: '$29/year',
+    inrPriceCents: 94900, // ₹949.00
+    inrDisplay: '₹949/year',
     paymentFrequencyCount: 1,
     paymentFrequencyInterval: 'Year',
     subscriptionPeriodCount: 20,
@@ -382,6 +388,8 @@ export const PLAN_CATALOG: Record<
     description: 'Kinich Fire frontier AI subscription — unlimited messages, frontier models, and priority compute.',
     usdPriceCents: 700, // $7.00
     usdDisplay: '$7/month',
+    inrPriceCents: 24900, // ₹249.00
+    inrDisplay: '₹249/month',
     paymentFrequencyCount: 1,
     paymentFrequencyInterval: 'Month',
     subscriptionPeriodCount: 20,
@@ -395,6 +403,8 @@ export const PLAN_CATALOG: Record<
     description: 'Kinich Fire frontier AI annual subscription — save 20% ($67/year).',
     usdPriceCents: 6700, // $67.00
     usdDisplay: '$67/year',
+    inrPriceCents: 239900, // ₹2,399.00
+    inrDisplay: '₹2,399/year',
     paymentFrequencyCount: 1,
     paymentFrequencyInterval: 'Year',
     subscriptionPeriodCount: 20,
@@ -882,6 +892,7 @@ function buildLocalizedFallbackPreview(
     totalMinor = targetTotal * 100;
     subtotalMinor = Math.round(totalMinor / (1 + countryInfo.defaultTaxRate));
     taxMinor = totalMinor - subtotalMinor;
+
   }
 
   const nextDate = new Date();
@@ -917,6 +928,11 @@ export async function previewPlanPriceForCountry(
   const countryInfo = getCountryInfo(rawCountry);
   const productId = await resolveServerProductId(plan, interval, countryInfo.code);
   const client = getDodoClient();
+
+  // For INR, use the fixed local price table (Dodo's converted price won't match)
+  if (countryInfo.code === 'IN' && countryInfo.currency === 'INR') {
+    return buildLocalizedFallbackPreview(plan, interval, countryInfo, productId);
+  }
 
   if (client && productId.startsWith('pdt_') && !productId.startsWith('pdt_kinich_')) {
     try {
@@ -1428,9 +1444,9 @@ export function registerDodoBillingRoutes(app: Express): void {
         },
         {
           id: 'upi',
-          name: 'UPI AutoPay & NetBanking',
+          name: 'UPI AutoPay',
           status: 'operational',
-          subtext: 'Instant UPI mandates & recurring bank debits (India/RBI)',
+          subtext: 'Instant UPI mandates (India/RBI)',
         },
         {
           id: 'sepa',
