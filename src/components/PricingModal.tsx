@@ -99,17 +99,6 @@ export const PricingModal: React.FC<PricingModalProps> = ({
     { code: 'SG', name: 'Singapore', flag: '🇸🇬', currency: 'SGD', symbol: 'S$' },
   ];
 
-  const PRICE_TABLE: Record<string, { spark: { monthly: string; yearly: string; monthlyEquiv: string }; fire: { monthly: string; yearly: string; monthlyEquiv: string } }> = {
-    USD: { spark: { monthly: '$3/mo', yearly: '$29/yr', monthlyEquiv: '2.42' }, fire: { monthly: '$7/mo', yearly: '$67/yr', monthlyEquiv: '5.58' } },
-    INR: { spark: { monthly: '₹99/mo + GST', yearly: '₹949/yr + GST', monthlyEquiv: '80' }, fire: { monthly: '₹249/mo + GST', yearly: '₹2,399/yr + GST', monthlyEquiv: '200' } },
-  };
-  const getPriceTable = () => {
-    const c = countries.find((x) => x.code === selectedCountry);
-    const cur = c?.currency || 'USD';
-    return PRICE_TABLE[cur] || PRICE_TABLE.USD;
-  };
-  const pt = getPriceTable();
-
   const [countries, setCountries] = useState<
     Array<{ code: string; name: string; flag: string; currency: string; symbol: string }>
   >(FALLBACK_COUNTRIES);
@@ -122,6 +111,17 @@ export const PricingModal: React.FC<PricingModalProps> = ({
   });
   const [countryDropdownOpen, setCountryDropdownOpen] = useState(false);
   const [countrySearchQuery, setCountrySearchQuery] = useState('');
+
+  const PRICE_TABLE: Record<string, { spark: { monthly: string; yearly: string; monthlyEquiv: string }; fire: { monthly: string; yearly: string; monthlyEquiv: string } }> = {
+    USD: { spark: { monthly: '$3/mo', yearly: '$29/yr', monthlyEquiv: '2.42' }, fire: { monthly: '$7/mo', yearly: '$67/yr', monthlyEquiv: '5.58' } },
+    INR: { spark: { monthly: '₹99/mo + GST', yearly: '₹949/yr + GST', monthlyEquiv: '80' }, fire: { monthly: '₹249/mo + GST', yearly: '₹2,399/yr + GST', monthlyEquiv: '200' } },
+  };
+  const getPriceTable = () => {
+    const c = countries.find((x) => x.code === selectedCountry);
+    const cur = c?.currency || 'USD';
+    return PRICE_TABLE[cur] || PRICE_TABLE.USD;
+  };
+  const pt = getPriceTable();
   const [previewLoading, setPreviewLoading] = useState(false);
   const [pricePreviews, setPricePreviews] = useState<Record<string, any>>({});
   const [paymentMethodsInfo, setPaymentMethodsInfo] = useState<{
@@ -1617,11 +1617,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
                 ) : (
                   <div className="flex items-baseline gap-2.5 flex-wrap">
                     <span className="text-4xl sm:text-5xl font-bold tracking-tight tabular-nums">
-                      {p?.formattedTotal
-                        ? `${p.formattedTotal}/${billingCycle === 'annual' ? 'yr' : 'mo'}`
-                        : billingCycle === 'annual'
-                        ? pt.spark.yearly
-                        : pt.spark.monthly}
+                      {billingCycle === 'annual' ? pt.spark.yearly : pt.spark.monthly}
                     </span>
                     <span className={`text-xs font-medium ${isDark ? 'text-neutral-300' : 'text-neutral-600'}`}>
                       {billingCycle === 'annual'
@@ -1758,11 +1754,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
                 ) : (
                   <div className="flex items-baseline gap-2.5 flex-wrap">
                     <span className="text-4xl sm:text-5xl font-bold tracking-tight tabular-nums">
-                      {p?.formattedTotal
-                        ? `${p.formattedTotal}/${billingCycle === 'annual' ? 'yr' : 'mo'}`
-                        : billingCycle === 'annual'
-                        ? pt.fire.yearly
-                        : pt.fire.monthly}
+                      {billingCycle === 'annual' ? pt.fire.yearly : pt.fire.monthly}
                     </span>
                     <span className={`text-xs font-medium ${isDark ? 'text-neutral-300' : 'text-neutral-600'}`}>
                       {billingCycle === 'annual'
