@@ -80,7 +80,7 @@ const DEFAULT_FALLBACK_STATUS: DodoGatewayStatusData = {
     'If 3D-Secure SMS/OTP approval from your issuing bank takes longer than usual, your session remains active for 15 minutes without double billing.',
     'Cryptographic idempotency keys prevent duplicate deductions even if the checkout button is pressed multiple times.',
   ],
-  supportContact: 'support@kinich.app',
+  supportContact: 'kinich.app@kinich.app',
 };
 
 export const DodoStatusModal: React.FC<DodoStatusModalProps> = ({

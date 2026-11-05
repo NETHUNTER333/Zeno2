@@ -808,7 +808,7 @@ export async function searchScholarlyLiterature(
         searchStr
       )}&per-page=${Math.min(10, maxResults + 2)}&filter=has_abstract:true`;
       const res = await fetch(oaUrl, {
-        headers: { Accept: 'application/json', 'User-Agent': 'KinichResearch/1.0 (mailto:research@kinich.app)' },
+        headers: { Accept: 'application/json', 'User-Agent': 'KinichResearch/1.0 (mailto:kinich.app@kinich.app)' },
         signal: signal || AbortSignal.timeout(4000),
       });
       if (!res.ok) return items;

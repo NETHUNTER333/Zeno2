@@ -494,7 +494,7 @@ export interface ServerFeedbackRecord {
 
 // Strict server-side destination inbox for user feedback (never returned to client or UI)
 const FEEDBACK_DESTINATION_EMAIL =
-  process.env.ZENO_FEEDBACK_EMAIL || 'wakefullfinding62@gmail.com';
+  process.env.ZENO_FEEDBACK_EMAIL || 'kinich.app@kinich.app';
 
 const feedbackStore: ServerFeedbackRecord[] = [];
 

@@ -1472,7 +1472,7 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
                   </div>
 
                   <div className="pt-2 text-[11px] text-neutral-400 flex items-center justify-between">
-                    <span>Contact: <strong className={isDark ? 'text-neutral-300' : 'text-neutral-700'}>wakefullfinding62@gmail.com</strong></span>
+                    <span>Contact: <strong className={isDark ? 'text-neutral-300' : 'text-neutral-700'}>kinich.app@kinich.app</strong></span>
                     <button
                       type="button"
                       onClick={() => {

@@ -1324,7 +1324,7 @@ export function registerDodoBillingRoutes(app: Express): void {
         'If 3D-Secure SMS/OTP approval from your issuing bank takes longer than usual, your session remains active for 15 minutes without double billing.',
         'Cryptographic idempotency keys prevent duplicate deductions even if the checkout button is pressed multiple times.',
       ],
-      supportContact: 'support@kinich.app',
+      supportContact: 'kinich.app@kinich.app',
       errorDetail: isOperational ? null : errorDetail,
     });
   });
