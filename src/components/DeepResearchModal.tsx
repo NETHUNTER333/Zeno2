@@ -679,7 +679,7 @@ export interface DeepResearchModalProps {
 
 const FEEDBACK_REASONS = ['Not accurate', 'Wrong source', 'Too long', 'Out of date'];
 
-const INSTACLOUD_API_BASE = 'https://prod-main-kinich-api-c257d4-00gfx3c9932.compute.instacloud-edge.com';
+const INSTACLOUD_API_BASE = 'https://prod-main-zeno-api-c257d4-00gfx3c9932.compute.instacloud-edge.com';
 
 async function callApi(path: string, init?: RequestInit): Promise<Response> {
   const isStaticHost =

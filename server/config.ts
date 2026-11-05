@@ -244,6 +244,10 @@ export interface DodoProductIdMap {
   spark_yearly: string;
   fire_monthly: string;
   fire_yearly: string;
+  spark_monthly_inr: string;
+  spark_yearly_inr: string;
+  fire_monthly_inr: string;
+  fire_yearly_inr: string;
 }
 
 export function getDodoProductIds(): DodoProductIdMap {
@@ -255,11 +259,13 @@ export function getDodoProductIds(): DodoProductIdMap {
         process.env.DODO_SPARK_PRODUCT_ID ||
         dodoCfg.sparkMonthlyProductId ||
         dodoCfg.sparkProductId ||
+        localKeys?.DODO_PRODUCT_SPARK_MONTHLY ||
         ''
     ).trim(),
     spark_yearly: String(
       process.env.DODO_PRODUCT_SPARK_YEARLY ||
         dodoCfg.sparkYearlyProductId ||
+        localKeys?.DODO_PRODUCT_SPARK_YEARLY ||
         ''
     ).trim(),
     fire_monthly: String(
@@ -267,11 +273,37 @@ export function getDodoProductIds(): DodoProductIdMap {
         process.env.DODO_FIRE_PRODUCT_ID ||
         dodoCfg.fireMonthlyProductId ||
         dodoCfg.fireProductId ||
+        localKeys?.DODO_PRODUCT_FIRE_MONTHLY ||
         ''
     ).trim(),
     fire_yearly: String(
       process.env.DODO_PRODUCT_FIRE_YEARLY ||
         dodoCfg.fireYearlyProductId ||
+        localKeys?.DODO_PRODUCT_FIRE_YEARLY ||
+        ''
+    ).trim(),
+    spark_monthly_inr: String(
+      process.env.DODO_PRODUCT_SPARK_MONTHLY_INR ||
+        dodoCfg.sparkMonthlyInrProductId ||
+        localKeys?.DODO_PRODUCT_SPARK_MONTHLY_INR ||
+        ''
+    ).trim(),
+    spark_yearly_inr: String(
+      process.env.DODO_PRODUCT_SPARK_YEARLY_INR ||
+        dodoCfg.sparkYearlyInrProductId ||
+        localKeys?.DODO_PRODUCT_SPARK_YEARLY_INR ||
+        ''
+    ).trim(),
+    fire_monthly_inr: String(
+      process.env.DODO_PRODUCT_FIRE_MONTHLY_INR ||
+        dodoCfg.fireMonthlyInrProductId ||
+        localKeys?.DODO_PRODUCT_FIRE_MONTHLY_INR ||
+        ''
+    ).trim(),
+    fire_yearly_inr: String(
+      process.env.DODO_PRODUCT_FIRE_YEARLY_INR ||
+        dodoCfg.fireYearlyInrProductId ||
+        localKeys?.DODO_PRODUCT_FIRE_YEARLY_INR ||
         ''
     ).trim(),
   };

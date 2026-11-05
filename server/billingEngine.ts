@@ -402,6 +402,29 @@ export const PLAN_CATALOG: Record<
   },
 };
 
+export const CURRENCY_PRICE_TABLE: Record<
+  'USD' | 'INR',
+  {
+    currency: Currency;
+    symbol: string;
+    spark: { monthly: number; yearly: number; monthlyEquiv: number };
+    fire: { monthly: number; yearly: number; monthlyEquiv: number };
+  }
+> = {
+  USD: {
+    currency: 'USD',
+    symbol: '$',
+    spark: { monthly: 3, yearly: 29, monthlyEquiv: 2.42 },
+    fire: { monthly: 7, yearly: 67, monthlyEquiv: 5.58 },
+  },
+  INR: {
+    currency: 'INR',
+    symbol: '₹',
+    spark: { monthly: 99, yearly: 949, monthlyEquiv: 79 },
+    fire: { monthly: 249, yearly: 2399, monthlyEquiv: 200 },
+  },
+};
+
 export function formatMinorCurrencyAmount(minorUnits: number, currency: Currency): string {
   const isZeroDec = ZERO_DECIMAL_CURRENCIES.has(currency);
   const major = isZeroDec ? Math.round(minorUnits) : minorUnits / 100;
@@ -624,7 +647,20 @@ function getProductsCacheFile(): string {
   return path.resolve(process.cwd(), '.insta', `dodo_${env}_products.json`);
 }
 
-const runtimeProductIds: Partial<Record<'spark_monthly' | 'spark_yearly' | 'fire_monthly' | 'fire_yearly', string>> = {};
+const PRODUCT_CACHE_KEYS = [
+  'spark_monthly',
+  'spark_yearly',
+  'fire_monthly',
+  'fire_yearly',
+  'spark_monthly_inr',
+  'spark_yearly_inr',
+  'fire_monthly_inr',
+  'fire_yearly_inr',
+] as const;
+
+type ProductCacheKey = (typeof PRODUCT_CACHE_KEYS)[number];
+
+const runtimeProductIds: Partial<Record<ProductCacheKey, string>> = {};
 let lastLoadedCacheEnv: string | null = null;
 
 function loadCachedProducts(): void {
@@ -632,7 +668,7 @@ function loadCachedProducts(): void {
   if (lastLoadedCacheEnv === currentEnv) return;
 
   // Clear previous environment product IDs
-  for (const k of ['spark_monthly', 'spark_yearly', 'fire_monthly', 'fire_yearly'] as const) {
+  for (const k of PRODUCT_CACHE_KEYS) {
     delete runtimeProductIds[k];
   }
 
@@ -641,7 +677,7 @@ function loadCachedProducts(): void {
     if (fs.existsSync(cacheFile)) {
       const parsed = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
       if (parsed && typeof parsed === 'object') {
-        for (const k of ['spark_monthly', 'spark_yearly', 'fire_monthly', 'fire_yearly'] as const) {
+        for (const k of PRODUCT_CACHE_KEYS) {
           if (typeof parsed[k] === 'string' && parsed[k].startsWith('pdt_')) {
             runtimeProductIds[k] = parsed[k];
           }
@@ -664,12 +700,20 @@ function saveCachedProducts(): void {
 
 loadCachedProducts();
 
+function isInrCountryOrCurrency(rawCountryOrCurrency?: unknown): boolean {
+  const val = String(rawCountryOrCurrency || '').trim().toUpperCase();
+  return val === 'IN' || val === 'INR';
+}
+
 export async function resolveServerProductId(
   plan: PaidPlanId,
-  interval: BillingInterval
+  interval: BillingInterval,
+  rawCountryOrCurrency?: unknown
 ): Promise<string> {
   loadCachedProducts();
-  const key = `${plan}_${interval}` as const;
+  const baseKey = `${plan}_${interval}` as const;
+  const useInr = isInrCountryOrCurrency(rawCountryOrCurrency);
+  const key: ProductCacheKey = useInr ? (`${baseKey}_inr` as ProductCacheKey) : baseKey;
   const envIds = getDodoProductIds();
   if (envIds[key]) {
     return envIds[key];
@@ -679,7 +723,16 @@ export async function resolveServerProductId(
   }
 
   const client = getDodoClient();
-  const spec = PLAN_CATALOG[key];
+  const spec = PLAN_CATALOG[baseKey];
+  const inrPriceMinor =
+    plan === 'spark'
+      ? interval === 'yearly'
+        ? CURRENCY_PRICE_TABLE.INR.spark.yearly * 100
+        : CURRENCY_PRICE_TABLE.INR.spark.monthly * 100
+      : interval === 'yearly'
+      ? CURRENCY_PRICE_TABLE.INR.fire.yearly * 100
+      : CURRENCY_PRICE_TABLE.INR.fire.monthly * 100;
+  const targetProductName = useInr ? `${spec.name.replace(/\)$/, ' · INR)')}` : spec.name;
 
   if (client && !isTestRuntime()) {
     try {
@@ -687,7 +740,7 @@ export async function resolveServerProductId(
       const items = Array.isArray((listPage as any)?.items) ? (listPage as any).items : [];
       for (const p of items) {
         const pName = String(p?.name || '').toLowerCase();
-        if (pName === spec.name.toLowerCase() && p?.product_id) {
+        if (pName === targetProductName.toLowerCase() && p?.product_id) {
           runtimeProductIds[key] = String(p.product_id);
           saveCachedProducts();
           return runtimeProductIds[key]!;
@@ -697,16 +750,16 @@ export async function resolveServerProductId(
       // Create recurring subscription product with 20-year subscription period
       // (CRITICAL Dodo requirement: subscription_period_interval must be longer than payment_frequency_interval)
       const created = await client.products.create({
-        name: spec.name,
+        name: targetProductName,
         description: spec.description,
         tax_category: 'saas',
         price: {
           type: 'recurring_price',
-          currency: 'USD',
-          price: spec.usdPriceCents,
+          currency: useInr ? 'INR' : 'USD',
+          price: useInr ? inrPriceMinor : spec.usdPriceCents,
           discount: 0,
           purchasing_power_parity: false,
-          tax_inclusive: false,
+          tax_inclusive: useInr ? true : false,
           payment_frequency_count: spec.paymentFrequencyCount,
           payment_frequency_interval: spec.paymentFrequencyInterval,
           subscription_period_count: spec.subscriptionPeriodCount,
@@ -736,16 +789,44 @@ export function mapProductIdToPlanAndInterval(
   const envIds = getDodoProductIds();
   const pid = String(productId || '').trim();
 
-  if (pid && (pid === envIds.fire_yearly || pid === runtimeProductIds.fire_yearly || pid.includes('fire_yearly'))) {
+  if (
+    pid &&
+    (pid === envIds.fire_yearly ||
+      pid === envIds.fire_yearly_inr ||
+      pid === runtimeProductIds.fire_yearly ||
+      pid === runtimeProductIds.fire_yearly_inr ||
+      pid.includes('fire_yearly'))
+  ) {
     return { plan: 'fire', interval: 'yearly' };
   }
-  if (pid && (pid === envIds.fire_monthly || pid === runtimeProductIds.fire_monthly || pid.includes('fire'))) {
+  if (
+    pid &&
+    (pid === envIds.fire_monthly ||
+      pid === envIds.fire_monthly_inr ||
+      pid === runtimeProductIds.fire_monthly ||
+      pid === runtimeProductIds.fire_monthly_inr ||
+      pid.includes('fire'))
+  ) {
     return { plan: 'fire', interval: metaInterval === 'yearly' ? 'yearly' : 'monthly' };
   }
-  if (pid && (pid === envIds.spark_yearly || pid === runtimeProductIds.spark_yearly || pid.includes('spark_yearly'))) {
+  if (
+    pid &&
+    (pid === envIds.spark_yearly ||
+      pid === envIds.spark_yearly_inr ||
+      pid === runtimeProductIds.spark_yearly ||
+      pid === runtimeProductIds.spark_yearly_inr ||
+      pid.includes('spark_yearly'))
+  ) {
     return { plan: 'spark', interval: 'yearly' };
   }
-  if (pid && (pid === envIds.spark_monthly || pid === runtimeProductIds.spark_monthly || pid.includes('spark'))) {
+  if (
+    pid &&
+    (pid === envIds.spark_monthly ||
+      pid === envIds.spark_monthly_inr ||
+      pid === runtimeProductIds.spark_monthly ||
+      pid === runtimeProductIds.spark_monthly_inr ||
+      pid.includes('spark'))
+  ) {
     return { plan: 'spark', interval: metaInterval === 'yearly' ? 'yearly' : 'monthly' };
   }
 
@@ -794,19 +875,13 @@ function buildLocalizedFallbackPreview(
   let taxMinor = Math.round(subtotalMinor * countryInfo.defaultTaxRate);
   let totalMinor = subtotalMinor + taxMinor;
 
-  // Specific Indian pricing override requested by user: ₹49/mo for spark, ₹99/mo for fire
+  // Canonical Indian pricing table: Spark ₹99/mo, ₹949/yr; Fire ₹249/mo, ₹2,399/yr
   if (countryInfo.code === 'IN' && countryInfo.currency === 'INR') {
-    if (plan === 'spark') {
-      const targetTotal = interval === 'yearly' ? 490 : 49;
-      totalMinor = targetTotal * 100;
-      subtotalMinor = Math.round(totalMinor / (1 + countryInfo.defaultTaxRate));
-      taxMinor = totalMinor - subtotalMinor;
-    } else if (plan === 'fire') {
-      const targetTotal = interval === 'yearly' ? 990 : 99;
-      totalMinor = targetTotal * 100;
-      subtotalMinor = Math.round(totalMinor / (1 + countryInfo.defaultTaxRate));
-      taxMinor = totalMinor - subtotalMinor;
-    }
+    const inrTable = CURRENCY_PRICE_TABLE.INR[plan];
+    const targetTotal = interval === 'yearly' ? inrTable.yearly : inrTable.monthly;
+    totalMinor = targetTotal * 100;
+    subtotalMinor = Math.round(totalMinor / (1 + countryInfo.defaultTaxRate));
+    taxMinor = totalMinor - subtotalMinor;
   }
 
   const nextDate = new Date();
@@ -840,7 +915,7 @@ export async function previewPlanPriceForCountry(
   rawCountry: unknown
 ): Promise<PlanPricePreviewItem> {
   const countryInfo = getCountryInfo(rawCountry);
-  const productId = await resolveServerProductId(plan, interval);
+  const productId = await resolveServerProductId(plan, interval, countryInfo.code);
   const client = getDodoClient();
 
   if (client && productId.startsWith('pdt_') && !productId.startsWith('pdt_kinich_')) {
@@ -852,9 +927,21 @@ export async function previewPlanPriceForCountry(
       });
 
       const currency = (previewRes.currency || countryInfo.currency) as Currency;
-      const totalMinor = Number(previewRes.total_price ?? previewRes.current_breakup?.total_amount ?? 0);
-      const taxMinor = Number(previewRes.total_tax ?? previewRes.current_breakup?.tax ?? 0);
-      const subtotalMinor = Math.max(0, totalMinor - taxMinor);
+      let totalMinor = Number(previewRes.total_price ?? previewRes.current_breakup?.total_amount ?? 0);
+      let taxMinor = Number(previewRes.total_tax ?? previewRes.current_breakup?.tax ?? 0);
+      let subtotalMinor = Math.max(0, totalMinor - taxMinor);
+
+      if (countryInfo.code === 'IN' && currency === 'INR') {
+        const inrTable = CURRENCY_PRICE_TABLE.INR[plan];
+        const expectedMinor = (interval === 'yearly' ? inrTable.yearly : inrTable.monthly) * 100;
+        if (totalMinor !== expectedMinor) {
+          totalMinor = expectedMinor;
+        }
+        if (taxMinor === 0 && countryInfo.defaultTaxRate > 0) {
+          subtotalMinor = Math.round(totalMinor / (1 + countryInfo.defaultTaxRate));
+          taxMinor = totalMinor - subtotalMinor;
+        }
+      }
 
       const nextDate = new Date();
       if (interval === 'yearly') {
@@ -1250,14 +1337,32 @@ export function processVerifiedDodoWebhookEvent(
 // EXPRESS ROUTE REGISTRATION
 // ============================================================================
 
+const guestCountryPreferences = new Map<string, CountryCode>();
+
+function extractCookieCountry(req: Request): CountryCode | null {
+  const cookieHeader = req.headers?.cookie;
+  if (typeof cookieHeader !== 'string' || !cookieHeader) return null;
+  const match = cookieHeader.match(/(?:^|;\s*)kinich_billing_country=([A-Za-z]{2})\b/);
+  if (match && match[1]) {
+    const normalized = normalizeCountryCode(match[1], '' as any);
+    if (normalized) return normalized;
+  }
+  return null;
+}
+
 export function resolveDefaultBillingCountry(req: Request, savedCountry?: string | null): CountryCode {
+  if (savedCountry) {
+    const normalized = normalizeCountryCode(savedCountry, '' as any);
+    if (normalized) return normalized;
+  }
+  const cookieCountry = extractCookieCountry(req);
+  if (cookieCountry) return cookieCountry;
+  const clientIp = String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'local');
+  const memCountry = guestCountryPreferences.get(clientIp);
+  if (memCountry) return memCountry;
   const vercelCountry = req.headers['x-vercel-ip-country'];
   if (typeof vercelCountry === 'string' && vercelCountry.trim()) {
     const normalized = normalizeCountryCode(vercelCountry.trim(), '' as any);
-    if (normalized) return normalized;
-  }
-  if (savedCountry) {
-    const normalized = normalizeCountryCode(savedCountry, '' as any);
     if (normalized) return normalized;
   }
   return 'US';
@@ -1411,6 +1516,13 @@ export function registerDodoBillingRoutes(app: Express): void {
     const countryInfo = getCountryInfo(country);
     const paymentMethods = getPaymentMethodsForCountry(country);
 
+    const clientIp = String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'local');
+    guestCountryPreferences.set(clientIp, country);
+    res.setHeader(
+      'Set-Cookie',
+      `kinich_billing_country=${country}; Path=/; Max-Age=31536000; SameSite=Lax`
+    );
+
     if (req.auth?.uid) {
       const db = getBillingDb();
       getOrCreateBillingUser(req.auth.uid, {
@@ -1487,8 +1599,8 @@ export function registerDodoBillingRoutes(app: Express): void {
         'UPDATE users SET billing_country = ?, billing_currency = ?, updated_at = ? WHERE firebase_uid = ?'
       ).run(country, countryInfo.currency, new Date().toISOString(), uid);
 
-      // Server-authoritative product_id lookup (NEVER trust client product_id)
-      const productId = await resolveServerProductId(plan, interval);
+      // Server-authoritative product_id lookup (uses INR products when country === 'IN')
+      const productId = await resolveServerProductId(plan, interval, country);
       const appBaseUrl = getAppBaseUrl(req);
 
       const customerEmail =
@@ -1732,7 +1844,7 @@ export function registerDodoBillingRoutes(app: Express): void {
         );
       }
 
-      const productId = await resolveServerProductId(plan, interval);
+      const productId = await resolveServerProductId(plan, interval, user.billing_country);
       const changeRes = await client.subscriptions.changePlan(user.dodo_subscription_id, {
         product_id: productId,
         quantity: 1,

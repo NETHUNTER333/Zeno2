@@ -60,6 +60,344 @@ function getUtcResetCountdown(): string {
   return `${hours}h ${mins}m`;
 }
 
+interface CurrencyPriceSchedule {
+  currency: string;
+  symbol: string;
+  freeFormatted: string;
+  spark: {
+    monthly: number;
+    yearly: number;
+    monthlyFormatted: string;
+    yearlyFormatted: string;
+    monthlyEquivFormatted: string;
+  };
+  fire: {
+    monthly: number;
+    yearly: number;
+    monthlyFormatted: string;
+    yearlyFormatted: string;
+    monthlyEquivFormatted: string;
+  };
+  taxLabel: string;
+  defaultTaxRate: number;
+}
+
+const CURRENCY_PRICE_TABLE: Record<string, CurrencyPriceSchedule> = {
+  USD: {
+    currency: 'USD',
+    symbol: '$',
+    freeFormatted: '$0',
+    spark: {
+      monthly: 3,
+      yearly: Number(LEGAL_CONFIG.SPARK_YEARLY_PRICE_USD) || 29,
+      monthlyFormatted: '$3',
+      yearlyFormatted: `$${LEGAL_CONFIG.SPARK_YEARLY_PRICE_USD}`,
+      monthlyEquivFormatted: `$${LEGAL_CONFIG.SPARK_YEARLY_MONTHLY_EQUIV_USD}`,
+    },
+    fire: {
+      monthly: 7,
+      yearly: Number(LEGAL_CONFIG.FIRE_YEARLY_PRICE_USD) || 67,
+      monthlyFormatted: '$7',
+      yearlyFormatted: `$${LEGAL_CONFIG.FIRE_YEARLY_PRICE_USD}`,
+      monthlyEquivFormatted: `$${LEGAL_CONFIG.FIRE_YEARLY_MONTHLY_EQUIV_USD}`,
+    },
+    taxLabel: 'Sales Tax',
+    defaultTaxRate: 0,
+  },
+  INR: {
+    currency: 'INR',
+    symbol: '₹',
+    freeFormatted: '₹0',
+    spark: {
+      monthly: 99,
+      yearly: 949,
+      monthlyFormatted: '₹99',
+      yearlyFormatted: '₹949',
+      monthlyEquivFormatted: '₹79',
+    },
+    fire: {
+      monthly: 249,
+      yearly: 2399,
+      monthlyFormatted: '₹249',
+      yearlyFormatted: '₹2,399',
+      monthlyEquivFormatted: '₹200',
+    },
+    taxLabel: 'GST (18%)',
+    defaultTaxRate: 0.18,
+  },
+  GBP: {
+    currency: 'GBP',
+    symbol: '£',
+    freeFormatted: '£0',
+    spark: {
+      monthly: 2.84,
+      yearly: 27.49,
+      monthlyFormatted: '£2.84',
+      yearlyFormatted: '£27.49',
+      monthlyEquivFormatted: '£2.29',
+    },
+    fire: {
+      monthly: 6.64,
+      yearly: 63.52,
+      monthlyFormatted: '£6.64',
+      yearlyFormatted: '£63.52',
+      monthlyEquivFormatted: '£5.29',
+    },
+    taxLabel: 'VAT (20%)',
+    defaultTaxRate: 0.2,
+  },
+  EUR: {
+    currency: 'EUR',
+    symbol: '€',
+    freeFormatted: '€0',
+    spark: {
+      monthly: 3.31,
+      yearly: 32.02,
+      monthlyFormatted: '€3.31',
+      yearlyFormatted: '€32.02',
+      monthlyEquivFormatted: '€2.67',
+    },
+    fire: {
+      monthly: 7.73,
+      yearly: 73.97,
+      monthlyFormatted: '€7.73',
+      yearlyFormatted: '€73.97',
+      monthlyEquivFormatted: '€6.16',
+    },
+    taxLabel: 'VAT (20%)',
+    defaultTaxRate: 0.2,
+  },
+  CAD: {
+    currency: 'CAD',
+    symbol: 'CA$',
+    freeFormatted: 'CA$0',
+    spark: {
+      monthly: 4.35,
+      yearly: 42.02,
+      monthlyFormatted: 'CA$4.35',
+      yearlyFormatted: 'CA$42.02',
+      monthlyEquivFormatted: 'CA$3.50',
+    },
+    fire: {
+      monthly: 10.14,
+      yearly: 97.08,
+      monthlyFormatted: 'CA$10.14',
+      yearlyFormatted: 'CA$97.08',
+      monthlyEquivFormatted: 'CA$8.09',
+    },
+    taxLabel: 'GST/HST',
+    defaultTaxRate: 0.05,
+  },
+  AUD: {
+    currency: 'AUD',
+    symbol: 'A$',
+    freeFormatted: 'A$0',
+    spark: {
+      monthly: 5.02,
+      yearly: 48.49,
+      monthlyFormatted: 'A$5.02',
+      yearlyFormatted: 'A$48.49',
+      monthlyEquivFormatted: 'A$4.04',
+    },
+    fire: {
+      monthly: 11.7,
+      yearly: 112.02,
+      monthlyFormatted: 'A$11.70',
+      yearlyFormatted: 'A$112.02',
+      monthlyEquivFormatted: 'A$9.34',
+    },
+    taxLabel: 'GST (10%)',
+    defaultTaxRate: 0.1,
+  },
+  JPY: {
+    currency: 'JPY',
+    symbol: '¥',
+    freeFormatted: '¥0',
+    spark: {
+      monthly: 502,
+      yearly: 4849,
+      monthlyFormatted: '¥502',
+      yearlyFormatted: '¥4,849',
+      monthlyEquivFormatted: '¥404',
+    },
+    fire: {
+      monthly: 1170,
+      yearly: 11202,
+      monthlyFormatted: '¥1,170',
+      yearlyFormatted: '¥11,202',
+      monthlyEquivFormatted: '¥934',
+    },
+    taxLabel: 'JCT (10%)',
+    defaultTaxRate: 0.1,
+  },
+  SGD: {
+    currency: 'SGD',
+    symbol: 'S$',
+    freeFormatted: 'S$0',
+    spark: {
+      monthly: 4.38,
+      yearly: 42.36,
+      monthlyFormatted: 'S$4.38',
+      yearlyFormatted: 'S$42.36',
+      monthlyEquivFormatted: 'S$3.53',
+    },
+    fire: {
+      monthly: 10.22,
+      yearly: 97.86,
+      monthlyFormatted: 'S$10.22',
+      yearlyFormatted: 'S$97.86',
+      monthlyEquivFormatted: 'S$8.16',
+    },
+    taxLabel: 'GST (9%)',
+    defaultTaxRate: 0.09,
+  },
+};
+
+function formatCurrencyValue(amount: number, currency: string): string {
+  const zeroDec = new Set(['JPY', 'KRW', 'VND', 'CLP', 'IDR', 'HUF', 'TWD']).has(currency);
+  try {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency,
+      minimumFractionDigits: zeroDec ? 0 : amount % 1 === 0 ? 0 : 2,
+      maximumFractionDigits: zeroDec ? 0 : 2,
+    }).format(amount);
+  } catch {
+    return `${currency} ${amount.toFixed(zeroDec ? 0 : 2)}`;
+  }
+}
+
+function getScheduleForCountry(
+  countryCode: string,
+  countriesList: Array<{ code: string; currency: string; symbol: string; approxRateFromUsd?: number; taxLabel?: string; defaultTaxRate?: number }>
+): CurrencyPriceSchedule {
+  const code = (countryCode || 'US').toUpperCase();
+  if (code === 'IN') return CURRENCY_PRICE_TABLE.INR;
+  if (code === 'US') return CURRENCY_PRICE_TABLE.USD;
+
+  const found = countriesList.find((c) => c.code === code);
+  const currency = found?.currency || 'USD';
+  if (CURRENCY_PRICE_TABLE[currency]) {
+    return CURRENCY_PRICE_TABLE[currency];
+  }
+
+  const rate = found?.approxRateFromUsd || 1;
+  const taxRate = found?.defaultTaxRate ?? 0;
+  const symbol = found?.symbol || `${currency} `;
+  const zeroDec = new Set(['JPY', 'KRW', 'VND', 'CLP', 'IDR', 'HUF', 'TWD']).has(currency);
+  const calc = (usd: number) => {
+    const val = usd * rate * (1 + taxRate);
+    return zeroDec ? Math.round(val) : Number(val.toFixed(2));
+  };
+
+  const sparkMo = calc(3);
+  const sparkYr = calc(29);
+  const sparkEq = zeroDec ? Math.round(sparkYr / 12) : Number((sparkYr / 12).toFixed(2));
+  const fireMo = calc(7);
+  const fireYr = calc(67);
+  const fireEq = zeroDec ? Math.round(fireYr / 12) : Number((fireYr / 12).toFixed(2));
+
+  return {
+    currency,
+    symbol,
+    freeFormatted: formatCurrencyValue(0, currency),
+    spark: {
+      monthly: sparkMo,
+      yearly: sparkYr,
+      monthlyFormatted: formatCurrencyValue(sparkMo, currency),
+      yearlyFormatted: formatCurrencyValue(sparkYr, currency),
+      monthlyEquivFormatted: formatCurrencyValue(sparkEq, currency),
+    },
+    fire: {
+      monthly: fireMo,
+      yearly: fireYr,
+      monthlyFormatted: formatCurrencyValue(fireMo, currency),
+      yearlyFormatted: formatCurrencyValue(fireYr, currency),
+      monthlyEquivFormatted: formatCurrencyValue(fireEq, currency),
+    },
+    taxLabel: found?.taxLabel || 'Tax',
+    defaultTaxRate: taxRate,
+  };
+}
+
+function buildLocalPreviewMap(
+  countryCode: string,
+  countriesList: Array<{ code: string; currency: string; symbol: string; approxRateFromUsd?: number; taxLabel?: string; defaultTaxRate?: number }>
+): Record<string, any> {
+  const schedule = getScheduleForCountry(countryCode, countriesList);
+  const zeroDec = new Set(['JPY', 'KRW', 'VND', 'CLP', 'IDR', 'HUF', 'TWD']).has(schedule.currency);
+  const makeItem = (plan: 'spark' | 'fire', interval: 'monthly' | 'yearly', usdRef: number) => {
+    const totalMajor = plan === 'spark' ? schedule.spark[interval] : schedule.fire[interval];
+    const totalMinor = zeroDec ? Math.round(totalMajor) : Math.round(totalMajor * 100);
+    const subtotalMinor =
+      schedule.defaultTaxRate > 0
+        ? Math.round(totalMinor / (1 + schedule.defaultTaxRate))
+        : totalMinor;
+    const taxMinor = totalMinor - subtotalMinor;
+    const subtotalMajor = zeroDec ? subtotalMinor : subtotalMinor / 100;
+    const taxMajor = zeroDec ? taxMinor : taxMinor / 100;
+    return {
+      plan,
+      interval,
+      currency: schedule.currency,
+      usdReferencePrice: usdRef,
+      subtotalMinor,
+      taxMinor,
+      totalMinor,
+      formattedSubtotal: formatCurrencyValue(subtotalMajor, schedule.currency),
+      formattedTax: formatCurrencyValue(taxMajor, schedule.currency),
+      formattedTotal:
+        plan === 'spark'
+          ? interval === 'yearly'
+            ? schedule.spark.yearlyFormatted
+            : schedule.spark.monthlyFormatted
+          : interval === 'yearly'
+          ? schedule.fire.yearlyFormatted
+          : schedule.fire.monthlyFormatted,
+      taxLabel: schedule.taxLabel,
+      source: 'localized_estimate',
+    };
+  };
+
+  return {
+    spark_monthly: makeItem('spark', 'monthly', 3),
+    spark_yearly: makeItem('spark', 'yearly', 29),
+    fire_monthly: makeItem('fire', 'monthly', 7),
+    fire_yearly: makeItem('fire', 'yearly', 67),
+  };
+}
+
+function getLocalPaymentMethodsForCountry(countryCode: string) {
+  const code = (countryCode || 'US').toUpperCase();
+  if (code === 'IN') {
+    return {
+      subscriptionMethods: [
+        { id: 'upi_intent', label: 'UPI AutoPay (Intent & Collect)', prominent: true, note: 'RBI e-Mandate' },
+        { id: 'rupay', label: 'RuPay', prominent: true },
+        { id: 'cards_in', label: 'Visa / Mastercard / Amex' },
+        { id: 'apple_pay', label: 'Apple Pay' },
+      ],
+      oneTimeOnlyMethods: [],
+      mandateNote:
+        'Subscriptions in India use RBI e-mandates (UPI AutoPay & standing instructions on RuPay/cards).',
+    };
+  }
+  const methods: Array<{ id: string; label: string; prominent?: boolean }> = [
+    { id: 'cards', label: 'Visa / Mastercard / Amex', prominent: true },
+    { id: 'apple_pay', label: 'Apple Pay' },
+    { id: 'google_pay', label: 'Google Pay' },
+  ];
+  if (code === 'US') {
+    methods.push({ id: 'cashapp', label: 'Cash App Pay', prominent: true });
+  } else if (code === 'GB') {
+    methods.unshift({ id: 'revolut_pay', label: 'Revolut Pay', prominent: true });
+  }
+  return {
+    subscriptionMethods: methods,
+    oneTimeOnlyMethods: [],
+  };
+}
+
 export const PricingModal: React.FC<PricingModalProps> = ({
   isOpen,
   onClose,
@@ -112,12 +450,14 @@ export const PricingModal: React.FC<PricingModalProps> = ({
   const [countryDropdownOpen, setCountryDropdownOpen] = useState(false);
   const [countrySearchQuery, setCountrySearchQuery] = useState('');
   const [previewLoading, setPreviewLoading] = useState(false);
-  const [pricePreviews, setPricePreviews] = useState<Record<string, any>>({});
+  const [pricePreviews, setPricePreviews] = useState<Record<string, any>>(() =>
+    buildLocalPreviewMap(selectedCountry, FALLBACK_COUNTRIES)
+  );
   const [paymentMethodsInfo, setPaymentMethodsInfo] = useState<{
     subscriptionMethods: Array<{ id: string; label: string; prominent?: boolean; note?: string }>;
     oneTimeOnlyMethods: Array<{ id: string; label: string }>;
     mandateNote?: string;
-  } | null>(null);
+  } | null>(() => getLocalPaymentMethodsForCountry(selectedCountry));
   const [billingMe, setBillingMe] = useState<any | null>(null);
   const [checkoutBusyPlan, setCheckoutBusyPlan] = useState<'spark' | 'fire' | null>(null);
   const [portalBusy, setPortalBusy] = useState(false);
@@ -133,9 +473,11 @@ export const PricingModal: React.FC<PricingModalProps> = ({
         fetch('/api/billing/me', { headers: authHeaders }).catch(() => null),
       ]);
       let resolvedCountry = selectedCountry;
+      let loadedCountries = countries;
       if (countriesRes && countriesRes.ok) {
         const cData = await countriesRes.json();
         if (Array.isArray(cData?.countries) && cData.countries.length > 0) {
+          loadedCountries = cData.countries;
           setCountries(cData.countries);
         }
         if (
@@ -162,45 +504,71 @@ export const PricingModal: React.FC<PricingModalProps> = ({
       if (resolvedCountry !== selectedCountry) {
         setSelectedCountry(resolvedCountry);
       }
-      await fetchPricePreviewForCountry(resolvedCountry);
-    } catch {}
+      await fetchPricePreviewForCountry(resolvedCountry, loadedCountries);
+    } catch {
+      setPricePreviews(buildLocalPreviewMap(selectedCountry, countries));
+      setPaymentMethodsInfo(getLocalPaymentMethodsForCountry(selectedCountry));
+    }
   };
 
-  const fetchPricePreviewForCountry = async (countryCode: string) => {
+  const fetchPricePreviewForCountry = async (
+    countryCode: string,
+    countriesList = countries
+  ) => {
+    const code = (countryCode || 'US').toUpperCase();
+    const localFallbackPreviews = buildLocalPreviewMap(code, countriesList);
+    const localMethods = getLocalPaymentMethodsForCountry(code);
+    setPricePreviews(localFallbackPreviews);
+    setPaymentMethodsInfo(localMethods);
+
     setPreviewLoading(true);
     try {
       const res = await fetch('/api/billing/preview', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ country: countryCode }),
+        body: JSON.stringify({ country: code }),
       });
       if (res.ok) {
         const data = await res.json();
         if (data?.previews) {
-          setPricePreviews(data.previews);
+          // Ensure India (IN) always uses the canonical INR price table (₹99/₹949 and ₹249/₹2,399)
+          if (code === 'IN') {
+            const sparkMoMinor = data.previews?.spark_monthly?.totalMinor;
+            if (sparkMoMinor === 9900) {
+              setPricePreviews(data.previews);
+            } else {
+              setPricePreviews(localFallbackPreviews);
+            }
+          } else {
+            setPricePreviews(data.previews);
+          }
         }
         if (data?.paymentMethods) {
           setPaymentMethodsInfo(data.paymentMethods);
         }
       }
-    } catch {}
+    } catch {
+      setPricePreviews(localFallbackPreviews);
+      setPaymentMethodsInfo(localMethods);
+    }
     setPreviewLoading(false);
   };
 
   const handleSelectCountry = async (code: string) => {
-    setSelectedCountry(code);
+    const normalized = code.toUpperCase();
+    setSelectedCountry(normalized);
     setCountryDropdownOpen(false);
     setCountrySearchQuery('');
     try {
-      localStorage.setItem('kinich_billing_country', code);
+      localStorage.setItem('kinich_billing_country', normalized);
     } catch {}
-    fetchPricePreviewForCountry(code);
+    fetchPricePreviewForCountry(normalized, countries);
     try {
       const authHeaders = await getAuthHeaders();
       await fetch('/api/billing/country', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders },
-        body: JSON.stringify({ country: code }),
+        body: JSON.stringify({ country: normalized }),
       });
     } catch {}
   };
@@ -246,6 +614,25 @@ export const PricingModal: React.FC<PricingModalProps> = ({
 
   if (!isOpen && !embedded) return null;
 
+  const activeSchedule = getScheduleForCountry(selectedCountry, countries);
+  const sparkMoFormatted =
+    pricePreviews.spark_monthly?.formattedTotal || activeSchedule.spark.monthlyFormatted;
+  const sparkYrFormatted =
+    pricePreviews.spark_yearly?.formattedTotal || activeSchedule.spark.yearlyFormatted;
+  const fireMoFormatted =
+    pricePreviews.fire_monthly?.formattedTotal || activeSchedule.fire.monthlyFormatted;
+  const fireYrFormatted =
+    pricePreviews.fire_yearly?.formattedTotal || activeSchedule.fire.yearlyFormatted;
+
+  const sparkDisplayPrice = billingCycle === 'annual' ? sparkYrFormatted : sparkMoFormatted;
+  const fireDisplayPrice = billingCycle === 'annual' ? fireYrFormatted : fireMoFormatted;
+  const cycleUnit = billingCycle === 'annual' ? 'yr' : 'mo';
+  const sparkPriceWithCycle = `${sparkDisplayPrice}/${cycleUnit}`;
+  const firePriceWithCycle = `${fireDisplayPrice}/${cycleUnit}`;
+  const freeDisplayPrice = activeSchedule.freeFormatted;
+  const sparkMonthlyEquivDisplay = activeSchedule.spark.monthlyEquivFormatted;
+  const fireMonthlyEquivDisplay = activeSchedule.fire.monthlyEquivFormatted;
+
   const isFirebaseSignedIn = Boolean(
     auth.currentUser && UserAccountStore.getProfile().signinProvider !== 'guest'
   );
@@ -276,7 +663,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
       setGuestSignInPromptPlan(targetPlan);
       setUpgradeBanner(
         `Please sign in with your Kinich account first to subscribe to ${
-          targetPlan === 'fire' ? 'Fire ($7/mo)' : 'Spark ($3/mo)'
+          targetPlan === 'fire' ? `Fire (${firePriceWithCycle})` : `Spark (${sparkPriceWithCycle})`
         }. Your selection will resume immediately after sign-in.`
       );
       return;
@@ -580,10 +967,10 @@ export const PricingModal: React.FC<PricingModalProps> = ({
       categoryLabel: 'AI Models & Intelligence',
       feature: 'Advanced Reasoning Models',
       subtext: 'DeepSeek R1, Claude 3.7 Sonnet, Qwen 2.5',
-      free: 'Locked ($3 Spark)',
+      free: `Locked (${sparkDisplayPrice} Spark)`,
       spark: 'Unlocked (1,500/day)',
       fire: 'Unlocked (Unlimited)',
-      freeTag: { label: 'Locked ($3)', variant: 'locked' as const },
+      freeTag: { label: `Locked (${sparkDisplayPrice})`, variant: 'locked' as const },
       sparkTag: { label: 'Unlocked · 1,500/day', variant: 'unlocked' as const },
       fireTag: { label: 'Unlimited', variant: 'highlight' as const },
     },
@@ -593,11 +980,11 @@ export const PricingModal: React.FC<PricingModalProps> = ({
       categoryLabel: 'AI Models & Intelligence',
       feature: 'Frontier Flagships',
       subtext: 'Claude 3.7 Sonnet (Thinking), GPT-4.5, Grok 3',
-      free: 'Locked ($7 Fire)',
-      spark: 'Locked ($7 Fire)',
+      free: `Locked (${fireDisplayPrice} Fire)`,
+      spark: `Locked (${fireDisplayPrice} Fire)`,
       fire: 'Unlocked (Unlimited)',
-      freeTag: { label: 'Locked ($7)', variant: 'locked' as const },
-      sparkTag: { label: 'Locked ($7)', variant: 'locked' as const },
+      freeTag: { label: `Locked (${fireDisplayPrice})`, variant: 'locked' as const },
+      sparkTag: { label: `Locked (${fireDisplayPrice})`, variant: 'locked' as const },
       fireTag: { label: 'Unlocked', variant: 'highlight' as const },
     },
     {
@@ -780,16 +1167,16 @@ export const PricingModal: React.FC<PricingModalProps> = ({
             )}
           </div>
           <p className={`text-xs sm:text-sm ${isDark ? 'text-neutral-400' : 'text-neutral-600'}`}>
-            Start on the Free Tier ($0), upgrade to Spark ($3/mo) for 10x daily limits, or unlock Fire ($7/mo) for unlimited frontier models.
+            Start on the Free Tier ({freeDisplayPrice}), upgrade to Spark ({sparkPriceWithCycle}) for 10x daily limits, or unlock Fire ({firePriceWithCycle}) for unlimited frontier models.
           </p>
         </div>
 
         {/* 3-Dash Indicator (Free, Spark, Fire) */}
         <div className="flex items-center gap-1.5 shrink-0">
           {[
-            { idx: 0, label: 'Free Tier' },
-            { idx: 1, label: 'Spark ($3)' },
-            { idx: 2, label: 'Fire ($7)' },
+            { idx: 0, label: `Free Tier (${freeDisplayPrice})` },
+            { idx: 1, label: `Spark (${sparkDisplayPrice})` },
+            { idx: 2, label: `Fire (${fireDisplayPrice})` },
           ].map((item) => (
             <button
               key={item.idx}
@@ -956,7 +1343,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
             <div className="text-xs sm:text-sm font-bold flex items-center gap-2">
               <Lock className="w-4 h-4 text-[#FC4C01] shrink-0" />
               <span>
-                Sign in required to subscribe to Kinich {guestSignInPromptPlan === 'fire' ? 'Fire ($7/mo)' : 'Spark ($3/mo)'}
+                Sign in required to subscribe to Kinich {guestSignInPromptPlan === 'fire' ? `Fire (${firePriceWithCycle})` : `Spark (${sparkPriceWithCycle})`}
               </span>
             </div>
             <p className={`text-xs ${isDark ? 'text-neutral-400' : 'text-neutral-600'}`}>
@@ -1170,7 +1557,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
               {limitReason}
             </div>
             <div className={`text-xs ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
-              Select Spark ($3) for 10x daily limits or Fire ($7) for unlimited access below.
+              Select Spark ({sparkDisplayPrice}) for 10x daily limits or Fire ({fireDisplayPrice}) for unlimited access below.
             </div>
           </div>
           {currentPlan === 'free' && (
@@ -1179,7 +1566,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
               onClick={() => handleSelectPlan('spark')}
               className="px-4 py-2 rounded-full text-xs font-bold bg-[#FC4C01] hover:bg-[#e04300] text-white shrink-0 cursor-pointer transition-all"
             >
-              Unlock Spark ($3/mo)
+              Unlock Spark ({sparkPriceWithCycle})
             </button>
           )}
         </div>
@@ -1256,10 +1643,10 @@ export const PricingModal: React.FC<PricingModalProps> = ({
               }`}
             >
               {currentPlan === 'fire'
-                ? 'Fire ($7/mo · Unlimited Frontier)'
+                ? `Fire (${firePriceWithCycle} · Unlimited Frontier)`
                 : currentPlan === 'spark'
-                ? 'Spark ($3/mo · 10x Daily Limits)'
-                : 'Free Tier (5 daily chats · 3 uploads · Default & Vision free)'}
+                ? `Spark (${sparkPriceWithCycle} · 10x Daily Limits)`
+                : `Free Tier (${freeDisplayPrice} · 5 daily chats · 3 uploads · Default & Vision free)`}
             </span>
           </div>
 
@@ -1412,7 +1799,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
               {currentPlan === 'fire'
                 ? 'All 45+ Frontier Models'
                 : currentPlan === 'spark'
-                ? 'Free + Spark ($3) Models'
+                ? `Free + Spark (${sparkDisplayPrice}) Models`
                 : 'Default + MoonMath Vision'}
             </span>
           </div>
@@ -1439,14 +1826,14 @@ export const PricingModal: React.FC<PricingModalProps> = ({
                 onClick={() => handleSelectPlan('spark')}
                 className="px-3.5 py-1.5 rounded-full text-xs font-bold bg-white text-black hover:bg-neutral-200 cursor-pointer transition-all"
               >
-                Upgrade to Spark ($3)
+                Upgrade to Spark ({sparkDisplayPrice})
               </button>
               <button
                 type="button"
                 onClick={() => handleSelectPlan('fire')}
                 className="px-3.5 py-1.5 rounded-full text-xs font-bold bg-[#FC4C01] text-white hover:bg-[#e04300] cursor-pointer transition-all"
               >
-                Go Unlimited ($7)
+                Go Unlimited ({fireDisplayPrice})
               </button>
             </div>
           </div>
@@ -1486,7 +1873,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
 
           <div className="flex items-baseline gap-2.5 mt-1 mb-3 min-h-[48px]">
             <span className="text-4xl sm:text-5xl font-bold tracking-tight tabular-nums">
-              $0
+              {freeDisplayPrice}
             </span>
             <span className={`text-xs font-medium ${isDark ? 'text-neutral-400' : 'text-neutral-600'}`}>
               forever free · no credit card
@@ -1562,12 +1949,12 @@ export const PricingModal: React.FC<PricingModalProps> = ({
                   : 'bg-neutral-100 hover:bg-neutral-200 text-[#18181b] border border-black/10 active:scale-95'
               }`}
             >
-              {currentPlan === 'free' ? 'Active Free Tier' : 'Switch to Free Tier ($0)'}
+              {currentPlan === 'free' ? 'Active Free Tier' : `Switch to Free Tier (${freeDisplayPrice})`}
             </button>
           </div>
         </div>
 
-        {/* ==================== CARD 1: SPARK PLAN ($3 USD) ==================== */}
+        {/* ==================== CARD 1: SPARK PLAN ==================== */}
         <div
           onClick={() => setActiveCardIndex(1)}
           className={`relative rounded-[28px] p-6 sm:p-7 flex flex-col transition-all border-[2px] shadow-xl ${
@@ -1600,28 +1987,20 @@ export const PricingModal: React.FC<PricingModalProps> = ({
             const previewKey = billingCycle === 'annual' ? 'spark_yearly' : 'spark_monthly';
             const p = pricePreviews[previewKey];
             return (
-              <div className="mt-1 mb-3 min-h-[58px]">
-                {previewLoading ? (
-                  <div className="h-10 w-44 rounded-xl bg-white/10 animate-pulse" />
-                ) : (
-                  <div className="flex items-baseline gap-2.5 flex-wrap">
-                    <span className="text-4xl sm:text-5xl font-bold tracking-tight tabular-nums">
-                      {p?.formattedTotal
-                        ? `${p.formattedTotal}/${billingCycle === 'annual' ? 'yr' : 'mo'}`
-                        : billingCycle === 'annual'
-                        ? `$${LEGAL_CONFIG.SPARK_YEARLY_PRICE_USD}/yr`
-                        : '$3/mo'}
-                    </span>
-                    <span className={`text-xs font-medium ${isDark ? 'text-neutral-300' : 'text-neutral-600'}`}>
-                      {billingCycle === 'annual'
-                        ? `(≈$${LEGAL_CONFIG.SPARK_YEARLY_MONTHLY_EQUIV_USD}/mo USD)`
-                        : '· billed monthly'}
-                    </span>
-                  </div>
-                )}
-                {!previewLoading && p && (
+              <div className="mt-1 mb-3 min-h-[58px]" data-loading={previewLoading ? 'true' : 'false'}>
+                <div className="flex items-baseline gap-2.5 flex-wrap">
+                  <span className="text-4xl sm:text-5xl font-bold tracking-tight tabular-nums">
+                    {sparkPriceWithCycle}
+                  </span>
+                  <span className={`text-xs font-medium ${isDark ? 'text-neutral-300' : 'text-neutral-600'}`}>
+                    {billingCycle === 'annual'
+                      ? `(≈${sparkMonthlyEquivDisplay}/mo ${activeSchedule.currency})`
+                      : '· billed monthly'}
+                  </span>
+                </div>
+                {p && (
                   <div className={`text-[11px] mt-1 font-mono ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
-                    Base ${p.usdReferencePrice} USD · Tax: {p.formattedTax || '$0.00'} ({p.currency})
+                    Subtotal {p.formattedSubtotal || sparkDisplayPrice} · {p.taxLabel || activeSchedule.taxLabel}: {p.formattedTax || `${activeSchedule.symbol}0`} ({p.currency || activeSchedule.currency})
                   </div>
                 )}
               </div>
@@ -1700,15 +2079,12 @@ export const PricingModal: React.FC<PricingModalProps> = ({
                 ? 'Creating Dodo Checkout...'
                 : currentPlan === 'spark'
                 ? 'Active Spark Plan'
-                : `Start Spark — ${
-                    pricePreviews[billingCycle === 'annual' ? 'spark_yearly' : 'spark_monthly']?.formattedTotal ||
-                    (billingCycle === 'annual' ? '$29/yr' : '$3/mo')
-                  }`}
+                : `Start Spark — ${sparkPriceWithCycle}`}
             </button>
           </div>
         </div>
 
-        {/* ==================== CARD 2: FIRE PLAN ($7 USD) ==================== */}
+        {/* ==================== CARD 2: FIRE PLAN ==================== */}
         <div
           onClick={() => setActiveCardIndex(2)}
           className={`relative rounded-[28px] p-6 sm:p-7 flex flex-col transition-all border-[2px] shadow-xl ${
@@ -1742,27 +2118,19 @@ export const PricingModal: React.FC<PricingModalProps> = ({
             const p = pricePreviews[previewKey];
             return (
               <div className="mt-1 mb-3 min-h-[58px]">
-                {previewLoading ? (
-                  <div className="h-10 w-44 rounded-xl bg-white/10 animate-pulse" />
-                ) : (
-                  <div className="flex items-baseline gap-2.5 flex-wrap">
-                    <span className="text-4xl sm:text-5xl font-bold tracking-tight tabular-nums">
-                      {p?.formattedTotal
-                        ? `${p.formattedTotal}/${billingCycle === 'annual' ? 'yr' : 'mo'}`
-                        : billingCycle === 'annual'
-                        ? `$${LEGAL_CONFIG.FIRE_YEARLY_PRICE_USD}/yr`
-                        : '$7/mo'}
-                    </span>
-                    <span className={`text-xs font-medium ${isDark ? 'text-neutral-300' : 'text-neutral-600'}`}>
-                      {billingCycle === 'annual'
-                        ? `(≈$${LEGAL_CONFIG.FIRE_YEARLY_MONTHLY_EQUIV_USD}/mo USD)`
-                        : '· billed monthly'}
-                    </span>
-                  </div>
-                )}
-                {!previewLoading && p && (
+                <div className="flex items-baseline gap-2.5 flex-wrap">
+                  <span className="text-4xl sm:text-5xl font-bold tracking-tight tabular-nums">
+                    {firePriceWithCycle}
+                  </span>
+                  <span className={`text-xs font-medium ${isDark ? 'text-neutral-300' : 'text-neutral-600'}`}>
+                    {billingCycle === 'annual'
+                      ? `(≈${fireMonthlyEquivDisplay}/mo ${activeSchedule.currency})`
+                      : '· billed monthly'}
+                  </span>
+                </div>
+                {p && (
                   <div className={`text-[11px] mt-1 font-mono ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
-                    Base ${p.usdReferencePrice} USD · Tax: {p.formattedTax || '$0.00'} ({p.currency})
+                    Subtotal {p.formattedSubtotal || fireDisplayPrice} · {p.taxLabel || activeSchedule.taxLabel}: {p.formattedTax || `${activeSchedule.symbol}0`} ({p.currency || activeSchedule.currency})
                   </div>
                 )}
               </div>
@@ -1813,10 +2181,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
                 ? 'Creating Dodo Checkout...'
                 : currentPlan === 'fire'
                 ? 'Active Fire Plan'
-                : `Start Fire — ${
-                    pricePreviews[billingCycle === 'annual' ? 'fire_yearly' : 'fire_monthly']?.formattedTotal ||
-                    (billingCycle === 'annual' ? '$67/yr' : '$7/mo')
-                  }`}
+                : `Start Fire — ${firePriceWithCycle}`}
             </button>
           </div>
         </div>
@@ -1893,9 +2258,9 @@ export const PricingModal: React.FC<PricingModalProps> = ({
             }`}
           >
             {[
-              { id: 'spark' as const, label: 'Spark ($3)' },
-              { id: 'fire' as const, label: 'Fire ($7)' },
-              { id: 'free' as const, label: 'Free ($0)' },
+              { id: 'spark' as const, label: `Spark (${sparkDisplayPrice})` },
+              { id: 'fire' as const, label: `Fire (${fireDisplayPrice})` },
+              { id: 'free' as const, label: `Free (${freeDisplayPrice})` },
               { id: 'compare' as const, label: 'All Plans' },
             ].map((tab) => {
               const isSelected = mobileMatrixPlan === tab.id;
@@ -2003,10 +2368,10 @@ export const PricingModal: React.FC<PricingModalProps> = ({
                 const isExpanded = mobileExpandedPlan === planKey;
                 const planTitle =
                   planKey === 'fire'
-                    ? 'Fire ($7/mo · Unlimited Flagship)'
+                    ? `Fire (${firePriceWithCycle} · Unlimited Flagship)`
                     : planKey === 'spark'
-                    ? 'Spark ($3/mo · 10x Limits)'
-                    : 'Free Tier ($0 · Standard)';
+                    ? `Spark (${sparkPriceWithCycle} · 10x Limits)`
+                    : `Free Tier (${freeDisplayPrice} · Standard)`;
                 const accentColor =
                   planKey === 'fire'
                     ? 'text-orange-400'
@@ -2123,12 +2488,12 @@ export const PricingModal: React.FC<PricingModalProps> = ({
                 }`}
               >
                 <th className="py-3.5 pr-4 font-semibold text-xs tracking-tight">Feature &amp; Capability</th>
-                <th className="py-3.5 px-4 font-semibold text-xs tracking-tight">Free Tier ($0)</th>
+                <th className="py-3.5 px-4 font-semibold text-xs tracking-tight">Free Tier ({freeDisplayPrice})</th>
                 <th className="py-3.5 px-4 font-semibold text-xs tracking-tight text-amber-500 dark:text-amber-400">
-                  Spark ($3/mo · Popular)
+                  Spark ({sparkPriceWithCycle} · Popular)
                 </th>
                 <th className="py-3.5 pl-4 font-semibold text-xs tracking-tight text-[#FC4C01]">
-                  Fire ($7/mo · Unlimited)
+                  Fire ({firePriceWithCycle} · Unlimited)
                 </th>
               </tr>
             </thead>

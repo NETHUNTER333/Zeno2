@@ -96,7 +96,7 @@ interface SavedThread extends ChatThread {
   messages: ChatMessageType[];
 }
 
-const INSTACLOUD_API_BASE = 'https://prod-main-kinich-api-c257d4-00gfx3c9932.compute.instacloud-edge.com';
+const INSTACLOUD_API_BASE = 'https://prod-main-zeno-api-c257d4-00gfx3c9932.compute.instacloud-edge.com';
 
 function getClientRealTimeClock() {
   const now = new Date();

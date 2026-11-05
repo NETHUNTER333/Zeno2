@@ -36,8 +36,25 @@ describe('Dodo Payments Billing Engine & Webhook State Machine', () => {
     const inSpark = await previewPlanPriceForCountry('spark', 'monthly', 'IN');
     expect(inSpark.currency).toBe('INR');
     expect(inSpark.usdReferencePrice).toBe(3);
+    expect(inSpark.totalMinor).toBe(9900);
+    expect(inSpark.formattedTotal).toBe('₹99');
     expect(inSpark.totalMinor).toBeGreaterThan(inSpark.subtotalMinor);
     expect(inSpark.taxLabel).toContain('GST');
+
+    const inSparkYearly = await previewPlanPriceForCountry('spark', 'yearly', 'IN');
+    expect(inSparkYearly.currency).toBe('INR');
+    expect(inSparkYearly.totalMinor).toBe(94900);
+    expect(inSparkYearly.formattedTotal).toBe('₹949');
+
+    const inFireMonthly = await previewPlanPriceForCountry('fire', 'monthly', 'IN');
+    expect(inFireMonthly.currency).toBe('INR');
+    expect(inFireMonthly.totalMinor).toBe(24900);
+    expect(inFireMonthly.formattedTotal).toBe('₹249');
+
+    const inFireYearly = await previewPlanPriceForCountry('fire', 'yearly', 'IN');
+    expect(inFireYearly.currency).toBe('INR');
+    expect(inFireYearly.totalMinor).toBe(239900);
+    expect(inFireYearly.formattedTotal).toBe('₹2,399');
 
     const usFireYearly = await previewPlanPriceForCountry('fire', 'yearly', 'US');
     expect(usFireYearly.currency).toBe('USD');

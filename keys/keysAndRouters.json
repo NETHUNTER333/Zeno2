@@ -9,7 +9,11 @@
     "sparkMonthlyProductId": "pdt_0NrGAPFbCUwOCJQD2TseQ",
     "sparkYearlyProductId": "pdt_0NrGAPGojOjzZYipbBO34",
     "fireMonthlyProductId": "pdt_0NrGAPIsQlYOeufek2MgP",
-    "fireYearlyProductId": "pdt_0NrGAPGunzO7afF9A7ES8"
+    "fireYearlyProductId": "pdt_0NrGAPGunzO7afF9A7ES8",
+    "sparkMonthlyInrProductId": "pdt_0NrINJz6pwtkzdhwH1XJq",
+    "sparkYearlyInrProductId": "pdt_0NrINK5NBNKkZXMjQGdpw",
+    "fireMonthlyInrProductId": "pdt_0NrINKAlqfSmx4Xdf24L8",
+    "fireYearlyInrProductId": "pdt_0NrINKH5vIAPxtacKYsRJ"
   },
   "DODO_PAYMENTS_API_KEY": "dodo_live_CGZuziXbpAz4krsL.yWievEmITRMNcGp3t-fmv9XDgOS3X8EKFmqK3fJOTpKvlE_Y",
   "DODO_PAYMENTS_WEBHOOK_KEY": "whsec_7Fh1JcIi3073xeaxB2oWP0N0obD1+OLQ",
@@ -17,5 +21,9 @@
   "DODO_PRODUCT_SPARK_MONTHLY": "pdt_0NrGAPFbCUwOCJQD2TseQ",
   "DODO_PRODUCT_SPARK_YEARLY": "pdt_0NrGAPGojOjzZYipbBO34",
   "DODO_PRODUCT_FIRE_MONTHLY": "pdt_0NrGAPIsQlYOeufek2MgP",
-  "DODO_PRODUCT_FIRE_YEARLY": "pdt_0NrGAPGunzO7afF9A7ES8"
+  "DODO_PRODUCT_FIRE_YEARLY": "pdt_0NrGAPGunzO7afF9A7ES8",
+  "DODO_PRODUCT_SPARK_MONTHLY_INR": "pdt_0NrINJz6pwtkzdhwH1XJq",
+  "DODO_PRODUCT_SPARK_YEARLY_INR": "pdt_0NrINK5NBNKkZXMjQGdpw",
+  "DODO_PRODUCT_FIRE_MONTHLY_INR": "pdt_0NrINKAlqfSmx4Xdf24L8",
+  "DODO_PRODUCT_FIRE_YEARLY_INR": "pdt_0NrINKH5vIAPxtacKYsRJ"
 }
