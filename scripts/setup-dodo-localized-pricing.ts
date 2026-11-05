@@ -5,7 +5,8 @@
  *
  * Idempotent: lists existing localized price rules first and skips if IN/INR rule exists.
  */
-import { getDodoClient, getDodoProductIds } from '../server/billingEngine';
+import { getDodoClient } from '../server/billingEngine';
+import { getDodoProductIds } from '../server/config';
 
 const INR_PRICES: Record<string, number> = {
   spark_monthly: 9900,   // ₹99.00
