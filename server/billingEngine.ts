@@ -788,11 +788,26 @@ function buildLocalizedFallbackPreview(
   const isZeroDec = ZERO_DECIMAL_CURRENCIES.has(countryInfo.currency);
 
   const rawConvertedMajor = usdMajor * countryInfo.approxRateFromUsd;
-  const subtotalMinor = isZeroDec
+  let subtotalMinor = isZeroDec
     ? Math.round(rawConvertedMajor)
     : Math.round(rawConvertedMajor * 100);
-  const taxMinor = Math.round(subtotalMinor * countryInfo.defaultTaxRate);
-  const totalMinor = subtotalMinor + taxMinor;
+  let taxMinor = Math.round(subtotalMinor * countryInfo.defaultTaxRate);
+  let totalMinor = subtotalMinor + taxMinor;
+
+  // Specific Indian pricing override requested by user: ₹49/mo for spark, ₹99/mo for fire
+  if (countryInfo.code === 'IN' && countryInfo.currency === 'INR') {
+    if (plan === 'spark') {
+      const targetTotal = interval === 'yearly' ? 490 : 49;
+      totalMinor = targetTotal * 100;
+      subtotalMinor = Math.round(totalMinor / (1 + countryInfo.defaultTaxRate));
+      taxMinor = totalMinor - subtotalMinor;
+    } else if (plan === 'fire') {
+      const targetTotal = interval === 'yearly' ? 990 : 99;
+      totalMinor = targetTotal * 100;
+      subtotalMinor = Math.round(totalMinor / (1 + countryInfo.defaultTaxRate));
+      taxMinor = totalMinor - subtotalMinor;
+    }
+  }
 
   const nextDate = new Date();
   if (interval === 'yearly') {

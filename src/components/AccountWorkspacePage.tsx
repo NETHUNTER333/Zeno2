@@ -43,6 +43,7 @@ import { ModelOption } from './GrokModelPicker';
 import { ChatThread } from './Sidebar';
 import { DeleteAccountButton } from './DeleteAccountButton';
 import { PricingModal } from './PricingModal';
+import { BillingHistorySection } from './BillingHistorySection';
 import { auth, getAuthHeaders } from '../lib/firebase';
 import { SiteFooter } from './LegalAndInfoPages';
 import {
@@ -577,6 +578,9 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
                     </div>
                   </div>
                 </div>
+
+                {/* Billing History & Past Invoices Component */}
+                <BillingHistorySection isDark={isDark} />
 
                 {/* Daily Streak & Reminder Notification Settings Card */}
                 <div

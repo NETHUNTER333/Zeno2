@@ -87,10 +87,21 @@ export const PricingModal: React.FC<PricingModalProps> = ({
   const [isSyncingQuota, setIsSyncingQuota] = useState(false);
   const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
 
-  // Dodo Payments Country, Localized Price Preview, Payment Methods & Billing State
+  const FALLBACK_COUNTRIES = [
+    { code: 'US', name: 'United States', flag: '🇺🇸', currency: 'USD', symbol: '$' },
+    { code: 'IN', name: 'India', flag: '🇮🇳', currency: 'INR', symbol: '₹' },
+    { code: 'GB', name: 'United Kingdom', flag: '🇬🇧', currency: 'GBP', symbol: '£' },
+    { code: 'CA', name: 'Canada', flag: '🇨🇦', currency: 'CAD', symbol: 'CA$' },
+    { code: 'AU', name: 'Australia', flag: '🇦🇺', currency: 'AUD', symbol: 'A$' },
+    { code: 'DE', name: 'Germany', flag: '🇩🇪', currency: 'EUR', symbol: '€' },
+    { code: 'FR', name: 'France', flag: '🇫🇷', currency: 'EUR', symbol: '€' },
+    { code: 'JP', name: 'Japan', flag: '🇯🇵', currency: 'JPY', symbol: '¥' },
+    { code: 'SG', name: 'Singapore', flag: '🇸🇬', currency: 'SGD', symbol: 'S$' },
+  ];
+
   const [countries, setCountries] = useState<
     Array<{ code: string; name: string; flag: string; currency: string; symbol: string }>
-  >([]);
+  >(FALLBACK_COUNTRIES);
   const [selectedCountry, setSelectedCountry] = useState<string>(() => {
     try {
       return localStorage.getItem('kinich_billing_country') || 'US';
@@ -118,13 +129,13 @@ export const PricingModal: React.FC<PricingModalProps> = ({
     try {
       const authHeaders = await getAuthHeaders();
       const [countriesRes, meRes] = await Promise.all([
-        fetch('/api/billing/countries'),
-        fetch('/api/billing/me', { headers: authHeaders }),
+        fetch('/api/billing/countries').catch(() => null),
+        fetch('/api/billing/me', { headers: authHeaders }).catch(() => null),
       ]);
       let resolvedCountry = selectedCountry;
-      if (countriesRes.ok) {
+      if (countriesRes && countriesRes.ok) {
         const cData = await countriesRes.json();
-        if (Array.isArray(cData?.countries)) {
+        if (Array.isArray(cData?.countries) && cData.countries.length > 0) {
           setCountries(cData.countries);
         }
         if (
@@ -134,7 +145,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
           resolvedCountry = cData.defaultCountry;
         }
       }
-      if (meRes.ok) {
+      if (meRes && meRes.ok) {
         const meData = await meRes.json();
         setBillingMe(meData);
         if (meData?.billingCountry && !localStorage.getItem('kinich_billing_country')) {
