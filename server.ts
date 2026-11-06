@@ -9706,7 +9706,7 @@ async function callStudyJsonLLM(
             contents: `${systemPrompt}\n\n${userPrompt}`,
             config: {
               temperature,
-              maxOutputTokens: 1024,
+              maxOutputTokens: 512,
               responseMimeType: 'application/json',
               thinkingConfig: modelName.startsWith('gemini-3')
                 ? { thinkingLevel: ThinkingLevel.HIGH }
@@ -9766,7 +9766,7 @@ async function callStudyJsonLLM(
               { role: 'user', content: userPrompt },
             ],
             temperature,
-            max_tokens: 1024,
+            max_tokens: 512,
             response_format: { type: 'json_object' },
             ...gw.extra,
           }),
@@ -9928,7 +9928,7 @@ app.post('/api/youtube/study', async (req, res) => {
     );
 
     // Format transcript as [mm:ss] text lines. Sample every 3rd segment beyond the first 60 to keep LLM calls fast.
-    const sampledSegments = activeSegments.filter((_, idx) => idx < 30 || idx % 5 === 0);
+    const sampledSegments = activeSegments.filter((_, idx) => idx < 20 || idx % 10 === 0);
     const formattedLines = sampledSegments.map(
       (s) => `[${formatMmSs(s.start_s)}] (t=${Math.floor(s.start_s)}s) ${s.text}`
     );
