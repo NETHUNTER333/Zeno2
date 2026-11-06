@@ -18,7 +18,7 @@ import {
   InvoiceItem,
   RefundItem,
 } from '../lib/billing';
-import { getAuthHeaders } from '../lib/firebase';
+import { auth, getAuthHeaders } from '../lib/firebase';
 import { UserAccountStore } from '../lib/userAccountStore';
 
 interface BillingHistorySectionProps {
@@ -57,6 +57,12 @@ export const BillingHistorySection: React.FC<BillingHistorySectionProps> = ({ is
   const [refundBusy, setRefundBusy] = useState<boolean>(false);
 
   const fetchBillingHistory = async () => {
+    if (!auth.currentUser || auth.currentUser.isAnonymous || UserAccountStore.isGuest()) {
+      setPayments([]);
+      setRefunds([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {

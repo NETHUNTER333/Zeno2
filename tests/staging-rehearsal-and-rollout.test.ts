@@ -148,10 +148,14 @@ describe('Release Gates 1–4 & Staging Deployment Rehearsal with Automated Roll
 
     const healthRes = await request(app).get('/api/health');
     expect(healthRes.status).toBe(200);
-    const healthRaw = JSON.stringify(healthRes.body);
+    expect(healthRes.body).toEqual({ status: 'ok', version: '1.0.0' });
+
+    const detailsRes = await request(app).get('/api/health/details');
+    expect(detailsRes.status).toBe(200);
+    const healthRaw = JSON.stringify(detailsRes.body);
 
     // Confirm boolean staging indicators are accurate
-    expect(healthRes.body.staging).toEqual({
+    expect(detailsRes.body.staging).toEqual({
       firebaseProjectId: PROJECT_ID,
       firebaseCredentialsConfigured: true,
       firebaseCheckRevoked: true,
@@ -164,7 +168,7 @@ describe('Release Gates 1–4 & Staging Deployment Rehearsal with Automated Roll
       rateLimitFailMode: 'fallback',
     });
 
-    // Confirm zero sensitive values are exposed in /api/health
+    // Confirm zero sensitive values are exposed in /api/health/details
     expect(healthRaw).not.toContain('StagingRedisSecretPass99');
     expect(healthRaw).not.toContain('10.128.0.14');
     expect(healthRaw).not.toContain('treg_live_secret_token_987654321');
@@ -368,8 +372,8 @@ describe('Release Gates 1–4 & Staging Deployment Rehearsal with Automated Roll
     }
 
     async function runStagingCanaryGate(): Promise<{ passed: boolean; reason?: string }> {
-      // Check 1: Health endpoint reachable & strict auth enabled
-      const health = await request(app).get('/api/health');
+      // Check 1: Health details endpoint reachable & strict auth enabled
+      const health = await request(app).get('/api/health/details');
       if (health.status !== 200 || !health.body?.staging?.strictAuthRequired) {
         return { passed: false, reason: `Health or strictAuth check failed (status=${health.status})` };
       }

@@ -596,12 +596,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
         items.push({
           id: 'action-vault',
           label: 'The Vault',
-          sublabel: UserAccountStore.isGuestUser()
-            ? 'Sign in to save · Grouped by Subject → Chapter'
+          sublabel: UserAccountStore.isGuest()
+            ? 'Sign in to save'
             : `${vaultItems.length} saved · Grouped by Subject → Chapter`,
           icon: <Bookmark className="w-3.5 h-3.5 text-[#FC4C01]" />,
           onClick: () => {
-            onOpenGrowthHub('vault');
+            if (UserAccountStore.isGuest()) {
+              window.dispatchEvent(
+                new CustomEvent('kinich-open-auth', {
+                  detail: { reason: 'Sign in to keep this in your Vault' },
+                })
+              );
+            } else {
+              onOpenGrowthHub('vault');
+            }
             if (window.innerWidth < 768) onClose();
           },
         });
@@ -629,43 +637,53 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }
 
     // Sidebar Vault section (Subject -> Chapter preview or Guest "Sign in to save")
+    const isGuestSidebar = UserAccountStore.isGuest();
     items.push({
       id: 'heading-vault-sidebar',
       label:
-        vaultItems.length > 0
+        !isGuestSidebar && vaultItems.length > 0
           ? `The Vault (${vaultItems.length})`
           : 'The Vault',
       heading: true,
       onClick: () => {
-        if (onOpenGrowthHub) {
+        if (isGuestSidebar) {
+          window.dispatchEvent(
+            new CustomEvent('kinich-open-auth', {
+              detail: { reason: 'Sign in to keep this in your Vault' },
+            })
+          );
+          if (window.innerWidth < 768) onClose();
+        } else if (onOpenGrowthHub) {
           onOpenGrowthHub('vault');
           if (window.innerWidth < 768) onClose();
         }
       },
       trailing: (
-        <span className="text-[10px] font-medium text-[#FC4C01]">Open Vault →</span>
+        <span className="text-[10px] font-medium text-[#FC4C01]">
+          {isGuestSidebar ? 'Sign in →' : `${vaultItems.length} saved · Open Vault →`}
+        </span>
       ),
     });
 
-    if (UserAccountStore.isGuestUser() && vaultItems.length === 0) {
+    if (isGuestSidebar) {
       items.push({
         id: 'vault-guest-signin',
         label: 'Sign in to save',
         sublabel: 'Save lectures, notes, quizzes & flashcards to your Vault',
         icon: <Bookmark className="w-3 h-3 text-[#FC4C01]" />,
         onClick: () => {
-          if (onOpenAccountModal) {
-            onOpenAccountModal('profile');
-          } else if (onOpenGrowthHub) {
-            onOpenGrowthHub('vault');
-          }
+          window.dispatchEvent(
+            new CustomEvent('kinich-open-auth', {
+              detail: { reason: 'Sign in to keep this in your Vault' },
+            })
+          );
           if (window.innerWidth < 768) onClose();
         },
       });
     } else if (vaultItems.length === 0) {
       items.push({
         id: 'vault-empty-hint',
-        label: 'No Vault items saved yet',
+        label: '0 saved · Grouped by Subject → Chapter',
         sublabel: 'Click "Save to Vault" on any chat, lecture, or report',
         onClick: () => {
           if (onOpenGrowthHub) {

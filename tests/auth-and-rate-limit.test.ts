@@ -76,8 +76,7 @@ describe('Phase 2 & 3 — Cryptographic Firebase Token Verification & Rate Limit
   it('allows intentionally public /api/health route without a token', async () => {
     const res = await request(app).get('/api/health');
     expect(res.status).toBe(200);
-    expect(res.body.success).toBe(true);
-    expect(res.body.projectId).toBe(PROJECT_ID);
+    expect(res.body).toEqual({ status: 'ok', version: '1.0.0' });
   });
 
   it('rejects missing Bearer token on protected routes (/api/auth/verify, /api/user/quota, /api/treg/call)', async () => {

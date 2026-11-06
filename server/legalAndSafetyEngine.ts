@@ -189,8 +189,9 @@ export function resolveSpaClientRouteMeta(pathname: string): SpaRouteMeta | null
   }
   if (clean === '/vault' || clean.startsWith('/vault/')) {
     return {
-      title: 'The Vault · Kinich',
-      description: 'Your saved lectures, notes, quizzes, and flashcards.',
+      title: 'The Vault · Kinich Study Threads & Knowledge Base',
+      description:
+        'Browse and review your saved lectures, key points, active recall quizzes, flashcards, and Sage study threads on Kinich.',
       canonicalPath: '/vault',
     };
   }

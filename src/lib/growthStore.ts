@@ -477,7 +477,7 @@ export const KnowledgeVaultStore = {
       return {
         allowed: false,
         reason: 'free_limit',
-        message: `Free tier Vault cap reached (${VAULT_FREE_ITEM_LIMIT}/${VAULT_FREE_ITEM_LIMIT} items). Upgrade to Spark for unlimited Vault items + Sage auto-organizer.`,
+        message: `${VAULT_FREE_ITEM_LIMIT}/${VAULT_FREE_ITEM_LIMIT}, upgrade to keep everything`,
         currentCount: items.length,
         maxCount: VAULT_FREE_ITEM_LIMIT,
       };
@@ -531,6 +531,7 @@ export const KnowledgeVaultStore = {
   },
 
   getItems(): KnowledgeVaultItem[] {
+    if (this.isGuest()) return [];
     const items = safeLoad<KnowledgeVaultItem[]>(GROWTH_KEYS.VAULT_ITEMS, []);
     return items
       .map((i) => {
@@ -659,7 +660,7 @@ export const KnowledgeVaultStore = {
     // Enforce Free tier 20-item cap on new items
     if (existingIdx < 0 && UserAccountStore.getCurrentPlan() === 'free' && items.length >= VAULT_FREE_ITEM_LIMIT) {
       throw new Error(
-        `Free tier Vault limit reached (${VAULT_FREE_ITEM_LIMIT} items). Upgrade to Spark for unlimited Vault items.`
+        `${VAULT_FREE_ITEM_LIMIT}/${VAULT_FREE_ITEM_LIMIT}, upgrade to keep everything`
       );
     }
 
@@ -715,6 +716,17 @@ export const KnowledgeVaultStore = {
             updatedAt: now,
             lastReviewedAt: now,
           };
+
+    if (UserAccountStore.isGuest()) {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('kinich-open-auth', {
+            detail: { reason: 'Sign in to keep this in your Vault' },
+          })
+        );
+      }
+      return item;
+    }
 
     const nextItems =
       existingIdx >= 0
@@ -1059,6 +1071,7 @@ export const VaultThreadStore = {
   },
 
   getThreads(): VaultThread[] {
+    if (this.isGuest()) return [];
     const plan = UserAccountStore.getCurrentPlan();
     const threads = safeLoad<VaultThread[]>(GROWTH_KEYS.VAULT_THREADS, []);
     // Tiers: Guest keeps nothing, Free keeps last 20 threads, Spark/Fire keep all

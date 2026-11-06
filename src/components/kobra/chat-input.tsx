@@ -22,8 +22,6 @@ import {
   GraduationCap,
   Layers,
   Zap,
-  Mic,
-  MicOff,
 } from 'lucide-react';
 import { ModelOption, GROK_MODELS, getDefaultVisionModel } from '../GrokModelPicker';
 import { SearchMode, ChatAttachment, ChatMessage } from '../../types';
@@ -305,90 +303,13 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isPlusMenuOpen, setIsPlusMenuOpen] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
-  const [isSpeechSupported, setIsSpeechSupported] = useState(false);
-  const [isListening, setIsListening] = useState(false);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const plusMenuRef = useRef<HTMLDivElement>(null);
-  const recognitionRef = useRef<any>(null);
-  const preVoiceTextRef = useRef<string>('');
 
   const isDark = theme === 'dark';
   const isEmpty = !value.trim() && attachments.length === 0;
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const SpeechRec =
-        (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-      setIsSpeechSupported(Boolean(SpeechRec));
-    }
-    return () => {
-      try {
-        recognitionRef.current?.stop?.();
-      } catch {}
-    };
-  }, []);
-
-  const toggleVoiceInput = () => {
-    if (typeof window === 'undefined') return;
-    const SpeechRec =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRec) return;
-
-    if (isListening && recognitionRef.current) {
-      try {
-        recognitionRef.current.stop();
-      } catch {}
-      setIsListening(false);
-      return;
-    }
-
-    try {
-      const recognition = new SpeechRec();
-      recognition.lang = navigator.language || 'en-US';
-      recognition.interimResults = true;
-      recognition.continuous = false;
-      recognition.maxAlternatives = 1;
-
-      preVoiceTextRef.current = value.trim() ? `${value.trim()} ` : '';
-
-      recognition.onstart = () => {
-        setIsListening(true);
-      };
-
-      recognition.onresult = (event: any) => {
-        let interimTranscript = '';
-        let finalTranscript = '';
-        for (let i = 0; i < event.results.length; i++) {
-          const res = event.results[i];
-          if (res.isFinal) {
-            finalTranscript += res[0].transcript;
-          } else {
-            interimTranscript += res[0].transcript;
-          }
-        }
-        const combined = `${preVoiceTextRef.current}${finalTranscript}${interimTranscript}`.trimStart();
-        setValue(combined);
-      };
-
-      recognition.onerror = () => {
-        setIsListening(false);
-      };
-
-      recognition.onend = () => {
-        setIsListening(false);
-        if (textareaRef.current) {
-          textareaRef.current.focus();
-        }
-      };
-
-      recognitionRef.current = recognition;
-      recognition.start();
-    } catch {
-      setIsListening(false);
-    }
-  };
 
   useEffect(() => {
     const syncQuota = () => {
@@ -1098,8 +1019,9 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           }`}
         />
 
-        {/* Right Action Cluster (Voice Mic + History + Send/Stop) */}
-        <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 select-none">
+        {/* Right Action Cluster (History + Send/Stop) */}
+        <div className="flex items-center gap-1.5 shrink-0 select-none">
+
           {/* In-Chat History Trigger Button */}
           <button
             type="button"

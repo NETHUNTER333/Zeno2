@@ -71,6 +71,14 @@
       "destination": "/discover.html"
     },
     {
+      "source": "/vault",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/vault/:path*",
+      "destination": "/index.html"
+    },
+    {
       "source": "/research",
       "destination": "/research.html"
     },

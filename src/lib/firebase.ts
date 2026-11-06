@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, deleteUser, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, deleteUser, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, onAuthStateChanged, signInAnonymously, User as FirebaseUser } from 'firebase/auth';
 import {
   getFirestore,
   initializeFirestore,
@@ -51,6 +51,16 @@ function initFirestoreInstance(): Firestore {
 export const db = initFirestoreInstance();
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
+
+export async function signInGuestAnonymously(): Promise<FirebaseUser | null> {
+  try {
+    const cred = await signInAnonymously(auth);
+    return cred.user;
+  } catch (err) {
+    console.warn('[Auth] Anonymous sign in failed, fallback to local guest:', err);
+    return null;
+  }
+}
 
 export enum OperationType {
   CREATE = 'create',

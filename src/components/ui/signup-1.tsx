@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { FcGoogle } from "react-icons/fc";
 import { Gift, CheckCircle2, Sparkles, ShieldCheck } from "lucide-react";
 
@@ -11,7 +11,7 @@ import {
   PendingReferralInfo,
 } from "../../lib/referralClient";
 import { apiFetch } from "../../lib/apiBase";
-import { auth } from "../../lib/firebase";
+import { auth, signInGuestAnonymously } from "../../lib/firebase";
 import { recordUserLegalConsent, SiteFooter } from "../LegalAndInfoPages";
 import { MIN_AGE } from "../../legal/config";
 
@@ -50,8 +50,11 @@ const Signup1 = ({
   const [password, setPassword] = useState("");
   const [isLoginMode, setIsLoginMode] = useState(true);
   const [consentAccepted, setConsentAccepted] = useState(false);
+  const consentAcceptedRef = useRef(false);
+  const checkboxRef = useRef<HTMLInputElement | null>(null);
   const [loading, setLoading] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
+  const [guestLoading, setGuestLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resetSuccess, setResetSuccess] = useState<string | null>(null);
 
@@ -120,16 +123,17 @@ const Signup1 = ({
     };
   }, []);
 
+  const isConsentChecked = () =>
+    consentAccepted || consentAcceptedRef.current || Boolean(checkboxRef.current?.checked);
+
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanEmail = email.trim();
-    if (!cleanEmail || !password) return;
-    if (!consentAccepted) {
-      setError(
-        `Please confirm you are at least ${MIN_AGE} years old and agree to the Terms of Service, Privacy Policy, and Acceptable Use Policy.`
-      );
+    if (!isConsentChecked()) {
+      setError("Please confirm you're 18+ and accept the Terms to continue.");
       return;
     }
+    if (!cleanEmail || !password) return;
     try {
       setLoading(true);
       setError(null);
@@ -192,10 +196,8 @@ const Signup1 = ({
   };
 
   const handleGoogleSignup = async () => {
-    if (!consentAccepted) {
-      setError(
-        `Please check the box below to confirm you are at least ${MIN_AGE} years old and agree to the Terms of Service, Privacy Policy, and Acceptable Use Policy.`
-      );
+    if (!isConsentChecked()) {
+      setError("Please confirm you're 18+ and accept the Terms to continue.");
       return;
     }
     try {
@@ -227,7 +229,7 @@ const Signup1 = ({
 
   return (
     <section
-      className={`min-h-screen w-full flex items-center justify-center p-4 relative z-10 overflow-y-auto ${
+      className={`min-h-screen w-full flex items-center justify-center p-4 pb-28 sm:pb-8 relative z-40 overflow-y-auto ${
         isDark ? "text-zinc-100" : "text-zinc-900"
       }`}
     >
@@ -432,12 +434,15 @@ const Signup1 = ({
               }`}
             >
               <input
+                ref={checkboxRef}
                 data-testid="guest-age-checkbox"
                 type="checkbox"
                 checked={consentAccepted}
                 onChange={(e) => {
-                  setConsentAccepted(e.target.checked);
-                  if (e.target.checked) {
+                  const next = e.target.checked;
+                  consentAcceptedRef.current = next;
+                  setConsentAccepted(next);
+                  if (next) {
                     setError(null);
                   }
                 }}
@@ -502,10 +507,10 @@ const Signup1 = ({
                     : "bg-zinc-900 text-white hover:bg-zinc-800"
                 } ${
                   !consentAccepted || loading || resetLoading
-                    ? "opacity-50 cursor-not-allowed"
+                    ? "opacity-50"
                     : "cursor-pointer"
                 }`}
-                disabled={loading || resetLoading || !consentAccepted}
+                disabled={loading || resetLoading}
               >
                 {loading
                   ? isLoginMode
@@ -518,7 +523,7 @@ const Signup1 = ({
                   : signupText}
               </Button>
               <Button
-                data-testid="guest-continue-btn"
+                data-testid="google-continue-btn"
                 type="button"
                 variant="outline"
                 className={`w-full h-10 transition-all ${
@@ -527,11 +532,11 @@ const Signup1 = ({
                     : "border-zinc-300 bg-white text-zinc-900 hover:bg-zinc-100"
                 } ${
                   !consentAccepted || loading || resetLoading
-                    ? "opacity-50 cursor-not-allowed"
+                    ? "opacity-50"
                     : "cursor-pointer"
                 }`}
                 onClick={handleGoogleSignup}
-                disabled={loading || resetLoading || !consentAccepted}
+                disabled={loading || resetLoading}
               >
                 <FcGoogle className="mr-2 size-5 shrink-0" />
                 <span className="text-xs sm:text-sm truncate">
@@ -543,6 +548,7 @@ const Signup1 = ({
                 </span>
               </Button>
               <Button
+                data-testid="guest-continue-btn"
                 type="button"
                 variant="outline"
                 className={`w-full h-10 border-dashed transition-all ${
@@ -550,25 +556,48 @@ const Signup1 = ({
                     ? "border-zinc-700 bg-transparent text-zinc-200 hover:bg-zinc-800/60"
                     : "border-zinc-300 bg-transparent text-zinc-800 hover:bg-zinc-100"
                 } ${
-                  !consentAccepted || loading || resetLoading
-                    ? "opacity-50 cursor-not-allowed"
+                  !consentAccepted || loading || resetLoading || guestLoading
+                    ? "opacity-50"
                     : "cursor-pointer"
                 }`}
-                onClick={async () => {
-                  if (!consentAccepted) {
-                    setError("Please tick the box above to accept the Terms and Policies before proceeding.");
+                onClick={() => {
+                  if (!isConsentChecked()) {
+                    setError("Please confirm you're 18+ and accept the Terms to continue.");
                     return;
                   }
-                  await recordUserLegalConsent(undefined, "guest_signin_card");
+                  setGuestLoading(true);
+                  setError(null);
                   UserAccountStore.loginAsGuest();
                   if (onSuccess) onSuccess();
+                  void (async () => {
+                    try {
+                      const anonUser = await signInGuestAnonymously();
+                      await recordUserLegalConsent(
+                        anonUser?.uid || auth.currentUser?.uid,
+                        "guest_signin_card"
+                      );
+                    } catch {}
+                  })();
                 }}
-                disabled={loading || resetLoading || !consentAccepted}
+                disabled={loading || resetLoading || guestLoading}
               >
-                <span className="text-xs sm:text-sm font-medium">
-                  Continue as Guest
+                <span className="text-xs sm:text-sm font-medium flex items-center justify-center gap-2">
+                  {guestLoading && (
+                    <span className="size-3.5 border-2 border-[#FC4C01] border-t-transparent rounded-full animate-spin shrink-0" />
+                  )}
+                  <span>{guestLoading ? "Entering as guest..." : "Continue as Guest"}</span>
                 </span>
               </Button>
+              {!consentAccepted && (
+                <p
+                  data-testid="tick-box-hint"
+                  className={`text-[11px] text-center pt-0.5 ${
+                    isDark ? "text-zinc-400" : "text-zinc-500"
+                  }`}
+                >
+                  Tick the box above to continue
+                </p>
+              )}
             </div>
           </form>
 

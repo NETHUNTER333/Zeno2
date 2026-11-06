@@ -47,7 +47,10 @@ import {
   RotateCcw,
   Bookmark,
   FolderOpen,
+  MapPin,
 } from 'lucide-react';
+import { ViewOnMap } from './watermelon/view-on-map';
+import { ThinkingOrb } from 'thinking-orbs';
 import {
   YouTubeTranscriptSegment,
   YouTubeStudyBundle,
@@ -88,7 +91,8 @@ export type WorkspaceTabType =
   | 'chapters'
   | 'transcripts'
   | 'notes'
-  | 'chat';
+  | 'chat'
+  | 'map';
 
 export interface OpenWorkspaceTab {
   id: string;
@@ -372,6 +376,9 @@ export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
   const [summaryFollowUpError, setSummaryFollowUpError] = useState<string | null>(null);
   const [copiedFollowUpTurnId, setCopiedFollowUpTurnId] = useState<string | null>(null);
 
+  // Map & Location State
+  const [mapLocationQuery, setMapLocationQuery] = useState<string>('');
+
   // Lesson Plan State
   const [completedModules, setCompletedModules] = useState<Record<string, boolean>>({});
   const [focusedModuleView, setFocusedModuleView] = useState<{
@@ -614,6 +621,7 @@ export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
       transcripts: 'Transcript',
       notes: 'Notes',
       chat: customTitle || 'Tutor',
+      map: customTitle || 'Location Map',
     };
     const newTab: OpenWorkspaceTab = {
       id: `tab-${type}-${Date.now()}`,
@@ -1372,8 +1380,13 @@ ${fullTranscriptText}`;
 
   const [isGuestStudyUser, setIsGuestStudyUser] = useState(() => UserAccountStore.isGuestUser());
   const [savedStudyVaultId, setSavedStudyVaultId] = useState<string | null>(null);
+  const savedStudyVaultIdRef = useRef<string | null>(null);
   const [sageStudyOrganizing, setSageStudyOrganizing] = useState(false);
   const [sageStudyCard, setSageStudyCard] = useState<AgentReplyCard | null>(null);
+  const [sageStatusText, setSageStatusText] = useState<string | null>(null);
+  const [showSageBanner, setShowSageBanner] = useState(false);
+  const sageTimeoutRef = useRef<any>(null);
+  const sageAutoHideTimerRef = useRef<any>(null);
 
   useEffect(() => {
     const syncGuest = () => setIsGuestStudyUser(UserAccountStore.isGuestUser());
@@ -1384,15 +1397,30 @@ ${fullTranscriptText}`;
   useEffect(() => {
     const onSageDone = (e: Event) => {
       const detail = (e as CustomEvent)?.detail;
-      if (!detail?.item || !detail?.agentReply) return;
-      if (savedStudyVaultId && detail.item.id === savedStudyVaultId) {
+      if (!detail?.item) return;
+      const targetId = savedStudyVaultIdRef.current;
+      if (targetId && detail.item.id === targetId) {
+        clearTimeout(sageTimeoutRef.current);
         setSageStudyOrganizing(false);
-        setSageStudyCard(detail.agentReply as AgentReplyCard);
+        if (detail.agentReply) {
+          setSageStudyCard(detail.agentReply as AgentReplyCard);
+          setSageStatusText(`Filed under ${detail.agentReply.subject || 'Subject'} → ${detail.agentReply.chapter || 'Chapter'}`);
+        } else {
+          setSageStatusText(`Filed under ${detail.item.subject || 'Subject'} → ${detail.item.chapter || 'Chapter'}`);
+        }
+        clearTimeout(sageAutoHideTimerRef.current);
+        sageAutoHideTimerRef.current = setTimeout(() => {
+          setShowSageBanner(false);
+        }, 4000);
       }
     };
     window.addEventListener('kinich-sage-organized', onSageDone as EventListener);
-    return () => window.removeEventListener('kinich-sage-organized', onSageDone as EventListener);
-  }, [savedStudyVaultId]);
+    return () => {
+      window.removeEventListener('kinich-sage-organized', onSageDone as EventListener);
+      clearTimeout(sageTimeoutRef.current);
+      clearTimeout(sageAutoHideTimerRef.current);
+    };
+  }, []);
 
   const handleSaveStudyResultToVault = (
     saveType: 'lecture' | 'quiz' | 'flashcard_deck' = 'lecture'
@@ -1461,7 +1489,19 @@ ${fullTranscriptText}`;
       });
     }
 
+    setShowSageBanner(true);
     setSageStudyOrganizing(true);
+    setSageStatusText('Assigning Subject, Chapter, tags, and linking related Vault lectures…');
+    clearTimeout(sageTimeoutRef.current);
+    sageTimeoutRef.current = setTimeout(() => {
+      setSageStudyOrganizing(false);
+      setSageStatusText('Saved. Sage will finish organizing in the background');
+      clearTimeout(sageAutoHideTimerRef.current);
+      sageAutoHideTimerRef.current = setTimeout(() => {
+        setShowSageBanner(false);
+      }, 4000);
+    }, 20000);
+
     const saved = KnowledgeVaultStore.saveItem({
       title:
         saveType === 'quiz'
@@ -1486,6 +1526,7 @@ ${fullTranscriptText}`;
       ],
     });
     setSavedStudyVaultId(saved.id);
+    savedStudyVaultIdRef.current = saved.id;
   };
 
   const handleSendStudyChat = async (overridePrompt?: string) => {
@@ -2525,7 +2566,7 @@ ${fullTranscriptText}`;
                     : sageStudyOrganizing
                     ? 'Sage organizing…'
                     : savedStudyVaultId
-                    ? 'Saved to Vault'
+                    ? 'Saved ✓'
                     : 'Save to Vault'}
                 </span>
               </button>
@@ -2636,10 +2677,10 @@ ${fullTranscriptText}`;
           </header>
 
           {/* Sage Agent Organization & Linked Lectures Banner */}
-          {(sageStudyOrganizing || sageStudyCard) && (
+          {showSageBanner && (sageStudyOrganizing || sageStudyCard || sageStatusText) && (
             <div
               data-testid="study-sage-banner"
-              className={`px-4 py-2 border-b flex flex-wrap items-center justify-between gap-2 text-xs ${
+              className={`px-4 py-2 border-b flex flex-wrap items-center justify-between gap-2 text-xs transition-all ${
                 isDark
                   ? 'bg-[#121215] border-[#FC4C01]/20 text-neutral-200'
                   : 'bg-[#fffaf7] border-[#FC4C01]/20 text-neutral-900'
@@ -2650,19 +2691,26 @@ ${fullTranscriptText}`;
                   <Sparkles className="w-3 h-3" />
                   Sage
                 </span>
-                {sageStudyOrganizing && !sageStudyCard ? (
+                {sageStudyOrganizing ? (
                   <span className="text-neutral-400">
-                    Assigning Subject, Chapter, tags, and linking related Vault lectures…
+                    {sageStatusText || 'Assigning Subject, Chapter, tags, and linking related Vault lectures…'}
                   </span>
-                ) : sageStudyCard ? (
-                  <>
+                ) : (
+                  <div className="flex items-center gap-2">
                     <span className="inline-flex items-center gap-1 font-semibold text-[#FC4C01]">
                       <FolderOpen className="w-3.5 h-3.5" />
-                      {sageStudyCard.subject} → {sageStudyCard.chapter}
+                      {sageStatusText || (sageStudyCard ? `${sageStudyCard.subject} → ${sageStudyCard.chapter}` : 'Saved ✓')}
                     </span>
-                    <span className="opacity-85">{sageStudyCard.content}</span>
-                  </>
-                ) : null}
+                    <button
+                      type="button"
+                      onClick={() => window.dispatchEvent(new CustomEvent('kinich-open-vault'))}
+                      className="text-[11px] text-[#FC4C01] hover:underline font-medium cursor-pointer"
+                    >
+                      View in Vault →
+                    </button>
+                    {sageStudyCard?.content && <span className="opacity-80 text-[11px] hidden md:inline">{sageStudyCard.content}</span>}
+                  </div>
+                )}
               </div>
               {sageStudyCard && Array.isArray(sageStudyCard.linkedItems) && sageStudyCard.linkedItems.length > 0 && (
                 <div className="flex items-center gap-1.5">
@@ -2890,14 +2938,22 @@ ${fullTranscriptText}`;
                     isDark ? 'bg-[#121215] border-white/[0.1]' : 'bg-white border-black/[0.08]'
                   }`}
                 >
-                  <div className="flex items-center justify-between gap-3 flex-wrap">
-                    <div className="flex items-center gap-2.5 text-sm font-semibold">
-                      <Loader2 className="w-4 h-4 animate-spin text-emerald-500" />
-                      <span>
-                        {segments.length > 0
-                          ? loadingStageText
-                          : 'Fetching full transcript from YouTube...'}
-                      </span>
+                  <div className="flex items-center justify-between gap-4 flex-wrap">
+                    <div className="flex items-center gap-2.5">
+                      <ThinkingOrb state="searching" size={20} />
+                      <div>
+                        <div className="text-sm font-semibold flex items-center gap-2">
+                          <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                          <span>
+                            {segments.length > 0
+                              ? loadingStageText
+                              : 'Fetching full transcript from YouTube...'}
+                          </span>
+                        </div>
+                        <div className={`text-xs mt-0.5 ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
+                          Deep knowledge processing and chapter decomposition in progress
+                        </div>
+                      </div>
                     </div>
                     <span className="px-2.5 py-1 rounded-lg text-xs font-mono font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                       {formatTime(loadingElapsedSec)} elapsed
@@ -3180,6 +3236,18 @@ ${fullTranscriptText}`;
                             sub: 'Ask questions',
                             icon: MessageSquare,
                             onClick: () => openOrFocusTab('chat', 'Tutor'),
+                          },
+                          {
+                            id: 'map',
+                            label: 'Location & Map',
+                            sub: 'Campus, labs & sites',
+                            icon: MapPin,
+                            onClick: () => {
+                              if (!mapLocationQuery) {
+                                setMapLocationQuery(resolvedTitle || 'Boston Public Garden');
+                              }
+                              openOrFocusTab('map', 'Location Map');
+                            },
                           },
                         ].map((item) => {
                           const Icon = item.icon;
@@ -5436,9 +5504,17 @@ ${fullTranscriptText}`;
                           </div>
                         ))}
                         {chatLoading && (
-                          <div className={`text-xs flex items-center gap-2 ${textMuted}`}>
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            <span>Thinking...</span>
+                          <div className="flex items-center justify-start my-1.5">
+                            <div
+                              className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium shadow-sm ${
+                                isDark
+                                  ? 'bg-[#18181b]/95 border-neutral-800 text-neutral-300'
+                                  : 'bg-neutral-100/90 border-neutral-200 text-neutral-700'
+                              }`}
+                            >
+                              <ThinkingOrb state="searching" size={20} />
+                              <span>Thinking....</span>
+                            </div>
                           </div>
                         )}
                         <div ref={chatEndRef} />
@@ -5601,6 +5677,97 @@ ${fullTranscriptText}`;
                           </div>
                         </div>
                       </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* =========================================================== */}
+                {/* TAB 10: LOCATION & MAP                                      */}
+                {/* =========================================================== */}
+                {activeTabObj?.type === 'map' && (
+                  <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 space-y-6 pb-24">
+                    <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-black/[0.08] dark:border-white/[0.08]">
+                      <div>
+                        <h2 className="text-base sm:text-lg font-semibold tracking-tight">Location & Map</h2>
+                        <p className={`text-xs ${textMuted}`}>
+                          Interactive location explorer for campuses, research institutes, field studies, and geography.
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setMapLocationQuery(resolvedTitle || 'Boston Public Garden')}
+                          className={`h-8 px-3.5 rounded-full border text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer transition-colors ${borderSubtle}`}
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>Use Study Topic</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Location Search Input */}
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium text-neutral-500">Search location, campus, or institute:</label>
+                      <div className="relative">
+                        <MapPin className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400" />
+                        <input
+                          type="text"
+                          value={mapLocationQuery}
+                          onChange={(e) => setMapLocationQuery(e.target.value)}
+                          placeholder="e.g. CERN Geneva, Stanford University, MIT Cambridge MA, IISc Bangalore..."
+                          className={`w-full pl-10 pr-4 py-2.5 rounded-full border text-xs outline-none transition-colors ${
+                            isDark
+                              ? 'bg-[#121215] border-white/15 text-white placeholder-neutral-500 focus:border-[#FC4C01]'
+                              : 'bg-white border-black/15 text-black placeholder-neutral-400 focus:border-[#FC4C01]'
+                          }`}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Preset Research & Study Hubs */}
+                    <div className="space-y-1.5">
+                      <div className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider">Quick Research & Study Presets</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[
+                          'CERN, Geneva, Switzerland',
+                          'MIT, Cambridge, MA',
+                          'Stanford University, CA',
+                          'Oxford University, UK',
+                          'IISc, Bangalore, India',
+                          'Max Planck Institute, Germany',
+                          'NASA JPL, Pasadena, CA',
+                        ].map((preset) => (
+                          <button
+                            key={preset}
+                            type="button"
+                            onClick={() => setMapLocationQuery(preset)}
+                            className={`px-3 py-1 rounded-full border text-xs font-medium transition-colors cursor-pointer ${
+                              mapLocationQuery === preset
+                                ? 'bg-[#FC4C01] text-white border-[#FC4C01] shadow-xs'
+                                : isDark
+                                ? 'border-white/10 text-neutral-400 hover:text-white hover:bg-white/[0.05]'
+                                : 'border-black/10 text-neutral-600 hover:text-black hover:bg-black/[0.04]'
+                            }`}
+                          >
+                            {preset.split(',')[0]}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* ViewOnMap Component Instance */}
+                    <div className={`p-8 sm:p-12 rounded-3xl border text-center flex flex-col items-center justify-center gap-4 transition-all ${bgCard}`}>
+                      <div className="space-y-1 text-center">
+                        <div className="text-sm font-semibold">{mapLocationQuery || resolvedTitle || 'Location'}</div>
+                        <div className={`text-xs ${textMuted}`}>Click the pill button below to expand the interactive live map</div>
+                      </div>
+
+                      <ViewOnMap
+                        address={mapLocationQuery || resolvedTitle || 'Boston Public Garden'}
+                        locationName={mapLocationQuery || resolvedTitle || 'View on Map'}
+                        isDark={isDark}
+                      />
                     </div>
                   </div>
                 )}

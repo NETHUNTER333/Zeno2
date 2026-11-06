@@ -111,6 +111,10 @@ export const CancelSubscriptionSection: React.FC<{
   } | null>(null);
 
   const loadSubscriptionState = async () => {
+    if (!auth.currentUser || auth.currentUser.isAnonymous || UserAccountStore.isGuest()) {
+      setCurrentPlan('free');
+      return;
+    }
     try {
       const headers = await getAuthHeaders();
       const res = await fetch('/api/billing/me', { headers });
@@ -512,6 +516,10 @@ export const RefundPolicySection: React.FC<{
   } | null>(null);
 
   const loadRefundEligibility = async () => {
+    if (!auth.currentUser || auth.currentUser.isAnonymous || UserAccountStore.isGuest()) {
+      setCurrentPlan('free');
+      return;
+    }
     try {
       const headers = await getAuthHeaders();
       const res = await fetch('/api/billing/me', { headers });
@@ -827,7 +835,10 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
   }, [threads]);
 
   useEffect(() => {
-    // Load & sync profile + active model + streak reminder settings with backend on mount
+    // Load & sync profile + active model + streak reminder settings with backend on mount (signed-in accounts only)
+    if (!auth.currentUser || auth.currentUser.isAnonymous || UserAccountStore.isGuest()) {
+      return;
+    }
     let cancelled = false;
     (async () => {
       try {
@@ -862,7 +873,9 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
   const isDark = theme === 'dark';
   const [locPref, setLocPref] = useState(() => getStoredLocationPref());
 
-  const isAuthenticatedUser = Boolean(auth.currentUser && profile.signinProvider !== 'guest');
+  const isAuthenticatedUser = Boolean(
+    auth.currentUser && !auth.currentUser.isAnonymous && !UserAccountStore.isGuest()
+  );
 
   const navItems: { id: AccountTab; label: string; icon: React.ReactNode }[] = [
     { id: 'profile', label: 'Profile & Account', icon: <User className="w-4 h-4" /> },
@@ -1190,9 +1203,37 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
                   </p>
                 </div>
 
-                <RefundPolicySection isDark={isDark} />
-                <CancelSubscriptionSection isDark={isDark} />
-                <BillingHistorySection isDark={isDark} />
+                {isAuthenticatedUser ? (
+                  <>
+                    <RefundPolicySection isDark={isDark} />
+                    <CancelSubscriptionSection isDark={isDark} />
+                    <BillingHistorySection isDark={isDark} />
+                  </>
+                ) : (
+                  <div
+                    className={`p-6 rounded-2xl border text-center space-y-3 ${
+                      isDark ? 'bg-white/[0.02] border-white/10' : 'bg-white border-black/10 shadow-xs'
+                    }`}
+                  >
+                    <p className="text-sm font-semibold">Sign in to manage billing &amp; subscriptions</p>
+                    <p className="text-xs text-neutral-400 max-w-md mx-auto">
+                      You are browsing as a Guest. Sign in with Google or Email to subscribe to Spark or Fire, view invoices, or request refunds.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        window.dispatchEvent(
+                          new CustomEvent('kinich-open-auth', {
+                            detail: { reason: 'Sign in to manage your account and billing' },
+                          })
+                        )
+                      }
+                      className="px-4 py-2 rounded-xl bg-[#FC4C01] hover:bg-[#e04300] text-white text-xs font-semibold cursor-pointer transition-colors"
+                    >
+                      Sign in with Google or Email
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1305,14 +1346,44 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
                   </div>
                 </div>
 
-                {/* Refund Policy & Eligibility Section */}
-                <RefundPolicySection isDark={isDark} />
+                {isAuthenticatedUser ? (
+                  <>
+                    {/* Refund Policy & Eligibility Section */}
+                    <RefundPolicySection isDark={isDark} />
 
-                {/* Cancel Subscription Section (with Survey & Confirmation Modal) */}
-                <CancelSubscriptionSection isDark={isDark} />
+                    {/* Cancel Subscription Section (with Survey & Confirmation Modal) */}
+                    <CancelSubscriptionSection isDark={isDark} />
 
-                {/* Billing History & Past Invoices Component */}
-                <BillingHistorySection isDark={isDark} />
+                    {/* Billing History & Past Invoices Component */}
+                    <BillingHistorySection isDark={isDark} />
+                  </>
+                ) : (
+                  <div
+                    className={`p-5 rounded-2xl border flex flex-wrap items-center justify-between gap-3 ${
+                      isDark ? 'bg-white/[0.02] border-white/10' : 'bg-white border-black/10 shadow-xs'
+                    }`}
+                  >
+                    <div>
+                      <div className="text-sm font-bold">Sign in to sync your Vault &amp; account</div>
+                      <div className="text-xs text-neutral-400 mt-0.5">
+                        Create a free account with Google or Email to save to the Vault, claim streak bonuses, and manage subscriptions.
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        window.dispatchEvent(
+                          new CustomEvent('kinich-open-auth', {
+                            detail: { reason: 'Sign in to keep this in your Vault' },
+                          })
+                        )
+                      }
+                      className="px-4 py-2 rounded-xl bg-[#FC4C01] hover:bg-[#e04300] text-white text-xs font-semibold cursor-pointer transition-colors"
+                    >
+                      Sign in
+                    </button>
+                  </div>
+                )}
 
                 {/* Daily Streak & Reminder Notification Settings Card */}
                 <div

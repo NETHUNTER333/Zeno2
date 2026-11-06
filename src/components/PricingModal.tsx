@@ -581,7 +581,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
   const sparkFeatures: PlanFeatureRow[] = [
     { text: '1,500 Daily Prompts (10x boost · 1M context)', included: true },
     { text: '250 File Uploads / day (up to 25 files/msg)', included: true },
-    { text: 'Vault (unlimited items) + Sage & Recall Personal Agents', included: true },
+    { text: 'Full Vault access + Sage & Recall Personal Agents', included: true },
     { text: '750 Real-Time Web & News Searches / day', included: true },
     { text: '100 Autonomous Deep Research reports / day', included: true },
     { text: '200 PDF Study & YouTube Studio sessions / day', included: true },

@@ -140,10 +140,14 @@ describe('Staging Configuration Verification & Multi-Instance Cloud Run Distribu
   it('verifies staging strict authentication mode (REQUIRE_AUTH_FOR_CHAT=true) across AI, search, and TTS routes', async () => {
     process.env.REQUIRE_AUTH_FOR_CHAT = 'true';
 
-    // Health check reflects staging strict auth flag
+    // Health check returns clean status and /api/health/details reflects staging strict auth flag
     const healthRes = await request(app).get('/api/health');
     expect(healthRes.status).toBe(200);
-    expect(healthRes.body.staging.strictAuthRequired).toBe(true);
+    expect(healthRes.body).toEqual({ status: 'ok', version: '1.0.0' });
+
+    const detailsRes = await request(app).get('/api/health/details');
+    expect(detailsRes.status).toBe(200);
+    expect(detailsRes.body.staging.strictAuthRequired).toBe(true);
 
     // Unauthenticated calls to optional-auth routes must now be rejected with 401
     const unauthChat = await request(app)

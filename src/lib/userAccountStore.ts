@@ -32,6 +32,17 @@ import { onAuthStateChanged } from 'firebase/auth';
 
 onAuthStateChanged(auth, async (firebaseUser) => {
   if (firebaseUser) {
+    if (firebaseUser.isAnonymous) {
+      const current = UserAccountStore.getProfile();
+      UserAccountStore.saveProfile({
+        ...current,
+        id: firebaseUser.uid || current.id || 'guest_' + Date.now().toString(36),
+        displayName: current.signinProvider === 'guest' ? current.displayName || 'Guest Explorer' : 'Guest Explorer',
+        email: 'guest@kinich.app',
+        signinProvider: 'guest',
+      });
+      return;
+    }
     const isGoogle = firebaseUser.providerData?.some((p) => p.providerId === 'google.com');
     const providerType = isGoogle ? 'google' : 'email';
     const current = UserAccountStore.getProfile();
@@ -545,7 +556,17 @@ export const UserAccountStore = {
     return false;
   },
   isGuest(): boolean {
-    return !this.isUserSignedIn();
+    if (!this.isUserSignedIn()) return true;
+    if (auth.currentUser?.isAnonymous) return true;
+    const profile = this.getProfile();
+    if (
+      profile.signinProvider === 'guest' ||
+      profile.email === 'guest@kinich.app' ||
+      String(profile.id || '').startsWith('guest_')
+    ) {
+      return !(auth.currentUser && !auth.currentUser.isAnonymous && auth.currentUser.email);
+    }
+    return false;
   },
   isGuestUser(): boolean {
     try {
@@ -1583,6 +1604,16 @@ export const UserAccountStore = {
     const raw = loadFromStorage<Partial<DailyStreakData>>(STORAGE_KEYS.DAILY_STREAK, {});
     const current = this.getDailyStreak();
     const target = ACHIEVEMENT_BADGES.find((b) => b.id === badgeId);
+    if (this.isGuest()) {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('kinich-open-auth', {
+            detail: { reason: 'Sign in to claim your streak bonus' },
+          })
+        );
+      }
+      return { streak: current, rewarded: false, badge: target };
+    }
     const alreadyClaimed =
       (Array.isArray(raw.claimedBadges) && raw.claimedBadges.includes(badgeId)) ||
       (Array.isArray(current.claimedBadges) && current.claimedBadges.includes(badgeId));
@@ -1696,6 +1727,7 @@ export const UserAccountStore = {
   },
 
   async syncProfileAndSettingsWithBackend(extraPayload?: Record<string, any>): Promise<any> {
+    if (this.isGuest()) return null;
     try {
       const headers = await getAuthHeaders();
       const profile = this.getProfile();
@@ -1882,6 +1914,16 @@ export const UserAccountStore = {
     const raw = loadFromStorage<Partial<DailyStreakData>>(STORAGE_KEYS.DAILY_STREAK, {});
     const current = this.getDailyStreak();
     const milestone = STREAK_MILESTONES.find((m) => m.days === milestoneDays);
+    if (this.isGuest()) {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('kinich-open-auth', {
+            detail: { reason: 'Sign in to claim your streak bonus' },
+          })
+        );
+      }
+      return { streak: current, rewarded: false, milestone };
+    }
     const alreadyClaimed =
       (Array.isArray(raw.claimedMilestones) && raw.claimedMilestones.includes(milestoneDays)) ||
       current.claimedMilestones.includes(milestoneDays);

@@ -344,12 +344,12 @@ async function generateGeminiContentWithFallback(contents: any, isResearchMode =
               config: {
                 maxOutputTokens: geminiMaxTokens,
                 thinkingConfig: modelName.startsWith('gemini-3')
-                  ? { thinkingLevel: ThinkingLevel.MINIMAL }
-                  : { thinkingBudget: 0 },
+                  ? { thinkingLevel: ThinkingLevel.HIGH }
+                  : { thinkingBudget: 2048 },
               },
             })
             .then((resp) => {
-              const text = (resp.text || '').replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '').trim();
+              const text = (resp.text || '').trim();
               if (!text) throw new Error('Empty Gemini text');
               if (isCodePrompt && !text.includes('```')) {
                 throw new Error('Gemini response missing fenced code block for code request');
@@ -370,31 +370,31 @@ async function generateGeminiContentWithFallback(contents: any, isResearchMode =
         url: `${ZRO_MOONMATH_BASE_URL}/chat/completions`,
         key: ZRO_MOONMATH_API_KEY,
         model: 'zro/deepseek-v4.1-flash',
-        extra: { chat_template_kwargs: { enable_thinking: false } },
+        extra: { chat_template_kwargs: { enable_thinking: true }, reasoning_effort: 'medium' },
       },
       {
         url: `${ZRO_MOONMATH_BASE_URL}/chat/completions`,
         key: ZRO_MOONMATH_API_KEY,
         model: 'zro/glm-5.3-flash',
-        extra: { chat_template_kwargs: { enable_thinking: false } },
+        extra: { chat_template_kwargs: { enable_thinking: true }, reasoning_effort: 'medium' },
       },
       {
         url: `${ITERA_COMPUTE_BASE_URL}/chat/completions`,
         key: ITERA_COMPUTE_API_KEY,
         model: 'qwen/qwen3.8-27b',
-        extra: { chat_template_kwargs: { enable_thinking: false }, reasoning_effort: 'none' },
+        extra: { chat_template_kwargs: { enable_thinking: true }, reasoning_effort: 'medium' },
       },
       {
         url: `${TOKENHARBOR_BASE_URL}/chat/completions`,
         key: TOKENHARBOR_API_KEY,
         model: 'deepseek-v4.1-flash:free',
-        extra: { chat_template_kwargs: { enable_thinking: false }, reasoning_effort: 'none' },
+        extra: { chat_template_kwargs: { enable_thinking: true }, reasoning_effort: 'medium' },
       },
       {
         url: `${INTERN_AI_BASE_URL}/chat/completions`,
         key: INTERN_AI_API_KEY,
         model: 'Agents-A1',
-        extra: { chat_template_kwargs: { enable_thinking: false }, reasoning_effort: 'none' },
+        extra: { chat_template_kwargs: { enable_thinking: true }, reasoning_effort: 'medium' },
       },
     ].filter((gw) => Boolean(gw.key));
 
@@ -938,17 +938,16 @@ async function generateChatCompletion(
   const stripThinkingTags = (raw: string): string =>
     String(raw || '').replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '').trim();
 
-  // Extract clean direct answer even if a provider places output in reasoning_content when max_tokens is tight
+  // Extract message text preserving thinking mode blocks across all providers
   const extractDirectMessageText = (rawMsg: any): string => {
-    const direct = stripThinkingTags(rawMsg?.content || '');
-    if (direct) return direct;
-    const fallbackReasoning = stripThinkingTags(rawMsg?.reasoning_content || '');
-    if (!fallbackReasoning) return '';
-    const paragraphs = fallbackReasoning
-      .split(/\n{2,}/)
-      .map((p) => p.trim())
-      .filter(Boolean);
-    return paragraphs[paragraphs.length - 1] || fallbackReasoning;
+    const rawDirect = String(rawMsg?.content || '').trim();
+    const rawReasoning = String(rawMsg?.reasoning_content || '').trim();
+    if (rawReasoning && !rawDirect.includes('<think>')) {
+      return `<think>\n${rawReasoning}\n</think>\n\n${rawDirect}`.trim();
+    }
+    if (rawDirect) return rawDirect;
+    if (rawReasoning) return `<think>\n${rawReasoning}\n</think>`.trim();
+    return '';
   };
 
   const lastUserMsgText =
@@ -1037,20 +1036,21 @@ async function generateChatCompletion(
     tHeaders: number,
     tDone: number
   ): RealCompletionMetrics => {
-    let content = stripThinkingTags(rawContent);
-    if (isCodeRequest && !content.includes('```')) {
+    const visibleContent = stripThinkingTags(rawContent);
+    if (isCodeRequest && !visibleContent.includes('```')) {
       throw new Error('Rejected non-code response for explicit code generation request');
     }
+    let content = rawContent;
     if (
       !effectiveRequestedLanguage &&
       !/[\u4e00-\u9fff]/.test(lastUserMsgText) &&
       !/\b(chinese|mandarin|cantonese|hanzi|kanji|japanese)\b/i.test(lastUserMsgText)
     ) {
-      const cjkChars = (content.match(/[\u4e00-\u9fff]/g) || []).length;
-      if (cjkChars > 25 && cjkChars * 3 > content.length) {
+      const cjkChars = (visibleContent.match(/[\u4e00-\u9fff]/g) || []).length;
+      if (cjkChars > 25 && cjkChars * 3 > visibleContent.length) {
         throw new Error('Rejected unsolicited non-English response');
       }
-      content = sanitizeNormalEnglishText(content, effectiveRequestedLanguage, lastUserMsgText);
+      content = sanitizeNormalEnglishText(rawContent, effectiveRequestedLanguage, lastUserMsgText);
     }
     const usage = data?.usage;
     const promptTokens =
@@ -1060,10 +1060,17 @@ async function generateChatCompletion(
     const completionTokens =
       typeof usage?.completion_tokens === 'number' && usage.completion_tokens > 0
         ? usage.completion_tokens
-        : countExactSubwordTokens(content);
-    // Thinking tokens explicitly disabled (0)
-    const reasoningTokens = 0;
-    const totalTokens = promptTokens + completionTokens;
+        : countExactSubwordTokens(visibleContent);
+    const thoughtMatch = content.match(/<think>([\s\S]*?)<\/think>/i);
+    const reasoningTokens =
+      typeof usage?.completion_tokens_details?.reasoning_tokens === 'number'
+        ? usage.completion_tokens_details.reasoning_tokens
+        : typeof usage?.reasoning_tokens === 'number'
+        ? usage.reasoning_tokens
+        : thoughtMatch
+        ? countExactSubwordTokens(thoughtMatch[1])
+        : 0;
+    const totalTokens = promptTokens + completionTokens + reasoningTokens;
 
     const totalSec = parseFloat(Math.max(0.05, (tDone - t0) / 1000).toFixed(2));
     const firstTokenSec = parseFloat(
@@ -1131,7 +1138,7 @@ async function generateChatCompletion(
       isResearchPaper
     );
     const tDone = Date.now();
-    const content = stripThinkingTags(resp.text || '');
+    const content = (resp.text || '').trim();
     if (!content) throw new Error('Empty Gemini response');
 
     const meta = resp.usageMetadata;
@@ -1139,10 +1146,13 @@ async function generateChatCompletion(
       typeof meta?.promptTokenCount === 'number' && meta.promptTokenCount > 0
         ? meta.promptTokenCount
         : countMessagesInputTokens(msgs);
+    const visibleContent = stripThinkingTags(content);
     const candidatesTokens = typeof meta?.candidatesTokenCount === 'number' ? meta.candidatesTokenCount : 0;
     const completionTokens =
-      candidatesTokens > 0 ? candidatesTokens : countExactSubwordTokens(content);
-    const totalTokens = promptTokens + completionTokens;
+      candidatesTokens > 0 ? candidatesTokens : countExactSubwordTokens(visibleContent || content);
+    const thoughtMatch = content.match(/<think>([\s\S]*?)<\/think>/i);
+    const reasoningTokens = thoughtMatch ? countExactSubwordTokens(thoughtMatch[1]) : 0;
+    const totalTokens = promptTokens + completionTokens + reasoningTokens;
 
     const totalSec = parseFloat(Math.max(0.05, (tDone - t0) / 1000).toFixed(2));
     const firstTokenSec = parseFloat(Math.max(0.03, totalSec * 0.28).toFixed(2));
@@ -1156,7 +1166,7 @@ async function generateChatCompletion(
       promptTokens,
       completionTokens,
       totalTokens,
-      reasoningTokens: 0,
+      reasoningTokens,
       firstTokenSec,
       totalSec,
       speedTokPerSec,
@@ -1264,7 +1274,8 @@ async function generateChatCompletion(
         messages: msgs,
         max_tokens: fastMaxTokens,
         temperature: 0.4,
-        chat_template_kwargs: { enable_thinking: false },
+        chat_template_kwargs: { enable_thinking: true },
+        reasoning_effort: 'medium',
       }),
     });
     const tHeaders = Date.now();
@@ -1300,7 +1311,8 @@ async function generateChatCompletion(
         messages: msgs,
         max_tokens: fastMaxTokens,
         temperature: 0.4,
-        chat_template_kwargs: { enable_thinking: false },
+        chat_template_kwargs: { enable_thinking: true },
+        reasoning_effort: 'medium',
       }),
     });
     const tHeaders = Date.now();
@@ -1481,7 +1493,8 @@ async function generateChatCompletion(
         messages: msgs,
         max_tokens: fastMaxTokens,
         temperature: 0.4,
-        chat_template_kwargs: { enable_thinking: false },
+        chat_template_kwargs: { enable_thinking: true },
+        reasoning_effort: 'medium',
       }),
     });
     const tHeaders = Date.now();
@@ -1532,7 +1545,8 @@ async function generateChatCompletion(
         messages: toTextOnlyMessages(msgs),
         max_tokens: fastMaxTokens,
         temperature: 0.4,
-        chat_template_kwargs: { enable_thinking: false },
+        chat_template_kwargs: { enable_thinking: true },
+        reasoning_effort: 'medium',
       }),
     });
     const tHeaders = Date.now();
@@ -3792,6 +3806,20 @@ app.get('/api/health', (_req, res) => {
   res.json({
     status: 'ok',
     version: '1.0.0',
+  });
+});
+
+app.get('/api/health/details', (req, res) => {
+  const adminKey = String(req.headers['x-admin-secret'] || req.headers['x-admin-key'] || '').trim();
+  const expectedKey = String(process.env.ADMIN_SECRET || process.env.KINICH_ADMIN_KEY || '').trim();
+  if (expectedKey && adminKey !== expectedKey && process.env.NODE_ENV === 'production') {
+    return res.status(403).json({ status: 'error', error: 'Forbidden' });
+  }
+  return res.json({
+    status: 'ok',
+    version: '1.0.0',
+    projectId: getFirebaseProjectId(),
+    staging: getStagingConfigSummary(),
   });
 });
 
@@ -9681,8 +9709,8 @@ async function callStudyJsonLLM(
               maxOutputTokens: 4096,
               responseMimeType: 'application/json',
               thinkingConfig: modelName.startsWith('gemini-3')
-                ? { thinkingLevel: ThinkingLevel.MINIMAL }
-                : { thinkingBudget: 0 },
+                ? { thinkingLevel: ThinkingLevel.HIGH }
+                : { thinkingBudget: 2048 },
             },
           })
           .then((resp) => {
@@ -9705,25 +9733,25 @@ async function callStudyJsonLLM(
       url: `${ZRO_MOONMATH_BASE_URL}/chat/completions`,
       key: ZRO_MOONMATH_API_KEY,
       model: 'zro/deepseek-v4.1-flash',
-      extra: { chat_template_kwargs: { enable_thinking: false } },
+      extra: { chat_template_kwargs: { enable_thinking: true }, reasoning_effort: 'medium' },
     },
     {
       url: `${ZRO_MOONMATH_BASE_URL}/chat/completions`,
       key: ZRO_MOONMATH_API_KEY,
       model: 'zro/glm-5.3-flash',
-      extra: { chat_template_kwargs: { enable_thinking: false } },
+      extra: { chat_template_kwargs: { enable_thinking: true }, reasoning_effort: 'medium' },
     },
     {
       url: `${ITERA_COMPUTE_BASE_URL}/chat/completions`,
       key: ITERA_COMPUTE_API_KEY,
       model: 'qwen/qwen3.8-27b',
-      extra: { chat_template_kwargs: { enable_thinking: false }, reasoning_effort: 'none' },
+      extra: { chat_template_kwargs: { enable_thinking: true }, reasoning_effort: 'medium' },
     },
     {
       url: `${TOKENHARBOR_BASE_URL}/chat/completions`,
       key: TOKENHARBOR_API_KEY,
       model: 'deepseek-v4.1-flash:free',
-      extra: { chat_template_kwargs: { enable_thinking: false }, reasoning_effort: 'none' },
+      extra: { chat_template_kwargs: { enable_thinking: true }, reasoning_effort: 'medium' },
     },
   ].filter((g) => Boolean(g.key));
 

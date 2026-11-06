@@ -62,10 +62,12 @@ import {
 import { getAuthHeaders } from '../lib/firebase';
 import { WebSearch, WebSearchCitation, CitationModal, WebSearchSource } from './ui/web-search';
 import { LoadingBreadcrumb } from './ui/animated-loading-svg-text-shimmer';
+import { ThinkingOrb } from 'thinking-orbs';
 import { XPostCard } from './XPostCard';
 import { extractSocialMeta, sourceToXPost } from '../lib/socialEnricher';
 import {
   StreamingText,
+  ReasoningSteps,
   InlineCitation,
   InlineCitationsList,
   PlanCard,
@@ -465,8 +467,12 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
   }, [isUser]);
 
   const handleSaveSegmentToVault = (rawSegment?: string, collectionOverride?: string) => {
-    if (UserAccountStore.isGuestUser()) {
-      window.dispatchEvent(new CustomEvent('kinich-open-auth', { detail: { message: 'Sign in to keep this in your Vault.' } }));
+    if (UserAccountStore.isGuest()) {
+      window.dispatchEvent(
+        new CustomEvent('kinich-open-auth', {
+          detail: { reason: 'Sign in to keep this in your Vault' },
+        })
+      );
       return;
     }
     const targetText = (rawSegment ?? selectedSegmentText).trim();
@@ -498,6 +504,14 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
   };
 
   const handleToggleParagraphHighlight = (segmentText: string) => {
+    if (UserAccountStore.isGuest()) {
+      window.dispatchEvent(
+        new CustomEvent('kinich-open-auth', {
+          detail: { reason: 'Sign in to keep this in your Vault' },
+        })
+      );
+      return;
+    }
     const cleanSeg = segmentText.trim();
     if (!cleanSeg) return;
     const existing = savedMessageHighlights.find(
@@ -510,7 +524,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
     }
   };
 
-  const [isGuestUser, setIsGuestUser] = useState(() => UserAccountStore.isGuestUser());
+  const [isGuestUser, setIsGuestUser] = useState(() => UserAccountStore.isGuest());
   const [sageOrganizing, setSageOrganizing] = useState(false);
   const [liveAgentCards, setLiveAgentCards] = useState<AgentReplyCard[]>(() => {
     const list: AgentReplyCard[] = [];
@@ -524,31 +538,41 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
   });
 
   useEffect(() => {
-    const syncAccount = () => setIsGuestUser(UserAccountStore.isGuestUser());
+    const syncAccount = () => setIsGuestUser(UserAccountStore.isGuest());
     window.addEventListener('kinich-account-updated', syncAccount);
     return () => window.removeEventListener('kinich-account-updated', syncAccount);
   }, []);
 
   useEffect(() => {
+    let sageTimeout: any;
     const onSageOrganized = (e: Event) => {
       const detail = (e as CustomEvent)?.detail;
-      if (!detail?.item || !detail?.agentReply) return;
+      if (!detail?.item) return;
       if (detail.item.sourceMessageId === message.id) {
+        clearTimeout(sageTimeout);
         setSageOrganizing(false);
-        setLiveAgentCards((prev) => {
-          const filtered = prev.filter((c) => c.agentId !== 'sage');
-          return [detail.agentReply as AgentReplyCard, ...filtered];
-        });
+        if (detail.agentReply) {
+          setLiveAgentCards((prev) => {
+            const filtered = prev.filter((c) => c.agentId !== 'sage');
+            return [detail.agentReply as AgentReplyCard, ...filtered];
+          });
+        }
       }
     };
     window.addEventListener('kinich-sage-organized', onSageOrganized as EventListener);
-    return () =>
+    return () => {
       window.removeEventListener('kinich-sage-organized', onSageOrganized as EventListener);
+      clearTimeout(sageTimeout);
+    };
   }, [message.id]);
 
   const handleSaveToKnowledgeVault = () => {
-    if (UserAccountStore.isGuestUser()) {
-      window.dispatchEvent(new CustomEvent('kinich-open-auth', { detail: { message: 'Sign in to keep this in your Vault.' } }));
+    if (UserAccountStore.isGuest()) {
+      window.dispatchEvent(
+        new CustomEvent('kinich-open-auth', {
+          detail: { reason: 'Sign in to keep this in your Vault' },
+        })
+      );
       return;
     }
     const check = KnowledgeVaultStore.canSaveToVault();
@@ -565,6 +589,9 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
       .trim();
     if (!cleanBody) return;
     setSageOrganizing(true);
+    setTimeout(() => {
+      setSageOrganizing(false);
+    }, 20000);
     KnowledgeVaultStore.saveItem({
       title: threadTitle || cleanBody.replace(/[#*`~>\n]+/g, ' ').trim().slice(0, 72) || 'Kinich Study Answer',
       summary: cleanBody.replace(/[#*`~>\n]+/g, ' ').trim().slice(0, 220),
@@ -578,13 +605,26 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
       sources: message.sources || [],
     });
     setSavedToVault(true);
-    setTimeout(() => setSavedToVault(false), 3200);
+    window.dispatchEvent(
+      new CustomEvent('kinich-toast', {
+        detail: { message: 'Saved to Vault · View in feed' },
+      })
+    );
+    setTimeout(() => setSavedToVault(false), 5000);
   };
 
-  // Thinking tokens are disabled; strip any <think>...</think> blocks directly
-  const cleanedContent = (message.content || '')
-    .replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '')
-    .trim();
+  // Extract thinking/reasoning process when Thinking Mode is on
+  const thoughtMatch = useMemo(() => (message.content || '').match(/<think>([\s\S]*?)(?:<\/think>|$)/i), [message.content]);
+  const thoughtContent = useMemo(() => {
+    if (thoughtMatch && thoughtMatch[1]) return thoughtMatch[1].trim();
+    return (message as any).reasoningContent || '';
+  }, [thoughtMatch, message]);
+
+  const cleanedContent = useMemo(() => {
+    return (message.content || '')
+      .replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '')
+      .trim();
+  }, [message.content]);
 
   // Split cleanedContent into selectable paragraphs/segments for one-tap highlighting
   const highlightableSegments = useMemo(() => {
@@ -1110,20 +1150,37 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
               );
             })()}
 
-          {/* Fast single-line loading indicator only while waiting for text when WebSearch spinner isn't already active */}
+          {/* Compact ThinkingOrb Loading Pill on Left Side - only for general casual replies (no web search) */}
           {message.isStreaming &&
             !cleanedContent &&
-            (message.loadingMode !== 'search' || (message.sources && message.sources.length > 0)) && (
-              <div className="my-1.5">
-                <LoadingBreadcrumb
-                  text={
-                    message.loadingMode === 'vision'
-                      ? 'Analyzing image...'
+            message.loadingMode !== 'search' &&
+            (!orderedMessageSources || orderedMessageSources.length === 0) && (
+              <div className="my-2.5 flex items-center justify-start">
+                <div
+                  className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full border shadow-sm transition-all duration-200 ${
+                    isDark
+                      ? 'bg-[#18181b]/95 border-neutral-800 text-neutral-300'
+                      : 'bg-neutral-100/90 border-neutral-200 text-neutral-700'
+                  }`}
+                >
+                  <div className="flex-shrink-0 flex items-center justify-center">
+                    <ThinkingOrb
+                      state={
+                        message.loadingMode === 'vision'
+                          ? 'solving'
+                          : 'working'
+                      }
+                      size={20}
+                    />
+                  </div>
+                  <span className="text-xs font-medium tracking-tight">
+                    {message.loadingMode === 'vision'
+                      ? 'Solving visual....'
                       : message.loadingMode === 'file'
-                      ? 'Reading file...'
-                      : 'Generating response...'
-                  }
-                />
+                      ? 'Reading file....'
+                      : 'Thinking....'}
+                  </span>
+                </div>
               </div>
             )}
 
@@ -1469,6 +1526,23 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                   );
                 })}
               </div>
+            </div>
+          )}
+
+          {/* Collapsible Reasoning Steps when Thinking Mode is on */}
+          {thoughtContent && (
+            <div className="mb-2.5">
+              <ReasoningSteps
+                thoughts={thoughtContent}
+                durationSec={
+                  message.timing?.totalSec
+                    ? Math.max(1, Math.round(message.timing.totalSec * 0.6))
+                    : 3
+                }
+                isDark={isDark}
+                isStreaming={message.isStreaming}
+                defaultExpanded={false}
+              />
             </div>
           )}
 
@@ -2578,7 +2652,17 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
 
                 <button
                   type="button"
-                  onClick={() => setShowSegmentPicker((prev) => !prev)}
+                  onClick={() => {
+                    if (UserAccountStore.isGuest()) {
+                      window.dispatchEvent(
+                        new CustomEvent('kinich-open-auth', {
+                          detail: { reason: 'Sign in to keep this in your Vault' },
+                        })
+                      );
+                      return;
+                    }
+                    setShowSegmentPicker((prev) => !prev);
+                  }}
                   className={`p-1 rounded transition-colors cursor-pointer ${
                     showSegmentPicker || savedMessageHighlights.length > 0
                       ? 'text-amber-400'
@@ -2609,7 +2693,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                   }`}
                   title={
                     isGuestUser
-                      ? 'Sign in to save to your Vault'
+                      ? 'Sign in to keep this in your Vault'
                       : savedToVault
                       ? 'Saved to Vault — Sage organized'
                       : 'Save answer to your Vault'
@@ -2619,11 +2703,11 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                   <Bookmark className={`w-3.5 h-3.5 ${savedToVault ? 'fill-current' : 'text-[#FC4C01]'}`} />
                   <span>
                     {isGuestUser
-                      ? 'Sign in to save'
+                      ? 'Save to Vault'
                       : savedToVault
                       ? sageOrganizing
                         ? 'Sage organizing…'
-                        : 'Saved to Vault'
+                        : 'Saved ✓'
                       : 'Save to Vault'}
                   </span>
                 </button>

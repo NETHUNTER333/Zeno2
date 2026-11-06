@@ -12,6 +12,7 @@ import { PeleDiagram } from './PeleDiagram';
 import { PrismCodeBlock } from './PrismCodeBlock';
 import { normalizeMathDelimiters } from './MathMarkdown';
 import { LoadingBreadcrumb } from './ui/animated-loading-svg-text-shimmer';
+import { ThinkingOrb } from 'thinking-orbs';
 
 interface ChatMessageProps {
   message: ChatMessageType;
@@ -116,9 +117,14 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ message, onExtractUrl,
 
           {/* Body / Markdown */}
           {message.isStreaming ? (
-            <div className="py-2">
-              <LoadingBreadcrumb text="Searching web via Treg (team syntrofoi) & synthesizing..." />
-            </div>
+            (!message.sources || message.sources.length === 0) && (
+              <div className="py-2 flex items-center justify-start">
+                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-800/90 border border-slate-700/80 text-slate-300 text-xs font-medium shadow-sm">
+                  <ThinkingOrb state="working" size={20} />
+                  <span>Thinking....</span>
+                </div>
+              </div>
+            )
           ) : (
             <div className="prose-custom max-w-none text-slate-200 text-sm leading-relaxed">
               <ReactMarkdown

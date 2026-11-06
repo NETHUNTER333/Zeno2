@@ -86,12 +86,18 @@ export function resolveLegalOr404Route(pathname: string): LegalPageRoute | null 
     clean.startsWith('/billing/') ||
     clean === '/discover' ||
     clean.startsWith('/discover/') ||
+    clean === '/vault' ||
+    clean.startsWith('/vault/') ||
     clean === '/account' ||
     clean.startsWith('/account/') ||
     clean === '/settings' ||
     clean.startsWith('/settings/') ||
+    clean === '/r' ||
     clean.startsWith('/r/') ||
+    clean === '/invite' ||
     clean.startsWith('/invite/') ||
+    clean === '/s' ||
+    clean.startsWith('/s/') ||
     clean.startsWith('/share/') ||
     clean.startsWith('/p/') ||
     clean.startsWith('/u/')
@@ -372,7 +378,7 @@ export const CookieConsentBanner: React.FC<{
     <div
       role="region"
       aria-label="Cookie and local storage notice"
-      className="fixed bottom-20 sm:bottom-4 inset-x-3 sm:left-4 sm:right-auto sm:max-w-[320px] z-30 pointer-events-auto"
+      className="fixed bottom-3 sm:bottom-4 inset-x-3 sm:left-4 sm:right-auto sm:max-w-[320px] z-20 pointer-events-auto"
     >
       <div
         className={`rounded-2xl border p-2.5 sm:p-3 shadow-xl transition-all ${

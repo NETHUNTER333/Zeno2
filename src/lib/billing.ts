@@ -1,4 +1,5 @@
-import { getAuthHeaders } from './firebase';
+import { auth, getAuthHeaders } from './firebase';
+import { UserAccountStore } from './userAccountStore';
 
 export interface InvoiceItem {
   id?: string;
@@ -27,6 +28,9 @@ export interface RefundItem {
  * Fetch the last 10 invoices / payments from Dodo Payments backend API.
  */
 export async function fetchLast10Invoices(): Promise<InvoiceItem[]> {
+  if (!auth.currentUser || auth.currentUser.isAnonymous || UserAccountStore.isGuest()) {
+    return [];
+  }
   try {
     const authHeaders = await getAuthHeaders();
     const res = await fetch('/api/billing/invoices', {
@@ -161,6 +165,9 @@ export async function cancelUserSubscription(params: {
  * Fetch refund history for the current user.
  */
 export async function fetchUserRefunds(): Promise<RefundItem[]> {
+  if (!auth.currentUser || auth.currentUser.isAnonymous || UserAccountStore.isGuest()) {
+    return [];
+  }
   try {
     const authHeaders = await getAuthHeaders();
     const res = await fetch('/api/billing/refunds', {

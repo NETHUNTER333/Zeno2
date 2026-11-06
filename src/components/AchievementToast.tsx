@@ -30,6 +30,7 @@ export const AchievementToast: React.FC<AchievementToastProps> = ({ isDark }) =>
   const [equippedBadgeId, setEquippedBadgeId] = useState<string>(() => {
     return UserAccountStore.getDailyStreak().featuredBadgeId || 'first-spark';
   });
+  const [isGuest, setIsGuest] = useState<boolean>(() => UserAccountStore.isGuest());
   const [feedbackText, setFeedbackText] = useState<string | null>(null);
 
   const activeToast = queue[0] || null;
@@ -37,6 +38,7 @@ export const AchievementToast: React.FC<AchievementToastProps> = ({ isDark }) =>
   const syncAccountState = useCallback(() => {
     const latest = UserAccountStore.getDailyStreak();
     setEquippedBadgeId(latest.featuredBadgeId || 'first-spark');
+    setIsGuest(UserAccountStore.isGuest());
   }, []);
 
   useEffect(() => {
@@ -117,6 +119,14 @@ export const AchievementToast: React.FC<AchievementToastProps> = ({ isDark }) =>
 
   const handleClaim = () => {
     if (isAlreadyClaimed) return;
+    if (UserAccountStore.isGuest()) {
+      window.dispatchEvent(
+        new CustomEvent('kinich-open-auth', {
+          detail: { reason: 'Sign in to claim your streak bonus' },
+        })
+      );
+      return;
+    }
 
     if (activeToast.kind === 'milestone' && typeof activeToast.days === 'number') {
       const res = UserAccountStore.claimStreakMilestone(
@@ -345,10 +355,11 @@ export const AchievementToast: React.FC<AchievementToastProps> = ({ isDark }) =>
                 <button
                   type="button"
                   onClick={handleClaim}
+                  data-testid="achievement-claim-bonus-btn"
                   className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#FC4C01] hover:bg-[#e04300] text-white text-xs font-semibold transition-colors cursor-pointer"
                 >
                   <Gift className="w-3.5 h-3.5" />
-                  <span>Claim Bonus</span>
+                  <span>{isGuest ? 'Sign in to claim' : 'Claim Bonus'}</span>
                 </button>
               )}
 

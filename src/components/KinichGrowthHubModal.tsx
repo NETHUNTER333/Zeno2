@@ -27,7 +27,9 @@ import {
   ChevronUp,
   Layers,
   Compass,
+  MapPin,
 } from 'lucide-react';
+import { ViewOnMap } from './watermelon/view-on-map';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -97,6 +99,7 @@ export interface KinichGrowthHubModalProps {
   isOpen: boolean;
   onClose: () => void;
   initialTab?: GrowthHubTab;
+  initialThreadId?: string | null;
   threads: ChatThread[];
   onOpenArtifactPage: (artifact: PublicArtifact) => void;
   onForkArtifactIntoChat: (artifact: PublicArtifact) => void;
@@ -164,6 +167,7 @@ export const KinichGrowthHubModal: React.FC<KinichGrowthHubModalProps> = ({
   isOpen,
   onClose,
   initialTab = 'discover',
+  initialThreadId = null,
   threads,
   onOpenArtifactPage,
   onForkArtifactIntoChat,
@@ -223,6 +227,7 @@ export const KinichGrowthHubModal: React.FC<KinichGrowthHubModalProps> = ({
   const [collapsedComments, setCollapsedComments] = useState<Record<string, boolean>>({});
   const [copiedShareNotice, setCopiedShareNotice] = useState<string | null>(null);
   const [activeVideoTimeSec, setActiveVideoTimeSec] = useState<number>(0);
+  const [showThreadMap, setShowThreadMap] = useState<boolean>(false);
 
   // --- TAB 3: WEEKLY BRIEF, MISSIONS & NOTIFICATIONS ---
   const [includeTopicsOnWeeklyCard, setIncludeTopicsOnWeeklyCard] = useState<boolean>(false);
@@ -311,8 +316,17 @@ export const KinichGrowthHubModal: React.FC<KinichGrowthHubModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       setActiveTab(initialTab === 'weekly' ? 'discover' : initialTab);
-      setVaultItems(KnowledgeVaultStore.getItems());
-      setVaultThreads(VaultThreadStore.getThreads());
+      const localItems = KnowledgeVaultStore.getItems();
+      const localThreads = VaultThreadStore.getThreads();
+      setVaultItems(localItems);
+      setVaultThreads(localThreads);
+      if (initialThreadId) {
+        const match = localThreads.find((t) => t.id === initialThreadId);
+        if (match) {
+          setVaultViewMode('threads');
+          setActiveThread(match);
+        }
+      }
       setCollections(KnowledgeVaultStore.getCollections());
       setSageMemoryFacts(AgentMemoryStore.getFacts('sage'));
       setIsGuestVault(UserAccountStore.isGuestUser());
@@ -322,14 +336,23 @@ export const KinichGrowthHubModal: React.FC<KinichGrowthHubModalProps> = ({
           setVaultItems(synced);
         });
         VaultThreadStore.syncWithFirestore().then((synced) => {
-          if (Array.isArray(synced)) setVaultThreads(synced);
+          if (Array.isArray(synced)) {
+            setVaultThreads(synced);
+            if (initialThreadId) {
+              const cloudMatch = synced.find((t) => t.id === initialThreadId);
+              if (cloudMatch) {
+                setVaultViewMode('threads');
+                setActiveThread(cloudMatch);
+              }
+            }
+          }
         });
         AgentMemoryStore.syncFromFirestore('sage').then((facts) => {
           setSageMemoryFacts(facts);
         });
       }
     }
-  }, [isOpen, initialTab]);
+  }, [isOpen, initialTab, initialThreadId]);
 
   useEffect(() => {
     const syncVault = () => {
@@ -1699,7 +1722,7 @@ export const KinichGrowthHubModal: React.FC<KinichGrowthHubModalProps> = ({
                 </div>
                 <div className="space-y-1.5">
                   <h3 className="text-base sm:text-lg font-bold tracking-tight">
-                    Sign in to your Vault
+                    Sign in to keep this in your Vault
                   </h3>
                   <p className={`text-xs leading-relaxed ${isDark ? 'text-neutral-400' : 'text-neutral-600'}`}>
                     Save lectures, notes, quizzes, and study threads across your devices.
@@ -1708,12 +1731,15 @@ export const KinichGrowthHubModal: React.FC<KinichGrowthHubModalProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    onClose();
-                    window.dispatchEvent(new CustomEvent('kinich-open-auth'));
+                    window.dispatchEvent(
+                      new CustomEvent('kinich-open-auth', {
+                        detail: { reason: 'Sign in to keep this in your Vault' },
+                      })
+                    );
                   }}
                   className="px-5 py-2.5 rounded-xl bg-[#FC4C01] hover:bg-[#e04300] text-white font-semibold text-xs cursor-pointer transition-colors"
                 >
-                  Sign in to save
+                  Sign in
                 </button>
               </div>
             ) : (
@@ -1814,6 +1840,20 @@ export const KinichGrowthHubModal: React.FC<KinichGrowthHubModalProps> = ({
                           </button>
                           <button
                             type="button"
+                            onClick={() => setShowThreadMap((prev) => !prev)}
+                            className={`h-8 px-3.5 rounded-full border text-xs font-semibold inline-flex items-center gap-1 cursor-pointer transition-colors ${
+                              showThreadMap
+                                ? 'bg-[#FC4C01] text-white border-[#FC4C01] shadow-xs'
+                                : isDark
+                                ? 'border-white/10 hover:border-white/25 text-neutral-200'
+                                : 'border-black/10 hover:border-black/25 text-neutral-800'
+                            }`}
+                          >
+                            <MapPin className="w-3.5 h-3.5" />
+                            <span>{showThreadMap ? 'Hide Map' : 'Location'}</span>
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => handleShareThread(activeThread)}
                             className={`h-8 px-3.5 rounded-full border text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer transition-colors ${
                               isDark
@@ -1835,6 +1875,20 @@ export const KinichGrowthHubModal: React.FC<KinichGrowthHubModalProps> = ({
                           </button>
                         </div>
                       </div>
+
+                      {/* Optional Expandable Location Map Card */}
+                      {showThreadMap && (
+                        <div className="p-4 rounded-2xl border border-black/10 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.02] flex flex-col items-center justify-center gap-3">
+                          <div className="text-xs text-neutral-400">
+                            Location explorer for <span className="font-semibold text-neutral-700 dark:text-neutral-200">{activeThread.subject || activeThread.title}</span>
+                          </div>
+                          <ViewOnMap
+                            address={activeThread.subject || activeThread.title || 'Boston Public Garden'}
+                            locationName={activeThread.subject || activeThread.title}
+                            isDark={isDark}
+                          />
+                        </div>
+                      )}
 
                       {/* Main Post Card with Left Reddit Upvote Column */}
                       <div className="flex items-start gap-4">

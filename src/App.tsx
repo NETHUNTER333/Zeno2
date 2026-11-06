@@ -591,7 +591,31 @@ export default function App() {
   const [growthHubState, setGrowthHubState] = useState<{
     isOpen: boolean;
     initialTab: GrowthHubTab;
-  }>({ isOpen: false, initialTab: 'discover' });
+    initialThreadId?: string | null;
+  }>(() => {
+    if (typeof window !== 'undefined') {
+      const p = window.location.pathname;
+      const lower = p.toLowerCase();
+      if (lower === '/vault' || lower.startsWith('/vault/')) {
+        const parts = p.split('/').filter(Boolean);
+        const tid = parts.length > 1 ? decodeURIComponent(parts[1]) : null;
+        return { isOpen: true, initialTab: 'vault', initialThreadId: tid };
+      }
+      if (lower === '/discover' || lower.startsWith('/discover/')) {
+        return { isOpen: true, initialTab: 'discover', initialThreadId: null };
+      }
+    }
+    return { isOpen: false, initialTab: 'discover', initialThreadId: null };
+  });
+  const [guestAuthModal, setGuestAuthModal] = useState<{
+    isOpen: boolean;
+    reason: string;
+  }>({ isOpen: false, reason: 'Sign in to keep this in your Vault' });
+  const [guestAuthEmail, setGuestAuthEmail] = useState('');
+  const [guestAuthPassword, setGuestAuthPassword] = useState('');
+  const [guestAuthBusy, setGuestAuthBusy] = useState(false);
+  const [guestAuthError, setGuestAuthError] = useState<string | null>(null);
+  const [showEmailFormInModal, setShowEmailFormInModal] = useState(false);
   const [publicArtifactModal, setPublicArtifactModal] = useState<{
     isOpen: boolean;
     artifactId: string | null;
@@ -632,6 +656,8 @@ export default function App() {
       if (
         p === '/study' ||
         p.startsWith('/study/') ||
+        p === '/vault' ||
+        p.startsWith('/vault/') ||
         p === '/pricing' ||
         p.startsWith('/pricing/') ||
         p === '/research' ||
@@ -639,9 +665,7 @@ export default function App() {
         p === '/discover' ||
         p.startsWith('/discover/') ||
         p.startsWith('/share/') ||
-        p.startsWith('/p/') ||
-        p === '/vault' ||
-        p.startsWith('/vault/')
+        p.startsWith('/p/')
       ) {
         return true;
       }
@@ -774,11 +798,13 @@ export default function App() {
       document.title = 'Deep Research · Kinich';
     } else if (clean === '/discover' || clean.startsWith('/discover/')) {
       setIsSignedIn(true);
-      setGrowthHubState({ isOpen: true, initialTab: 'discover' });
+      setGrowthHubState({ isOpen: true, initialTab: 'discover', initialThreadId: null });
       document.title = 'Discover Public Research · Kinich';
     } else if (clean === '/vault' || clean.startsWith('/vault/')) {
       setIsSignedIn(true);
-      setGrowthHubState({ isOpen: true, initialTab: 'vault' });
+      const parts = (pathname || '').split('/').filter(Boolean);
+      const tid = parts.length > 1 ? decodeURIComponent(parts[1]) : null;
+      setGrowthHubState({ isOpen: true, initialTab: 'vault', initialThreadId: tid });
       document.title = 'The Vault · Kinich';
     } else if (clean === '/' || clean === '/chat' || clean.startsWith('/chat/')) {
       setCurrentView('chat');
@@ -803,6 +829,8 @@ export default function App() {
       document.title = 'Deep Research · Kinich';
     } else if (clean === '/discover' || clean.startsWith('/discover/')) {
       document.title = 'Discover Public Research · Kinich';
+    } else if (clean === '/vault' || clean.startsWith('/vault/')) {
+      document.title = 'The Vault · Kinich';
     } else {
       document.title = 'Kinich — Deep Research, Real-Time Web Search & YouTube Study Workspace';
     }
@@ -829,11 +857,32 @@ export default function App() {
         navigateRoute(targetPath);
       }
     };
+    const onOpenVaultEvent = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail || {};
+      setGrowthHubState({
+        isOpen: true,
+        initialTab: 'vault',
+        initialThreadId: detail.threadId || null,
+      });
+    };
+    const onOpenAuthEvent = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail || {};
+      setGuestAuthError(null);
+      setShowEmailFormInModal(false);
+      setGuestAuthModal({
+        isOpen: true,
+        reason: detail.reason || 'Sign in to keep this in your Vault',
+      });
+    };
     window.addEventListener('popstate', onPopState);
     window.addEventListener('kinich-navigate-route', onLegalNav);
+    window.addEventListener('kinich-open-vault', onOpenVaultEvent);
+    window.addEventListener('kinich-open-auth', onOpenAuthEvent);
     return () => {
       window.removeEventListener('popstate', onPopState);
       window.removeEventListener('kinich-navigate-route', onLegalNav);
+      window.removeEventListener('kinich-open-vault', onOpenVaultEvent);
+      window.removeEventListener('kinich-open-auth', onOpenAuthEvent);
     };
   }, []);
 
@@ -849,16 +898,6 @@ export default function App() {
     };
     window.addEventListener('kinich-open-pricing', handleOpenPricing);
     return () => window.removeEventListener('kinich-open-pricing', handleOpenPricing);
-  }, []);
-
-  // Listen for global 'kinich-open-auth' events to open sign-in modal
-  useEffect(() => {
-    const handleOpenAuth = () => {
-      setAccountPageTab('profile');
-      setCurrentView('account');
-    };
-    window.addEventListener('kinich-open-auth', handleOpenAuth);
-    return () => window.removeEventListener('kinich-open-auth', handleOpenAuth);
   }, []);
 
   // Load Public Shared Thread snapshot (?share=), Public Kinich Page (?artifact=), and Referral attribution (?ref=)
@@ -1526,7 +1565,7 @@ export default function App() {
       /^(hi+|hey+|hello+|yo+|sup|wassup|whats up|howdy|greetings|good (morning|afternoon|evening|night)|how are you|thanks|thank you|thx|ty|ok|okay|k|cool|nice|great|awesome|got it|wave|hand wave|waving|bye|cya)$/i.test(query.trim().toLowerCase());
 
     // Auto-capture as a Vault Study Thread for signed-in users (Deduplicated, 5-10 key points, IST timestamp, agent comments)
-    if (!UserAccountStore.isGuestUser() && !isCasualOrGreeting) {
+    if (!UserAccountStore.isGuest() && !isCasualOrGreeting) {
       let detectedType: VaultThreadType = 'text';
       let detectedUrl: string | undefined = undefined;
 
@@ -2848,8 +2887,17 @@ export default function App() {
           {/* Kinich Growth Hub Modal (Discover, Knowledge Vault, Weekly Brief, Kinich Passes) */}
           <KinichGrowthHubModal
             isOpen={growthHubState.isOpen}
-            onClose={() => setGrowthHubState((prev) => ({ ...prev, isOpen: false }))}
+            onClose={() => {
+              setGrowthHubState((prev) => ({ ...prev, isOpen: false }));
+              if (
+                typeof window !== 'undefined' &&
+                window.location.pathname.toLowerCase().startsWith('/vault')
+              ) {
+                window.history.pushState({}, '', '/');
+              }
+            }}
             initialTab={growthHubState.initialTab}
+            initialThreadId={growthHubState.initialThreadId}
             threads={threads}
             onOpenArtifactPage={(artifact) => {
               setGrowthHubState((prev) => ({ ...prev, isOpen: false }));
@@ -3062,6 +3110,169 @@ export default function App() {
 
       {/* Global Cookie & Local Storage Notice Banner */}
       <CookieConsentBanner isDark={isDark} onNavigate={(path) => navigateRoute(path)} />
+
+      {/* Compact In-Place Guest Sign-In Modal / Sheet (Never navigates away from the current page) */}
+      {guestAuthModal.isOpen && (
+        <div
+          data-testid="guest-signin-modal"
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-[130] flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-3 sm:p-4 animate-in fade-in duration-150"
+          onClick={() => setGuestAuthModal((prev) => ({ ...prev, isOpen: false }))}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className={`w-full max-w-sm rounded-2xl border p-5 sm:p-6 shadow-2xl space-y-4 ${
+              isDark
+                ? 'bg-[#121215] border-white/15 text-white'
+                : 'bg-white border-black/15 text-neutral-900'
+            }`}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-[#FC4C01]/15 border border-[#FC4C01]/35 flex items-center justify-center text-[#FC4C01] shrink-0">
+                  <Bookmark className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3
+                    data-testid="guest-signin-modal-title"
+                    className="text-sm sm:text-base font-bold tracking-tight"
+                  >
+                    {guestAuthModal.reason || 'Sign in to keep this in your Vault'}
+                  </h3>
+                  <p className={`text-xs mt-0.5 ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
+                    Sync your saved lectures, notes, highlights, and streaks across devices.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setGuestAuthModal((prev) => ({ ...prev, isOpen: false }))}
+                className="p-1 rounded-lg opacity-60 hover:opacity-100 cursor-pointer"
+                aria-label="Close sign-in modal"
+              >
+                ✕
+              </button>
+            </div>
+
+            {guestAuthError && (
+              <div className="p-2.5 rounded-xl border border-red-500/35 bg-red-500/10 text-red-400 text-xs">
+                {guestAuthError}
+              </div>
+            )}
+
+            <div className="space-y-2.5">
+              <button
+                type="button"
+                data-testid="modal-google-signin-btn"
+                disabled={guestAuthBusy}
+                onClick={async () => {
+                  setGuestAuthBusy(true);
+                  setGuestAuthError(null);
+                  try {
+                    const user = await UserAccountStore.signIn();
+                    if (user) {
+                      setGuestAuthModal((prev) => ({ ...prev, isOpen: false }));
+                    }
+                  } catch (err: any) {
+                    setGuestAuthError(err?.message || 'Google sign-in could not be completed.');
+                  } finally {
+                    setGuestAuthBusy(false);
+                  }
+                }}
+                className="w-full h-10 px-4 rounded-xl bg-[#FC4C01] hover:bg-[#e04300] text-white text-xs font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:opacity-50"
+              >
+                <span>{guestAuthBusy ? 'Signing in…' : 'Continue with Google'}</span>
+              </button>
+
+              {!showEmailFormInModal ? (
+                <button
+                  type="button"
+                  data-testid="modal-email-toggle-btn"
+                  onClick={() => setShowEmailFormInModal(true)}
+                  className={`w-full h-10 px-4 rounded-xl border text-xs font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer ${
+                    isDark
+                      ? 'border-white/15 bg-white/[0.04] hover:bg-white/[0.08] text-white'
+                      : 'border-black/15 bg-black/[0.03] hover:bg-black/[0.06] text-neutral-900'
+                  }`}
+                >
+                  <span>Continue with Email</span>
+                </button>
+              ) : (
+                <form
+                  data-testid="modal-email-signin-form"
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    if (!guestAuthEmail.trim() || !guestAuthPassword) return;
+                    setGuestAuthBusy(true);
+                    setGuestAuthError(null);
+                    try {
+                      let user;
+                      try {
+                        user = await UserAccountStore.loginWithEmail(
+                          guestAuthEmail.trim(),
+                          guestAuthPassword
+                        );
+                      } catch {
+                        user = await UserAccountStore.signUp(
+                          guestAuthEmail.trim(),
+                          guestAuthPassword
+                        );
+                      }
+                      if (user) {
+                        setGuestAuthModal((prev) => ({ ...prev, isOpen: false }));
+                      }
+                    } catch (err: any) {
+                      setGuestAuthError(err?.message || 'Could not sign in with Email.');
+                    } finally {
+                      setGuestAuthBusy(false);
+                    }
+                  }}
+                  className="space-y-2 pt-1"
+                >
+                  <input
+                    type="email"
+                    required
+                    value={guestAuthEmail}
+                    onChange={(e) => setGuestAuthEmail(e.target.value)}
+                    placeholder="you@example.com"
+                    className={`w-full h-9 px-3 rounded-xl border text-xs outline-none ${
+                      isDark
+                        ? 'bg-black/40 border-white/15 text-white placeholder:text-neutral-500'
+                        : 'bg-neutral-50 border-black/15 text-black placeholder:text-neutral-400'
+                    }`}
+                  />
+                  <input
+                    type="password"
+                    required
+                    minLength={6}
+                    value={guestAuthPassword}
+                    onChange={(e) => setGuestAuthPassword(e.target.value)}
+                    placeholder="Password (6+ chars)"
+                    className={`w-full h-9 px-3 rounded-xl border text-xs outline-none ${
+                      isDark
+                        ? 'bg-black/40 border-white/15 text-white placeholder:text-neutral-500'
+                        : 'bg-neutral-50 border-black/15 text-black placeholder:text-neutral-400'
+                    }`}
+                  />
+                  <button
+                    type="submit"
+                    data-testid="modal-email-signin-btn"
+                    disabled={guestAuthBusy}
+                    className={`w-full h-9 px-4 rounded-xl border text-xs font-semibold transition-colors cursor-pointer ${
+                      isDark
+                        ? 'border-white/20 bg-white text-black hover:bg-neutral-200'
+                        : 'border-black/20 bg-black text-white hover:bg-neutral-800'
+                    }`}
+                  >
+                    {guestAuthBusy ? 'Signing in…' : 'Sign in with Email'}
+                  </button>
+                </form>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
