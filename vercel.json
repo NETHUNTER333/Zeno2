@@ -1,5 +1,5 @@
 {
-  "cleanUrls": true,
+  "cleanUrls": false,
   "trailingSlash": false,
   "rewrites": [
     {
@@ -103,7 +103,15 @@
       "destination": "/chat.html"
     },
     {
-      "source": "/r/:code*",
+      "source": "/vault",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/vault/(.*)",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/r/(.*)",
       "destination": "/index.html"
     },
     {
@@ -111,15 +119,15 @@
       "destination": "/index.html"
     },
     {
-      "source": "/s/:id*",
+      "source": "/s/(.*)",
       "destination": "/index.html"
     },
     {
-      "source": "/share/:id*",
+      "source": "/share/(.*)",
       "destination": "/index.html"
     },
     {
-      "source": "/p/:id*",
+      "source": "/p/(.*)",
       "destination": "/index.html"
     }
   ],
