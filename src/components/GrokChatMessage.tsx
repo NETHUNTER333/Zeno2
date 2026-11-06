@@ -465,7 +465,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
   }, [isUser]);
 
   const handleSaveSegmentToVault = (rawSegment?: string, collectionOverride?: string) => {
-    if (UserAccountStore.isGuest()) {
+    if (UserAccountStore.isGuestUser()) {
       window.dispatchEvent(new CustomEvent('kinich-open-auth'));
       return;
     }
@@ -510,7 +510,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
     }
   };
 
-  const [isGuestUser, setIsGuestUser] = useState(() => UserAccountStore.isGuest());
+  const [isGuestUser, setIsGuestUser] = useState(() => UserAccountStore.isGuestUser());
   const [sageOrganizing, setSageOrganizing] = useState(false);
   const [liveAgentCards, setLiveAgentCards] = useState<AgentReplyCard[]>(() => {
     const list: AgentReplyCard[] = [];
@@ -524,7 +524,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
   });
 
   useEffect(() => {
-    const syncAccount = () => setIsGuestUser(UserAccountStore.isGuest());
+    const syncAccount = () => setIsGuestUser(UserAccountStore.isGuestUser());
     window.addEventListener('kinich-account-updated', syncAccount);
     return () => window.removeEventListener('kinich-account-updated', syncAccount);
   }, []);
@@ -547,7 +547,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
   }, [message.id]);
 
   const handleSaveToKnowledgeVault = () => {
-    if (UserAccountStore.isGuest()) {
+    if (UserAccountStore.isGuestUser()) {
       window.dispatchEvent(new CustomEvent('kinich-open-auth'));
       return;
     }

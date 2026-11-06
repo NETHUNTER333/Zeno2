@@ -596,7 +596,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         items.push({
           id: 'action-vault',
           label: 'The Vault',
-          sublabel: !auth.currentUser
+          sublabel: UserAccountStore.isGuestUser()
             ? 'Sign in to save · Grouped by Subject → Chapter'
             : `${vaultItems.length} saved · Grouped by Subject → Chapter`,
           icon: <Bookmark className="w-3.5 h-3.5 text-[#FC4C01]" />,
@@ -647,7 +647,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       ),
     });
 
-    if (!auth.currentUser && vaultItems.length === 0) {
+    if (UserAccountStore.isGuestUser() && vaultItems.length === 0) {
       items.push({
         id: 'vault-guest-signin',
         label: 'Sign in to save',

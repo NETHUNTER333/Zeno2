@@ -872,7 +872,7 @@ ${fullTranscriptText}`;
           videoAuthor: resolvedAuthor,
           segments: consolidated.length > 0 ? consolidated : [{ start_s: 0, duration_s: 0, text: t }],
         }),
-        signal: AbortSignal.timeout(45000),
+        signal: AbortSignal.timeout(90000),
       });
       if (aiRes.ok) {
         const aiData = await aiRes.json();
@@ -996,7 +996,7 @@ ${fullTranscriptText}`;
           videoAuthor: author,
           segments: consolidated,
         }),
-        signal: AbortSignal.timeout(45000),
+        signal: AbortSignal.timeout(90000),
       });
 
       if (!aiRes.ok) {
@@ -1370,13 +1370,13 @@ ${fullTranscriptText}`;
     URL.revokeObjectURL(url);
   };
 
-  const [isGuestStudyUser, setIsGuestStudyUser] = useState(() => UserAccountStore.isGuest());
+  const [isGuestStudyUser, setIsGuestStudyUser] = useState(() => UserAccountStore.isGuestUser());
   const [savedStudyVaultId, setSavedStudyVaultId] = useState<string | null>(null);
   const [sageStudyOrganizing, setSageStudyOrganizing] = useState(false);
   const [sageStudyCard, setSageStudyCard] = useState<AgentReplyCard | null>(null);
 
   useEffect(() => {
-    const syncGuest = () => setIsGuestStudyUser(UserAccountStore.isGuest());
+    const syncGuest = () => setIsGuestStudyUser(UserAccountStore.isGuestUser());
     window.addEventListener('kinich-account-updated', syncGuest);
     return () => window.removeEventListener('kinich-account-updated', syncGuest);
   }, []);
@@ -1397,7 +1397,7 @@ ${fullTranscriptText}`;
   const handleSaveStudyResultToVault = (
     saveType: 'lecture' | 'quiz' | 'flashcard_deck' = 'lecture'
   ) => {
-    if (UserAccountStore.isGuest()) {
+    if (UserAccountStore.isGuestUser()) {
       window.dispatchEvent(new CustomEvent('kinich-open-auth'));
       return;
     }

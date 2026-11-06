@@ -443,7 +443,7 @@ export const KnowledgeVaultStore = {
   VAULT_FREE_ITEM_LIMIT,
 
   isGuest(): boolean {
-    return UserAccountStore.isGuest();
+    return UserAccountStore.isGuestUser();
   },
 
   canSaveToVault(existingItemId?: string): {
@@ -453,7 +453,7 @@ export const KnowledgeVaultStore = {
     currentCount: number;
     maxCount: number | null;
   } {
-    if (UserAccountStore.isGuest()) {
+    if (UserAccountStore.isGuestUser()) {
       return {
         allowed: false,
         reason: 'guest',
@@ -727,7 +727,7 @@ export const KnowledgeVaultStore = {
     emitVaultUpdate();
 
     // Trigger Agent "Sage" (on_save) in background to auto-assign Subject + Chapter + Tags and link related Vault items within <10s
-    if (!input.skipSage && !UserAccountStore.isGuest()) {
+    if (!input.skipSage && !UserAccountStore.isGuestUser()) {
       this.organizeWithSage(item, nextItems).catch(() => {});
     }
 
@@ -1055,7 +1055,7 @@ export function formatToIstDate(dateInput: number | string | Date): string {
 
 export const VaultThreadStore = {
   isGuest(): boolean {
-    return UserAccountStore.isGuest();
+    return UserAccountStore.isGuestUser();
   },
 
   getThreads(): VaultThread[] {

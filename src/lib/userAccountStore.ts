@@ -547,6 +547,13 @@ export const UserAccountStore = {
   isGuest(): boolean {
     return !this.isUserSignedIn();
   },
+  isGuestUser(): boolean {
+    try {
+      const profile = this.getProfile();
+      return profile?.signinProvider === 'guest';
+    } catch {}
+    return false;
+  },
   getCurrentPlan(): 'free' | 'spark' | 'fire' {
     return this.getNormalizedPlan();
   },

@@ -303,7 +303,7 @@ export const KinichGrowthHubModal: React.FC<KinichGrowthHubModalProps> = ({
     AgentMemoryStore.getFacts('sage')
   );
   const [newMemoryFactInput, setNewMemoryFactInput] = useState<string>('');
-  const [isGuestVault, setIsGuestVault] = useState<boolean>(() => UserAccountStore.isGuest());
+  const [isGuestVault, setIsGuestVault] = useState<boolean>(() => UserAccountStore.isGuestUser());
   const [currentUserTier, setCurrentUserTier] = useState<'free' | 'spark' | 'fire'>(() =>
     UserAccountStore.getCurrentPlan()
   );
@@ -315,9 +315,9 @@ export const KinichGrowthHubModal: React.FC<KinichGrowthHubModalProps> = ({
       setVaultThreads(VaultThreadStore.getThreads());
       setCollections(KnowledgeVaultStore.getCollections());
       setSageMemoryFacts(AgentMemoryStore.getFacts('sage'));
-      setIsGuestVault(UserAccountStore.isGuest());
+      setIsGuestVault(UserAccountStore.isGuestUser());
       setCurrentUserTier(UserAccountStore.getCurrentPlan());
-      if (!UserAccountStore.isGuest()) {
+      if (!UserAccountStore.isGuestUser()) {
         KnowledgeVaultStore.syncFromCloud().then((synced) => {
           setVaultItems(synced);
         });
@@ -337,7 +337,7 @@ export const KinichGrowthHubModal: React.FC<KinichGrowthHubModalProps> = ({
       setVaultThreads(VaultThreadStore.getThreads());
       setCollections(KnowledgeVaultStore.getCollections());
       setSageMemoryFacts(AgentMemoryStore.getFacts('sage'));
-      setIsGuestVault(UserAccountStore.isGuest());
+      setIsGuestVault(UserAccountStore.isGuestUser());
       setCurrentUserTier(UserAccountStore.getCurrentPlan());
     };
     window.addEventListener('kinich-vault-updated', syncVault);
@@ -733,7 +733,7 @@ export const KinichGrowthHubModal: React.FC<KinichGrowthHubModalProps> = ({
 
   const handleCreateCustomNote = () => {
     if (!newNoteTitle.trim() || !newNoteContent.trim()) return;
-    if (UserAccountStore.isGuest()) {
+    if (UserAccountStore.isGuestUser()) {
       window.dispatchEvent(new CustomEvent('kinich-open-auth'));
       return;
     }

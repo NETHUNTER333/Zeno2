@@ -187,6 +187,13 @@ export function resolveSpaClientRouteMeta(pathname: string): SpaRouteMeta | null
       canonicalPath: '/discover',
     };
   }
+  if (clean === '/vault' || clean.startsWith('/vault/')) {
+    return {
+      title: 'The Vault · Kinich',
+      description: 'Your saved lectures, notes, quizzes, and flashcards.',
+      canonicalPath: '/vault',
+    };
+  }
   if (clean === '/research' || clean.startsWith('/research/')) {
     return {
       title: 'Deep Research Synthesis · Kinich',

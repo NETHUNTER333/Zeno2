@@ -1516,7 +1516,7 @@ export default function App() {
       /^(hi+|hey+|hello+|yo+|sup|wassup|whats up|howdy|greetings|good (morning|afternoon|evening|night)|how are you|thanks|thank you|thx|ty|ok|okay|k|cool|nice|great|awesome|got it|wave|hand wave|waving|bye|cya)$/i.test(query.trim().toLowerCase());
 
     // Auto-capture as a Vault Study Thread for signed-in users (Deduplicated, 5-10 key points, IST timestamp, agent comments)
-    if (!UserAccountStore.isGuest() && !isCasualOrGreeting) {
+    if (!UserAccountStore.isGuestUser() && !isCasualOrGreeting) {
       let detectedType: VaultThreadType = 'text';
       let detectedUrl: string | undefined = undefined;
 

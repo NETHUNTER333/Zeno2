@@ -1614,12 +1614,12 @@ STRICT RULES:
     setLiveStatusAnnouncement('Exported report (.md)');
   };
 
-  const [isGuestResearchUser, setIsGuestResearchUser] = useState(() => UserAccountStore.isGuest());
+  const [isGuestResearchUser, setIsGuestResearchUser] = useState(() => UserAccountStore.isGuestUser());
   const [savedResearchTurnMap, setSavedResearchTurnMap] = useState<Record<string, string>>({});
   const [sageResearchCardMap, setSageResearchCardMap] = useState<Record<string, AgentReplyCard>>({});
 
   useEffect(() => {
-    const syncGuest = () => setIsGuestResearchUser(UserAccountStore.isGuest());
+    const syncGuest = () => setIsGuestResearchUser(UserAccountStore.isGuestUser());
     window.addEventListener('kinich-account-updated', syncGuest);
     return () => window.removeEventListener('kinich-account-updated', syncGuest);
   }, []);
@@ -1643,7 +1643,7 @@ STRICT RULES:
   }, [savedResearchTurnMap]);
 
   const handleSaveTurnToVault = (turn: DeepResearchTurn) => {
-    if (UserAccountStore.isGuest()) {
+    if (UserAccountStore.isGuestUser()) {
       window.dispatchEvent(new CustomEvent('kinich-open-auth'));
       return;
     }
