@@ -9950,8 +9950,8 @@ app.post('/api/youtube/study', async (req, res) => {
       }
     }
 
-    const targetMinChapters = 2;
-    const targetMaxChapters = 3;
+    const targetMinChapters = 1;
+    const targetMaxChapters = 1;
 
     // STEP 2: Chapters from the transcript (one LLM call per window, merged)
     const buildChaptersPrompt = (transcriptChunk: string, errorFeedback?: string) => `Analyze the following timestamped video transcript and segment it into ${targetMinChapters} to ${targetMaxChapters} logical chapters covering the entire video from start to finish.
