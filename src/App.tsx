@@ -639,7 +639,9 @@ export default function App() {
         p === '/discover' ||
         p.startsWith('/discover/') ||
         p.startsWith('/share/') ||
-        p.startsWith('/p/')
+        p.startsWith('/p/') ||
+        p === '/vault' ||
+        p.startsWith('/vault/')
       ) {
         return true;
       }
@@ -774,6 +776,10 @@ export default function App() {
       setIsSignedIn(true);
       setGrowthHubState({ isOpen: true, initialTab: 'discover' });
       document.title = 'Discover Public Research · Kinich';
+    } else if (clean === '/vault' || clean.startsWith('/vault/')) {
+      setIsSignedIn(true);
+      setGrowthHubState({ isOpen: true, initialTab: 'vault' });
+      document.title = 'The Vault · Kinich';
     } else if (clean === '/' || clean === '/chat' || clean.startsWith('/chat/')) {
       setCurrentView('chat');
       document.title = 'Kinich — Deep Research, Real-Time Web Search & YouTube Study Workspace';

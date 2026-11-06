@@ -465,6 +465,10 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
   }, [isUser]);
 
   const handleSaveSegmentToVault = (rawSegment?: string, collectionOverride?: string) => {
+    if (UserAccountStore.isGuest()) {
+      window.dispatchEvent(new CustomEvent('kinich-open-auth'));
+      return;
+    }
     const targetText = (rawSegment ?? selectedSegmentText).trim();
     if (!targetText) return;
     const cleanTitleSnippet = targetText
