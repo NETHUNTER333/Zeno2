@@ -9950,8 +9950,8 @@ app.post('/api/youtube/study', async (req, res) => {
       }
     }
 
-    const targetMinChapters = videoEndSec > 600 ? 6 : 4;
-    const targetMaxChapters = videoEndSec > 900 ? 10 : 8;
+    const targetMinChapters = videoEndSec > 600 ? 4 : 3;
+    const targetMaxChapters = videoEndSec > 900 ? 6 : 5;
 
     // STEP 2: Chapters from the transcript (one LLM call per window, merged)
     const buildChaptersPrompt = (transcriptChunk: string, errorFeedback?: string) => `Analyze the following timestamped video transcript and segment it into ${targetMinChapters} to ${targetMaxChapters} logical chapters covering the entire video from start to finish.
@@ -10063,7 +10063,7 @@ ${transcriptChunk}`;
     }
 
     const allChapterTitles = chapters.map((c) => c.title);
-    const questionsPerChapter = 4;
+    const questionsPerChapter = 2;
     const flashcardsPerChapter = 3;
 
     // STEP 3 & 4: Per-chapter Quiz and Flashcards in parallel
