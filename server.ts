@@ -9706,7 +9706,7 @@ async function callStudyJsonLLM(
             contents: `${systemPrompt}\n\n${userPrompt}`,
             config: {
               temperature,
-              maxOutputTokens: 512,
+              maxOutputTokens: 256,
               responseMimeType: 'application/json',
               thinkingConfig: modelName.startsWith('gemini-3')
                 ? { thinkingLevel: ThinkingLevel.HIGH }
@@ -9766,7 +9766,7 @@ async function callStudyJsonLLM(
               { role: 'user', content: userPrompt },
             ],
             temperature,
-            max_tokens: 512,
+            max_tokens: 256,
             response_format: { type: 'json_object' },
             ...gw.extra,
           }),
