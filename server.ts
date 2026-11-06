@@ -6924,7 +6924,7 @@ async function analyzeImageWithVisionModel(
               ],
             },
           ],
-          max_tokens: 1024,
+          max_tokens: 4096,
         }),
       });
       const data: any = await resp.json();
@@ -9706,7 +9706,7 @@ async function callStudyJsonLLM(
             contents: `${systemPrompt}\n\n${userPrompt}`,
             config: {
               temperature,
-              maxOutputTokens: 2048,
+              maxOutputTokens: 1024,
               responseMimeType: 'application/json',
               thinkingConfig: modelName.startsWith('gemini-3')
                 ? { thinkingLevel: ThinkingLevel.HIGH }
@@ -9747,12 +9747,6 @@ async function callStudyJsonLLM(
       model: 'qwen/qwen3.8-27b',
       extra: { chat_template_kwargs: { enable_thinking: true }, reasoning_effort: 'medium' },
     },
-    {
-      url: `${TOKENHARBOR_BASE_URL}/chat/completions`,
-      key: TOKENHARBOR_API_KEY,
-      model: 'deepseek-v4.1-flash:free',
-      extra: { chat_template_kwargs: { enable_thinking: true }, reasoning_effort: 'medium' },
-    },
   ].filter((g) => Boolean(g.key));
 
   for (const gw of gateways) {
@@ -9772,7 +9766,7 @@ async function callStudyJsonLLM(
               { role: 'user', content: userPrompt },
             ],
             temperature,
-            max_tokens: 2048,
+            max_tokens: 1024,
             response_format: { type: 'json_object' },
             ...gw.extra,
           }),
