@@ -1100,30 +1100,6 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
         {/* Right Action Cluster (Voice Mic + History + Send/Stop) */}
         <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 select-none">
-          {/* Web Speech API Voice Input Mic Button (hidden if unsupported) */}
-          {isSpeechSupported && (
-            <button
-              type="button"
-              onClick={toggleVoiceInput}
-              className={`size-7 sm:size-7.5 rounded-full flex items-center justify-center transition-all cursor-pointer ${
-                isListening
-                  ? 'bg-[#FC4C01] text-white shadow-[0_0_14px_rgba(252,76,1,0.55)] animate-pulse'
-                  : isDark
-                  ? 'text-[#a1a1aa] hover:text-white hover:bg-white/[0.08]'
-                  : 'text-[#71717a] hover:text-[#18181b] hover:bg-black/[0.05]'
-              }`}
-              title={isListening ? 'Stop voice input' : 'Voice input (Speak your question)'}
-              aria-label={isListening ? 'Stop voice input' : 'Start voice input'}
-              data-testid="chat-voice-input-btn"
-            >
-              {isListening ? (
-                <MicOff className="w-3.5 h-3.5" />
-              ) : (
-                <Mic className="w-3.5 h-3.5" />
-              )}
-            </button>
-          )}
-
           {/* In-Chat History Trigger Button */}
           <button
             type="button"

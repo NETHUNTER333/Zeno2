@@ -3791,10 +3791,7 @@ app.use('/api', firebaseAuthMiddleware, rateLimitMiddleware);
 app.get('/api/health', (_req, res) => {
   res.json({
     status: 'ok',
-    success: true,
     version: '1.0.0',
-    projectId: getFirebaseProjectId(),
-    staging: getStagingConfigSummary(),
   });
 });
 
