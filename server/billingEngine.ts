@@ -385,7 +385,7 @@ export const PLAN_CATALOG: Record<
     plan: 'fire',
     interval: 'monthly',
     name: 'Kinich Fire (Monthly)',
-    description: 'Kinich Fire frontier AI subscription — unlimited messages, frontier models, and priority compute.',
+    description: 'Kinich Fire frontier AI subscription — 5,000 daily messages, all personal study agents, frontier models, and priority compute.',
     usdPriceCents: 700, // $7.00
     usdDisplay: '$7/month',
     inrPriceCents: 24900, // ₹249.00
@@ -938,7 +938,7 @@ export async function previewPlanPriceForCountry(
         if (totalMinor !== expectedMinor) {
           totalMinor = expectedMinor;
         }
-        if (taxMinor === 0 && countryInfo.defaultTaxRate > 0) {
+        if (countryInfo.defaultTaxRate > 0) {
           subtotalMinor = Math.round(totalMinor / (1 + countryInfo.defaultTaxRate));
           taxMinor = totalMinor - subtotalMinor;
         }
@@ -996,12 +996,36 @@ function resolveWebhookUserUid(data: any): string | null {
     return metaUid;
   }
 
-  const subId = String(data?.subscription_id || '').trim();
+  const paymentId = String(data?.payment_id || data?.payment?.payment_id || '').trim();
+  if (paymentId) {
+    const payRow = db
+      .prepare('SELECT firebase_uid, dodo_subscription_id FROM payments WHERE dodo_payment_id = ?')
+      .get(paymentId) as { firebase_uid?: string; dodo_subscription_id?: string | null } | undefined;
+    if (payRow?.firebase_uid && payRow.firebase_uid !== 'unknown') {
+      return payRow.firebase_uid;
+    }
+    if (payRow?.dodo_subscription_id) {
+      const byPaySub = db
+        .prepare('SELECT firebase_uid FROM subscriptions WHERE dodo_subscription_id = ?')
+        .get(payRow.dodo_subscription_id) as { firebase_uid?: string } | undefined;
+      if (byPaySub?.firebase_uid && byPaySub.firebase_uid !== 'unknown') {
+        return byPaySub.firebase_uid;
+      }
+      const userByPaySub = db
+        .prepare('SELECT firebase_uid FROM users WHERE dodo_subscription_id = ?')
+        .get(payRow.dodo_subscription_id) as { firebase_uid?: string } | undefined;
+      if (userByPaySub?.firebase_uid) {
+        return userByPaySub.firebase_uid;
+      }
+    }
+  }
+
+  const subId = String(data?.subscription_id || data?.subscription?.subscription_id || '').trim();
   if (subId) {
     const bySub = db
       .prepare('SELECT firebase_uid FROM subscriptions WHERE dodo_subscription_id = ?')
       .get(subId) as { firebase_uid?: string } | undefined;
-    if (bySub?.firebase_uid) return bySub.firebase_uid;
+    if (bySub?.firebase_uid && bySub.firebase_uid !== 'unknown') return bySub.firebase_uid;
 
     const userBySub = db
       .prepare('SELECT firebase_uid FROM users WHERE dodo_subscription_id = ?')
@@ -1009,7 +1033,7 @@ function resolveWebhookUserUid(data: any): string | null {
     if (userBySub?.firebase_uid) return userBySub.firebase_uid;
   }
 
-  const customerId = String(data?.customer?.customer_id || '').trim();
+  const customerId = String(data?.customer?.customer_id || data?.customer_id || '').trim();
   if (customerId) {
     const byCust = db
       .prepare('SELECT firebase_uid FROM users WHERE dodo_customer_id = ?')
@@ -1017,7 +1041,7 @@ function resolveWebhookUserUid(data: any): string | null {
     if (byCust?.firebase_uid) return byCust.firebase_uid;
   }
 
-  const email = String(data?.customer?.email || '').trim().toLowerCase();
+  const email = String(data?.customer?.email || data?.email || '').trim().toLowerCase();
   if (email) {
     const byEmail = db
       .prepare('SELECT firebase_uid FROM users WHERE LOWER(email) = ?')
@@ -1059,6 +1083,7 @@ export function processVerifiedDodoWebhookEvent(
   const data = event.data || {};
   const nowIso = new Date().toISOString();
   const uid = resolveWebhookUserUid(data);
+  let resolvedUid: string | null = uid;
 
   // 2. Out-of-order protection for subscription events
   const subId = String(data?.subscription_id || '').trim();
@@ -1093,9 +1118,17 @@ export function processVerifiedDodoWebhookEvent(
       const customerId = String(data?.customer?.customer_id || '').trim() || null;
       const currency = String(data?.currency || 'USD').toUpperCase();
       const amount = Number(data?.recurring_pre_tax_amount ?? 0);
-      const nextBillingDate = data?.next_billing_date ? String(data.next_billing_date) : null;
+      const userRow = getOrCreateBillingUser(uid, {
+        email: data?.customer?.email || null,
+        name: data?.customer?.name || null,
+      });
+      const nextBillingDate = data?.next_billing_date
+        ? String(data.next_billing_date)
+        : data?.current_period_end
+        ? String(data.current_period_end)
+        : userRow.current_period_end || null;
       const prevBillingDate = data?.previous_billing_date ? String(data.previous_billing_date) : null;
-      const cancelAtNext = data?.cancel_at_next_billing_date ? 1 : 0;
+      let cancelAtNext = data?.cancel_at_next_billing_date ? 1 : 0;
       const cancelledAt = data?.cancelled_at ? String(data.cancelled_at) : null;
 
       let subStatus: PlanStatus = 'active';
@@ -1115,6 +1148,13 @@ export function processVerifiedDodoWebhookEvent(
         if (rawStatus === 'cancelled') {
           subStatus = 'cancelled';
           userStatus = 'cancelled';
+          const periodEndMs = nextBillingDate ? Date.parse(nextBillingDate) : NaN;
+          if (!Number.isNaN(periodEndMs) && periodEndMs > Date.now()) {
+            userPlan = plan;
+            cancelAtNext = 1;
+          } else {
+            userPlan = 'free';
+          }
         } else if (rawStatus === 'past_due') {
           subStatus = 'past_due';
           userStatus = 'past_due';
@@ -1145,15 +1185,18 @@ export function processVerifiedDodoWebhookEvent(
         userStatus = 'cancelled';
         const periodEndMs = nextBillingDate ? Date.parse(nextBillingDate) : NaN;
         if (!Number.isNaN(periodEndMs) && periodEndMs > Date.now()) {
-          // Keep access until current_period_end
+          // Keep access until current_period_end (month/year ends)
           userPlan = plan;
+          cancelAtNext = 1;
         } else {
           userPlan = 'free';
+          cancelAtNext = 0;
         }
       } else if (eventType === 'subscription.expired') {
         subStatus = 'expired';
         userPlan = 'free';
         userStatus = 'expired';
+        cancelAtNext = 0;
       }
 
       db.prepare(
@@ -1196,10 +1239,10 @@ export function processVerifiedDodoWebhookEvent(
         nowIso
       );
 
-      const userRow = getOrCreateBillingUser(uid, {
-        email: data?.customer?.email || null,
-        name: data?.customer?.name || null,
-      });
+      // Backfill any payments for this subscription that arrived before user mapping was known
+      db.prepare(
+        "UPDATE payments SET firebase_uid = ? WHERE dodo_subscription_id = ? AND (firebase_uid = 'unknown' OR firebase_uid IS NULL)"
+      ).run(uid, subId);
 
       const firstPurchaseAt =
         userRow.first_purchase_at ||
@@ -1233,7 +1276,19 @@ export function processVerifiedDodoWebhookEvent(
       );
     } else if (eventType === 'payment.succeeded' || eventType === 'payment.failed') {
       const paymentId = String(data?.payment_id || `pay_${Date.now()}`).trim();
-      const targetUid = uid || 'unknown';
+      const paymentSubId = data?.subscription_id ? String(data.subscription_id).trim() : null;
+      let targetUid = uid;
+      if (!targetUid && paymentSubId) {
+        const subOwner = db
+          .prepare('SELECT firebase_uid FROM subscriptions WHERE dodo_subscription_id = ?')
+          .get(paymentSubId) as { firebase_uid?: string } | undefined;
+        if (subOwner?.firebase_uid && subOwner.firebase_uid !== 'unknown') {
+          targetUid = subOwner.firebase_uid;
+        }
+      }
+      if (targetUid) {
+        resolvedUid = targetUid;
+      }
       const pStatus = eventType === 'payment.succeeded' ? 'succeeded' : 'failed';
       const amount = Number(data?.total_amount ?? 0);
       const currency = String(data?.currency || 'USD').toUpperCase();
@@ -1245,6 +1300,11 @@ export function processVerifiedDodoWebhookEvent(
           invoice_id, invoice_url, error_code, error_message, created_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(dodo_payment_id) DO UPDATE SET
+          dodo_subscription_id = COALESCE(excluded.dodo_subscription_id, payments.dodo_subscription_id),
+          firebase_uid = CASE
+            WHEN excluded.firebase_uid != 'unknown' THEN excluded.firebase_uid
+            ELSE payments.firebase_uid
+          END,
           status = excluded.status,
           invoice_id = COALESCE(excluded.invoice_id, payments.invoice_id),
           invoice_url = COALESCE(excluded.invoice_url, payments.invoice_url),
@@ -1252,8 +1312,8 @@ export function processVerifiedDodoWebhookEvent(
           error_message = excluded.error_message`
       ).run(
         paymentId,
-        data?.subscription_id ? String(data.subscription_id) : null,
-        targetUid,
+        paymentSubId,
+        targetUid || 'unknown',
         amount,
         currency,
         pStatus,
@@ -1268,54 +1328,118 @@ export function processVerifiedDodoWebhookEvent(
         data?.created_at ? String(data.created_at) : nowIso
       );
     } else if (eventType === 'refund.succeeded') {
-      const paymentId = String(data?.payment_id || '').trim();
-      const refundId = String(data?.refund_id || `ref_${Date.now()}`).trim();
+      const paymentId = String(data?.payment_id || data?.payment?.payment_id || '').trim();
+      const refundId = String(data?.refund_id || data?.id || `ref_${Date.now()}`).trim();
       const isPartial = Boolean(data?.is_partial);
       let refundUid = uid;
+      let payRow:
+        | {
+            firebase_uid?: string;
+            dodo_subscription_id?: string | null;
+            amount?: number;
+            currency?: string;
+          }
+        | undefined;
 
       if (paymentId) {
-        const payRow = db
-          .prepare('SELECT firebase_uid, amount, currency FROM payments WHERE dodo_payment_id = ?')
-          .get(paymentId) as { firebase_uid?: string; amount?: number; currency?: string } | undefined;
+        payRow = db
+          .prepare(
+            'SELECT firebase_uid, dodo_subscription_id, amount, currency FROM payments WHERE dodo_payment_id = ?'
+          )
+          .get(paymentId) as
+          | {
+              firebase_uid?: string;
+              dodo_subscription_id?: string | null;
+              amount?: number;
+              currency?: string;
+            }
+          | undefined;
         if (!refundUid && payRow?.firebase_uid && payRow.firebase_uid !== 'unknown') {
           refundUid = payRow.firebase_uid;
         }
-        db.prepare("UPDATE payments SET status = 'refunded' WHERE dodo_payment_id = ?").run(paymentId);
-
-        db.prepare(
-          `INSERT INTO refunds (
-            dodo_refund_id, dodo_payment_id, firebase_uid, amount, currency, status, reason, is_partial, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-          ON CONFLICT(dodo_refund_id) DO UPDATE SET
-            status = excluded.status,
-            amount = excluded.amount,
-            reason = COALESCE(excluded.reason, refunds.reason)`
-        ).run(
-          refundId,
-          paymentId,
-          refundUid || 'unknown',
-          Number(data?.amount ?? payRow?.amount ?? 0),
-          String(data?.currency || payRow?.currency || 'USD').toUpperCase(),
-          String(data?.status || 'succeeded'),
-          data?.reason ? String(data.reason) : null,
-          isPartial ? 1 : 0,
-          data?.created_at ? String(data.created_at) : nowIso
-        );
+        if (!refundUid && payRow?.dodo_subscription_id) {
+          const subLookup = db
+            .prepare('SELECT firebase_uid FROM subscriptions WHERE dodo_subscription_id = ?')
+            .get(payRow.dodo_subscription_id) as { firebase_uid?: string } | undefined;
+          if (subLookup?.firebase_uid && subLookup.firebase_uid !== 'unknown') {
+            refundUid = subLookup.firebase_uid;
+          } else {
+            const userLookup = db
+              .prepare('SELECT firebase_uid FROM users WHERE dodo_subscription_id = ?')
+              .get(payRow.dodo_subscription_id) as { firebase_uid?: string } | undefined;
+            if (userLookup?.firebase_uid) {
+              refundUid = userLookup.firebase_uid;
+            }
+          }
+        }
       }
 
-      // If full refund within 7-day first-purchase window (or active subscription refund), revoke entitlement to 'free'
+      // Fallback: if payment was not yet linked to a UID in SQLite, find the active paid user
+      if (!refundUid) {
+        const paidUser = db
+          .prepare(
+            "SELECT firebase_uid FROM users WHERE plan IN ('spark', 'fire') ORDER BY updated_at DESC LIMIT 1"
+          )
+          .get() as { firebase_uid?: string } | undefined;
+        if (paidUser?.firebase_uid) {
+          refundUid = paidUser.firebase_uid;
+        }
+      }
+
+      if (paymentId) {
+        db.prepare(
+          `UPDATE payments SET
+            status = 'refunded',
+            firebase_uid = CASE
+              WHEN ? IS NOT NULL AND ? != '' THEN ?
+              ELSE firebase_uid
+            END
+          WHERE dodo_payment_id = ?`
+        ).run(refundUid, refundUid, refundUid, paymentId);
+      }
+
+      db.prepare(
+        `INSERT INTO refunds (
+          dodo_refund_id, dodo_payment_id, firebase_uid, amount, currency, status, reason, is_partial, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(dodo_refund_id) DO UPDATE SET
+          firebase_uid = CASE
+            WHEN excluded.firebase_uid != 'unknown' THEN excluded.firebase_uid
+            ELSE refunds.firebase_uid
+          END,
+          status = excluded.status,
+          amount = excluded.amount,
+          reason = COALESCE(excluded.reason, refunds.reason)`
+      ).run(
+        refundId,
+        paymentId || 'unknown',
+        refundUid || 'unknown',
+        Number(data?.amount ?? payRow?.amount ?? 0),
+        String(data?.currency || payRow?.currency || 'USD').toUpperCase(),
+        String(data?.status || 'succeeded'),
+        data?.reason ? String(data.reason) : null,
+        isPartial ? 1 : 0,
+        data?.created_at ? String(data.created_at) : nowIso
+      );
+
+      // Full refund immediately revokes Spark/Fire back to Free
       if (!isPartial && refundUid) {
+        resolvedUid = refundUid;
         const userRow = db
           .prepare('SELECT * FROM users WHERE firebase_uid = ?')
           .get(refundUid) as UserBillingRecord | undefined;
         if (userRow) {
           db.prepare(
-            "UPDATE users SET plan = 'free', plan_status = 'cancelled', cancel_at_next_billing_date = 0, updated_at = ? WHERE firebase_uid = ?"
-          ).run(nowIso, refundUid);
+            "UPDATE users SET plan = 'free', plan_status = 'cancelled', cancel_at_next_billing_date = 0, current_period_end = ?, updated_at = ? WHERE firebase_uid = ?"
+          ).run(nowIso, nowIso, refundUid);
           if (userRow.dodo_subscription_id) {
             db.prepare(
-              "UPDATE subscriptions SET status = 'cancelled', updated_at = ? WHERE dodo_subscription_id = ?"
-            ).run(nowIso, userRow.dodo_subscription_id);
+              "UPDATE subscriptions SET status = 'cancelled', cancel_at_next_billing_date = 0, cancelled_at = ?, updated_at = ? WHERE dodo_subscription_id = ?"
+            ).run(nowIso, nowIso, userRow.dodo_subscription_id);
+          } else {
+            db.prepare(
+              "UPDATE subscriptions SET status = 'cancelled', cancel_at_next_billing_date = 0, cancelled_at = ?, updated_at = ? WHERE firebase_uid = ?"
+            ).run(nowIso, nowIso, refundUid);
           }
         }
       }
@@ -1332,9 +1456,10 @@ export function processVerifiedDodoWebhookEvent(
         db.prepare("UPDATE payments SET status = 'disputed' WHERE dodo_payment_id = ?").run(paymentId);
       }
       if (disputeUid) {
+        resolvedUid = disputeUid;
         db.prepare(
-          "UPDATE users SET dispute_flagged = 1, plan = 'free', plan_status = 'on_hold', updated_at = ? WHERE firebase_uid = ?"
-        ).run(nowIso, disputeUid);
+          "UPDATE users SET dispute_flagged = 1, plan = 'free', plan_status = 'on_hold', current_period_end = ?, updated_at = ? WHERE firebase_uid = ?"
+        ).run(nowIso, nowIso, disputeUid);
       }
     }
 
@@ -1351,7 +1476,7 @@ export function processVerifiedDodoWebhookEvent(
     duplicate: false,
     outOfOrder: false,
     processedType: eventType,
-    uid,
+    uid: resolvedUid,
   };
 }
 
@@ -1721,11 +1846,10 @@ export function registerDodoBillingRoutes(app: Express): void {
     }
 
     const db = getBillingDb();
-    const user = getOrCreateBillingUser(uid, {
+    let user = getOrCreateBillingUser(uid, {
       email: req.auth?.email || null,
       country: defaultCountry,
     });
-    const effective = getEffectiveServerUserPlan(uid);
 
     const subscription = user.dodo_subscription_id
       ? db
@@ -1739,7 +1863,7 @@ export function registerDodoBillingRoutes(app: Express): void {
       .prepare('SELECT * FROM payments WHERE firebase_uid = ? ORDER BY created_at DESC LIMIT 10')
       .all(uid) as any[];
 
-    const refunds = db
+    let refunds = db
       .prepare('SELECT * FROM refunds WHERE firebase_uid = ? ORDER BY created_at DESC LIMIT 10')
       .all(uid) as any[];
 
@@ -1765,6 +1889,60 @@ export function registerDodoBillingRoutes(app: Express): void {
           });
         }
       } catch {}
+    }
+
+    // Reconcile live refunds from Dodo if user still shows an active paid plan
+    if (user.plan !== 'free' && client && !isTestRuntime() && typeof client.refunds?.list === 'function') {
+      try {
+        const refundList = await client.refunds.list({ page_size: 10 });
+        if (refundList && Array.isArray(refundList.items) && refundList.items.length > 0) {
+          const userPaymentIds = new Set(
+            payments.map((p: any) => String(p.dodo_payment_id || p.payment_id || '')).filter(Boolean)
+          );
+          for (const rItem of refundList.items as any[]) {
+            const rPayId = String(rItem.payment_id || '').trim();
+            const rUid = String(rItem.metadata?.firebase_uid || '').trim();
+            const rStatus = String(rItem.status || 'succeeded').toLowerCase();
+            if (
+              rStatus === 'succeeded' &&
+              !rItem.is_partial &&
+              (rUid === uid || (rPayId && userPaymentIds.has(rPayId)))
+            ) {
+              processVerifiedDodoWebhookEvent(`reconcile_ref_${rItem.refund_id || rPayId}`, {
+                type: 'refund.succeeded',
+                timestamp: rItem.created_at || new Date().toISOString(),
+                data: {
+                  ...rItem,
+                  metadata: { ...(rItem.metadata || {}), firebase_uid: uid },
+                },
+              });
+            }
+          }
+          user = getOrCreateBillingUser(uid);
+          refunds = db
+            .prepare('SELECT * FROM refunds WHERE firebase_uid = ? ORDER BY created_at DESC LIMIT 10')
+            .all(uid) as any[];
+        }
+      } catch {}
+    }
+
+    // Also ensure that if a non-partial succeeded refund exists for the latest payment while plan is still Spark/Fire, revoke to Free
+    if (
+      user.plan !== 'free' &&
+      refunds.some((r: any) => r.status === 'succeeded' && !r.is_partial) &&
+      payments.length > 0 &&
+      payments.every((p: any) => p.status === 'refunded' || refundedPaymentIds.has(String(p.dodo_payment_id || '')))
+    ) {
+      const nowIso = new Date().toISOString();
+      db.prepare(
+        "UPDATE users SET plan = 'free', plan_status = 'cancelled', cancel_at_next_billing_date = 0, current_period_end = ?, updated_at = ? WHERE firebase_uid = ?"
+      ).run(nowIso, nowIso, uid);
+      user = getOrCreateBillingUser(uid);
+    }
+
+    const effective = getEffectiveServerUserPlan(uid);
+    if (effective.plan === 'free' && user.plan === 'free' && user.plan_status === 'cancelled') {
+      upgradeServerSubscriptionPlan(req, 'free', 'monthly');
     }
 
     const latestRefundablePayment =
@@ -2200,8 +2378,8 @@ export function registerDodoBillingRoutes(app: Express): void {
 
       if (cancelSubscription) {
         db.prepare(
-          "UPDATE users SET plan = 'free', plan_status = 'cancelled', cancel_at_next_billing_date = 0, updated_at = ? WHERE firebase_uid = ?"
-        ).run(nowIso, uid);
+          "UPDATE users SET plan = 'free', plan_status = 'cancelled', cancel_at_next_billing_date = 0, current_period_end = ?, updated_at = ? WHERE firebase_uid = ?"
+        ).run(nowIso, nowIso, uid);
         if (user.dodo_subscription_id) {
           db.prepare(
             "UPDATE subscriptions SET status = 'cancelled', cancel_at_next_billing_date = 0, cancelled_at = ?, updated_at = ? WHERE dodo_subscription_id = ?"

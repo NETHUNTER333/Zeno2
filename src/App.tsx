@@ -18,6 +18,7 @@ import {
   SearchMode,
   PublicArtifact,
   KnowledgeVaultItem,
+  VaultThreadType,
 } from './types';
 import { GrokLogo } from './components/GrokLogo';
 import { ChatInput, ChatHistoryItem, ChatHistoryMessageItem, MessageScroller } from './components/kobra';
@@ -52,6 +53,8 @@ import {
   claimPendingReferralIfEligible,
   trackGrowthEvent,
   KnowledgeVaultStore,
+  AgentMemoryStore,
+  VaultThreadStore,
 } from './lib/growthStore';
 import {
   captureInboundReferral,
@@ -1151,6 +1154,47 @@ export default function App() {
     } catch {}
   }, []);
 
+  // Attach Sage's AgentReplyCard directly to the chat thread message when "Save to Vault" completes
+  useEffect(() => {
+    const handleSageOrganized = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      const agentReply = detail?.result?.agentReply;
+      const sourceMessageId = detail?.item?.sourceMessageId;
+      if (!agentReply) return;
+
+      setThreads((prev) =>
+        prev.map((t) => ({
+          ...t,
+          messages: t.messages.map((m, idx, arr) => {
+            const isTargetMsg =
+              (sourceMessageId && m.id === sourceMessageId) ||
+              (!sourceMessageId &&
+                t.id === activeThreadId &&
+                m.role === 'assistant' &&
+                idx === arr.length - 1);
+            if (!isTargetMsg) return m;
+            const prevReplies = Array.isArray(m.agentReplies)
+              ? m.agentReplies
+              : m.agentReply
+              ? [m.agentReply]
+              : [];
+            const deduped = [
+              ...prevReplies.filter((r) => r.agentId !== agentReply.agentId),
+              agentReply,
+            ];
+            return {
+              ...m,
+              agentReply: deduped[0],
+              agentReplies: deduped,
+            };
+          }),
+        }))
+      );
+    };
+    window.addEventListener('kinich-sage-organized', handleSageOrganized);
+    return () => window.removeEventListener('kinich-sage-organized', handleSageOrganized);
+  }, [activeThreadId]);
+
   // Persist threads to localStorage & Firebase Firestore
   useEffect(() => {
     try {
@@ -1419,7 +1463,7 @@ export default function App() {
       setPricingModalState({
         isOpen: true,
         highlightPlan: currentPlanNorm === 'free' ? 'spark' : 'fire',
-        limitReason: `Daily message limit reached (${currentUsage.messagesUsed}/${currentUsage.messageLimit} prompts used). Upgrade to Spark ($3/mo) for 1,500 messages/day or Fire ($7/mo) for unlimited messages.`,
+        limitReason: `Daily message limit reached (${currentUsage.messagesUsed}/${currentUsage.messageLimit} prompts used). Upgrade to Spark ($3/mo) for 1,500 messages/day or Fire ($7/mo) for 5,000 messages/day.`,
       });
       return;
     }
@@ -1431,7 +1475,7 @@ export default function App() {
       setPricingModalState({
         isOpen: true,
         highlightPlan: currentPlanNorm === 'free' ? 'spark' : 'fire',
-        limitReason: `File upload limit reached (${currentUsage.filesUploaded}/${currentUsage.fileUploadLimit} files used on your plan). Upgrade to Spark ($3/mo) for 250 uploads/day or Fire ($7/mo) for unlimited uploads.`,
+        limitReason: `File upload limit reached (${currentUsage.filesUploaded}/${currentUsage.fileUploadLimit} files used on your plan). Upgrade to Spark ($3/mo) for 250 uploads/day or Fire ($7/mo) for 1,000 uploads/day.`,
       });
       return;
     }
@@ -1464,6 +1508,37 @@ export default function App() {
     const isCasualOrGreeting =
       /^[\p{Extended_Pictographic}\p{Emoji}\s\u200d\ufe0f👋✋✌️🙌🤝✨💌🎉❤️]+$/u.test(query.trim()) ||
       /^(hi+|hey+|hello+|yo+|sup|wassup|whats up|howdy|greetings|good (morning|afternoon|evening|night)|how are you|thanks|thank you|thx|ty|ok|okay|k|cool|nice|great|awesome|got it|wave|hand wave|waving|bye|cya)$/i.test(query.trim().toLowerCase());
+
+    // Auto-capture as a Vault Study Thread for signed-in users (Deduplicated, 5-10 key points, IST timestamp, agent comments)
+    if (!UserAccountStore.isGuest() && !isCasualOrGreeting) {
+      let detectedType: VaultThreadType = 'text';
+      let detectedUrl: string | undefined = undefined;
+
+      const ytMatch = query.match(
+        /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/i
+      );
+      const urlMatch = query.match(/https?:\/\/[^\s]+/i);
+
+      if (hasImageAtt) {
+        detectedType = 'image';
+      } else if (attachments.some((a) => a?.type?.includes('pdf') || a?.name?.endsWith('.pdf'))) {
+        detectedType = 'pdf';
+      } else if (ytMatch) {
+        detectedType = 'youtube';
+        detectedUrl = ytMatch[0];
+      } else if (urlMatch) {
+        detectedType = 'web_link';
+        detectedUrl = urlMatch[0];
+      } else {
+        detectedType = 'text';
+      }
+
+      VaultThreadStore.autoCapture({
+        content: query,
+        inputType: detectedType,
+        sourceUrl: detectedUrl,
+      }).catch(() => {});
+    }
 
     const allPriorMessages = activeThread ? activeThread.messages : [];
 
@@ -1772,6 +1847,60 @@ export default function App() {
 
       chatCompleted = true;
       await streamResponseIntoMessage(currentThreadId, streamingMessage.id, data, controller.signal);
+
+      // Personal Study Agent Router (on_message): cheap router checks if an agent (Doubt Buddy, Planner, Recall, Sage) should respond
+      const activePlanTier = UserAccountStore.getNormalizedPlan();
+      if (activePlanTier !== 'free' && !controller.signal.aborted) {
+        const memoryCitations = VaultThreadStore.searchMemoryCitations(query);
+        fetchKinichApi('/api/agents/on-message', {
+          method: 'POST',
+          headers: authHeaders,
+          body: JSON.stringify({
+            message: query,
+            tier: activePlanTier,
+            vaultItems: KnowledgeVaultStore.getAll().slice(0, 30),
+            memoryByAgent: AgentMemoryStore.getAllMemories(),
+            memoryCitations,
+          }),
+        })
+          .then((r) => r.json())
+          .then((agentRes) => {
+            if (agentRes?.acted && agentRes?.agentReply) {
+              if (Array.isArray(agentRes.memoryUpdated) && agentRes.agentReply.agentId) {
+                AgentMemoryStore.setFacts(agentRes.agentReply.agentId, agentRes.memoryUpdated);
+              }
+              setThreads((prev) =>
+                prev.map((t) =>
+                  t.id === currentThreadId
+                    ? {
+                        ...t,
+                        messages: t.messages.map((m) => {
+                          if (m.id !== streamingMessage.id) return m;
+                          const prevReplies = Array.isArray(m.agentReplies)
+                            ? m.agentReplies
+                            : m.agentReply
+                            ? [m.agentReply]
+                            : [];
+                          const nextReplies = [
+                            ...prevReplies.filter(
+                              (r) => r.agentId !== agentRes.agentReply.agentId
+                            ),
+                            agentRes.agentReply,
+                          ];
+                          return {
+                            ...m,
+                            agentReply: nextReplies[0],
+                            agentReplies: nextReplies,
+                          };
+                        }),
+                      }
+                    : t
+                )
+              );
+            }
+          })
+          .catch(() => {});
+      }
     } catch (err: any) {
       const errorText =
         err.name === 'AbortError'
@@ -2372,7 +2501,7 @@ export default function App() {
                           isOpen: true,
                           highlightPlan:
                             UserAccountStore.getNormalizedPlan() === 'free' ? 'spark' : 'fire',
-                          limitReason: `Study Space limit reached (${u.pdfStudyUsed}/${u.pdfStudyLimit} sessions used). Upgrade to Spark ($3/mo) for 200 sessions/day or Fire ($7/mo) for unlimited Study Space.`,
+                          limitReason: `Study Space limit reached (${u.pdfStudyUsed}/${u.pdfStudyLimit} sessions used). Upgrade to Spark ($3/mo) for 200 sessions/day or Fire ($7/mo) for 500 Study Space sessions/day.`,
                         });
                         return;
                       }

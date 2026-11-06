@@ -104,6 +104,7 @@ import {
 } from './server/legalAndSafetyEngine';
 import { initBackendSentry, sentryBackendMiddleware, sentryErrorHandler, reportUpstreamProviderFailure, Sentry } from './server/sentry';
 import { registerDodoBillingRoutes } from './server/billingEngine';
+import { registerAgentFrameworkRoutes } from './server/agentFramework';
 
 dotenv.config();
 initBackendSentry();
@@ -4221,6 +4222,7 @@ const handleDodoWebhook = async (req: express.Request, res: express.Response) =>
 app.post('/api/payments/webhook', handleDodoWebhook);
 app.post('/api/dodo/webhook', handleDodoWebhook);
 registerDodoBillingRoutes(app);
+registerAgentFrameworkRoutes(app);
 
 // Fetch 100% real X / Twitter status post details via fxtwitter API
 async function fetchRealXPostByStatusId(handle: string, tweetId: string): Promise<any | null> {

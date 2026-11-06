@@ -16,6 +16,12 @@ import {
   TopContributorEntry,
   KinichFeedbackCategory,
   KinichFeedbackSubmission,
+  AgentReplyCard,
+  VaultThread,
+  VaultThreadType,
+  VaultKeyPoint,
+  VaultThreadComment,
+  VaultMemoryIndexItem,
 } from '../types';
 import {
   auth,
@@ -23,6 +29,13 @@ import {
   saveVaultItemToFirestore,
   deleteVaultItemFromFirestore,
   loadUserVaultItemsFromFirestore,
+  saveVaultThreadToFirestore,
+  loadVaultThreadsFromFirestore,
+  deleteVaultThreadFromFirestore,
+  saveVaultCommentToFirestore,
+  saveAgentMemoryToFirestore,
+  loadAgentMemoryFromFirestore,
+  recordAgentUsageToFirestore,
   savePublicArtifactToFirestore,
   deletePublicArtifactFromFirestore,
 } from './firebase';
@@ -52,7 +65,13 @@ const GROWTH_KEYS = {
   FEEDBACK_ITEMS: 'kinich_submitted_feedback_v1',
   USER_REFERRAL_TRACKER: 'kinich_user_referral_tracker_v1',
   CLAIMED_REFERRER_BONUSES: 'kinich_claimed_referrer_bonuses_v1',
+  AGENT_MEMORY: 'kinich_agent_memory_v1',
+  AGENT_USAGE: 'kinich_agent_usage_v1',
+  VAULT_THREADS: 'kinich_vault_threads_v1',
+  VAULT_MEMORY_INDEX: 'kinich_vault_memory_index_v1',
 };
+
+export const VAULT_FREE_ITEM_LIMIT = 20;
 
 export const DISCOVER_CATEGORIES: DiscoverCategory[] = [
   'Learning',
@@ -288,7 +307,190 @@ export function dismissContinuationItem(id: string): void {
   }
 }
 
+function inferInitialSubjectAndChapter(title: string, content: string): {
+  subject: string;
+  chapter: string;
+  tags: string[];
+} {
+  const hay = `${title || ''} ${content || ''}`.toLowerCase();
+  const rules: Array<{
+    subject: string;
+    keywords: string[];
+    chapters: Array<{ name: string; keywords: string[] }>;
+  }> = [
+    {
+      subject: 'Physics',
+      keywords: ['physics', 'thermodynamics', 'entropy', 'heat', 'carnot', 'quantum', 'mechanics', 'electromagnetism', 'optics', 'kinematics', 'newton', 'circuit', 'voltage', 'boltzmann'],
+      chapters: [
+        { name: 'Thermodynamics & Heat Engines', keywords: ['thermodynamics', 'entropy', 'heat', 'carnot', 'enthalpy', 'kelvin', 'boltzmann'] },
+        { name: 'Quantum Mechanics & Atomic Physics', keywords: ['quantum', 'photon', 'planck', 'wavefunction', 'schrodinger', 'orbital'] },
+        { name: 'Electromagnetism & Circuits', keywords: ['electromagnetism', 'circuit', 'voltage', 'magnetic', 'maxwell', 'capacitor'] },
+        { name: 'Classical Mechanics & Kinematics', keywords: ['mechanics', 'kinematics', 'newton', 'momentum', 'torque', 'gravity'] },
+      ],
+    },
+    {
+      subject: 'Biology & Life Sciences',
+      keywords: ['biology', 'cell', 'cellular', 'photosynthesis', 'chloroplast', 'mitochondria', 'atp', 'dna', 'rna', 'genetics', 'crispr', 'protein', 'enzyme', 'neuron', 'synapse', 'respiration'],
+      chapters: [
+        { name: 'Cellular Energetics & Photosynthesis', keywords: ['photosynthesis', 'chloroplast', 'calvin', 'respiration', 'mitochondria', 'atp', 'glycolysis'] },
+        { name: 'Molecular Genetics & Gene Editing', keywords: ['dna', 'rna', 'crispr', 'genome', 'transcription', 'mutation'] },
+        { name: 'Neurobiology & Nervous System', keywords: ['neuron', 'synapse', 'brain', 'neurotransmitter', 'cortex'] },
+      ],
+    },
+    {
+      subject: 'Computer Science & AI',
+      keywords: ['computer', 'algorithm', 'data structure', 'transformer', 'neural network', 'machine learning', 'deep learning', 'llm', 'attention', 'python', 'typescript', 'react', 'database', 'sql', 'system'],
+      chapters: [
+        { name: 'Deep Learning & Transformer Architectures', keywords: ['transformer', 'attention', 'llm', 'neural network', 'backpropagation', 'embedding', 'gpt'] },
+        { name: 'Data Structures & Algorithms', keywords: ['algorithm', 'data structure', 'graph', 'tree', 'dynamic programming', 'sorting', 'complexity'] },
+        { name: 'Systems & Software Engineering', keywords: ['database', 'sql', 'distributed', 'typescript', 'react', 'python', 'api'] },
+      ],
+    },
+    {
+      subject: 'Mathematics',
+      keywords: ['mathematics', 'calculus', 'derivative', 'integral', 'differential', 'linear algebra', 'matrix', 'eigenvalue', 'vector', 'probability', 'statistics', 'bayes', 'theorem'],
+      chapters: [
+        { name: 'Calculus & Differential Equations', keywords: ['calculus', 'derivative', 'integral', 'differential', 'limit', 'taylor', 'fourier'] },
+        { name: 'Linear Algebra & Vector Spaces', keywords: ['linear algebra', 'matrix', 'eigenvalue', 'eigenvector', 'vector', 'determinant'] },
+        { name: 'Probability & Statistics', keywords: ['probability', 'statistics', 'bayes', 'distribution', 'variance'] },
+      ],
+    },
+    {
+      subject: 'Chemistry',
+      keywords: ['chemistry', 'organic', 'inorganic', 'covalent', 'ionic', 'stoichiometry', 'periodic', 'acid', 'base', 'redox', 'kinetics', 'equilibrium', 'molecule', 'alkane', 'benzene'],
+      chapters: [
+        { name: 'Organic Chemistry & Mechanisms', keywords: ['organic', 'alkane', 'benzene', 'polymer', 'nucleophile', 'carbonyl'] },
+        { name: 'Physical Chemistry & Kinetics', keywords: ['kinetics', 'equilibrium', 'redox', 'electrochemistry', 'catalyst'] },
+      ],
+    },
+    {
+      subject: 'Economics, History & Humanities',
+      keywords: ['economics', 'macroeconomics', 'inflation', 'gdp', 'monetary', 'fiscal', 'market', 'history', 'civilization', 'constitution', 'polity', 'geopolitics'],
+      chapters: [
+        { name: 'Macroeconomics & Monetary Policy', keywords: ['macroeconomics', 'inflation', 'gdp', 'monetary', 'fiscal'] },
+        { name: 'World History & Governance', keywords: ['history', 'civilization', 'constitution', 'polity', 'geopolitics'] },
+      ],
+    },
+  ];
+
+  for (const r of rules) {
+    if (r.keywords.some((kw) => hay.includes(kw))) {
+      const matchedCh = r.chapters.find((c) => c.keywords.some((ckw) => hay.includes(ckw)));
+      const matchedTags = r.keywords.filter((kw) => hay.includes(kw)).slice(0, 5);
+      return {
+        subject: r.subject,
+        chapter: matchedCh ? matchedCh.name : r.chapters[0]?.name || 'Core Concepts',
+        tags: matchedTags,
+      };
+    }
+  }
+
+  const cleanTitle = String(title || 'Core Study Topic')
+    .replace(/^(youtube study|study notes|deep research|saved response)[:\s-]*/i, '')
+    .trim();
+  const shortChapter = cleanTitle.split(/\s+/).slice(0, 5).join(' ') || 'Core Concepts';
+  return {
+    subject: 'General Studies',
+    chapter: shortChapter.slice(0, 70),
+    tags: ['study-vault'],
+  };
+}
+
+export const AgentMemoryStore = {
+  getFacts(agentId = 'sage'): string[] {
+    const map = safeLoad<Record<string, string[]>>(GROWTH_KEYS.AGENT_MEMORY, {});
+    return Array.isArray(map[agentId]) ? map[agentId].slice(0, 50) : [];
+  },
+
+  setFacts(agentId: string, facts: string[]): string[] {
+    const map = safeLoad<Record<string, string[]>>(GROWTH_KEYS.AGENT_MEMORY, {});
+    const cleaned = Array.from(
+      new Set(
+        (Array.isArray(facts) ? facts : [])
+          .map((f) => String(f || '').trim().slice(0, 160))
+          .filter(Boolean)
+      )
+    ).slice(0, 50);
+    map[agentId] = cleaned;
+    safeSave(GROWTH_KEYS.AGENT_MEMORY, map);
+    saveAgentMemoryToFirestore(agentId, cleaned).catch(() => {});
+    emitVaultUpdate();
+    return cleaned;
+  },
+
+  addFact(agentId: string, fact: string): string[] {
+    const clean = String(fact || '').trim().slice(0, 160);
+    if (!clean) return this.getFacts(agentId);
+    const existing = this.getFacts(agentId);
+    return this.setFacts(agentId, [clean, ...existing]);
+  },
+
+  getAllMemories(): Record<string, string[]> {
+    return safeLoad<Record<string, string[]>>(GROWTH_KEYS.AGENT_MEMORY, {});
+  },
+
+  async syncFromFirestore(agentId = 'sage'): Promise<string[]> {
+    const remote = await loadAgentMemoryFromFirestore(agentId);
+    if (remote && remote.length > 0) {
+      const local = this.getFacts(agentId);
+      return this.setFacts(agentId, [...remote, ...local]);
+    }
+    return this.getFacts(agentId);
+  },
+};
+
 export const KnowledgeVaultStore = {
+  VAULT_FREE_ITEM_LIMIT,
+
+  isGuest(): boolean {
+    return UserAccountStore.isGuest();
+  },
+
+  canSaveToVault(existingItemId?: string): {
+    allowed: boolean;
+    reason: 'ok' | 'guest' | 'free_limit';
+    message: string;
+    currentCount: number;
+    maxCount: number | null;
+  } {
+    if (UserAccountStore.isGuest()) {
+      return {
+        allowed: false,
+        reason: 'guest',
+        message: 'Sign in to save',
+        currentCount: 0,
+        maxCount: 0,
+      };
+    }
+    const items = this.getItems();
+    const plan = UserAccountStore.getCurrentPlan();
+    if (existingItemId && items.some((i) => i.id === existingItemId)) {
+      return {
+        allowed: true,
+        reason: 'ok',
+        message: 'Update in Vault',
+        currentCount: items.length,
+        maxCount: plan === 'free' ? VAULT_FREE_ITEM_LIMIT : null,
+      };
+    }
+    if (plan === 'free' && items.length >= VAULT_FREE_ITEM_LIMIT) {
+      return {
+        allowed: false,
+        reason: 'free_limit',
+        message: `Free tier Vault cap reached (${VAULT_FREE_ITEM_LIMIT}/${VAULT_FREE_ITEM_LIMIT} items). Upgrade to Spark for unlimited Vault items + Sage auto-organizer.`,
+        currentCount: items.length,
+        maxCount: VAULT_FREE_ITEM_LIMIT,
+      };
+    }
+    return {
+      allowed: true,
+      reason: 'ok',
+      message: 'Save to Vault',
+      currentCount: items.length,
+      maxCount: plan === 'free' ? VAULT_FREE_ITEM_LIMIT : null,
+    };
+  },
+
   getCollections(): KnowledgeCollection[] {
     return safeLoad<KnowledgeCollection[]>(
       GROWTH_KEYS.VAULT_COLLECTIONS,
@@ -324,20 +526,76 @@ export const KnowledgeVaultStore = {
     emitVaultUpdate();
   },
 
+  getAll(): KnowledgeVaultItem[] {
+    return this.getItems();
+  },
+
   getItems(): KnowledgeVaultItem[] {
     const items = safeLoad<KnowledgeVaultItem[]>(GROWTH_KEYS.VAULT_ITEMS, []);
     return items
-      .map((i) => ({
-        ...i,
-        summary: i.summary || (i.content || '').slice(0, 200),
-        isPinned: Boolean(i.isPinned ?? i.pinned),
-        pinned: Boolean(i.isPinned ?? i.pinned),
-        sourceThreadId: i.sourceThreadId || i.threadId,
-        sourceMessageId: i.sourceMessageId || i.messageId,
-      }))
+      .map((i) => {
+        const inferred =
+          !i.subject || !i.chapter
+            ? inferInitialSubjectAndChapter(i.title || '', i.content || '')
+            : null;
+        const resolvedType = (i.type || i.sourceType || 'chat_answer') as KnowledgeVaultItem['type'];
+        return {
+          ...i,
+          type: resolvedType,
+          sourceType: resolvedType,
+          subject: i.subject || inferred?.subject || 'General Studies',
+          chapter: i.chapter || inferred?.chapter || 'Core Concepts',
+          tags: Array.isArray(i.tags) && i.tags.length > 0 ? i.tags : inferred?.tags || [],
+          sourceUrl: i.sourceUrl || '',
+          timestamps: Array.isArray(i.timestamps) ? i.timestamps : [],
+          relatedItemIds: Array.isArray(i.relatedItemIds) ? i.relatedItemIds : [],
+          lastReviewedAt: i.lastReviewedAt || i.updatedAt || i.createdAt || Date.now(),
+          summary: i.summary || (i.content || '').slice(0, 200),
+          isPinned: Boolean(i.isPinned ?? i.pinned),
+          pinned: Boolean(i.isPinned ?? i.pinned),
+          sourceThreadId: i.sourceThreadId || i.threadId,
+          sourceMessageId: i.sourceMessageId || i.messageId,
+        };
+      })
       .sort(
         (a, b) => Number(b.isPinned) - Number(a.isPinned) || b.updatedAt - a.updatedAt
       );
+  },
+
+  getGroupedBySubjectAndChapter(itemsInput?: KnowledgeVaultItem[]): Array<{
+    subject: string;
+    totalItems: number;
+    chapters: Array<{
+      chapter: string;
+      items: KnowledgeVaultItem[];
+    }>;
+  }> {
+    const items = itemsInput || this.getItems();
+    const subjectMap = new Map<string, Map<string, KnowledgeVaultItem[]>>();
+
+    for (const item of items) {
+      const subj = (item.subject || 'General Studies').trim();
+      const chap = (item.chapter || 'Core Concepts').trim();
+      if (!subjectMap.has(subj)) {
+        subjectMap.set(subj, new Map());
+      }
+      const chMap = subjectMap.get(subj)!;
+      if (!chMap.has(chap)) {
+        chMap.set(chap, []);
+      }
+      chMap.get(chap)!.push(item);
+    }
+
+    return Array.from(subjectMap.entries())
+      .map(([subject, chMap]) => {
+        const chapters = Array.from(chMap.entries()).map(([chapter, chItems]) => ({
+          chapter,
+          items: chItems,
+        }));
+        const totalItems = chapters.reduce((acc, c) => acc + c.items.length, 0);
+        return { subject, totalItems, chapters };
+      })
+      .sort((a, b) => b.totalItems - a.totalItems || a.subject.localeCompare(b.subject));
   },
 
   saveItem(input: {
@@ -345,10 +603,18 @@ export const KnowledgeVaultStore = {
     title: string;
     content: string;
     summary?: string;
+    subject?: string;
+    chapter?: string;
     collectionId?: string;
     tags?: string[];
     sourceType?: KnowledgeVaultItem['sourceType'];
     type?: KnowledgeVaultItem['sourceType'];
+    sourceUrl?: string;
+    timestamps?: string[];
+    relatedItemIds?: string[];
+    sageNote?: string;
+    organizedBySage?: boolean;
+    skipSage?: boolean;
     threadId?: string;
     sourceThreadId?: string;
     messageId?: string;
@@ -373,11 +639,30 @@ export const KnowledgeVaultStore = {
         .slice(0, 200);
 
     const isPinnedVal = Boolean(input.isPinned ?? input.pinned);
-    const resolvedType = input.sourceType || input.type || 'ai_response';
+    const resolvedType = (input.type || input.sourceType || 'chat_answer') as KnowledgeVaultItem['type'];
     const resolvedThreadId = input.threadId || input.sourceThreadId;
     const resolvedMsgId = input.messageId || input.sourceMessageId;
 
+    const inferred = inferInitialSubjectAndChapter(cleanTitle, cleanContent);
+    const initialSubject = (input.subject || inferred.subject || 'General Studies').trim();
+    const initialChapter = (input.chapter || inferred.chapter || 'Core Concepts').trim();
+    const initialTags = Array.from(
+      new Set(
+        [...(input.tags || []), ...inferred.tags]
+          .map((t) => String(t || '').trim().toLowerCase())
+          .filter(Boolean)
+      )
+    ).slice(0, 8);
+
     const existingIdx = input.id ? items.findIndex((i) => i.id === input.id) : -1;
+
+    // Enforce Free tier 20-item cap on new items
+    if (existingIdx < 0 && UserAccountStore.getCurrentPlan() === 'free' && items.length >= VAULT_FREE_ITEM_LIMIT) {
+      throw new Error(
+        `Free tier Vault limit reached (${VAULT_FREE_ITEM_LIMIT} items). Upgrade to Spark for unlimited Vault items.`
+      );
+    }
+
     const item: KnowledgeVaultItem =
       existingIdx >= 0
         ? {
@@ -385,26 +670,39 @@ export const KnowledgeVaultStore = {
             title: cleanTitle,
             content: cleanContent,
             summary: cleanSummary,
+            subject: input.subject || items[existingIdx].subject || initialSubject,
+            chapter: input.chapter || items[existingIdx].chapter || initialChapter,
             collectionId:
               input.collectionId || items[existingIdx].collectionId || 'col_research_ideas',
-            tags: input.tags ?? items[existingIdx].tags,
+            tags: input.tags ?? items[existingIdx].tags ?? initialTags,
+            sourceUrl: input.sourceUrl ?? items[existingIdx].sourceUrl ?? '',
+            timestamps: input.timestamps ?? items[existingIdx].timestamps ?? [],
+            relatedItemIds: input.relatedItemIds ?? items[existingIdx].relatedItemIds ?? [],
+            sageNote: input.sageNote ?? items[existingIdx].sageNote,
+            organizedBySage: input.organizedBySage ?? items[existingIdx].organizedBySage,
             isPinned: isPinnedVal,
             pinned: isPinnedVal,
             updatedAt: now,
+            lastReviewedAt: now,
           }
         : {
             id: input.id || `kv_${now.toString(36)}_${Math.random().toString(36).slice(2, 7)}`,
             userId,
+            type: resolvedType,
+            sourceType: resolvedType,
             title: cleanTitle,
+            subject: initialSubject,
+            chapter: initialChapter,
             content: cleanContent,
             summary: cleanSummary,
             collectionId: input.collectionId || 'col_research_ideas',
-            tags: (input.tags || [])
-              .map((t) => t.trim().toLowerCase())
-              .filter(Boolean)
-              .slice(0, 8),
-            sourceType: resolvedType,
-            type: resolvedType,
+            tags: initialTags,
+            sourceUrl: input.sourceUrl || '',
+            timestamps: Array.isArray(input.timestamps) ? input.timestamps.slice(0, 50) : [],
+            relatedItemIds: Array.isArray(input.relatedItemIds) ? input.relatedItemIds : [],
+            sageNote: input.sageNote || '',
+            organizedBySage: Boolean(input.organizedBySage),
+            organizingStatus: input.skipSage ? 'organized' : 'organizing',
             threadId: resolvedThreadId,
             sourceThreadId: resolvedThreadId,
             messageId: resolvedMsgId,
@@ -415,6 +713,7 @@ export const KnowledgeVaultStore = {
             pinned: isPinnedVal,
             createdAt: now,
             updatedAt: now,
+            lastReviewedAt: now,
           };
 
     const nextItems =
@@ -426,7 +725,127 @@ export const KnowledgeVaultStore = {
     saveVaultItemToFirestore(item).catch(() => {});
     trackGrowthEvent('knowledge_item_saved', `kv_save_${item.id}`);
     emitVaultUpdate();
+
+    // Trigger Agent "Sage" (on_save) in background to auto-assign Subject + Chapter + Tags and link related Vault items within <10s
+    if (!input.skipSage && !UserAccountStore.isGuest()) {
+      this.organizeWithSage(item, nextItems).catch(() => {});
+    }
+
     return item;
+  },
+
+  async organizeWithSage(
+    savedItem: KnowledgeVaultItem,
+    allItemsInput?: KnowledgeVaultItem[]
+  ): Promise<{
+    item: KnowledgeVaultItem;
+    agentReply?: AgentReplyCard;
+  }> {
+    const allItems = allItemsInput || this.getItems();
+    const existingOthers = allItems
+      .filter((i) => i.id !== savedItem.id)
+      .slice(0, 20)
+      .map((i) => ({
+        id: i.id,
+        type: i.type,
+        title: i.title,
+        subject: i.subject,
+        chapter: i.chapter,
+        tags: i.tags,
+        timestamps: i.timestamps,
+        content: (i.summary || i.content || '').slice(0, 500),
+      }));
+
+    try {
+      const headers = await getGrowthHeaders();
+      const res = await fetch('/api/agents/on-save', {
+        method: 'POST',
+        headers: {
+          ...headers,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          clientSessionId: getOrCreateClientId(),
+          userTier: UserAccountStore.getCurrentPlan(),
+          item: {
+            id: savedItem.id,
+            type: savedItem.type,
+            title: savedItem.title,
+            subject: savedItem.subject,
+            chapter: savedItem.chapter,
+            tags: savedItem.tags,
+            sourceUrl: savedItem.sourceUrl,
+            timestamps: savedItem.timestamps,
+            content: (savedItem.content || '').slice(0, 2200),
+            summary: savedItem.summary,
+          },
+          existingVaultItems: existingOthers,
+          agentMemory: AgentMemoryStore.getFacts('sage'),
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const updated = this.updateItem(savedItem.id, {
+          subject: data.subject || savedItem.subject,
+          chapter: data.chapter || savedItem.chapter,
+          tags: Array.isArray(data.tags) && data.tags.length > 0 ? data.tags : savedItem.tags,
+          relatedItemIds: Array.isArray(data.relatedItemIds) ? data.relatedItemIds : [],
+          sageNote: data.sageNote || '',
+          organizedBySage: true,
+          organizingStatus: 'organized',
+        });
+
+        // Also back-link related items so both lectures point to each other
+        if (Array.isArray(data.relatedItemIds) && data.relatedItemIds.length > 0) {
+          for (const relId of data.relatedItemIds) {
+            const relItem = this.getItems().find((it) => it.id === relId);
+            if (relItem) {
+              const nextRelIds = Array.from(
+                new Set([savedItem.id, ...(relItem.relatedItemIds || [])])
+              ).slice(0, 15);
+              this.updateItem(relId, {
+                relatedItemIds: nextRelIds,
+              });
+            }
+          }
+        }
+
+        if (Array.isArray(data.memoryFacts) && data.memoryFacts.length > 0) {
+          AgentMemoryStore.setFacts('sage', data.memoryFacts);
+        }
+
+        if (data.tokensUsed) {
+          recordAgentUsageToFirestore({
+            agentId: 'sage',
+            tokensUsed: Number(data.tokensUsed) || 180,
+            callsCount: 1,
+          }).catch(() => {});
+        }
+
+        if (typeof window !== 'undefined' && data.agentReply) {
+          window.dispatchEvent(
+            new CustomEvent('kinich-sage-organized', {
+              detail: {
+                item: updated || savedItem,
+                agentReply: data.agentReply as AgentReplyCard,
+              },
+            })
+          );
+        }
+
+        return {
+          item: updated || savedItem,
+          agentReply: data.agentReply as AgentReplyCard | undefined,
+        };
+      }
+    } catch {}
+
+    const fallbackUpdated = this.updateItem(savedItem.id, {
+      organizedBySage: true,
+      organizingStatus: 'organized',
+    });
+    return { item: fallbackUpdated || savedItem };
   },
 
   updateItem(
@@ -455,6 +874,10 @@ export const KnowledgeVaultStore = {
     saveVaultItemToFirestore(updated).catch(() => {});
     emitVaultUpdate();
     return updated;
+  },
+
+  markReviewed(itemId: string): KnowledgeVaultItem | null {
+    return this.updateItem(itemId, { lastReviewedAt: Date.now() });
   },
 
   togglePin(itemId: string): void {
@@ -488,6 +911,7 @@ export const KnowledgeVaultStore = {
       collectionId: 'col_reading_list',
       tags: artifact.tags || [],
       sourceType: 'discover_resource',
+      type: 'note',
       artifactId: artifact.id,
       sources: artifact.sources || [],
     });
@@ -505,20 +929,31 @@ export const KnowledgeVaultStore = {
         const existing = merged.get(r.id);
         if (!existing || (r.updatedAt || 0) > existing.updatedAt) {
           const pin = Boolean(r.isPinned ?? r.pinned);
+          const inferred = inferInitialSubjectAndChapter(r.title || '', r.content || '');
+          const resolvedType = (r.type || r.sourceType || 'chat_answer') as KnowledgeVaultItem['type'];
           merged.set(r.id, {
             id: r.id,
             userId: r.userId,
+            type: resolvedType,
+            sourceType: resolvedType,
             title: r.title,
+            subject: r.subject || inferred.subject,
+            chapter: r.chapter || inferred.chapter,
             content: r.content,
             summary: r.summary || (r.content || '').slice(0, 200),
             collectionId: r.collectionId || 'col_research_ideas',
-            tags: Array.isArray(r.tags) ? r.tags : [],
-            sourceType: r.sourceType || 'ai_response',
-            type: r.sourceType || 'ai_response',
+            tags: Array.isArray(r.tags) && r.tags.length > 0 ? r.tags : inferred.tags,
+            sourceUrl: r.sourceUrl || '',
+            timestamps: Array.isArray(r.timestamps) ? r.timestamps : [],
+            relatedItemIds: Array.isArray(r.relatedItemIds) ? r.relatedItemIds : [],
+            sageNote: r.sageNote || '',
+            organizedBySage: Boolean(r.organizedBySage),
+            organizingStatus: 'organized',
             isPinned: pin,
             pinned: pin,
             createdAt: r.createdAt || Date.now(),
             updatedAt: r.updatedAt || Date.now(),
+            lastReviewedAt: r.lastReviewedAt || r.updatedAt || r.createdAt || Date.now(),
           });
         }
       }
@@ -589,6 +1024,419 @@ export const KnowledgeVaultStore = {
       null,
       2
     );
+  },
+};
+
+// ============================================================================
+// REDDIT-STYLE VAULT THREADS STORE (AUTO-CAPTURE, DEDUPLICATION, COMMENTS, MEMORY)
+// ============================================================================
+
+export function formatToIstDate(dateInput: number | string | Date): string {
+  const date =
+    typeof dateInput === 'number' || typeof dateInput === 'string'
+      ? new Date(dateInput)
+      : dateInput;
+  if (!date || isNaN(date.getTime())) return '';
+  try {
+    const formatted = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Kolkata',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    }).format(date);
+    return formatted.replace(', ', ', ').replace(/, ([0-9]{1,2}:)/, ' · $1');
+  } catch {
+    return date.toISOString().slice(0, 16);
+  }
+}
+
+export const VaultThreadStore = {
+  isGuest(): boolean {
+    return UserAccountStore.isGuest();
+  },
+
+  getThreads(): VaultThread[] {
+    const plan = UserAccountStore.getCurrentPlan();
+    const threads = safeLoad<VaultThread[]>(GROWTH_KEYS.VAULT_THREADS, []);
+    // Tiers: Guest keeps nothing, Free keeps last 20 threads, Spark/Fire keep all
+    const sorted = [...threads].sort(
+      (a, b) => Number(b.pinned) - Number(a.pinned) || b.updatedAt - a.updatedAt
+    );
+    if (plan === 'free') {
+      return sorted.slice(0, 20);
+    }
+    return sorted;
+  },
+
+  getThread(threadId: string): VaultThread | null {
+    const threads = this.getThreads();
+    return threads.find((t) => t.id === threadId) || null;
+  },
+
+  saveThread(thread: VaultThread): VaultThread {
+    if (this.isGuest()) return thread;
+    const plan = UserAccountStore.getCurrentPlan();
+    const current = safeLoad<VaultThread[]>(GROWTH_KEYS.VAULT_THREADS, []);
+    const idx = current.findIndex((t) => t.id === thread.id);
+    let next: VaultThread[];
+    if (idx >= 0) {
+      next = [...current];
+      next[idx] = { ...current[idx], ...thread, updatedAt: Date.now() };
+    } else {
+      next = [thread, ...current];
+    }
+    if (plan === 'free' && next.length > 20) {
+      next = next.slice(0, 20);
+    }
+    safeSave(GROWTH_KEYS.VAULT_THREADS, next);
+
+    // Save to Firestore & index memory
+    saveVaultThreadToFirestore(thread).catch(() => {});
+    this.indexKeyPoints(thread);
+    emitVaultUpdate();
+    return thread;
+  },
+
+  findDuplicate(sourceUrl?: string): VaultThread | null {
+    if (!sourceUrl || !sourceUrl.trim()) return null;
+    const cleanSource = sourceUrl.trim().toLowerCase().replace(/\/+$/, '');
+    const ytMatch = cleanSource.match(
+      /(?:v=|\/embed\/|\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/i
+    );
+    const targetVideoId = ytMatch ? ytMatch[1] : null;
+
+    const threads = this.getThreads();
+    for (const t of threads) {
+      if (!t.sourceUrl) continue;
+      const existingClean = t.sourceUrl.trim().toLowerCase().replace(/\/+$/, '');
+      if (existingClean === cleanSource) return t;
+      if (targetVideoId) {
+        const existingYt = existingClean.match(
+          /(?:v=|\/embed\/|\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/i
+        );
+        if (existingYt && existingYt[1] === targetVideoId) {
+          return t;
+        }
+      }
+    }
+    return null;
+  },
+
+  async autoCapture(input: {
+    content: string;
+    title?: string;
+    sourceUrl?: string;
+    thumbnail?: string;
+    timestamps?: any[];
+    inputType?: VaultThreadType;
+  }): Promise<{
+    ok: boolean;
+    isGuest?: boolean;
+    deduplicated?: boolean;
+    thread?: VaultThread;
+    message?: string;
+  }> {
+    if (this.isGuest()) {
+      return {
+        ok: true,
+        isGuest: true,
+        message: 'Sign in to keep this in your Vault',
+      };
+    }
+
+    // Deduplicate on client first
+    const duplicate = this.findDuplicate(input.sourceUrl);
+    if (duplicate) {
+      return {
+        ok: true,
+        deduplicated: true,
+        thread: duplicate,
+      };
+    }
+
+    try {
+      const headers = await getGrowthHeaders();
+      const plan = UserAccountStore.getCurrentPlan();
+      const res = await fetch('/api/vault/auto-capture', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          ...input,
+          userTier: plan,
+          userId: auth.currentUser?.uid,
+          existingThreads: this.getThreads().slice(0, 20),
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.thread) {
+          this.saveThread(data.thread);
+          return {
+            ok: true,
+            deduplicated: Boolean(data.deduplicated),
+            thread: data.thread,
+          };
+        }
+      }
+    } catch {}
+
+    // Offline / direct heuristic fallback
+    const heuristic = inferInitialSubjectAndChapter(input.title || '', input.content);
+    const now = Date.now();
+    const threadId = `vth_${now}_${Math.random().toString(36).slice(2, 6)}`;
+    const defaultTitle =
+      input.title && input.title.trim()
+        ? input.title.trim().slice(0, 160)
+        : input.inputType === 'youtube'
+        ? 'YouTube Study Lecture'
+        : 'Study Topic Thread';
+
+    const fallbackThread: VaultThread = {
+      id: threadId,
+      userId: auth.currentUser?.uid || 'user',
+      type: input.inputType || 'text',
+      title: defaultTitle,
+      sourceUrl: input.sourceUrl,
+      thumbnail: input.thumbnail,
+      tldr: (input.content || '').slice(0, 180) || `Core study notes on ${defaultTitle}`,
+      keyPoints: [
+        {
+          id: `kp_1_${now}`,
+          text: `Key point overview for ${defaultTitle}`,
+          timestamp: '00:00',
+          score: 1,
+        },
+        {
+          id: `kp_2_${now}`,
+          text: `Mechanisms and main principles in ${heuristic.chapter}`,
+          timestamp: '03:15',
+          score: 1,
+        },
+        {
+          id: `kp_3_${now}`,
+          text: `Active recall takeaways and practice formulas`,
+          timestamp: '07:30',
+          score: 1,
+        },
+      ],
+      subject: heuristic.subject,
+      chapter: heuristic.chapter,
+      tags: heuristic.tags,
+      createdAt: now,
+      updatedAt: now,
+      pinned: false,
+      score: 1,
+      commentCount: 2,
+      comments: [
+        {
+          id: `cm_sage_${now}`,
+          threadId,
+          author: 'sage',
+          authorName: 'Sage',
+          text: `Filed under ${heuristic.subject} → ${heuristic.chapter}. Key points saved and indexed into your Vault memory.`,
+          createdAt: now,
+          score: 1,
+        },
+        {
+          id: `cm_recall_${now + 500}`,
+          threadId,
+          author: 'recall',
+          authorName: 'Recall',
+          text: `Quiz time: 3 active recall questions prepared from this topic for tomorrow's review.`,
+          createdAt: now + 500,
+          score: 1,
+        },
+      ],
+    };
+
+    this.saveThread(fallbackThread);
+    return { ok: true, deduplicated: false, thread: fallbackThread };
+  },
+
+  forgetThread(threadId: string): void {
+    // 1. Remove from local store
+    const current = safeLoad<VaultThread[]>(GROWTH_KEYS.VAULT_THREADS, []);
+    safeSave(
+      GROWTH_KEYS.VAULT_THREADS,
+      current.filter((t) => t.id !== threadId)
+    );
+
+    // 2. Wipe memory index entries
+    const memIndex = safeLoad<VaultMemoryIndexItem[]>(GROWTH_KEYS.VAULT_MEMORY_INDEX, []);
+    safeSave(
+      GROWTH_KEYS.VAULT_MEMORY_INDEX,
+      memIndex.filter((m) => m.threadId !== threadId)
+    );
+
+    // 3. Remove from Firestore
+    deleteVaultThreadFromFirestore(threadId).catch(() => {});
+
+    // 4. Notify backend
+    getGrowthHeaders().then((headers) => {
+      fetch(`/api/vault/threads/${encodeURIComponent(threadId)}`, {
+        method: 'DELETE',
+        headers,
+      }).catch(() => {});
+    });
+
+    emitVaultUpdate();
+  },
+
+  addComment(
+    threadId: string,
+    commentInput: string | { text: string; author?: string; authorName?: string; parentId?: string | null },
+    parentId: string | null = null,
+    author = 'user',
+    authorName = 'Student'
+  ): VaultThreadComment | null {
+    const thread = this.getThread(threadId);
+    if (!thread) return null;
+    const now = Date.now();
+    const effectiveText = typeof commentInput === 'string' ? commentInput : commentInput.text;
+    const effectiveParent = typeof commentInput === 'object' && commentInput.parentId !== undefined ? commentInput.parentId : parentId;
+    const effectiveAuthor = typeof commentInput === 'object' && commentInput.author ? commentInput.author : author;
+    const effectiveAuthorName = typeof commentInput === 'object' && commentInput.authorName ? commentInput.authorName : authorName;
+
+    const comment: VaultThreadComment = {
+      id: `cm_${now}_${Math.random().toString(36).slice(2, 6)}`,
+      threadId,
+      userId: auth.currentUser?.uid,
+      author: effectiveAuthor,
+      authorName: effectiveAuthorName,
+      text: (effectiveText || '').trim().slice(0, 5000),
+      createdAt: now,
+      parentId: effectiveParent || null,
+      score: 1,
+    };
+
+    const nextComments = [...(thread.comments || []), comment];
+    thread.comments = nextComments;
+    thread.commentCount = nextComments.length;
+    thread.updatedAt = now;
+    this.saveThread(thread);
+
+    saveVaultCommentToFirestore(comment).catch(() => {});
+    return comment;
+  },
+
+  voteThread(threadId: string, delta: number, keyPointId?: string): VaultThread | null {
+    const thread = this.getThread(threadId);
+    if (!thread) return null;
+    if (keyPointId) {
+      const kp = (thread.keyPoints || []).find((k) => k.id === keyPointId);
+      if (kp) {
+        kp.score = (kp.score || 0) + delta;
+        if (delta > 0) {
+          kp.upvoted = !kp.upvoted;
+          kp.downvoted = false;
+        } else {
+          kp.downvoted = !kp.downvoted;
+          kp.upvoted = false;
+        }
+      }
+    } else {
+      thread.score = (thread.score || 0) + delta;
+      if (delta > 0) {
+        thread.upvoted = !thread.upvoted;
+        thread.downvoted = false;
+      } else {
+        thread.downvoted = !thread.downvoted;
+        thread.upvoted = false;
+      }
+    }
+    return this.saveThread(thread);
+  },
+
+  voteComment(threadId: string, commentId: string, delta: number): VaultThreadComment | null {
+    const thread = this.getThread(threadId);
+    if (!thread || !thread.comments) return null;
+    const cm = thread.comments.find((c) => c.id === commentId);
+    if (!cm) return null;
+    cm.score = (cm.score || 0) + delta;
+    if (delta > 0) {
+      cm.upvoted = !cm.upvoted;
+      cm.downvoted = false;
+    } else {
+      cm.downvoted = !cm.downvoted;
+      cm.upvoted = false;
+    }
+    this.saveThread(thread);
+    return cm;
+  },
+
+  indexKeyPoints(thread: VaultThread): void {
+    const current = safeLoad<VaultMemoryIndexItem[]>(GROWTH_KEYS.VAULT_MEMORY_INDEX, []);
+    const filtered = current.filter((m) => m.threadId !== thread.id);
+    const newItems: VaultMemoryIndexItem[] = (thread.keyPoints || []).map((kp, idx) => ({
+      id: `mem_${thread.id}_${idx}`,
+      threadId: thread.id,
+      userId: thread.userId,
+      type: thread.type,
+      title: thread.title,
+      keyPointText: kp.text,
+      timestamp: kp.timestamp,
+      sourceUrl: thread.sourceUrl,
+      subject: thread.subject,
+      chapter: thread.chapter,
+      createdAt: thread.createdAt,
+    }));
+    safeSave(GROWTH_KEYS.VAULT_MEMORY_INDEX, [...newItems, ...filtered].slice(0, 300));
+  },
+
+  searchMemoryCitations(query: string): string[] {
+    const entries = safeLoad<VaultMemoryIndexItem[]>(GROWTH_KEYS.VAULT_MEMORY_INDEX, []);
+    if (entries.length === 0 || !query.trim()) return [];
+    const tokens = query
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter((t) => t.length >= 3);
+    if (tokens.length === 0) return [];
+
+    const scored: Array<{ score: number; entry: VaultMemoryIndexItem }> = [];
+    for (const e of entries) {
+      const hay = `${e.title} ${e.subject} ${e.chapter} ${e.keyPointText}`.toLowerCase();
+      let s = 0;
+      for (const t of tokens) {
+        if (hay.includes(t)) s += 1;
+      }
+      if (s > 0) scored.push({ score: s, entry: e });
+    }
+    scored.sort((a, b) => b.score - a.score);
+
+    return scored.slice(0, 3).map(({ entry }) => {
+      const dateFormatted = formatToIstDate(entry.createdAt).split(' · ')[0] || 'past lecture';
+      const ts = entry.timestamp ? ` (${entry.timestamp})` : '';
+      const noun = entry.type === 'youtube' ? 'lecture' : 'study note';
+      return `From your ${dateFormatted} ${noun} on ${entry.subject} → ${entry.chapter}${ts}: "${entry.keyPointText}"`;
+    });
+  },
+
+  async syncWithFirestore(): Promise<VaultThread[]> {
+    if (this.isGuest()) return [];
+    try {
+      const remote = await loadVaultThreadsFromFirestore();
+      if (Array.isArray(remote) && remote.length > 0) {
+        const local = this.getThreads();
+        const mergedMap = new Map<string, VaultThread>();
+        for (const item of [...remote, ...local]) {
+          if (item?.id) {
+            mergedMap.set(item.id, item as VaultThread);
+          }
+        }
+        const merged = Array.from(mergedMap.values());
+        const plan = UserAccountStore.getCurrentPlan();
+        const finalThreads = plan === 'free' ? merged.slice(0, 20) : merged;
+        safeSave(GROWTH_KEYS.VAULT_THREADS, finalThreads);
+        emitVaultUpdate();
+        return finalThreads;
+      }
+    } catch {}
+    return this.getThreads();
   },
 };
 

@@ -187,8 +187,26 @@ describe('Dodo Payments Billing Engine & Webhook State Machine', () => {
     expect(refundRow?.currency).toBe('INR');
     expect(refundRow?.status).toBe('succeeded');
 
-    // 6. Dispute opened immediately revokes paid access and flags user
-    processVerifiedDodoWebhookEvent('wh_5_dispute', {
+    // 6. Full refund (with only payment_id, no metadata.firebase_uid) finds user from payment and drops Spark back to Free
+    const fullRefundOutcome = processVerifiedDodoWebhookEvent('wh_5_full_refund', {
+      type: 'refund.succeeded',
+      timestamp: '2026-11-04T11:12:00.000Z',
+      data: {
+        payload_type: 'Refund',
+        refund_id: 'ref_full_1',
+        payment_id: 'pay_test_1',
+        is_partial: false,
+        amount: 29736,
+        currency: 'INR',
+        status: 'succeeded',
+        reason: 'requested_by_customer',
+      },
+    });
+    expect(fullRefundOutcome.uid).toBe(uid);
+    expect(getEffectiveServerUserPlan(uid).plan).toBe('free');
+
+    // 7. Dispute opened immediately revokes paid access and flags user
+    processVerifiedDodoWebhookEvent('wh_6_dispute', {
       type: 'dispute.opened',
       timestamp: '2026-11-04T11:15:00.000Z',
       data: {
@@ -205,3 +223,4 @@ describe('Dodo Payments Billing Engine & Webhook State Machine', () => {
     expect(userRow.dispute_flagged).toBe(1);
   });
 });
+

@@ -22,6 +22,8 @@ import {
   GraduationCap,
   Layers,
   Zap,
+  Mic,
+  MicOff,
 } from 'lucide-react';
 import { ModelOption, GROK_MODELS, getDefaultVisionModel } from '../GrokModelPicker';
 import { SearchMode, ChatAttachment, ChatMessage } from '../../types';
@@ -303,13 +305,90 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isPlusMenuOpen, setIsPlusMenuOpen] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [isSpeechSupported, setIsSpeechSupported] = useState(false);
+  const [isListening, setIsListening] = useState(false);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const plusMenuRef = useRef<HTMLDivElement>(null);
+  const recognitionRef = useRef<any>(null);
+  const preVoiceTextRef = useRef<string>('');
 
   const isDark = theme === 'dark';
   const isEmpty = !value.trim() && attachments.length === 0;
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const SpeechRec =
+        (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      setIsSpeechSupported(Boolean(SpeechRec));
+    }
+    return () => {
+      try {
+        recognitionRef.current?.stop?.();
+      } catch {}
+    };
+  }, []);
+
+  const toggleVoiceInput = () => {
+    if (typeof window === 'undefined') return;
+    const SpeechRec =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRec) return;
+
+    if (isListening && recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch {}
+      setIsListening(false);
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRec();
+      recognition.lang = navigator.language || 'en-US';
+      recognition.interimResults = true;
+      recognition.continuous = false;
+      recognition.maxAlternatives = 1;
+
+      preVoiceTextRef.current = value.trim() ? `${value.trim()} ` : '';
+
+      recognition.onstart = () => {
+        setIsListening(true);
+      };
+
+      recognition.onresult = (event: any) => {
+        let interimTranscript = '';
+        let finalTranscript = '';
+        for (let i = 0; i < event.results.length; i++) {
+          const res = event.results[i];
+          if (res.isFinal) {
+            finalTranscript += res[0].transcript;
+          } else {
+            interimTranscript += res[0].transcript;
+          }
+        }
+        const combined = `${preVoiceTextRef.current}${finalTranscript}${interimTranscript}`.trimStart();
+        setValue(combined);
+      };
+
+      recognition.onerror = () => {
+        setIsListening(false);
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+        }
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch {
+      setIsListening(false);
+    }
+  };
 
   useEffect(() => {
     const syncQuota = () => {
@@ -402,8 +481,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     if (allowedSlots <= 0) {
       const msg =
         currentPlan === 'spark'
-          ? `Daily file upload limit reached (${latestUsage.fileUploadLimit}/250 files used on Spark). Upgrade to Fire ($7/mo) for unlimited file uploads.`
-          : `Please choose a plan to upload files — Spark ($3/mo for 250 uploads/day) or Fire ($7/mo for unlimited uploads).`;
+          ? `Daily file upload limit reached (${latestUsage.fileUploadLimit}/250 files used on Spark). Upgrade to Fire ($7/mo) for 1,000 file uploads/day.`
+          : `Please choose a plan to upload files — Spark ($3/mo for 250 uploads/day) or Fire ($7/mo for 1,000 uploads/day).`;
       setUploadLimitWarning(msg);
       openPricingModal(currentPlan === 'spark' ? 'fire' : 'spark', msg);
       return;
@@ -414,7 +493,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       filesToProcess = fileList.slice(0, allowedSlots);
       const msg =
         currentPlan === 'spark'
-          ? `Attached ${allowedSlots} file(s) up to your Spark plan limit (250 uploads/day). Upgrade to Fire ($7/mo) for unlimited uploads.`
+          ? `Attached ${allowedSlots} file(s) up to your Spark plan limit (250 uploads/day). Upgrade to Fire ($7/mo) for 1,000 uploads/day.`
           : `Select Spark ($3/mo) or Fire ($7/mo) to upload more files.`;
       setUploadLimitWarning(msg);
     } else {
@@ -524,7 +603,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             Drop any files, photos, code, or documents to upload
           </span>
           <span className="text-[10px] text-white/70">
-            Multi-file upload • Unlimited formats & sizes
+            Multi-file upload • PDFs, slides, code &amp; study documents
           </span>
         </div>
       )}
@@ -619,7 +698,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               </span>
               <span className="text-[10px] font-mono opacity-65">
                 ({usageQuota.filesUploaded + attachments.length}/
-                {usageQuota.fileUploadLimit >= 999999 ? '∞' : usageQuota.fileUploadLimit} plan limit)
+                {usageQuota.fileUploadLimit} daily plan cap)
               </span>
               {totalAttachmentBytes > 0 && (
                 <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono ${
@@ -1019,8 +1098,31 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           }`}
         />
 
-        {/* Right Action Cluster (History + Send/Stop) */}
+        {/* Right Action Cluster (Voice Mic + History + Send/Stop) */}
         <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 select-none">
+          {/* Web Speech API Voice Input Mic Button (hidden if unsupported) */}
+          {isSpeechSupported && (
+            <button
+              type="button"
+              onClick={toggleVoiceInput}
+              className={`size-7 sm:size-7.5 rounded-full flex items-center justify-center transition-all cursor-pointer ${
+                isListening
+                  ? 'bg-[#FC4C01] text-white shadow-[0_0_14px_rgba(252,76,1,0.55)] animate-pulse'
+                  : isDark
+                  ? 'text-[#a1a1aa] hover:text-white hover:bg-white/[0.08]'
+                  : 'text-[#71717a] hover:text-[#18181b] hover:bg-black/[0.05]'
+              }`}
+              title={isListening ? 'Stop voice input' : 'Voice input (Speak your question)'}
+              aria-label={isListening ? 'Stop voice input' : 'Start voice input'}
+              data-testid="chat-voice-input-btn"
+            >
+              {isListening ? (
+                <MicOff className="w-3.5 h-3.5" />
+              ) : (
+                <Mic className="w-3.5 h-3.5" />
+              )}
+            </button>
+          )}
 
           {/* In-Chat History Trigger Button */}
           <button

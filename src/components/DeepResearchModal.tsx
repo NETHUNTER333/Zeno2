@@ -16,8 +16,11 @@ import {
   Download,
   Edit3,
   Sparkles,
+  Bookmark,
+  FolderOpen,
+  Link2,
 } from 'lucide-react';
-import { SearchSource, ArxivPaper, SearchMode, ChatAttachment } from '../types';
+import { SearchSource, ArxivPaper, SearchMode, ChatAttachment, AgentReplyCard } from '../types';
 import { getAuthHeaders } from '../lib/firebase';
 import AILoadingState from './kokonutui/ai-loading';
 import { ThinkingStep } from './ui/thinking-state';
@@ -41,6 +44,8 @@ import {
 import { MathMarkdown } from './MathMarkdown';
 import { openKinichReportModal } from './LegalAndInfoPages';
 import { Flag } from 'lucide-react';
+import { UserAccountStore } from '../lib/userAccountStore';
+import { KnowledgeVaultStore } from '../lib/growthStore';
 
 export { type AnswerSource };
 
@@ -1609,6 +1614,79 @@ STRICT RULES:
     setLiveStatusAnnouncement('Exported report (.md)');
   };
 
+  const [isGuestResearchUser, setIsGuestResearchUser] = useState(() => UserAccountStore.isGuest());
+  const [savedResearchTurnMap, setSavedResearchTurnMap] = useState<Record<string, string>>({});
+  const [sageResearchCardMap, setSageResearchCardMap] = useState<Record<string, AgentReplyCard>>({});
+
+  useEffect(() => {
+    const syncGuest = () => setIsGuestResearchUser(UserAccountStore.isGuest());
+    window.addEventListener('kinich-account-updated', syncGuest);
+    return () => window.removeEventListener('kinich-account-updated', syncGuest);
+  }, []);
+
+  useEffect(() => {
+    const onSageDone = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      if (!detail?.item || !detail?.agentReply) return;
+      const turnEntry = Object.entries(savedResearchTurnMap).find(
+        ([, vaultId]) => vaultId === detail.item.id
+      );
+      if (turnEntry) {
+        setSageResearchCardMap((prev) => ({
+          ...prev,
+          [turnEntry[0]]: detail.agentReply as AgentReplyCard,
+        }));
+      }
+    };
+    window.addEventListener('kinich-sage-organized', onSageDone as EventListener);
+    return () => window.removeEventListener('kinich-sage-organized', onSageDone as EventListener);
+  }, [savedResearchTurnMap]);
+
+  const handleSaveTurnToVault = (turn: DeepResearchTurn) => {
+    if (UserAccountStore.isGuest()) {
+      window.dispatchEvent(new CustomEvent('kinich-open-auth'));
+      return;
+    }
+    const existingVaultId = savedResearchTurnMap[turn.id];
+    const check = KnowledgeVaultStore.canSaveToVault(existingVaultId);
+    if (!check.allowed) {
+      window.dispatchEvent(
+        new CustomEvent('kinich-open-pricing', {
+          detail: { highlightPlan: 'spark', reason: check.message },
+        })
+      );
+      return;
+    }
+
+    const fullContent =
+      `# Deep Research: ${turn.question}\n\n${turn.fullAnswer}\n\n## Cited Sources\n` +
+      (turn.sources || [])
+        .map((s) => `- [${s.id}] ${s.title} (${s.url})`)
+        .join('\n');
+
+    const saved = KnowledgeVaultStore.saveItem({
+      id: existingVaultId,
+      title: `Deep Research: ${turn.question}`,
+      summary: turn.fullAnswer.replace(/[#*`~>\n]+/g, ' ').trim().slice(0, 240),
+      content: fullContent,
+      type: 'research_report',
+      sourceType: 'research_report',
+      sourceUrl: turn.sources?.[0]?.url || '',
+      collectionId: 'col_research_ideas',
+      tags: ['deep-research', 'research-report'],
+      sources: (turn.sources || []).map((s, idx) => ({
+        position: s.id || idx + 1,
+        title: s.title,
+        url: s.url,
+        snippet: s.snippet || '',
+        domain: s.domain,
+      })),
+    });
+
+    setSavedResearchTurnMap((prev) => ({ ...prev, [turn.id]: saved.id }));
+    setLiveStatusAnnouncement('Saved Deep Research report to Vault');
+  };
+
   // Render inline text with KaTeX math ($$...$$ only, never single-$ currency), **bold**, and [1] or [1,3] numbered citation chips
   const renderRichLine = (lineText: string, lineKey: string, turnSources: AnswerSource[]) => {
     // Capture optional preceding non-whitespace word + citation [1] + optional trailing punctuation so chip never wraps alone
@@ -2570,6 +2648,40 @@ STRICT RULES:
                           <span>Export</span>
                         </button>
 
+                        {/* Save to Vault Pill */}
+                        <button
+                          type="button"
+                          onClick={() => handleSaveTurnToVault(turn)}
+                          data-testid="deep-research-save-to-vault-btn"
+                          title={
+                            isGuestResearchUser
+                              ? 'Sign in to save this research report to your Vault'
+                              : 'Save Deep Research report to your Vault'
+                          }
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold border backdrop-blur-md transition-all active:scale-95 cursor-pointer ${
+                            savedResearchTurnMap[turn.id]
+                              ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-400'
+                              : isGuestResearchUser
+                              ? isDark
+                                ? 'border-white/[0.12] bg-white/[0.04] text-neutral-300 hover:text-white'
+                                : 'border-black/[0.12] bg-black/[0.03] text-neutral-700 hover:text-black'
+                              : 'border-[#FC4C01]/50 bg-[#FC4C01]/15 text-[#FC4C01] hover:bg-[#FC4C01] hover:text-white'
+                          }`}
+                        >
+                          <Bookmark
+                            className={`w-3 h-3 ${savedResearchTurnMap[turn.id] ? 'fill-current' : ''}`}
+                          />
+                          <span>
+                            {isGuestResearchUser
+                              ? 'Sign in to save'
+                              : savedResearchTurnMap[turn.id]
+                              ? sageResearchCardMap[turn.id]
+                                ? 'Saved to Vault'
+                                : 'Sage organizing…'
+                              : 'Save to Vault'}
+                          </span>
+                        </button>
+
                         {/* Regenerate / Retry Pill */}
                         {tIdx === turns.length - 1 && (
                           <button
@@ -2667,6 +2779,45 @@ STRICT RULES:
                           }`}
                         </div>
                       ) : null}
+                    </div>
+                  )}
+
+                  {/* Sage Reply Card for Saved Deep Research Report */}
+                  {sageResearchCardMap[turn.id] && (
+                    <div
+                      className={`mt-3 rounded-xl border p-3 text-xs ${
+                        isDark
+                          ? 'bg-[#121215] border-[#FC4C01]/35 text-neutral-200'
+                          : 'bg-[#fffaf7] border-[#FC4C01]/35 text-neutral-900'
+                      }`}
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+                        <span className="inline-flex items-center gap-1.5 font-bold text-[#FC4C01]">
+                          <Sparkles className="w-3.5 h-3.5" />
+                          Sage (Vault Organizer)
+                        </span>
+                        <span className="inline-flex items-center gap-1 font-medium text-[#FC4C01]">
+                          <FolderOpen className="w-3.5 h-3.5" />
+                          {sageResearchCardMap[turn.id].subject} → {sageResearchCardMap[turn.id].chapter}
+                        </span>
+                      </div>
+                      <p className="opacity-90">{sageResearchCardMap[turn.id].content}</p>
+                      {Array.isArray(sageResearchCardMap[turn.id].linkedItems) &&
+                        sageResearchCardMap[turn.id].linkedItems!.length > 0 && (
+                          <div className="mt-1.5 pt-1.5 border-t border-current/10 flex flex-wrap items-center gap-1.5">
+                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-[#FC4C01]">
+                              <Link2 className="w-3 h-3" /> Linked in Vault:
+                            </span>
+                            {sageResearchCardMap[turn.id].linkedItems!.map((li) => (
+                              <span
+                                key={li.id}
+                                className="text-[10px] px-2 py-0.5 rounded-md border border-current/15"
+                              >
+                                {li.title}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                     </div>
                   )}
 

@@ -45,11 +45,14 @@ import {
   Sliders,
   Type,
   RotateCcw,
+  Bookmark,
+  FolderOpen,
 } from 'lucide-react';
 import {
   YouTubeTranscriptSegment,
   YouTubeStudyBundle,
   YouTubeVideoInfo,
+  AgentReplyCard,
 } from '../types';
 import {
   getAuthHeaders,
@@ -59,6 +62,7 @@ import {
 } from '../lib/pdfStudyEngine';
 import { speakTextWithSmallestAi, stopSmallestSpeech } from '../lib/smallestAi';
 import { UserAccountStore } from '../lib/userAccountStore';
+import { KnowledgeVaultStore } from '../lib/growthStore';
 import { MathMarkdown } from './MathMarkdown';
 
 export interface StudyWorkspaceProps {
@@ -1365,6 +1369,124 @@ ${fullTranscriptText}`;
     URL.revokeObjectURL(url);
   };
 
+  const [isGuestStudyUser, setIsGuestStudyUser] = useState(() => UserAccountStore.isGuest());
+  const [savedStudyVaultId, setSavedStudyVaultId] = useState<string | null>(null);
+  const [sageStudyOrganizing, setSageStudyOrganizing] = useState(false);
+  const [sageStudyCard, setSageStudyCard] = useState<AgentReplyCard | null>(null);
+
+  useEffect(() => {
+    const syncGuest = () => setIsGuestStudyUser(UserAccountStore.isGuest());
+    window.addEventListener('kinich-account-updated', syncGuest);
+    return () => window.removeEventListener('kinich-account-updated', syncGuest);
+  }, []);
+
+  useEffect(() => {
+    const onSageDone = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      if (!detail?.item || !detail?.agentReply) return;
+      if (savedStudyVaultId && detail.item.id === savedStudyVaultId) {
+        setSageStudyOrganizing(false);
+        setSageStudyCard(detail.agentReply as AgentReplyCard);
+      }
+    };
+    window.addEventListener('kinich-sage-organized', onSageDone as EventListener);
+    return () => window.removeEventListener('kinich-sage-organized', onSageDone as EventListener);
+  }, [savedStudyVaultId]);
+
+  const handleSaveStudyResultToVault = (
+    saveType: 'lecture' | 'quiz' | 'flashcard_deck' = 'lecture'
+  ) => {
+    if (UserAccountStore.isGuest()) {
+      window.dispatchEvent(new CustomEvent('kinich-open-auth'));
+      return;
+    }
+    const check = KnowledgeVaultStore.canSaveToVault(savedStudyVaultId || undefined);
+    if (!check.allowed) {
+      window.dispatchEvent(
+        new CustomEvent('kinich-open-pricing', {
+          detail: { highlightPlan: 'spark', reason: check.message },
+        })
+      );
+      return;
+    }
+
+    const chapterTimestamps = (studyBundle?.summary?.chapters || [])
+      .slice(0, 20)
+      .map((ch) => `[${formatTime(ch.timestamp)}] ${ch.title}`);
+    const segmentTimestamps = segments
+      .slice(0, 15)
+      .map((s) => `[${formatTime(s.start_s)}] ${s.text.slice(0, 60)}`);
+    const timestamps =
+      chapterTimestamps.length > 0 ? chapterTimestamps : segmentTimestamps;
+
+    const sourceUrl = activeVideoId
+      ? `https://www.youtube.com/watch?v=${activeVideoId}`
+      : pdfUrl || '';
+
+    let md = `# ${resolvedTitle}\n\n`;
+    if (sourceUrl) {
+      md += `**Source**: ${sourceUrl}\n\n`;
+    }
+    if (studyBundle?.summary?.overview) {
+      md += `## Overview\n${studyBundle.summary.overview}\n\n`;
+    }
+    if (aiExhaustiveSummary) {
+      md += `## Detailed Synthesis\n${aiExhaustiveSummary}\n\n`;
+    }
+    if (studyBundle?.summary?.chapters && studyBundle.summary.chapters.length > 0) {
+      md += `## Timestamped Chapters\n`;
+      for (const ch of studyBundle.summary.chapters) {
+        md += `- **[${formatTime(ch.timestamp)}] ${ch.title}**: ${ch.summary}\n`;
+      }
+      md += `\n`;
+    }
+    if (statementBreakdown.length > 0) {
+      md += `## Core Concepts & Breakdown\n\n`;
+      for (const st of statementBreakdown) {
+        md += `### ${st.heading}\n${st.elaboration}\n\n`;
+      }
+    }
+    if (studyBundle?.quiz && studyBundle.quiz.length > 0) {
+      md += `## Active Recall Quiz (${studyBundle.quiz.length} Questions)\n`;
+      studyBundle.quiz.forEach((q, idx) => {
+        md += `${idx + 1}. **${q.question}**\n   - Answer: ${q.options[q.correctIndex]} — ${q.explanation}\n`;
+      });
+      md += `\n`;
+    }
+    if (customFlashcards.length > 0) {
+      md += `## Flashcards (${customFlashcards.length})\n`;
+      customFlashcards.forEach((fc, idx) => {
+        md += `${idx + 1}. **${fc.front}** — ${fc.back}\n`;
+      });
+    }
+
+    setSageStudyOrganizing(true);
+    const saved = KnowledgeVaultStore.saveItem({
+      title:
+        saveType === 'quiz'
+          ? `Quiz: ${resolvedTitle}`
+          : saveType === 'flashcard_deck'
+          ? `Flashcards: ${resolvedTitle}`
+          : resolvedTitle || 'YouTube Study Lecture',
+      summary:
+        studyBundle?.summary?.overview ||
+        aiExhaustiveSummary.slice(0, 240) ||
+        rawSourceText.slice(0, 240) ||
+        resolvedTitle,
+      content: md.trim() || rawSourceText || resolvedTitle,
+      type: saveType,
+      sourceType: saveType,
+      sourceUrl,
+      timestamps,
+      collectionId: 'col_exam_prep',
+      tags: [
+        activeVideoId ? 'youtube-study' : 'study-space',
+        saveType,
+      ],
+    });
+    setSavedStudyVaultId(saved.id);
+  };
+
   const handleSendStudyChat = async (overridePrompt?: string) => {
     const raw = (overridePrompt ?? chatDraft).trim();
     if (!raw && activeChatTags.length === 0) return;
@@ -1916,19 +2038,19 @@ ${fullTranscriptText}`;
           </header>
 
           <div className="max-w-2xl w-full mx-auto px-4 sm:px-6 py-3 space-y-4">
-            {/* 3-Column Compact Ingestion: Upload, Link, Paste (Monochrome, Small) */}
+            {/* 3-Column Compact Ingestion: Upload, Link, Paste (Pill-shaped, Clean) */}
             <div className="grid grid-cols-3 gap-2 sm:gap-2.5">
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className={`p-2.5 sm:p-3 rounded-2xl border text-left flex items-center gap-2.5 transition-all cursor-pointer ${
+                className={`px-3.5 py-2 rounded-full border text-left flex items-center gap-2.5 transition-all cursor-pointer ${
                   isDark
                     ? 'bg-[#121215] border-white/[0.08] hover:border-white/[0.2] hover:bg-[#18181c]'
                     : 'bg-white border-black/[0.08] hover:border-black/[0.2] hover:bg-neutral-50 shadow-xs'
                 }`}
               >
                 <div
-                  className={`size-8 rounded-full flex items-center justify-center shrink-0 ${
+                  className={`size-7 rounded-full flex items-center justify-center shrink-0 ${
                     isDark ? 'bg-white/[0.06] text-neutral-200' : 'bg-black/[0.05] text-neutral-800'
                   }`}
                 >
@@ -1943,14 +2065,14 @@ ${fullTranscriptText}`;
               <button
                 type="button"
                 onClick={() => setLinkModalOpen(true)}
-                className={`p-2.5 sm:p-3 rounded-2xl border text-left flex items-center gap-2.5 transition-all cursor-pointer ${
+                className={`px-3.5 py-2 rounded-full border text-left flex items-center gap-2.5 transition-all cursor-pointer ${
                   isDark
                     ? 'bg-[#121215] border-white/[0.08] hover:border-white/[0.2] hover:bg-[#18181c]'
                     : 'bg-white border-black/[0.08] hover:border-black/[0.2] hover:bg-neutral-50 shadow-xs'
                 }`}
               >
                 <div
-                  className={`size-8 rounded-full flex items-center justify-center shrink-0 ${
+                  className={`size-7 rounded-full flex items-center justify-center shrink-0 ${
                     isDark ? 'bg-white/[0.06] text-neutral-200' : 'bg-black/[0.05] text-neutral-800'
                   }`}
                 >
@@ -1965,14 +2087,14 @@ ${fullTranscriptText}`;
               <button
                 type="button"
                 onClick={() => setPasteModalOpen(true)}
-                className={`p-2.5 sm:p-3 rounded-2xl border text-left flex items-center gap-2.5 transition-all cursor-pointer ${
+                className={`px-3.5 py-2 rounded-full border text-left flex items-center gap-2.5 transition-all cursor-pointer ${
                   isDark
                     ? 'bg-[#121215] border-white/[0.08] hover:border-white/[0.2] hover:bg-[#18181c]'
                     : 'bg-white border-black/[0.08] hover:border-black/[0.2] hover:bg-neutral-50 shadow-xs'
                 }`}
               >
                 <div
-                  className={`size-8 rounded-full flex items-center justify-center shrink-0 ${
+                  className={`size-7 rounded-full flex items-center justify-center shrink-0 ${
                     isDark ? 'bg-white/[0.06] text-neutral-200' : 'bg-black/[0.05] text-neutral-800'
                   }`}
                 >
@@ -2036,7 +2158,7 @@ ${fullTranscriptText}`;
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <h2 className="text-xs sm:text-sm font-semibold tracking-tight">Spaces</h2>
-                  <span className="text-[10px] font-medium px-1.5 py-0.2 rounded-full bg-neutral-500/10 text-muted-foreground">
+                  <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-neutral-500/10 text-muted-foreground">
                     {spaces.length}
                   </span>
                 </div>
@@ -2075,7 +2197,7 @@ ${fullTranscriptText}`;
                             loadTopicStudySpace(sp.name);
                           }
                         }}
-                        className={`group px-3 py-2.5 rounded-xl border flex items-center justify-between gap-3 transition-all cursor-pointer ${
+                        className={`group px-3 py-2.5 rounded-2xl border flex items-center justify-between gap-3 transition-all cursor-pointer ${
                           isDark
                             ? 'bg-[#121215] border-white/[0.07] hover:border-white/[0.18] hover:bg-[#16161a]'
                             : 'bg-white border-black/[0.07] hover:border-black/[0.18] hover:bg-neutral-50 shadow-2xs'
@@ -2100,7 +2222,7 @@ ${fullTranscriptText}`;
                               {sp.name}
                             </div>
                           </div>
-                          <span className={`text-[10px] shrink-0 ${textMuted}`}>
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full border border-black/8 dark:border-white/8 shrink-0 ${textMuted}`}>
                             {isYt ? 'YouTube' : isPdf ? 'PDF' : 'Topic'}
                           </span>
                         </div>
@@ -2111,7 +2233,7 @@ ${fullTranscriptText}`;
                             onClick={() =>
                               setOpenSpaceMenuId((prev) => (prev === sp.id ? null : sp.id))
                             }
-                            className={`p-1.5 rounded-full transition-colors cursor-pointer ${
+                            className={`size-7 rounded-full flex items-center justify-center transition-colors cursor-pointer ${
                               isDark ? 'hover:bg-white/[0.08]' : 'hover:bg-black/[0.06]'
                             }`}
                             title="Space options"
@@ -2367,6 +2489,46 @@ ${fullTranscriptText}`;
                 New Topic
               </button>
 
+              {/* Save to Vault Button (YouTube Study / Lecture / Quiz / Flashcards) */}
+              <button
+                type="button"
+                onClick={() =>
+                  handleSaveStudyResultToVault(
+                    activeTabObj?.type === 'quiz'
+                      ? 'quiz'
+                      : activeTabObj?.type === 'flashcards'
+                      ? 'flashcard_deck'
+                      : 'lecture'
+                  )
+                }
+                data-testid="study-save-to-vault-btn"
+                className={`h-8 px-3.5 rounded-full border text-xs font-semibold inline-flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap active:scale-95 ${
+                  savedStudyVaultId
+                    ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400'
+                    : isGuestStudyUser
+                    ? isDark
+                      ? 'bg-white/[0.04] hover:bg-white/[0.09] border-white/[0.15] text-neutral-300'
+                      : 'bg-black/[0.04] hover:bg-black/[0.08] border-black/[0.15] text-neutral-800'
+                    : 'bg-[#FC4C01] hover:bg-[#e04300] border-[#FC4C01] text-white shadow-[0_0_16px_rgba(252,76,1,0.3)]'
+                }`}
+                title={
+                  isGuestStudyUser
+                    ? 'Sign in to save this study output to your Vault'
+                    : 'Save lecture, transcript, chapters, quiz & flashcards to your Vault'
+                }
+              >
+                <Bookmark className={`w-3.5 h-3.5 shrink-0 ${savedStudyVaultId ? 'fill-current' : ''}`} />
+                <span>
+                  {isGuestStudyUser
+                    ? 'Sign in to save'
+                    : sageStudyOrganizing
+                    ? 'Sage organizing…'
+                    : savedStudyVaultId
+                    ? 'Saved to Vault'
+                    : 'Save to Vault'}
+                </span>
+              </button>
+
               <button
                 type="button"
                 onClick={handleExportStudyPack}
@@ -2472,6 +2634,58 @@ ${fullTranscriptText}`;
             </div>
           </header>
 
+          {/* Sage Agent Organization & Linked Lectures Banner */}
+          {(sageStudyOrganizing || sageStudyCard) && (
+            <div
+              data-testid="study-sage-banner"
+              className={`px-4 py-2 border-b flex flex-wrap items-center justify-between gap-2 text-xs ${
+                isDark
+                  ? 'bg-[#121215] border-[#FC4C01]/20 text-neutral-200'
+                  : 'bg-[#fffaf7] border-[#FC4C01]/20 text-neutral-900'
+              }`}
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#FC4C01]/10 text-[#FC4C01] font-semibold text-[11px] border border-[#FC4C01]/25">
+                  <Sparkles className="w-3 h-3" />
+                  Sage
+                </span>
+                {sageStudyOrganizing && !sageStudyCard ? (
+                  <span className="text-neutral-400">
+                    Assigning Subject, Chapter, tags, and linking related Vault lectures…
+                  </span>
+                ) : sageStudyCard ? (
+                  <>
+                    <span className="inline-flex items-center gap-1 font-semibold text-[#FC4C01]">
+                      <FolderOpen className="w-3.5 h-3.5" />
+                      {sageStudyCard.subject} → {sageStudyCard.chapter}
+                    </span>
+                    <span className="opacity-85">{sageStudyCard.content}</span>
+                  </>
+                ) : null}
+              </div>
+              {sageStudyCard && Array.isArray(sageStudyCard.linkedItems) && sageStudyCard.linkedItems.length > 0 && (
+                <div className="flex items-center gap-1.5">
+                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#FC4C01]">
+                    <Link2 className="w-3 h-3" />
+                    Linked:
+                  </span>
+                  {sageStudyCard.linkedItems.map((li) => (
+                    <span
+                      key={li.id}
+                      className={`px-2.5 py-0.5 rounded-full border text-[11px] ${
+                        isDark
+                          ? 'bg-white/[0.04] border-white/10 text-neutral-200'
+                          : 'bg-black/[0.04] border-black/10 text-neutral-800'
+                      }`}
+                    >
+                      {li.title}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Collapsible Source Video / PDF Drawer */}
           {showSourceViewer && (
             <div className={`px-3 sm:px-5 py-2.5 border-b shrink-0 ${borderSubtle}`}>
@@ -2523,7 +2737,7 @@ ${fullTranscriptText}`;
             </div>
           )}
 
-          {/* Workspace Navigation Tabs */}
+          {/* Workspace Navigation Tabs (Pill style) */}
           <div
             className={`px-3 sm:px-5 py-1.5 border-b flex items-center gap-1.5 overflow-x-auto scrollbar-none shrink-0 ${
               isDark ? 'bg-[#0c0c0e] border-white/[0.08]' : 'bg-[#f4f4f6] border-black/[0.08]'
@@ -2541,11 +2755,11 @@ ${fullTranscriptText}`;
                   className={`h-8 inline-flex items-center gap-2 px-3.5 rounded-full border text-xs font-medium transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                     isActive
                       ? isDark
-                        ? 'bg-white text-black border-white font-semibold shadow-2xs'
-                        : 'bg-black text-white border-black font-semibold shadow-2xs'
+                        ? 'bg-white text-black border-white font-semibold shadow-xs'
+                        : 'bg-black text-white border-black font-semibold shadow-xs'
                       : isDark
-                      ? 'border-transparent text-neutral-400 hover:text-white hover:bg-white/[0.05]'
-                      : 'border-transparent text-neutral-600 hover:text-black hover:bg-black/[0.05]'
+                      ? 'border-white/10 text-neutral-400 hover:text-white hover:bg-white/[0.05]'
+                      : 'border-black/10 text-neutral-600 hover:text-black hover:bg-black/[0.05]'
                   }`}
                 >
                   <span className="max-w-[150px] truncate">{tab.title}</span>
@@ -2555,7 +2769,7 @@ ${fullTranscriptText}`;
                       onClick={(e) => closeTab(tab.id, e)}
                       aria-label={`Close ${tab.title} tab`}
                       title={`Close ${tab.title} tab`}
-                      className="opacity-60 hover:opacity-100 p-0.5 rounded-full cursor-pointer"
+                      className="size-4 rounded-full flex items-center justify-center opacity-60 hover:opacity-100 hover:bg-black/10 dark:hover:bg-white/20 p-0.5 cursor-pointer"
                     >
                       <X className="w-3 h-3" />
                     </button>
@@ -2568,7 +2782,7 @@ ${fullTranscriptText}`;
               <button
                 type="button"
                 onClick={() => openOrFocusTab('videos', `Videos (${topicVideos.length})`)}
-                className={`h-8 inline-flex items-center gap-1.5 px-3.5 rounded-full text-xs font-medium transition-colors cursor-pointer shrink-0 ${
+                className={`h-8 inline-flex items-center gap-1.5 px-3.5 rounded-full border border-black/10 dark:border-white/10 text-xs font-medium transition-colors cursor-pointer shrink-0 ${
                   isDark
                     ? 'text-neutral-400 hover:text-white hover:bg-white/[0.05]'
                     : 'text-neutral-600 hover:text-black hover:bg-black/[0.05]'
@@ -2582,7 +2796,7 @@ ${fullTranscriptText}`;
             <button
               type="button"
               onClick={() => openOrFocusTab('learn', 'Study Tools')}
-              className={`h-8 w-8 inline-flex items-center justify-center rounded-full border text-xs font-medium transition-colors cursor-pointer shrink-0 ${
+              className={`size-8 inline-flex items-center justify-center rounded-full border text-xs font-medium transition-colors cursor-pointer shrink-0 ${
                 isDark
                   ? 'bg-white/[0.04] hover:bg-white/[0.09] border-white/[0.12] text-neutral-300'
                   : 'bg-black/[0.03] hover:bg-black/[0.07] border-black/[0.12] text-neutral-700'
@@ -3268,7 +3482,7 @@ ${fullTranscriptText}`;
                         <div className="flex flex-wrap items-center gap-2 text-xs">
                           {/* Font Family Selector */}
                           <div
-                            className={`flex items-center p-0.5 rounded-xl border ${borderSubtle} ${bgCard}`}
+                            className={`flex items-center p-0.5 rounded-full border ${borderSubtle} ${bgCard}`}
                             title="Font Family"
                           >
                             {(['sans', 'serif', 'mono'] as const).map((ff) => (
@@ -3276,7 +3490,7 @@ ${fullTranscriptText}`;
                                 key={ff}
                                 type="button"
                                 onClick={() => setReadingFontFamily(ff)}
-                                className={`px-2.5 py-1 rounded-lg capitalize font-medium cursor-pointer transition-all ${
+                                className={`px-2.5 py-0.5 rounded-full capitalize font-medium text-xs cursor-pointer transition-all ${
                                   readingFontFamily === ff
                                     ? isDark
                                       ? 'bg-neutral-800 text-white shadow-xs'
@@ -3291,7 +3505,7 @@ ${fullTranscriptText}`;
 
                           {/* Font Size Selector */}
                           <div
-                            className={`flex items-center p-0.5 rounded-xl border ${borderSubtle} ${bgCard}`}
+                            className={`flex items-center p-0.5 rounded-full border ${borderSubtle} ${bgCard}`}
                             title="Font Size"
                           >
                             <span className={`px-2 text-[11px] font-semibold ${textMuted}`}>Size</span>
@@ -3300,7 +3514,7 @@ ${fullTranscriptText}`;
                                 key={sz}
                                 type="button"
                                 onClick={() => setReadingFontSize(sz)}
-                                className={`px-2 py-1 rounded-lg text-xs font-medium cursor-pointer transition-all ${
+                                className={`px-2 py-0.5 rounded-full text-xs font-medium cursor-pointer transition-all ${
                                   readingFontSize === sz
                                     ? isDark
                                       ? 'bg-neutral-800 text-white shadow-xs'
@@ -3315,7 +3529,7 @@ ${fullTranscriptText}`;
 
                           {/* Line Height Selector */}
                           <div
-                            className={`flex items-center p-0.5 rounded-xl border ${borderSubtle} ${bgCard}`}
+                            className={`flex items-center p-0.5 rounded-full border ${borderSubtle} ${bgCard}`}
                             title="Line Spacing"
                           >
                             <span className={`px-2 text-[11px] font-semibold ${textMuted}`}>Line</span>
@@ -3324,7 +3538,7 @@ ${fullTranscriptText}`;
                                 key={lh}
                                 type="button"
                                 onClick={() => setReadingLineHeight(lh)}
-                                className={`px-2 py-1 rounded-lg text-xs font-medium cursor-pointer transition-all ${
+                                className={`px-2 py-0.5 rounded-full text-xs font-medium cursor-pointer transition-all ${
                                   readingLineHeight === lh
                                     ? isDark
                                       ? 'bg-neutral-800 text-white shadow-xs'
@@ -3342,7 +3556,7 @@ ${fullTranscriptText}`;
                         <button
                           type="button"
                           onClick={() => setIsReadingMode(false)}
-                          className={`h-8 px-3 rounded-xl border text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer hover:opacity-80 transition-colors ${borderSubtle}`}
+                          className={`h-8 px-3.5 rounded-full border text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer hover:opacity-80 transition-colors ${borderSubtle}`}
                         >
                           <X className="w-3.5 h-3.5" />
                           <span>Exit Reading</span>
@@ -4218,7 +4432,7 @@ ${fullTranscriptText}`;
                             [currentQuizItem.id]: selectedQuizOption,
                           }));
                         }}
-                        className={`px-4 py-2 rounded-xl border text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
+                        className={`h-9 px-4 rounded-full border text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
                           selectedQuizOption !== null
                             ? isDark
                               ? 'bg-white text-black border-white font-semibold'
@@ -4237,7 +4451,7 @@ ${fullTranscriptText}`;
                             setQuotedQuizQuestion(currentQuizItem.question);
                             openOrFocusTab('chat', 'Tutor');
                           }}
-                          className={`px-3.5 py-2 rounded-xl border text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer ${borderSubtle}`}
+                          className={`h-9 px-4 rounded-full border text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer ${borderSubtle}`}
                         >
                           <MessageSquare className="w-3.5 h-3.5" />
                           <span>Ask Tutor</span>
@@ -4251,7 +4465,7 @@ ${fullTranscriptText}`;
                               [currentQuizItem.id]: true,
                             }))
                           }
-                          className={`px-3.5 py-2 rounded-xl border text-xs font-medium transition-colors cursor-pointer ${borderSubtle}`}
+                          className={`h-9 px-4 rounded-full border text-xs font-medium transition-colors cursor-pointer ${borderSubtle}`}
                         >
                           Show Answer
                         </button>
@@ -4268,7 +4482,7 @@ ${fullTranscriptText}`;
                           setSelectedQuizOption(null);
                           setCurrentQuizIdx((i) => Math.max(0, i - 1));
                         }}
-                        className={`px-4 py-2 rounded-xl border text-xs font-medium inline-flex items-center gap-1 disabled:opacity-35 cursor-pointer ${borderSubtle}`}
+                        className={`h-9 px-4 rounded-full border text-xs font-medium inline-flex items-center gap-1 disabled:opacity-35 cursor-pointer ${borderSubtle}`}
                       >
                         <ChevronLeft className="w-3.5 h-3.5" />
                         <span>Previous</span>
@@ -4284,7 +4498,7 @@ ${fullTranscriptText}`;
                             setCurrentQuizIdx(0);
                           }
                         }}
-                        className={`px-4 py-2 rounded-xl border text-xs font-medium inline-flex items-center gap-1 cursor-pointer ${borderSubtle}`}
+                        className={`h-9 px-4 rounded-full border text-xs font-medium inline-flex items-center gap-1 cursor-pointer ${borderSubtle}`}
                       >
                         <span>Next</span>
                         <ChevronRight className="w-3.5 h-3.5" />
@@ -4302,18 +4516,18 @@ ${fullTranscriptText}`;
                       <h2 className="text-base font-semibold">Flashcards</h2>
 
                       <div
-                        className={`inline-flex items-center p-1 rounded-xl border ${
+                        className={`inline-flex items-center p-0.5 rounded-full border ${
                           isDark ? 'bg-[#121215] border-white/[0.08]' : 'bg-[#f4f4f5] border-black/[0.08]'
                         }`}
                       >
                         <button
                           type="button"
                           onClick={() => setFlashcardMode('spaced')}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+                          className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer ${
                             flashcardMode === 'spaced'
                               ? isDark
                                 ? 'bg-white text-black font-semibold'
-                                : 'bg-white text-black shadow-2xs font-semibold'
+                                : 'bg-white text-black shadow-xs font-semibold'
                               : textMuted
                           }`}
                         >
@@ -4322,11 +4536,11 @@ ${fullTranscriptText}`;
                         <button
                           type="button"
                           onClick={() => setFlashcardMode('fast')}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+                          className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer ${
                             flashcardMode === 'fast'
                               ? isDark
                                 ? 'bg-white text-black font-semibold'
-                                : 'bg-white text-black shadow-2xs font-semibold'
+                                : 'bg-white text-black shadow-xs font-semibold'
                               : textMuted
                           }`}
                         >
@@ -4442,7 +4656,7 @@ ${fullTranscriptText}`;
                                   setCardIndex((i) => Math.max(0, i - 1));
                                 }}
                                 disabled={cardIndex === 0}
-                                className={`size-10 rounded-xl border flex items-center justify-center disabled:opacity-35 cursor-pointer ${borderSubtle}`}
+                                className={`size-9 rounded-full border flex items-center justify-center disabled:opacity-35 cursor-pointer ${borderSubtle}`}
                               >
                                 <ChevronLeft className="w-4 h-4" />
                               </button>
@@ -4461,7 +4675,7 @@ ${fullTranscriptText}`;
                                   );
                                 }}
                                 disabled={cardIndex >= customFlashcards.length - 1}
-                                className={`size-10 rounded-xl border flex items-center justify-center disabled:opacity-35 cursor-pointer ${borderSubtle}`}
+                                className={`size-9 rounded-full border flex items-center justify-center disabled:opacity-35 cursor-pointer ${borderSubtle}`}
                               >
                                 <ChevronRight className="w-4 h-4" />
                               </button>
@@ -4471,7 +4685,7 @@ ${fullTranscriptText}`;
                               <button
                                 type="button"
                                 onClick={() => setFlashcardMode('spaced')}
-                                className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-medium cursor-pointer ${textMuted} hover:opacity-100`}
+                                className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full border text-xs font-medium cursor-pointer ${borderSubtle} ${textMuted} hover:opacity-100 transition-colors`}
                               >
                                 <Layers className="w-4 h-4" />
                                 <span>Manage Cards</span>
@@ -4680,7 +4894,7 @@ ${fullTranscriptText}`;
                           <button
                             type="button"
                             onClick={() => setLangDropdownOpen((o) => !o)}
-                            className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-medium cursor-pointer ${borderSubtle}`}
+                            className={`h-8 px-3.5 rounded-full border text-xs font-medium inline-flex items-center gap-2 cursor-pointer transition-colors ${borderSubtle}`}
                           >
                             <span>{selectedLang.flag}</span>
                             <span>{selectedLang.label}</span>
@@ -4732,7 +4946,7 @@ ${fullTranscriptText}`;
                           type="button"
                           onClick={handleCopyFormattedTranscript}
                           disabled={activeTranscriptList.length === 0}
-                          className={`px-3 py-1.5 rounded-xl border text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+                          className={`h-8 px-3.5 rounded-full border text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
                             copiedTranscript
                               ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400 font-semibold'
                               : borderSubtle
@@ -4846,7 +5060,7 @@ ${fullTranscriptText}`;
                                     e.stopPropagation();
                                     triggerJump(seg.start_s);
                                   }}
-                                  className={`px-2 py-1 rounded-lg font-mono text-xs shrink-0 cursor-pointer flex items-center gap-1 transition-all ${
+                                  className={`px-2.5 py-0.5 rounded-full font-mono text-[11px] shrink-0 cursor-pointer flex items-center gap-1 transition-all ${
                                     activeJumpTimestamp !== null &&
                                     Math.abs(activeJumpTimestamp - seg.start_s) < 2
                                       ? 'bg-[#FC4C01] text-white shadow-xs'
@@ -4979,7 +5193,7 @@ ${fullTranscriptText}`;
                       <button
                         type="button"
                         onClick={handleExportStudyPack}
-                        className={`px-3.5 py-1.5 rounded-xl border text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer ${borderSubtle}`}
+                        className={`h-8 px-3.5 rounded-full border text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer transition-colors ${borderSubtle}`}
                       >
                         <Download className="w-3.5 h-3.5" />
                         <span>Export Notes</span>
@@ -5009,7 +5223,7 @@ ${fullTranscriptText}`;
                           setChatTurns([]);
                           setQuotedQuizQuestion(null);
                         }}
-                        className={`px-3 py-1.5 rounded-xl border text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer ${borderSubtle}`}
+                        className={`h-8 px-3.5 rounded-full border text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer transition-colors ${borderSubtle}`}
                       >
                         <Plus className="w-3.5 h-3.5" />
                         <span>Clear Chat</span>
@@ -5065,10 +5279,10 @@ ${fullTranscriptText}`;
                                 key={pill.label}
                                 type="button"
                                 onClick={pill.onClick}
-                                className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl border text-xs font-medium transition-colors cursor-pointer ${
+                                className={`h-8 inline-flex items-center gap-1.5 px-3.5 rounded-full border text-xs font-medium transition-colors cursor-pointer ${
                                   isDark
-                                    ? 'bg-[#121215] border-white/[0.1] hover:border-white/[0.25]'
-                                    : 'bg-white border-black/[0.1] hover:border-black/[0.25]'
+                                    ? 'bg-[#121215] border-white/10 hover:border-white/25 hover:bg-white/[0.05]'
+                                    : 'bg-white border-black/10 hover:border-black/25 hover:bg-black/[0.03]'
                                 }`}
                               >
                                 <Icon className="w-3.5 h-3.5 opacity-70" />

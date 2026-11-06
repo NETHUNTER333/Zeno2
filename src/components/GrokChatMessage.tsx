@@ -32,7 +32,11 @@ import {
   Bookmark,
   Highlighter,
   Globe,
-  Flag
+  Flag,
+  Sparkles,
+  Bot,
+  Link2,
+  FolderOpen,
 } from 'lucide-react';
 import { openKinichReportModal } from './LegalAndInfoPages';
 import ReactMarkdown from 'react-markdown';
@@ -40,7 +44,7 @@ import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
-import { ChatMessage as ChatMessageType, YouTubeVideoInfo, FinanceQuote, KnowledgeVaultItem } from '../types';
+import { ChatMessage as ChatMessageType, YouTubeVideoInfo, FinanceQuote, KnowledgeVaultItem, AgentReplyCard } from '../types';
 import { PrismCodeBlock } from './PrismCodeBlock';
 import { normalizeMathDelimiters } from './MathMarkdown';
 import { GrokTimingTooltip } from './GrokTimingTooltip';
@@ -502,24 +506,75 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
     }
   };
 
+  const [isGuestUser, setIsGuestUser] = useState(() => UserAccountStore.isGuest());
+  const [sageOrganizing, setSageOrganizing] = useState(false);
+  const [liveAgentCards, setLiveAgentCards] = useState<AgentReplyCard[]>(() => {
+    const list: AgentReplyCard[] = [];
+    if (message.agentReply) list.push(message.agentReply);
+    if (Array.isArray(message.agentReplies)) {
+      for (const c of message.agentReplies) {
+        if (c && !list.some((x) => x.id === c.id)) list.push(c);
+      }
+    }
+    return list;
+  });
+
+  useEffect(() => {
+    const syncAccount = () => setIsGuestUser(UserAccountStore.isGuest());
+    window.addEventListener('kinich-account-updated', syncAccount);
+    return () => window.removeEventListener('kinich-account-updated', syncAccount);
+  }, []);
+
+  useEffect(() => {
+    const onSageOrganized = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      if (!detail?.item || !detail?.agentReply) return;
+      if (detail.item.sourceMessageId === message.id) {
+        setSageOrganizing(false);
+        setLiveAgentCards((prev) => {
+          const filtered = prev.filter((c) => c.agentId !== 'sage');
+          return [detail.agentReply as AgentReplyCard, ...filtered];
+        });
+      }
+    };
+    window.addEventListener('kinich-sage-organized', onSageOrganized as EventListener);
+    return () =>
+      window.removeEventListener('kinich-sage-organized', onSageOrganized as EventListener);
+  }, [message.id]);
+
   const handleSaveToKnowledgeVault = () => {
+    if (UserAccountStore.isGuest()) {
+      window.dispatchEvent(new CustomEvent('kinich-open-auth'));
+      return;
+    }
+    const check = KnowledgeVaultStore.canSaveToVault();
+    if (!check.allowed) {
+      window.dispatchEvent(
+        new CustomEvent('kinich-open-pricing', {
+          detail: { highlightPlan: 'spark', reason: check.message },
+        })
+      );
+      return;
+    }
     const cleanBody = (message.content || '')
       .replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '')
       .trim();
     if (!cleanBody) return;
+    setSageOrganizing(true);
     KnowledgeVaultStore.saveItem({
-      title: threadTitle || cleanBody.replace(/[#*`~>\n]+/g, ' ').trim().slice(0, 72) || 'Kinich Insight',
+      title: threadTitle || cleanBody.replace(/[#*`~>\n]+/g, ' ').trim().slice(0, 72) || 'Kinich Study Answer',
       summary: cleanBody.replace(/[#*`~>\n]+/g, ' ').trim().slice(0, 220),
       content: cleanBody,
-      type: 'ai_response',
+      type: 'chat_answer',
+      sourceType: 'chat_answer',
       collectionId: 'col_explanations',
-      tags: ['chat-insight'],
+      tags: ['chat-answer'],
       sourceThreadId: threadId,
       sourceMessageId: message.id,
       sources: message.sources || [],
     });
     setSavedToVault(true);
-    setTimeout(() => setSavedToVault(false), 2200);
+    setTimeout(() => setSavedToVault(false), 3200);
   };
 
   // Thinking tokens are disabled; strip any <think>...</think> blocks directly
@@ -2536,17 +2591,37 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                 <button
                   type="button"
                   onClick={handleSaveToKnowledgeVault}
-                  className={`p-1 rounded transition-colors cursor-pointer ${
+                  data-testid="chat-save-to-vault-btn"
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-medium transition-all cursor-pointer ${
                     savedToVault
-                      ? 'text-emerald-400'
+                      ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
+                      : isGuestUser
+                      ? isDark
+                        ? 'border-white/10 bg-white/[0.03] text-neutral-400 hover:text-white hover:border-[#FC4C01]/50'
+                        : 'border-black/10 bg-black/[0.03] text-neutral-600 hover:text-black hover:border-[#FC4C01]/50'
                       : isDark
-                      ? 'hover:text-white'
-                      : 'hover:text-[#0d0d0d]'
+                      ? 'border-white/10 bg-white/[0.04] text-neutral-300 hover:text-white hover:border-[#FC4C01]/60 hover:bg-[#FC4C01]/10'
+                      : 'border-black/10 bg-black/[0.03] text-neutral-700 hover:text-black hover:border-[#FC4C01]/60 hover:bg-[#FC4C01]/10'
                   }`}
-                  title={savedToVault ? 'Saved to Knowledge Vault' : 'Save full response to Knowledge Vault'}
-                  aria-label="Save to Knowledge Vault"
+                  title={
+                    isGuestUser
+                      ? 'Sign in to save to your Vault'
+                      : savedToVault
+                      ? 'Saved to Vault — Sage organized'
+                      : 'Save answer to your Vault'
+                  }
+                  aria-label={isGuestUser ? 'Sign in to save' : 'Save to Vault'}
                 >
-                  <Bookmark className={`w-3.5 h-3.5 ${savedToVault ? 'fill-current' : ''}`} />
+                  <Bookmark className={`w-3.5 h-3.5 ${savedToVault ? 'fill-current' : 'text-[#FC4C01]'}`} />
+                  <span>
+                    {isGuestUser
+                      ? 'Sign in to save'
+                      : savedToVault
+                      ? sageOrganizing
+                        ? 'Sage organizing…'
+                        : 'Saved to Vault'
+                      : 'Save to Vault'}
+                  </span>
                 </button>
 
                 {onOpenShareStudio && (
@@ -2586,6 +2661,102 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
               {message.timing && (
                 <GrokTimingTooltip timing={message.timing} messageContent={message.content} isDark={isDark} />
               )}
+            </div>
+          )}
+
+          {/* Personal Study Agent Reply Cards in Thread (Sage, Doubt Buddy, Planner, Recall) */}
+          {(liveAgentCards.length > 0 || (Array.isArray(message.agentReplies) && message.agentReplies.length > 0) || message.agentReply) && (
+            <div className="mt-3 space-y-2.5">
+              {(liveAgentCards.length > 0
+                ? liveAgentCards
+                : message.agentReplies || (message.agentReply ? [message.agentReply] : [])
+              ).map((card) => (
+                <div
+                  key={card.id}
+                  data-testid={`agent-reply-card-${card.agentId}`}
+                  className={`rounded-xl border p-3.5 transition-all ${
+                    isDark
+                      ? 'bg-[#121215] border-[#FC4C01]/35 text-neutral-100 shadow-[0_6px_24px_rgba(252,76,1,0.08)]'
+                      : 'bg-[#fffaf7] border-[#FC4C01]/35 text-neutral-900 shadow-sm'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2 mb-1.5">
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex items-center justify-center w-6 h-6 rounded-lg bg-[#FC4C01]/15 text-[#FC4C01] border border-[#FC4C01]/30">
+                        {card.agentId === 'sage' ? (
+                          <Sparkles className="w-3.5 h-3.5" />
+                        ) : (
+                          <Bot className="w-3.5 h-3.5" />
+                        )}
+                      </span>
+                      <span className="text-xs font-bold tracking-tight text-[#FC4C01]">
+                        {card.agentName}
+                      </span>
+                      <span
+                        className={`text-[10px] px-2 py-0.5 rounded-md font-medium border ${
+                          isDark
+                            ? 'bg-white/[0.04] border-white/10 text-neutral-400'
+                            : 'bg-black/[0.04] border-black/10 text-neutral-600'
+                        }`}
+                      >
+                        {card.agentRole}
+                      </span>
+                    </div>
+                    {card.subject && (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[#FC4C01]">
+                        <FolderOpen className="w-3 h-3" />
+                        {card.subject}
+                        {card.chapter ? ` → ${card.chapter}` : ''}
+                      </span>
+                    )}
+                  </div>
+
+                  <p className={`text-xs leading-relaxed ${isDark ? 'text-neutral-200' : 'text-neutral-800'}`}>
+                    {card.content}
+                  </p>
+
+                  {Array.isArray(card.linkedItems) && card.linkedItems.length > 0 && (
+                    <div className="mt-2 pt-2 border-t border-current/10 flex flex-wrap items-center gap-1.5">
+                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-[#FC4C01]">
+                        <Link2 className="w-3 h-3" /> Linked in Vault:
+                      </span>
+                      {card.linkedItems.map((li) => (
+                        <span
+                          key={li.id}
+                          className={`text-[10px] px-2 py-0.5 rounded-md border ${
+                            isDark
+                              ? 'bg-white/[0.04] border-white/10 text-neutral-300'
+                              : 'bg-black/[0.04] border-black/10 text-neutral-700'
+                          }`}
+                        >
+                          {li.title} ({li.subject} → {li.chapter})
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {Array.isArray(card.citations) && card.citations.length > 0 && (
+                    <div className="mt-2 pt-2 border-t border-current/10 flex flex-wrap items-center gap-1.5">
+                      <span className="text-[10px] font-semibold text-[#FC4C01]">
+                        Vault Citations:
+                      </span>
+                      {card.citations.map((cit, cIdx) => (
+                        <span
+                          key={`${cit.vaultItemId}_${cIdx}`}
+                          className={`text-[10px] px-2 py-0.5 rounded-md font-mono border ${
+                            isDark
+                              ? 'bg-white/[0.04] border-white/10 text-neutral-300'
+                              : 'bg-black/[0.04] border-black/10 text-neutral-700'
+                          }`}
+                        >
+                          {cit.title}
+                          {cit.timestamp ? ` @ ${cit.timestamp}` : ''}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           )}
         </div>

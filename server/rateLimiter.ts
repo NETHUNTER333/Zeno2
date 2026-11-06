@@ -480,12 +480,12 @@ export const SERVER_PLAN_LIMITS: Record<SubscriptionPlanTier, ServerPlanLimits> 
   fire: {
     name: 'Fire',
     priceMonthly: 7,
-    fileUploadLimit: 999_999,
+    fileUploadLimit: 1000, // 1,000 daily file uploads
     maxFilesPerMessage: 50,
-    messageLimit: 999_999,
-    searchLimit: 999_999,
-    deepResearchLimit: 999_999,
-    pdfStudyLimit: 999_999,
+    messageLimit: 5000, // 5,000 daily AI messages
+    searchLimit: 2500, // 2,500 daily web searches
+    deepResearchLimit: 300, // 300 daily autonomous deep research runs
+    pdfStudyLimit: 500, // 500 daily study sessions
     tokenLimit: 25_000_000,
   },
 };
@@ -655,6 +655,8 @@ export interface ServerDailyQuotaRecord {
 export interface ServerDailyQuotaSnapshot extends ServerDailyQuotaRecord {
   limits: ServerPlanLimits;
   resetAtIso: string;
+  authoritativePlan?: boolean;
+  billingStatus?: string;
 }
 
 const QUOTA_LEDGER_FILE = path.resolve(process.cwd(), '.insta', 'zeno_quota_ledger.json');
@@ -775,6 +777,10 @@ function getOrInitDailyQuotaRecord(req: Request): ServerDailyQuotaRecord {
           plan: billingEff.plan,
           billingCycle: billingEff.interval,
         };
+        planByPrincipal.set(principalKey, savedPlan);
+        if (clientIp && clientIp !== 'unknown') {
+          planByPrincipal.set(`ip:${clientIp}`, savedPlan);
+        }
       }
     } catch {}
   }
@@ -821,10 +827,24 @@ function getOrInitDailyQuotaRecord(req: Request): ServerDailyQuotaRecord {
 export function getServerQuotaSnapshot(req: Request): ServerDailyQuotaSnapshot {
   const rec = getOrInitDailyQuotaRecord(req);
   const limits = SERVER_PLAN_LIMITS[rec.plan];
+  const uid = req.auth?.uid || null;
+  let authoritativePlan = false;
+  let billingStatus = 'none';
+  if (uid && billingEntitlementResolver) {
+    try {
+      const billingEff = billingEntitlementResolver(uid);
+      if (billingEff.hasBillingRecord && billingEff.status !== 'none') {
+        authoritativePlan = true;
+        billingStatus = billingEff.status;
+      }
+    } catch {}
+  }
   return {
     ...rec,
     limits,
     resetAtIso: getNextUtcMidnightIso(),
+    authoritativePlan,
+    billingStatus,
   };
 }
 
@@ -999,7 +1019,7 @@ export function verifyChatQuotaBeforeExecution(
     return { allowed: true, statusCode: 200, snapshot };
   }
 
-  // 2. Daily Prompt / Message Quota Enforcement (1,500 on Spark, Unlimited on Fire)
+  // 2. Daily Prompt / Message Quota Enforcement (1,500 on Spark, 5,000 on Fire)
   if (snapshot.messagesUsed >= limits.messageLimit) {
     const upgradeTarget: SubscriptionPlanTier = plan === 'spark' ? 'fire' : 'spark';
     return {
@@ -1007,12 +1027,12 @@ export function verifyChatQuotaBeforeExecution(
       statusCode: 429,
       code: 'quota/messages_exceeded',
       requiredTier: upgradeTarget,
-      message: `Daily message limit reached (${snapshot.messagesUsed}/${limits.messageLimit} prompts used on ${limits.name}). Upgrade to Fire ($7/mo) for unlimited messages.`,
+      message: `Daily message limit reached (${snapshot.messagesUsed}/${limits.messageLimit} prompts used on ${limits.name}). Upgrade to Fire ($7/mo) for 5,000 messages/day.`,
       snapshot,
     };
   }
 
-  // 3. Daily File Upload Quota Enforcement (250 on Spark, Unlimited on Fire)
+  // 3. Daily File Upload Quota Enforcement (250 on Spark, 1,000 on Fire)
   const attachmentsCount = Math.max(0, Number(options.attachmentsCount) || 0);
   if (attachmentsCount > 0) {
     if (attachmentsCount > limits.maxFilesPerMessage) {
@@ -1022,7 +1042,7 @@ export function verifyChatQuotaBeforeExecution(
         statusCode: 429,
         code: 'quota/uploads_exceeded',
         requiredTier: upgradeTarget,
-        message: `Your ${limits.name} plan allows up to ${limits.maxFilesPerMessage} files per message. Upgrade to Fire ($7/mo) for unlimited files.`,
+        message: `Your ${limits.name} plan allows up to ${limits.maxFilesPerMessage} files per message. Upgrade to Fire ($7/mo) for up to 50 files/message (1,000/day).`,
         snapshot,
       };
     }
@@ -1033,13 +1053,13 @@ export function verifyChatQuotaBeforeExecution(
         statusCode: 429,
         code: 'quota/uploads_exceeded',
         requiredTier: upgradeTarget,
-        message: `Daily file upload limit reached (${snapshot.filesUploaded}/${limits.fileUploadLimit} files used on ${limits.name}). Upgrade to Fire ($7/mo) for unlimited uploads.`,
+        message: `Daily file upload limit reached (${snapshot.filesUploaded}/${limits.fileUploadLimit} files used on ${limits.name}). Upgrade to Fire ($7/mo) for 1,000 uploads/day.`,
         snapshot,
       };
     }
   }
 
-  // 4. Deep Research Quota Enforcement (100 on Spark, Unlimited on Fire)
+  // 4. Deep Research Quota Enforcement (100 on Spark, 300 on Fire)
   if (options.isResearchMode && snapshot.deepResearchUsed >= limits.deepResearchLimit) {
     const upgradeTarget: SubscriptionPlanTier = plan === 'spark' ? 'fire' : 'spark';
     return {
@@ -1047,7 +1067,7 @@ export function verifyChatQuotaBeforeExecution(
       statusCode: 429,
       code: 'quota/deep_research_exceeded',
       requiredTier: upgradeTarget,
-      message: `Daily Deep Research limit reached (${snapshot.deepResearchUsed}/${limits.deepResearchLimit} runs used on ${limits.name}). Upgrade to Fire ($7/mo) for unlimited autonomous research runs.`,
+      message: `Daily Deep Research limit reached (${snapshot.deepResearchUsed}/${limits.deepResearchLimit} runs used on ${limits.name}). Upgrade to Fire ($7/mo) for 300 autonomous research runs/day.`,
       snapshot,
     };
   }

@@ -173,9 +173,16 @@ export const PricingModal: React.FC<PricingModalProps> = ({
         if (
           meData?.authenticated &&
           (meData.effectivePlan === 'spark' || meData.effectivePlan === 'fire' || meData.effectivePlan === 'free') &&
-          meData.planStatus !== 'none'
+          (meData.planStatus !== 'none' || (Array.isArray(meData.refunds) && meData.refunds.length > 0))
         ) {
+          if (UserAccountStore.getNormalizedPlan() !== meData.effectivePlan) {
+            UserAccountStore.upgradePlan(
+              meData.effectivePlan,
+              meData.planInterval === 'yearly' ? 'yearly' : 'monthly'
+            );
+          }
           setCurrentPlan(meData.effectivePlan);
+          setUsage(UserAccountStore.getUsage());
         }
       }
       if (resolvedCountry !== selectedCountry) {
@@ -524,43 +531,36 @@ export const PricingModal: React.FC<PricingModalProps> = ({
     }
   };
 
-  // Authoritative plan limits guarantee Free Tier NEVER shows Unlimited or inflated numbers
+  // Authoritative plan limits guarantee each tier displays explicit daily caps
   const planLimits = PLAN_LIMITS[currentPlan];
-  const isUnlimitedPlan = currentPlan === 'fire';
 
-  const effectiveFileLimit = isUnlimitedPlan
-    ? 999999
-    : currentPlan === 'free'
-    ? PLAN_LIMITS.free.fileUploadLimit
-    : Math.min(999998, usage.fileUploadLimit || planLimits.fileUploadLimit);
+  const effectiveFileLimit =
+    currentPlan === 'free'
+      ? PLAN_LIMITS.free.fileUploadLimit
+      : usage.fileUploadLimit || planLimits.fileUploadLimit;
 
-  const effectivePromptLimit = isUnlimitedPlan
-    ? 999999
-    : currentPlan === 'free'
-    ? PLAN_LIMITS.free.messageLimit
-    : Math.min(999998, usage.messageLimit || planLimits.messageLimit);
+  const effectivePromptLimit =
+    currentPlan === 'free'
+      ? PLAN_LIMITS.free.messageLimit
+      : usage.messageLimit || planLimits.messageLimit;
 
-  const effectiveSearchLimit = isUnlimitedPlan
-    ? 999999
-    : currentPlan === 'free'
-    ? PLAN_LIMITS.free.searchLimit
-    : Math.min(999998, usage.searchLimit || planLimits.searchLimit);
+  const effectiveSearchLimit =
+    currentPlan === 'free'
+      ? PLAN_LIMITS.free.searchLimit
+      : usage.searchLimit || planLimits.searchLimit;
 
-  const effectiveDeepResearchLimit = isUnlimitedPlan
-    ? 999999
-    : currentPlan === 'free'
-    ? PLAN_LIMITS.free.deepResearchLimit
-    : Math.min(999998, usage.deepResearchLimit || planLimits.deepResearchLimit);
+  const effectiveDeepResearchLimit =
+    currentPlan === 'free'
+      ? PLAN_LIMITS.free.deepResearchLimit
+      : usage.deepResearchLimit || planLimits.deepResearchLimit;
 
-  const effectivePdfStudyLimit = isUnlimitedPlan
-    ? 999999
-    : currentPlan === 'free'
-    ? PLAN_LIMITS.free.pdfStudyLimit
-    : Math.min(999998, usage.pdfStudyLimit || planLimits.pdfStudyLimit);
+  const effectivePdfStudyLimit =
+    currentPlan === 'free'
+      ? PLAN_LIMITS.free.pdfStudyLimit
+      : usage.pdfStudyLimit || planLimits.pdfStudyLimit;
 
   const formatQuotaVal = (used: number, limit: number) => {
-    if (isUnlimitedPlan && limit >= 999999) return `${used} / Unlimited`;
-    return `${used} / ${limit}`;
+    return `${used} / ${limit.toLocaleString()}`;
   };
 
   const neutralBadgeClass = isDark
@@ -571,35 +571,35 @@ export const PricingModal: React.FC<PricingModalProps> = ({
   const freeFeatures: PlanFeatureRow[] = [
     { text: '5 Daily AI Prompts (resets every midnight UTC)', included: true },
     { text: '3 File & Vision Uploads / day (up to 2 files/msg)', included: true },
-    { text: 'Fast Reasoning: DeepSeek V3.2 Flash (1M context)', included: true },
+    { text: 'Vault (up to 20 items) with manual Save', included: true },
     { text: '5 Live Web Searches & 5 Document Study runs / day', included: true },
     { text: '3 Autonomous Deep Research reports / day', included: true },
-    { text: 'Advanced Reasoning & Frontier Flagship Models', included: false },
-    { text: '10x Daily Limit Boost & Unlimited Inference', included: false },
+    { text: 'Personal Study Agents (Sage, Recall, Planner, Doubt Buddy)', included: false },
+    { text: '10x Daily Limit Boost & Frontier Flagship Models', included: false },
   ];
 
   const sparkFeatures: PlanFeatureRow[] = [
     { text: '1,500 Daily Prompts (10x boost · 1M context)', included: true },
     { text: '250 File Uploads / day (up to 25 files/msg)', included: true },
+    { text: 'Vault (unlimited items) + Sage & Recall Personal Agents', included: true },
     { text: '750 Real-Time Web & News Searches / day', included: true },
     { text: '100 Autonomous Deep Research reports / day', included: true },
     { text: '200 PDF Study & YouTube Studio sessions / day', included: true },
-    { text: 'Advanced Models: DeepSeek R1, Claude 3.7 Sonnet, Qwen 2.5', included: true },
-    { text: '10M Daily Token Capacity & 10 GB Vault Storage', included: true },
-    { text: 'Frontier Flagships (Claude 3.7 Thinking, GPT-4.5)', included: false },
-    { text: 'Unlimited Messages & Zero-Queue Priority', included: false },
+    { text: '10M Daily Token Capacity & 250K Daily Agent Tokens', included: true },
+    { text: 'All Agents (Planner, Doubt Buddy) + Daily Morning Brief', included: false },
+    { text: '5,000 Daily Messages & Zero-Queue Priority', included: false },
   ];
 
   const fireFeatures: PlanFeatureRow[] = [
-    { text: 'Unlimited Daily Prompts & Messages (No Cap)', included: true },
-    { text: 'Unlimited File Uploads (all formats, up to 50/msg)', included: true },
-    { text: 'Unlimited Real-Time Web, News & Academic Search', included: true },
-    { text: 'Unlimited Deep Research Reports & Synthesis', included: true },
-    { text: 'Unlimited PDF Studio, Quiz Studio & Document Intelligence', included: true },
-    { text: 'All Advanced Models (DeepSeek R1, Claude 3.7 Sonnet, Qwen 2.5)', included: true },
+    { text: '5,000 Daily Prompts & Messages (Max Frontier Cap)', included: true },
+    { text: '1,000 File Uploads / day (all formats, up to 50/msg)', included: true },
+    { text: 'All Personal Agents (Sage, Recall, Planner, Doubt Buddy) + Morning Brief', included: true },
+    { text: '2,500 Real-Time Web, News & Academic Searches / day', included: true },
+    { text: '300 Deep Research Reports & Synthesis / day', included: true },
+    { text: '500 PDF Studio, Quiz Studio & YouTube Study sessions / day', included: true },
     { text: 'Frontier Flagships: Claude 3.7 Sonnet (Thinking), GPT-4.5, Grok 3', included: true },
     { text: 'Priority Zero-Queue Compute & Dedicated Ingestion', included: true },
-    { text: '25M Daily Token Capacity & 30 GB Vault Storage', included: true },
+    { text: '25M Daily Token Capacity (1M Agent Tokens/day) & 30 GB Vault Storage', included: true },
   ];
 
   const allowanceCards = [
@@ -615,40 +615,53 @@ export const PricingModal: React.FC<PricingModalProps> = ({
       used: usage.messagesUsed,
       limit: effectivePromptLimit,
       icon: MessageSquare,
-      sublabel: currentPlan === 'free' ? '5 daily chats' : currentPlan === 'spark' ? '10x boost' : 'No cap',
+      sublabel: currentPlan === 'free' ? '5 daily chats' : currentPlan === 'spark' ? '1,500/day' : '5,000/day cap',
     },
     {
       label: 'Web Searches',
       used: usage.searchesUsed,
       limit: effectiveSearchLimit,
       icon: Globe,
-      sublabel: 'Live web + images',
+      sublabel: currentPlan === 'free' ? '5 searches/day' : currentPlan === 'spark' ? '750/day' : '2,500/day cap',
     },
     {
       label: 'Deep Research',
       used: usage.deepResearchUsed,
       limit: effectiveDeepResearchLimit,
       icon: Layers,
-      sublabel: currentPlan === 'free' ? '3 daily runs' : currentPlan === 'spark' ? '100 runs/day' : 'Unlimited runs',
+      sublabel: currentPlan === 'free' ? '3 daily runs' : currentPlan === 'spark' ? '100 runs/day' : '300 runs/day',
     },
     {
       label: 'PDF Studio',
       used: usage.pdfStudyUsed,
       limit: effectivePdfStudyLimit,
       icon: FileText,
-      sublabel: currentPlan === 'free' ? '5 study runs' : currentPlan === 'spark' ? '200 runs/day' : 'Unlimited study',
+      sublabel: currentPlan === 'free' ? '5 study runs' : currentPlan === 'spark' ? '200 runs/day' : '500 runs/day',
     },
   ];
 
   const anyFreeLimitReached =
     currentPlan === 'free' &&
-    allowanceCards.some((c) => !isUnlimitedPlan && c.used >= c.limit);
+    allowanceCards.some((c) => c.used >= c.limit);
 
   const comparisonRows = [
     {
+      id: 'personal-agents',
+      category: 'models' as const,
+      categoryLabel: 'AI Models & Personal Study Agents',
+      feature: 'Personal Study Agents & The Vault',
+      subtext: 'Auto-organization (Sage), SM-2 Recall, Exam Planner, Doubt Buddy & Morning Brief',
+      free: 'Vault (20 items) · No agents',
+      spark: 'Sage + Recall (250K tok/day)',
+      fire: 'All Agents + Morning Brief (1M tok/day)',
+      freeTag: { label: '20 Vault Items', variant: 'neutral' as const },
+      sparkTag: { label: 'Sage + Recall', variant: 'unlocked' as const },
+      fireTag: { label: 'All Agents + Brief', variant: 'highlight' as const },
+    },
+    {
       id: 'fast-chat',
       category: 'models' as const,
-      categoryLabel: 'AI Models & Intelligence',
+      categoryLabel: 'AI Models & Personal Study Agents',
       feature: 'Fast Reasoning & Chat',
       subtext: 'DeepSeek V3.2 Flash · 1M context',
       free: 'Standard Speed',
@@ -661,7 +674,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
     {
       id: 'multimodal-vision',
       category: 'models' as const,
-      categoryLabel: 'AI Models & Intelligence',
+      categoryLabel: 'AI Models & Personal Study Agents',
       feature: 'Multimodal & Vision Analysis',
       subtext: 'High-resolution image, chart & diagram OCR',
       free: 'Standard Res',
@@ -674,25 +687,25 @@ export const PricingModal: React.FC<PricingModalProps> = ({
     {
       id: 'advanced-reasoning',
       category: 'models' as const,
-      categoryLabel: 'AI Models & Intelligence',
+      categoryLabel: 'AI Models & Personal Study Agents',
       feature: 'Advanced Reasoning Models',
       subtext: 'DeepSeek R1, Claude 3.7 Sonnet, Qwen 2.5',
       free: `Locked (${pt.spark.monthly} Spark)`,
       spark: 'Unlocked (1,500/day)',
-      fire: 'Unlocked (Unlimited)',
+      fire: 'Unlocked (5,000/day)',
       freeTag: { label: `Locked (${pt.spark.monthly})`, variant: 'locked' as const },
       sparkTag: { label: 'Unlocked · 1,500/day', variant: 'unlocked' as const },
-      fireTag: { label: 'Unlimited', variant: 'highlight' as const },
+      fireTag: { label: '5,000 / day', variant: 'highlight' as const },
     },
     {
       id: 'frontier-flagship',
       category: 'models' as const,
-      categoryLabel: 'AI Models & Intelligence',
+      categoryLabel: 'AI Models & Personal Study Agents',
       feature: 'Frontier Flagships',
       subtext: 'Claude 3.7 Sonnet (Thinking), GPT-4.5, Grok 3',
       free: `Locked (${pt.fire.monthly} Fire)`,
       spark: `Locked (${pt.fire.monthly} Fire)`,
-      fire: 'Unlocked (Unlimited)',
+      fire: 'Unlocked (5,000/day)',
       freeTag: { label: `Locked (${pt.fire.monthly})`, variant: 'locked' as const },
       sparkTag: { label: `Locked (${pt.fire.monthly})`, variant: 'locked' as const },
       fireTag: { label: 'Unlocked', variant: 'highlight' as const },
@@ -705,10 +718,10 @@ export const PricingModal: React.FC<PricingModalProps> = ({
       subtext: 'Resets daily at 00:00 UTC',
       free: '5 / day',
       spark: '1,500 / day',
-      fire: 'Unlimited',
+      fire: '5,000 / day',
       freeTag: { label: '5 / day', variant: 'neutral' as const },
       sparkTag: { label: '1,500 / day', variant: 'unlocked' as const },
-      fireTag: { label: 'Unlimited', variant: 'highlight' as const },
+      fireTag: { label: '5,000 / day', variant: 'highlight' as const },
     },
     {
       id: 'file-uploads',
@@ -718,10 +731,10 @@ export const PricingModal: React.FC<PricingModalProps> = ({
       subtext: 'PDFs, spreadsheets, code & images',
       free: '3 / day (2/msg)',
       spark: '250 / day (25/msg)',
-      fire: 'Unlimited (50/msg)',
+      fire: '1,000 / day (50/msg)',
       freeTag: { label: '3 / day', variant: 'neutral' as const },
       sparkTag: { label: '250 / day', variant: 'unlocked' as const },
-      fireTag: { label: 'Unlimited', variant: 'highlight' as const },
+      fireTag: { label: '1,000 / day', variant: 'highlight' as const },
     },
     {
       id: 'web-search',
@@ -731,10 +744,10 @@ export const PricingModal: React.FC<PricingModalProps> = ({
       subtext: 'Real-time verified source citations',
       free: '5 / day',
       spark: '750 / day',
-      fire: 'Unlimited',
+      fire: '2,500 / day',
       freeTag: { label: '5 / day', variant: 'neutral' as const },
       sparkTag: { label: '750 / day', variant: 'unlocked' as const },
-      fireTag: { label: 'Unlimited', variant: 'highlight' as const },
+      fireTag: { label: '2,500 / day', variant: 'highlight' as const },
     },
     {
       id: 'deep-research',
@@ -744,10 +757,10 @@ export const PricingModal: React.FC<PricingModalProps> = ({
       subtext: 'Multi-source synthesis reports',
       free: '3 / day',
       spark: '100 / day',
-      fire: 'Unlimited',
+      fire: '300 / day',
       freeTag: { label: '3 / day', variant: 'neutral' as const },
       sparkTag: { label: '100 / day', variant: 'unlocked' as const },
-      fireTag: { label: 'Unlimited', variant: 'highlight' as const },
+      fireTag: { label: '300 / day', variant: 'highlight' as const },
     },
     {
       id: 'study-studio',
@@ -757,10 +770,10 @@ export const PricingModal: React.FC<PricingModalProps> = ({
       subtext: 'Interactive quizzes, flashcards & summaries',
       free: '5 / day',
       spark: '200 / day',
-      fire: 'Unlimited',
+      fire: '500 / day',
       freeTag: { label: '5 / day', variant: 'neutral' as const },
       sparkTag: { label: '200 / day', variant: 'unlocked' as const },
-      fireTag: { label: 'Unlimited', variant: 'highlight' as const },
+      fireTag: { label: '500 / day', variant: 'highlight' as const },
     },
     {
       id: 'tokens-vault',
@@ -768,10 +781,10 @@ export const PricingModal: React.FC<PricingModalProps> = ({
       categoryLabel: 'Daily Quotas & Limits',
       feature: 'Daily Token Allowance & Cloud Vault',
       subtext: 'Workspace storage & document persistence',
-      free: '250K tokens · 100 MB',
+      free: '250K tokens · 20 Vault items',
       spark: '10M tokens · 10 GB',
       fire: '25M tokens · 30 GB',
-      freeTag: { label: '100 MB', variant: 'neutral' as const },
+      freeTag: { label: '20 Vault Items', variant: 'neutral' as const },
       sparkTag: { label: '10 GB Vault', variant: 'unlocked' as const },
       fireTag: { label: '30 GB Vault', variant: 'highlight' as const },
     },
@@ -872,12 +885,12 @@ export const PricingModal: React.FC<PricingModalProps> = ({
               </span>
             ) : (
               <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${activeBadgeClass}`}>
-                Unlimited Frontier Active · Fire
+                Frontier Active · Fire
               </span>
             )}
           </div>
           <p className={`text-xs sm:text-sm ${isDark ? 'text-neutral-400' : 'text-neutral-600'}`}>
-            Start on the Free Tier ({selectedCountry === 'IN' ? '₹0' : '$0'}), upgrade to Spark ({pt.spark.monthly}) for 10x daily limits, or unlock Fire ({pt.fire.monthly}) for unlimited frontier models.
+            Start on the Free Tier ({selectedCountry === 'IN' ? '₹0' : '$0'}), upgrade to Spark ({pt.spark.monthly}) for 10x daily limits + Sage &amp; Recall agents, or unlock Fire ({pt.fire.monthly}) for 5,000 daily prompts + all personal study agents.
           </p>
         </div>
 
@@ -1278,7 +1291,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
               </button>
             </div>
             <p className="text-[11px] opacity-75 leading-relaxed">
-              Submit a refund request via Dodo Payments. Once confirmed, the full amount ({sparkDisplayPrice} or {fireDisplayPrice}) is refunded back to your original payment method (UPI, Card, NetBanking, or Wallet) and your subscription is cancelled.
+              Submit a refund request via Dodo Payments. Once confirmed, the full amount ({pt.spark.monthly} or {pt.fire.monthly}) is refunded back to your original payment method (UPI, Card, NetBanking, or Wallet) and your subscription is cancelled.
             </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1307,7 +1320,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
                       ))
                   ) : (
                     <option value="">
-                      Most Recent Spark / Fire Charge ({sparkDisplayPrice})
+                      Most Recent Spark / Fire Charge ({pt.spark.monthly})
                     </option>
                   )}
                 </select>
@@ -1513,7 +1526,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
               {limitReason}
             </div>
             <div className={`text-xs ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
-              Select Spark ({pt.spark.monthly}) for 10x daily limits or Fire ({pt.fire.monthly}) for unlimited access below.
+              Select Spark ({pt.spark.monthly}) for 10x daily limits or Fire ({pt.fire.monthly}) for 5,000 daily prompts &amp; all personal agents below.
             </div>
           </div>
           {currentPlan === 'free' && (
@@ -1599,7 +1612,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
               }`}
             >
               {currentPlan === 'fire'
-                ? `Fire (${pt.fire.monthly} · Unlimited Frontier)`
+                ? `Fire (${pt.fire.monthly} · 5,000 Daily Prompts)`
                 : currentPlan === 'spark'
                 ? `Spark (${pt.spark.monthly} · 10x Daily Limits)`
                 : 'Free Tier (5 daily chats · 3 uploads · Default & Vision free)'}
@@ -1638,13 +1651,10 @@ export const PricingModal: React.FC<PricingModalProps> = ({
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
           {allowanceCards.map((stat) => {
             const Icon = stat.icon;
-            const isUnlimited = isUnlimitedPlan && stat.limit >= 999999;
-            const rawPct = isUnlimited
-              ? 10
-              : Math.min(100, Math.round((stat.used / Math.max(1, stat.limit)) * 100));
-            const isExhausted = !isUnlimited && stat.used >= stat.limit;
-            const isWarning = !isUnlimited && !isExhausted && rawPct >= 75;
-            const remaining = isUnlimited ? null : Math.max(0, stat.limit - stat.used);
+            const rawPct = Math.min(100, Math.round((stat.used / Math.max(1, stat.limit)) * 100));
+            const isExhausted = stat.used >= stat.limit;
+            const isWarning = !isExhausted && rawPct >= 75;
+            const remaining = Math.max(0, stat.limit - stat.used);
 
             return (
               <div
@@ -1672,9 +1682,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
                   </div>
                   <span
                     className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${
-                      isUnlimited
-                        ? 'bg-orange-500/15 text-orange-400'
-                        : isExhausted
+                      isExhausted
                         ? 'bg-red-500/20 text-red-400'
                         : isWarning
                         ? 'bg-amber-500/20 text-amber-400'
@@ -1683,11 +1691,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
                         : 'bg-black/5 text-neutral-600'
                     }`}
                   >
-                    {isUnlimited
-                      ? 'No Cap'
-                      : isExhausted
-                      ? 'Limit Hit'
-                      : `${remaining} left`}
+                    {isExhausted ? 'Limit Hit' : `${remaining.toLocaleString()} left`}
                   </span>
                 </div>
 
@@ -1698,9 +1702,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
                 >
                   <div
                     className={`h-full rounded-full transition-all ${
-                      isUnlimited
-                        ? 'bg-orange-400'
-                        : isExhausted
+                      isExhausted
                         ? 'bg-red-500'
                         : isWarning
                         ? 'bg-amber-400'
@@ -1789,7 +1791,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
                 onClick={() => handleSelectPlan('fire')}
                 className="px-3.5 py-1.5 rounded-full text-xs font-bold bg-[#FC4C01] text-white hover:bg-[#e04300] cursor-pointer transition-all"
               >
-                Go Unlimited ({pt.fire.monthly})
+                Unlock Fire ({pt.fire.monthly})
               </button>
             </div>
           </div>
@@ -2064,7 +2066,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
             <div className="flex items-center gap-2">
               <h2 className="text-xl font-bold tracking-tight">Fire</h2>
               <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider ${neutralBadgeClass}`}>
-                Unlimited
+                All Agents
               </span>
             </div>
             <div
@@ -2109,8 +2111,8 @@ export const PricingModal: React.FC<PricingModalProps> = ({
               isDark ? 'text-neutral-300' : 'text-neutral-600'
             }`}
           >
-            Maximize research performance with unlimited prompts, uncapped file uploads,
-            frontier reasoning models, and zero-queue priority.
+            Maximize study &amp; research performance with 5,000 daily prompts, 1,000 daily file uploads,
+            all personal study agents + Morning Brief, and zero-queue priority.
           </p>
 
           <div
@@ -2338,10 +2340,10 @@ export const PricingModal: React.FC<PricingModalProps> = ({
                 const isExpanded = mobileExpandedPlan === planKey;
                 const planTitle =
                   planKey === 'fire'
-                    ? `Fire (${pt.fire.monthly} · Unlimited Flagship)`
+                    ? `Fire (${pt.fire.monthly} · Flagship + All Agents)`
                     : planKey === 'spark'
                     ? `Spark (${pt.spark.monthly} · 10x Limits)`
-                    : 'Free Tier ($0 · Standard)';
+                    : 'Free Tier ($0 · Starter)';
                 const accentColor =
                   planKey === 'fire'
                     ? 'text-orange-400'
@@ -2463,7 +2465,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
                   Spark ({pt.spark.monthly} · Popular)
                 </th>
                 <th className="py-3.5 pl-4 font-semibold text-xs tracking-tight text-[#FC4C01]">
-                  Fire ({pt.fire.monthly} · Unlimited)
+                  Fire ({pt.fire.monthly} · Flagship)
                 </th>
               </tr>
             </thead>

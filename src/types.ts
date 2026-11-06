@@ -331,6 +331,8 @@ export interface ChatMessage {
     }[];
   }[];
   reaction?: 'good' | 'bad' | null;
+  agentReply?: AgentReplyCard;
+  agentReplies?: AgentReplyCard[];
 }
 
 export interface TregStatus {
@@ -535,24 +537,38 @@ export interface PublicArtifact {
 }
 
 export type KnowledgeSourceType =
+  | 'lecture'
+  | 'note'
+  | 'quiz'
+  | 'flashcard_deck'
+  | 'research_report'
+  | 'chat_answer'
   | 'ai_response'
   | 'research_summary'
   | 'study_guide'
   | 'pdf_insight'
   | 'discover_resource'
-  | 'personal_note'
-  | 'note';
+  | 'personal_note';
+
+export interface VaultTimestamp {
+  timeSec: number;
+  label: string;
+}
 
 export interface KnowledgeVaultItem {
   id: string;
   userId: string;
+  type: KnowledgeSourceType;
   title: string;
+  subject: string;
+  chapter: string;
+  tags: string[];
+  sourceUrl?: string;
+  timestamps?: Array<string | VaultTimestamp>;
   content: string;
   summary: string;
   collectionId: string;
-  tags: string[];
   sourceType: KnowledgeSourceType;
-  type?: KnowledgeSourceType;
   threadId?: string;
   sourceThreadId?: string;
   messageId?: string;
@@ -561,8 +577,220 @@ export interface KnowledgeVaultItem {
   sources?: SearchSource[];
   isPinned: boolean;
   pinned?: boolean;
+  relatedItemIds?: string[];
+  sageNote?: string;
+  organizedBySage?: boolean;
+  organizingStatus?: 'pending' | 'organizing' | 'organized' | 'manual';
+  createdAt: number;
+  lastReviewedAt: number;
+  updatedAt: number;
+}
+
+export type VaultThreadType = 'youtube' | 'web_link' | 'pdf' | 'image' | 'text';
+
+export interface VaultKeyPoint {
+  id: string;
+  text: string;
+  timestamp?: string; // e.g. "04:15"
+  timeSec?: number;
+  score?: number;
+  upvoted?: boolean;
+  downvoted?: boolean;
+}
+
+export interface VaultThreadComment {
+  id: string;
+  threadId: string;
+  userId?: string;
+  author: 'user' | 'sage' | 'recall' | 'planner' | 'doubt_buddy' | string;
+  authorName: string;
+  authorAvatar?: string;
+  text: string;
+  createdAt: number;
+  parentId?: string | null;
+  score: number;
+  upvoted?: boolean;
+  downvoted?: boolean;
+  replies?: VaultThreadComment[];
+}
+
+export interface VaultThread {
+  id: string;
+  userId: string;
+  type: VaultThreadType;
+  title: string;
+  sourceUrl?: string;
+  thumbnail?: string;
+  tldr: string;
+  keyPoints: VaultKeyPoint[];
+  subject: string;
+  chapter: string;
+  tags: string[];
+  createdAt: number; // UTC timestamp ms
+  updatedAt: number; // UTC timestamp ms
+  pinned: boolean;
+  score: number;
+  upvoted?: boolean;
+  downvoted?: boolean;
+  commentCount: number;
+  comments?: VaultThreadComment[];
+}
+
+export interface VaultMemoryIndexItem {
+  id: string;
+  threadId: string;
+  userId: string;
+  type: VaultThreadType;
+  title: string;
+  keyPointText: string;
+  timestamp?: string;
+  sourceUrl?: string;
+  subject: string;
+  chapter: string;
+  createdAt: number;
+}
+
+export type AgentTriggerType = 'on_save' | 'on_message' | 'schedule';
+
+export type AgentToolName =
+  | 'searchWeb'
+  | 'deepResearch'
+  | 'getTranscript'
+  | 'makeQuiz'
+  | 'makeFlashcards'
+  | 'summarize'
+  | 'readVault'
+  | 'writeVault';
+
+export interface PersonalAgentDefinition {
+  id: 'sage' | 'recall' | 'planner' | 'doubt_buddy' | 'morning_brief';
+  name: string;
+  role: string;
+  description: string;
+  icon: string;
+  systemPrompt: string;
+  tools: AgentToolName[];
+  trigger: AgentTriggerType;
+  tierRequired: 'spark' | 'fire';
+  phase: 1 | 2 | 3 | 4;
+}
+
+export interface AgentReplyCard {
+  id: string;
+  agentId: string;
+  agentName: string;
+  agentRole: string;
+  agentIcon: string;
+  content: string;
+  subject?: string;
+  chapter?: string;
+  tags?: string[];
+  relatedItems?: Array<{
+    id: string;
+    title: string;
+    subject?: string;
+    chapter?: string;
+    reason?: string;
+  }>;
+  linkedItems?: Array<{
+    id: string;
+    title: string;
+    subject?: string;
+    chapter?: string;
+    reason?: string;
+  }>;
+  citedTimestamps?: Array<{
+    timeSec: number;
+    label: string;
+    vaultItemId?: string;
+    vaultItemTitle?: string;
+  }>;
+  citations?: Array<{
+    vaultItemId: string;
+    title: string;
+    timestamp?: string;
+  }>;
+  toolsCalled?: AgentToolName[];
+  tokensUsed?: number;
+  createdAt: number;
+}
+
+export interface AgentMemoryDoc {
+  agentId: string;
+  userId: string;
+  facts: string[];
+  updatedAt: number;
+}
+
+export interface AgentUsageDoc {
+  id: string;
+  userId: string;
+  agentId: string;
+  date: string;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  callsCount: number;
+  updatedAt: number;
+}
+
+// Phase 2 Schema: Recall (Spaced-repetition SM-2 flashcards)
+export interface RecallCardDoc {
+  id: string;
+  userId: string;
+  vaultItemId: string;
+  subject: string;
+  chapter: string;
+  front: string;
+  back: string;
+  repetitions: number;
+  easinessFactor: number;
+  intervalDays: number;
+  dueAt: number;
+  lastReviewedAt: number;
+  pushReminderEnabled: boolean;
   createdAt: number;
   updatedAt: number;
+}
+
+// Phase 3 Schema: Planner (Exam date + subjects -> day-by-day plan from Vault)
+export interface StudyPlanDayTask {
+  date: string;
+  subject: string;
+  chapter: string;
+  tasks: string[];
+  vaultItemIds: string[];
+  completed: boolean;
+}
+
+export interface StudyPlanDoc {
+  id: string;
+  userId: string;
+  examName: string;
+  examDate: string;
+  subjects: string[];
+  days: StudyPlanDayTask[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+// Phase 4 Schema: Morning Brief (Scheduled daily in IST default with cards due, today's plan, one quiz)
+export interface MorningBriefDoc {
+  id: string;
+  userId: string;
+  briefDate: string;
+  scheduledTime: string;
+  timezone: string;
+  dueCardsCount: number;
+  todayPlanSummary: string;
+  dailyQuiz: {
+    question: string;
+    options: string[];
+    correctIndex: number;
+    explanation: string;
+    vaultItemId?: string;
+  };
+  createdAt: number;
 }
 
 export interface KnowledgeCollection {

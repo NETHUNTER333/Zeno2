@@ -450,14 +450,14 @@ export const PLAN_LIMITS: Record<
     name: 'Fire',
     priceMonthlyUsd: 7,
     priceYearlyUsd: 67,
-    fileUploadLimit: 999999,
+    fileUploadLimit: 1000, // 1,000 daily file uploads
     maxFilesPerMessage: 50,
-    messageLimit: 999999,
-    searchLimit: 999999,
-    deepResearchLimit: 999999,
-    pdfStudyLimit: 999999,
-    tokenLimit: 25000000,
-    toolLimit: 999999,
+    messageLimit: 5000, // 5,000 daily AI messages
+    searchLimit: 2500, // 2,500 daily web searches
+    deepResearchLimit: 300, // 300 daily autonomous deep research runs
+    pdfStudyLimit: 500, // 500 daily study sessions
+    tokenLimit: 25000000, // 25M daily tokens
+    toolLimit: 10000, // 10,000 daily agent & tool calls
     storageBytesLimit: 32212254720, // 30 GB
   },
 };
@@ -543,6 +543,12 @@ export const UserAccountStore = {
     } catch {}
     // Require explicit sign-in to enter the workspace
     return false;
+  },
+  isGuest(): boolean {
+    return !this.isUserSignedIn();
+  },
+  getCurrentPlan(): 'free' | 'spark' | 'fire' {
+    return this.getNormalizedPlan();
   },
   async signIn() {
     const user = await signInWithGoogle();
@@ -931,15 +937,15 @@ export const UserAccountStore = {
       pdfStudyUsed: Number(raw.pdfStudyUsed || 0),
       tokensUsed: Number(raw.tokensUsed || 0),
       toolsUsed: Number(raw.toolsUsed || 0),
-      messageLimit: isFire ? 999999 : limits.messageLimit + bonusMsgs,
-      fileUploadLimit: isFire ? 999999 : limits.fileUploadLimit + bonusUploads,
+      messageLimit: limits.messageLimit + bonusMsgs,
+      fileUploadLimit: limits.fileUploadLimit + bonusUploads,
       maxFilesPerMessage: isFree
         ? limits.maxFilesPerMessage
         : Math.max(limits.maxFilesPerMessage, bonusUploads > 0 ? 10 : 0),
       tokenLimit: limits.tokenLimit,
-      searchLimit: isFire ? 999999 : limits.searchLimit + bonusResearch,
-      deepResearchLimit: isFire ? 999999 : limits.deepResearchLimit + bonusResearch,
-      pdfStudyLimit: isFire ? 999999 : limits.pdfStudyLimit + bonusQuizzes,
+      searchLimit: limits.searchLimit + bonusResearch,
+      deepResearchLimit: limits.deepResearchLimit + bonusResearch,
+      pdfStudyLimit: limits.pdfStudyLimit + bonusQuizzes,
       toolLimit: limits.toolLimit,
       storageBytesLimit: limits.storageBytesLimit,
     };
@@ -955,13 +961,28 @@ export const UserAccountStore = {
         ? snapshot.plan
         : localPlan;
 
-    // Respect explicit local plan selection (including when user switches to 'free')
-    const effectivePlan: 'free' | 'spark' | 'fire' = hasExplicitLocalSub ? localPlan : serverPlan;
+    // If the server has an authoritative billing record (e.g. refund.succeeded revoked Spark -> Free, or active Dodo sub),
+    // honor the server's plan so stale localStorage never keeps Spark active after a refund.
+    const isAuthoritativeServerPlan = Boolean(
+      snapshot.authoritativePlan ||
+        (snapshot.billingStatus && snapshot.billingStatus !== 'none')
+    );
+    const effectivePlan: 'free' | 'spark' | 'fire' = isAuthoritativeServerPlan
+      ? serverPlan
+      : hasExplicitLocalSub
+      ? localPlan
+      : serverPlan;
 
     if (effectivePlan !== currentSub.plan) {
       saveToStorage(STORAGE_KEYS.SUBSCRIPTION, {
         ...currentSub,
         plan: effectivePlan,
+        status:
+          snapshot.billingStatus === 'cancelled'
+            ? 'canceled'
+            : effectivePlan === 'free'
+            ? 'active'
+            : currentSub.status,
       });
     }
 

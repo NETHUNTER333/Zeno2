@@ -102,7 +102,7 @@ export const CancelSubscriptionSection: React.FC<{
     CANCELLATION_SURVEY_REASONS[0].id
   );
   const [surveyComments, setSurveyComments] = useState<string>('');
-  const [terminationMode, setTerminationMode] = useState<'period_end' | 'immediate'>('immediate');
+  const [terminationMode, setTerminationMode] = useState<'period_end' | 'immediate'>('period_end');
   const [isSubmittingCancel, setIsSubmittingCancel] = useState(false);
   const [portalBusy, setPortalBusy] = useState(false);
   const [feedbackBanner, setFeedbackBanner] = useState<{
@@ -120,8 +120,14 @@ export const CancelSubscriptionSection: React.FC<{
         if (
           data?.authenticated &&
           (data.effectivePlan === 'spark' || data.effectivePlan === 'fire' || data.effectivePlan === 'free') &&
-          data.planStatus !== 'none'
+          (data.planStatus !== 'none' || (Array.isArray(data.refunds) && data.refunds.length > 0))
         ) {
+          if (UserAccountStore.getNormalizedPlan() !== data.effectivePlan) {
+            UserAccountStore.upgradePlan(
+              data.effectivePlan,
+              data.planInterval === 'yearly' ? 'yearly' : 'monthly'
+            );
+          }
           setCurrentPlan(data.effectivePlan);
         } else {
           setCurrentPlan(UserAccountStore.getNormalizedPlan());
@@ -512,6 +518,19 @@ export const RefundPolicySection: React.FC<{
       if (res.ok) {
         const data = await res.json();
         setBillingMe(data);
+        if (
+          data?.authenticated &&
+          (data.effectivePlan === 'spark' || data.effectivePlan === 'fire' || data.effectivePlan === 'free') &&
+          (data.planStatus !== 'none' || (Array.isArray(data.refunds) && data.refunds.length > 0))
+        ) {
+          if (UserAccountStore.getNormalizedPlan() !== data.effectivePlan) {
+            UserAccountStore.upgradePlan(
+              data.effectivePlan,
+              data.planInterval === 'yearly' ? 'yearly' : 'monthly'
+            );
+          }
+          setCurrentPlan(data.effectivePlan);
+        }
         const defaultPay =
           data?.latestRefundablePayment?.dodo_payment_id ||
           data?.payments?.find((p: any) => p.status !== 'refunded')?.dodo_payment_id ||

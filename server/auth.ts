@@ -91,6 +91,10 @@ export const OPTIONAL_AUTH_API_ROUTES = [
   '/moderation/check',
   '/consent',
   '/account/delete',
+  '/agents/status',
+  '/agents/on-save',
+  '/agents/on-message',
+  '/agents/memory',
 ] as const;
 
 export const PUBLIC_API_ROUTES = [

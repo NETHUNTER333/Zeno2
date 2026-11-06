@@ -34,7 +34,7 @@ import {
   Award,
 } from 'lucide-react';
 import { GrokLogo } from './GrokLogo';
-import { ChatMessage, SavedBookmark } from '../types';
+import { ChatMessage, SavedBookmark, KnowledgeVaultItem } from '../types';
 import { BounceSidebar, BounceSidebarItem } from './ui/bounce-sidebar';
 import {
   UserAccountStore,
@@ -42,6 +42,7 @@ import {
   STREAK_MILESTONES,
   EvaluatedBadge,
 } from '../lib/userAccountStore';
+import { KnowledgeVaultStore } from '../lib/growthStore';
 import { StreakModal } from './StreakModal';
 import { auth } from '../lib/firebase';
 
@@ -321,6 +322,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [pinnedMessages, setPinnedMessages] = useState<SavedBookmark[]>(() =>
     UserAccountStore.getBookmarks()
   );
+  const [vaultItems, setVaultItems] = useState<KnowledgeVaultItem[]>(() =>
+    KnowledgeVaultStore.getAll()
+  );
   const [dailyStreak, setDailyStreak] = useState<DailyStreakData>(() =>
     UserAccountStore.getDailyStreak(threads)
   );
@@ -380,11 +384,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
       setUserSub(UserAccountStore.getSubscription());
       setUsageQuota(UserAccountStore.getUsage());
       setPinnedMessages(UserAccountStore.getBookmarks());
+      setVaultItems(KnowledgeVaultStore.getAll());
       setDailyStreak(UserAccountStore.getDailyStreak(threads));
       setEvaluatedBadges(UserAccountStore.getEvaluatedBadges(threads));
     };
     window.addEventListener('kinich-account-updated', syncProfile);
-    return () => window.removeEventListener('kinich-account-updated', syncProfile);
+    window.addEventListener('kinich-growth-updated', syncProfile);
+    window.addEventListener('kinich-sage-organized', syncProfile);
+    return () => {
+      window.removeEventListener('kinich-account-updated', syncProfile);
+      window.removeEventListener('kinich-growth-updated', syncProfile);
+      window.removeEventListener('kinich-sage-organized', syncProfile);
+    };
   }, [threads]);
 
   const unlockedBadgesCount = useMemo(
@@ -584,9 +595,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
         });
         items.push({
           id: 'action-vault',
-          label: 'Knowledge Vault',
-          sublabel: 'Saved insights & collections',
-          icon: <Bookmark className="w-3.5 h-3.5 text-current" />,
+          label: 'The Vault',
+          sublabel: !auth.currentUser
+            ? 'Sign in to save · Grouped by Subject → Chapter'
+            : `${vaultItems.length} saved · Grouped by Subject → Chapter`,
+          icon: <Bookmark className="w-3.5 h-3.5 text-[#FC4C01]" />,
           onClick: () => {
             onOpenGrowthHub('vault');
             if (window.innerWidth < 768) onClose();
@@ -613,6 +626,85 @@ export const Sidebar: React.FC<SidebarProps> = ({
           },
         });
       }
+    }
+
+    // Sidebar Vault section (Subject -> Chapter preview or Guest "Sign in to save")
+    items.push({
+      id: 'heading-vault-sidebar',
+      label:
+        vaultItems.length > 0
+          ? `The Vault (${vaultItems.length})`
+          : 'The Vault',
+      heading: true,
+      onClick: () => {
+        if (onOpenGrowthHub) {
+          onOpenGrowthHub('vault');
+          if (window.innerWidth < 768) onClose();
+        }
+      },
+      trailing: (
+        <span className="text-[10px] font-medium text-[#FC4C01]">Open Vault →</span>
+      ),
+    });
+
+    if (!auth.currentUser && vaultItems.length === 0) {
+      items.push({
+        id: 'vault-guest-signin',
+        label: 'Sign in to save',
+        sublabel: 'Save lectures, notes, quizzes & flashcards to your Vault',
+        icon: <Bookmark className="w-3 h-3 text-[#FC4C01]" />,
+        onClick: () => {
+          if (onOpenAccountModal) {
+            onOpenAccountModal('profile');
+          } else if (onOpenGrowthHub) {
+            onOpenGrowthHub('vault');
+          }
+          if (window.innerWidth < 768) onClose();
+        },
+      });
+    } else if (vaultItems.length === 0) {
+      items.push({
+        id: 'vault-empty-hint',
+        label: 'No Vault items saved yet',
+        sublabel: 'Click "Save to Vault" on any chat, lecture, or report',
+        onClick: () => {
+          if (onOpenGrowthHub) {
+            onOpenGrowthHub('vault');
+            if (window.innerWidth < 768) onClose();
+          }
+        },
+      });
+    } else {
+      const filteredVault = normalizedQuery
+        ? vaultItems.filter(
+            (v) =>
+              (v.title || '').toLowerCase().includes(normalizedQuery) ||
+              (v.subject || '').toLowerCase().includes(normalizedQuery) ||
+              (v.chapter || '').toLowerCase().includes(normalizedQuery) ||
+              (v.tags || []).some((t) => t.toLowerCase().includes(normalizedQuery))
+          )
+        : vaultItems.slice(0, 5);
+
+      filteredVault.slice(0, 5).forEach((v) => {
+        const subjectLabel = v.subject || 'General Studies';
+        const chapterLabel = v.chapter || 'Core Concepts';
+        items.push({
+          id: `vault-item-${v.id}`,
+          label: v.title,
+          sublabel: `${subjectLabel} → ${chapterLabel}${
+            Array.isArray(v.relatedItemIds) && v.relatedItemIds.length > 0
+              ? ` · ${v.relatedItemIds.length} linked`
+              : ''
+          }`,
+          icon: <BookOpen className="w-3 h-3 text-[#FC4C01]" />,
+          onClick: () => {
+            if (onOpenGrowthHub) {
+              onOpenGrowthHub('vault');
+              if (window.innerWidth < 768) onClose();
+            }
+          },
+        });
+      });
     }
 
     if (filteredPinnedMessages.length > 0 || !normalizedQuery) {
@@ -748,6 +840,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     dailyStreak.currentStreak,
     unlockedBadgesCount,
     evaluatedBadges.length,
+    vaultItems,
+    onOpenAccountModal,
   ]);
 
   return (
@@ -1203,12 +1297,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   }`}
                 >
                   <span>
-                    Uploads: {usageQuota.filesUploaded}/
-                    {usageQuota.fileUploadLimit >= 999999 ? '∞' : usageQuota.fileUploadLimit}
+                    Uploads: {usageQuota.filesUploaded}/{usageQuota.fileUploadLimit}
                   </span>
                   <span>
-                    Msgs: {usageQuota.messagesUsed}/
-                    {usageQuota.messageLimit >= 999999 ? '∞' : usageQuota.messageLimit}
+                    Msgs: {usageQuota.messagesUsed}/{usageQuota.messageLimit}
                   </span>
                 </div>
               </button>

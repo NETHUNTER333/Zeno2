@@ -12,6 +12,21 @@ import {
   Bookmark,
   Check,
   Code2,
+  FolderOpen,
+  Link2,
+  Clock,
+  Bot,
+  Lock,
+  MessageSquare,
+  Share2,
+  Trash2,
+  Play,
+  ArrowBigUp,
+  ArrowBigDown,
+  ChevronDown,
+  ChevronUp,
+  Layers,
+  Compass,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -29,11 +44,18 @@ import {
   TopContributorEntry,
   KinichFeedbackCategory,
   KinichFeedbackSubmission,
+  VaultThread,
+  VaultThreadComment,
+  VaultKeyPoint,
 } from '../types';
 import {
   DISCOVER_CATEGORIES,
   fetchDiscoverArtifacts,
   KnowledgeVaultStore,
+  VaultThreadStore,
+  formatToIstDate,
+  AgentMemoryStore,
+  VAULT_FREE_ITEM_LIMIT,
   computeWeeklyIntelligenceReport,
   evaluateMissionsAndLevel,
   fetchMyReferralStatus,
@@ -87,6 +109,25 @@ function normalizeLatexDelimiters(raw: string): string {
   return raw
     .replace(/\\\[([\s\S]*?)\\\]/g, (_m, inner) => `\n$$\n${inner.trim()}\n$$\n`)
     .replace(/\\\(([\s\S]*?)\\\)/g, (_m, inner) => `$$${inner.trim()}$$`);
+}
+
+function extractYouTubeVideoId(url?: string): string | null {
+  if (!url) return null;
+  const match = url.match(/(?:v=|\/embed\/|\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/i);
+  return match ? match[1] : null;
+}
+
+function parseTimestampToSeconds(ts?: string): number {
+  if (!ts) return 0;
+  const cleaned = ts.replace(/[[\]]/g, '').trim();
+  const parts = cleaned.split(':').map((p) => parseInt(p, 10));
+  if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+    return parts[0] * 60 + parts[1];
+  }
+  if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
+    return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  }
+  return 0;
 }
 
 interface LiveDiscoverConnectedRepo {
@@ -166,6 +207,23 @@ export const KinichGrowthHubModal: React.FC<KinichGrowthHubModalProps> = ({
   const [newCollectionName, setNewCollectionName] = useState<string>('');
   const [showNewCollectionInput, setShowNewCollectionInput] = useState<boolean>(false);
 
+  // --- REDDIT-STYLE VAULT THREADS STATE ---
+  const [vaultThreads, setVaultThreads] = useState<VaultThread[]>(() =>
+    VaultThreadStore.getThreads()
+  );
+  const [activeThread, setActiveThread] = useState<VaultThread | null>(null);
+  const [vaultViewMode, setVaultViewMode] = useState<'threads' | 'tree'>('threads');
+  const [threadSort, setThreadSort] = useState<'new' | 'top' | 'due'>('new');
+  const [threadTypeFilter, setThreadTypeFilter] = useState<
+    'all' | 'youtube' | 'web_link' | 'pdf' | 'image' | 'text'
+  >('all');
+  const [threadCommentInput, setThreadCommentInput] = useState<string>('');
+  const [replyingCommentId, setReplyingCommentId] = useState<string | null>(null);
+  const [replyTextInput, setReplyTextInput] = useState<string>('');
+  const [collapsedComments, setCollapsedComments] = useState<Record<string, boolean>>({});
+  const [copiedShareNotice, setCopiedShareNotice] = useState<string | null>(null);
+  const [activeVideoTimeSec, setActiveVideoTimeSec] = useState<number>(0);
+
   // --- TAB 3: WEEKLY BRIEF, MISSIONS & NOTIFICATIONS ---
   const [includeTopicsOnWeeklyCard, setIncludeTopicsOnWeeklyCard] = useState<boolean>(false);
   const [weeklyCardTheme] = useState<ShareCardTheme>('carbon');
@@ -237,24 +295,57 @@ export const KinichGrowthHubModal: React.FC<KinichGrowthHubModalProps> = ({
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
   const [myFeedbackHistory, setMyFeedbackHistory] = useState<KinichFeedbackSubmission[]>([]);
 
+  const [vaultTypeFilter, setVaultTypeFilter] = useState<
+    'all' | 'lecture' | 'note' | 'quiz' | 'flashcard_deck' | 'research_report' | 'chat_answer'
+  >('all');
+  const [selectedSubject, setSelectedSubject] = useState<string>('all');
+  const [sageMemoryFacts, setSageMemoryFacts] = useState<string[]>(() =>
+    AgentMemoryStore.getFacts('sage')
+  );
+  const [newMemoryFactInput, setNewMemoryFactInput] = useState<string>('');
+  const [isGuestVault, setIsGuestVault] = useState<boolean>(() => UserAccountStore.isGuest());
+  const [currentUserTier, setCurrentUserTier] = useState<'free' | 'spark' | 'fire'>(() =>
+    UserAccountStore.getCurrentPlan()
+  );
+
   useEffect(() => {
     if (isOpen) {
       setActiveTab(initialTab === 'weekly' ? 'discover' : initialTab);
       setVaultItems(KnowledgeVaultStore.getItems());
+      setVaultThreads(VaultThreadStore.getThreads());
       setCollections(KnowledgeVaultStore.getCollections());
-      KnowledgeVaultStore.syncFromCloud().then((synced) => {
-        setVaultItems(synced);
-      });
+      setSageMemoryFacts(AgentMemoryStore.getFacts('sage'));
+      setIsGuestVault(UserAccountStore.isGuest());
+      setCurrentUserTier(UserAccountStore.getCurrentPlan());
+      if (!UserAccountStore.isGuest()) {
+        KnowledgeVaultStore.syncFromCloud().then((synced) => {
+          setVaultItems(synced);
+        });
+        VaultThreadStore.syncWithFirestore().then((synced) => {
+          if (Array.isArray(synced)) setVaultThreads(synced);
+        });
+        AgentMemoryStore.syncFromFirestore('sage').then((facts) => {
+          setSageMemoryFacts(facts);
+        });
+      }
     }
   }, [isOpen, initialTab]);
 
   useEffect(() => {
     const syncVault = () => {
       setVaultItems(KnowledgeVaultStore.getItems());
+      setVaultThreads(VaultThreadStore.getThreads());
       setCollections(KnowledgeVaultStore.getCollections());
+      setSageMemoryFacts(AgentMemoryStore.getFacts('sage'));
+      setIsGuestVault(UserAccountStore.isGuest());
+      setCurrentUserTier(UserAccountStore.getCurrentPlan());
     };
     window.addEventListener('kinich-vault-updated', syncVault);
-    return () => window.removeEventListener('kinich-vault-updated', syncVault);
+    window.addEventListener('kinich-account-updated', syncVault);
+    return () => {
+      window.removeEventListener('kinich-vault-updated', syncVault);
+      window.removeEventListener('kinich-account-updated', syncVault);
+    };
   }, []);
 
   // Load Discover items + Live arXiv & Connected GitHub feed when Discover tab or filters change
@@ -419,23 +510,242 @@ export const KinichGrowthHubModal: React.FC<KinichGrowthHubModalProps> = ({
     } else if (selectedCollectionId !== 'all') {
       list = list.filter((i) => i.collectionId === selectedCollectionId);
     }
+    if (selectedSubject !== 'all') {
+      list = list.filter(
+        (i) => (i.subject || 'General Studies').toLowerCase() === selectedSubject.toLowerCase()
+      );
+    }
+    if (vaultTypeFilter !== 'all') {
+      list = list.filter((i) => {
+        const t = i.type || i.sourceType || 'chat_answer';
+        if (vaultTypeFilter === 'note') return t === 'note' || t === 'personal_note' || t === 'discover_resource';
+        if (vaultTypeFilter === 'chat_answer') return t === 'chat_answer' || t === 'ai_response' || t === 'study_guide';
+        return t === vaultTypeFilter;
+      });
+    }
     const q = vaultSearch.trim().toLowerCase();
     if (q) {
       list = list.filter(
         (i) =>
           i.title.toLowerCase().includes(q) ||
+          (i.subject || '').toLowerCase().includes(q) ||
+          (i.chapter || '').toLowerCase().includes(q) ||
           i.summary.toLowerCase().includes(q) ||
           i.content.toLowerCase().includes(q) ||
+          (i.sageNote || '').toLowerCase().includes(q) ||
           i.tags.some((t) => t.toLowerCase().includes(q))
       );
     }
     return list;
-  }, [vaultItems, selectedCollectionId, vaultSearch]);
+  }, [vaultItems, selectedCollectionId, selectedSubject, vaultTypeFilter, vaultSearch]);
+
+  const groupedVaultBySubjectAndChapter = useMemo(
+    () => KnowledgeVaultStore.getGroupedBySubjectAndChapter(filteredVaultItems),
+    [filteredVaultItems]
+  );
+
+  const allSubjectsWithCounts = useMemo(
+    () => KnowledgeVaultStore.getGroupedBySubjectAndChapter(vaultItems),
+    [vaultItems]
+  );
+
+  const filteredVaultThreads = useMemo(() => {
+    let list = [...vaultThreads];
+    if (threadTypeFilter !== 'all') {
+      list = list.filter((t) => t.type === threadTypeFilter);
+    }
+    if (selectedSubject !== 'all') {
+      list = list.filter(
+        (t) => (t.subject || 'General Studies').toLowerCase() === selectedSubject.toLowerCase()
+      );
+    }
+    const q = vaultSearch.trim().toLowerCase();
+    if (q) {
+      list = list.filter(
+        (t) =>
+          t.title.toLowerCase().includes(q) ||
+          (t.tldr || '').toLowerCase().includes(q) ||
+          (t.subject || '').toLowerCase().includes(q) ||
+          (t.chapter || '').toLowerCase().includes(q) ||
+          (t.tags || []).some((tag) => tag.toLowerCase().includes(q)) ||
+          (t.keyPoints || []).some((kp) => kp.text.toLowerCase().includes(q))
+      );
+    }
+    if (threadSort === 'top') {
+      list.sort((a, b) => b.score - a.score || b.createdAt - a.createdAt);
+    } else if (threadSort === 'due') {
+      list.sort((a, b) => (a.updatedAt || a.createdAt) - (b.updatedAt || b.createdAt));
+    } else {
+      list.sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.createdAt - a.createdAt);
+    }
+    return list;
+  }, [vaultThreads, threadTypeFilter, selectedSubject, vaultSearch, threadSort]);
+
+  const handleVoteThread = (threadId: string, delta: 1 | -1) => {
+    const updated = VaultThreadStore.voteThread(threadId, delta);
+    if (updated) {
+      setVaultThreads(VaultThreadStore.getThreads());
+      if (activeThread && activeThread.id === threadId) {
+        setActiveThread(updated);
+      }
+    }
+  };
+
+  const handleVoteComment = (threadId: string, commentId: string, delta: 1 | -1) => {
+    const updated = VaultThreadStore.voteComment(threadId, commentId, delta);
+    if (updated) {
+      setVaultThreads(VaultThreadStore.getThreads());
+      if (activeThread && activeThread.id === threadId) {
+        const refreshed = VaultThreadStore.getThread(threadId);
+        if (refreshed) setActiveThread(refreshed);
+      }
+    }
+  };
+
+  const handleVoteKeyPoint = (threadId: string, keyPointId: string, delta: 1 | -1) => {
+    const thread = VaultThreadStore.getThread(threadId);
+    if (!thread) return;
+    const nextKp = (thread.keyPoints || []).map((kp) =>
+      kp.id === keyPointId ? { ...kp, score: (kp.score || 0) + delta } : kp
+    );
+    const updated = VaultThreadStore.saveThread({ ...thread, keyPoints: nextKp });
+    setVaultThreads(VaultThreadStore.getThreads());
+    if (activeThread && activeThread.id === threadId) {
+      setActiveThread(updated);
+    }
+  };
+
+  const handleAddThreadComment = (parentId?: string) => {
+    if (!activeThread) return;
+    const text = (parentId ? replyTextInput : threadCommentInput).trim();
+    if (!text) return;
+    VaultThreadStore.addComment(activeThread.id, {
+      author: 'user',
+      text,
+      parentId,
+    });
+    if (parentId) {
+      setReplyingCommentId(null);
+      setReplyTextInput('');
+    } else {
+      setThreadCommentInput('');
+    }
+    const refreshed = VaultThreadStore.getThread(activeThread.id);
+    if (refreshed) {
+      setActiveThread(refreshed);
+      setVaultThreads(VaultThreadStore.getThreads());
+    }
+  };
+
+  const handleForgetThread = (threadId: string) => {
+    if (
+      typeof window !== 'undefined' &&
+      !window.confirm(
+        'Forget this study thread? It will be permanently removed from your Vault and wiped from agent memory.'
+      )
+    ) {
+      return;
+    }
+    VaultThreadStore.forgetThread(threadId);
+    setVaultThreads(VaultThreadStore.getThreads());
+    if (activeThread && activeThread.id === threadId) {
+      setActiveThread(null);
+    }
+  };
+
+  const handleQuizMeOnThread = (thread: VaultThread) => {
+    onContinueVaultItemInChat({
+      id: `quiz-${thread.id}`,
+      userId: auth.currentUser?.uid || 'user',
+      title: `Quiz: ${thread.title}`,
+      summary: thread.tldr || '',
+      content: `Conduct an active recall quiz on this study thread:\n\nTitle: ${thread.title}\nTL;DR: ${thread.tldr}\nKey Points:\n${thread.keyPoints.map((k) => `- ${k.text} ${k.timestamp || ''}`).join('\n')}`,
+      type: 'quiz',
+      sourceType: 'quiz',
+      collectionId: 'col_quizzes',
+      subject: thread.subject,
+      chapter: thread.chapter,
+      tags: thread.tags,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      lastReviewedAt: Date.now(),
+      isPinned: thread.pinned,
+    });
+    onClose();
+  };
+
+  const handleFlashcardsOnThread = (thread: VaultThread) => {
+    onContinueVaultItemInChat({
+      id: `flashcard-${thread.id}`,
+      userId: auth.currentUser?.uid || 'user',
+      title: `Flashcards: ${thread.title}`,
+      summary: thread.tldr || '',
+      content: `Generate spaced-repetition flashcards for:\n\nTitle: ${thread.title}\nTL;DR: ${thread.tldr}\nKey Points:\n${thread.keyPoints.map((k) => `- ${k.text} ${k.timestamp || ''}`).join('\n')}`,
+      type: 'flashcard_deck',
+      sourceType: 'flashcard_deck',
+      collectionId: 'col_flashcards',
+      subject: thread.subject,
+      chapter: thread.chapter,
+      tags: thread.tags,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      lastReviewedAt: Date.now(),
+      isPinned: thread.pinned,
+    });
+    onClose();
+  };
+
+  const handleDeepResearchOnThread = (thread: VaultThread) => {
+    onContinueVaultItemInChat({
+      id: `research-${thread.id}`,
+      userId: auth.currentUser?.uid || 'user',
+      title: `Deep Research: ${thread.title}`,
+      summary: thread.tldr || '',
+      content: `Perform a Deep Research comprehensive synthesis on:\n\nTopic: ${thread.title}\nSource: ${thread.sourceUrl || ''}\nKey takeaways to build on:\n${thread.keyPoints.map((k) => `- ${k.text}`).join('\n')}`,
+      type: 'research_report',
+      sourceType: 'research_report',
+      collectionId: 'col_research',
+      subject: thread.subject,
+      chapter: thread.chapter,
+      tags: thread.tags,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      lastReviewedAt: Date.now(),
+      isPinned: thread.pinned,
+    });
+    onClose();
+  };
+
+  const handleShareThread = (thread: VaultThread) => {
+    const text = `📚 Kinich Study Thread: ${thread.title}\n` +
+      `Subject: ${thread.subject} → ${thread.chapter}\n` +
+      `TL;DR: ${thread.tldr}\n\n` +
+      `Key Points:\n${thread.keyPoints.map((kp, idx) => `${idx + 1}. ${kp.text} ${kp.timestamp ? '(' + kp.timestamp + ')' : ''}`).join('\n')}\n\n` +
+      `Saved: ${formatToIstDate(thread.createdAt)} (IST)\nkinich.app`;
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(text);
+    }
+    setCopiedShareNotice('Copied thread snapshot to clipboard!');
+    setTimeout(() => setCopiedShareNotice(null), 3000);
+  };
 
   if (!isOpen) return null;
 
   const handleCreateCustomNote = () => {
     if (!newNoteTitle.trim() || !newNoteContent.trim()) return;
+    if (UserAccountStore.isGuest()) {
+      window.dispatchEvent(new CustomEvent('kinich-open-auth'));
+      return;
+    }
+    const check = KnowledgeVaultStore.canSaveToVault();
+    if (!check.allowed) {
+      window.dispatchEvent(
+        new CustomEvent('kinich-open-pricing', {
+          detail: { highlightPlan: 'spark', reason: check.message },
+        })
+      );
+      return;
+    }
     const targetCol =
       selectedCollectionId !== 'all' && selectedCollectionId !== 'pinned'
         ? selectedCollectionId
@@ -444,7 +754,8 @@ export const KinichGrowthHubModal: React.FC<KinichGrowthHubModalProps> = ({
       title: newNoteTitle.trim(),
       summary: newNoteContent.trim().slice(0, 200),
       content: newNoteContent.trim(),
-      type: 'personal_note',
+      type: 'note',
+      sourceType: 'note',
       collectionId: targetCol,
       tags: newNoteTags
         .split(',')
@@ -583,9 +894,9 @@ export const KinichGrowthHubModal: React.FC<KinichGrowthHubModalProps> = ({
       >
         {(
           [
-            { id: 'discover', label: 'Discover (arXiv + GitHub)' },
-            { id: 'vault', label: `Knowledge Vault (${vaultItems.length})` },
-            { id: 'passes', label: 'Referrals (8x Rewards)' },
+            { id: 'discover', label: 'Discover' },
+            { id: 'vault', label: `Vault (${vaultThreads.length || vaultItems.length})` },
+            { id: 'passes', label: 'Referrals' },
             { id: 'feedback', label: 'Feedback' },
           ] as const
         ).map((t) => (
@@ -616,29 +927,23 @@ export const KinichGrowthHubModal: React.FC<KinichGrowthHubModalProps> = ({
              ========================================================= */}
           {activeTab === 'discover' && (
             <div className="space-y-5">
-              {/* Brutalist Header Banner + Live Refresh Action */}
+              {/* Clean, Premium Header Bar + Refresh Action */}
               <div
-                className={`p-4 sm:p-5 rounded-2xl border-2 flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
+                className={`p-4 sm:p-5 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
                   isDark
-                    ? 'bg-[#101014] border-white/25 shadow-[4px_4px_0px_0px_rgba(252,76,1,0.45)]'
-                    : 'bg-white border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,0.85)]'
+                    ? 'bg-[#101014] border-white/10'
+                    : 'bg-white border-black/10 shadow-2xs'
                 }`}
               >
                 <div className="space-y-1">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="px-2 py-0.5 rounded bg-[#FC4C01] text-white font-mono text-[10px] font-bold uppercase tracking-widest">
-                      LIVE FEED // ARXIV × GITHUB
-                    </span>
-                    <span className="font-mono text-[11px] text-neutral-400">
-                      {liveArxivPapers.length} arXiv Papers · {liveGithubRepos.length} GitHub Repos ·{' '}
-                      {discoverItems.length} Blueprints
+                    <span className="text-sm font-semibold tracking-tight">Discover Research & Code</span>
+                    <span className="text-[11px] text-neutral-400">
+                      · {liveArxivPapers.length} arXiv papers · {liveGithubRepos.length} repos · {discoverItems.length} blueprints
                     </span>
                   </div>
-                  <h3 className="text-base sm:text-lg font-bold tracking-tight">
-                    Frontier Research Papers, Connected Code & Study Blueprints
-                  </h3>
                   <p className={`text-xs ${isDark ? 'text-neutral-400' : 'text-neutral-600'}`}>
-                    Real-time arXiv preprints automatically linked to open-source GitHub implementations, plus community research workflows.
+                    Frontier preprints linked to open-source code and community study workflows.
                   </p>
                 </div>
 
@@ -647,38 +952,34 @@ export const KinichGrowthHubModal: React.FC<KinichGrowthHubModalProps> = ({
                     type="button"
                     onClick={() => setLiveRefreshTick((t) => t + 1)}
                     disabled={liveFeedLoading}
-                    className={`px-3.5 py-2 rounded-xl border-2 font-mono text-xs font-bold inline-flex items-center gap-2 cursor-pointer transition-all active:translate-y-0.5 ${
-                      isDark
-                        ? 'bg-[#FC4C01] hover:bg-[#e04300] border-white/20 text-white shadow-[3px_3px_0px_0px_rgba(255,255,255,0.2)]'
-                        : 'bg-[#FC4C01] hover:bg-[#e04300] border-black text-white shadow-[3px_3px_0px_0px_rgba(0,0,0,1)]'
-                    }`}
+                    className="h-8 px-3.5 rounded-full bg-[#FC4C01] hover:bg-[#e04300] text-white text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer transition-colors shadow-xs shrink-0"
                   >
                     <RefreshCw
                       className={`w-3.5 h-3.5 ${liveFeedLoading ? 'animate-spin' : ''}`}
                     />
-                    <span>{liveFeedLoading ? 'Syncing Live Feed…' : 'Refresh Feed'}</span>
+                    <span>{liveFeedLoading ? 'Syncing…' : 'Refresh'}</span>
                   </button>
                 </div>
               </div>
 
-              {/* Search, Source Filter & Sort Bar */}
-              <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+              {/* Search & Source Filter Bar */}
+              <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-2.5">
                 <div className="relative flex-1">
-                  <Search className="w-3.5 h-3.5 absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-500" />
+                  <Search className="w-3.5 h-3.5 absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400" />
                   <input
                     type="text"
                     value={discoverQuery}
                     onChange={(e) => setDiscoverQuery(e.target.value)}
-                    placeholder="Search arXiv papers, GitHub repositories, transformers, agents, physics, or study guides..."
-                    className={`w-full pl-9 pr-4 py-2.5 rounded-xl border-2 font-mono text-xs outline-none ${
+                    placeholder="Search papers, code, or study blueprints..."
+                    className={`w-full pl-9 pr-4 py-2 rounded-full border text-xs outline-none transition-colors ${
                       isDark
-                        ? 'bg-[#09090b] border-white/20 text-white placeholder-neutral-500 focus:border-[#FC4C01]'
-                        : 'bg-white border-black/80 text-black placeholder-neutral-400 focus:border-[#FC4C01]'
+                        ? 'bg-[#09090b] border-white/15 text-white placeholder-neutral-500 focus:border-[#FC4C01]'
+                        : 'bg-white border-black/15 text-black placeholder-neutral-400 focus:border-[#FC4C01]'
                     }`}
                   />
                 </div>
 
-                <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                <div className="flex flex-wrap items-center gap-1 shrink-0">
                   {(
                     [
                       { id: 'all', label: 'All Sources' },
@@ -691,12 +992,12 @@ export const KinichGrowthHubModal: React.FC<KinichGrowthHubModalProps> = ({
                       key={src.id}
                       type="button"
                       onClick={() => setDiscoverSourceFilter(src.id)}
-                      className={`px-3 py-1.5 rounded-lg border-2 font-mono text-[11px] font-bold cursor-pointer transition-all ${
+                      className={`px-3 py-1.5 rounded-full text-xs font-medium cursor-pointer transition-colors whitespace-nowrap ${
                         discoverSourceFilter === src.id
-                          ? 'bg-[#FC4C01] text-white border-[#FC4C01]'
+                          ? 'bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 font-semibold shadow-xs'
                           : isDark
-                          ? 'bg-[#121215] border-white/15 text-neutral-300 hover:border-white/35'
-                          : 'bg-white border-black/20 text-neutral-800 hover:border-black'
+                          ? 'text-neutral-400 hover:text-white hover:bg-white/[0.06]'
+                          : 'text-neutral-600 hover:text-black hover:bg-black/[0.04]'
                       }`}
                     >
                       {src.label}
@@ -705,19 +1006,21 @@ export const KinichGrowthHubModal: React.FC<KinichGrowthHubModalProps> = ({
                 </div>
               </div>
 
-              {/* Category Filter Bar */}
+              {/* Category Filter Bar (Pills) */}
               <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
                 {(['All', ...DISCOVER_CATEGORIES] as const).map((cat) => (
                   <button
                     key={cat}
                     type="button"
                     onClick={() => setDiscoverCategory(cat)}
-                    className={`px-3 py-1.5 rounded-lg border text-xs font-medium whitespace-nowrap transition-colors cursor-pointer ${
+                    className={`px-3 py-1 rounded-full border text-xs font-medium whitespace-nowrap transition-colors cursor-pointer ${
                       discoverCategory === cat
                         ? isDark
-                          ? 'bg-white text-black border-white font-bold'
-                          : 'bg-neutral-900 text-white border-neutral-900 font-bold'
-                        : secondaryBtn
+                          ? 'bg-white text-black border-white font-semibold'
+                          : 'bg-neutral-900 text-white border-neutral-900 font-semibold'
+                        : isDark
+                        ? 'border-white/10 text-neutral-400 hover:text-white hover:bg-white/[0.05]'
+                        : 'border-black/10 text-neutral-600 hover:text-black hover:bg-black/[0.04]'
                     }`}
                   >
                     {cat}
@@ -1383,349 +1686,1342 @@ export const KinichGrowthHubModal: React.FC<KinichGrowthHubModalProps> = ({
           )}
 
           {/* =========================================================
-              TAB 2: PERSONAL KNOWLEDGE VAULT
+              TAB 2: THE VAULT (Subject -> Chapter + Sage + Type Filters)
              ========================================================= */}
           {activeTab === 'vault' && (
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-5">
-              {/* Left Rail: Collections & Export */}
-              <div className="md:col-span-3 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] uppercase tracking-wider text-neutral-500 font-medium">
-                    Collections
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setShowNewCollectionInput((v) => !v)}
-                    className="text-[11px] text-neutral-500 hover:text-current cursor-pointer font-medium"
-                  >
-                    + New
-                  </button>
+            isGuestVault ? (
+              <div
+                data-testid="vault-guest-signin-prompt"
+                className={`p-8 sm:p-12 rounded-2xl border text-center max-w-lg mx-auto my-6 space-y-4 ${cardSurface}`}
+              >
+                <div className="w-12 h-12 rounded-2xl bg-[#FC4C01]/15 border border-[#FC4C01]/35 text-[#FC4C01] flex items-center justify-center mx-auto">
+                  <Lock className="w-5 h-5" />
                 </div>
-
-                {showNewCollectionInput && (
-                  <div className="flex items-center gap-1.5">
-                    <input
-                      type="text"
-                      value={newCollectionName}
-                      onChange={(e) => setNewCollectionName(e.target.value)}
-                      placeholder="Collection name…"
-                      className={`flex-1 px-3 py-1.5 rounded-full border text-xs outline-none ${inputSurface}`}
-                    />
+                <div className="space-y-1.5">
+                  <h3 className="text-base sm:text-lg font-bold tracking-tight">
+                    Sign in to your Vault
+                  </h3>
+                  <p className={`text-xs leading-relaxed ${isDark ? 'text-neutral-400' : 'text-neutral-600'}`}>
+                    Save lectures, notes, quizzes, and study threads across your devices.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    window.dispatchEvent(new CustomEvent('kinich-open-auth'));
+                  }}
+                  className="px-5 py-2.5 rounded-xl bg-[#FC4C01] hover:bg-[#e04300] text-white font-semibold text-xs cursor-pointer transition-colors"
+                >
+                  Sign in to save
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {/* Vault View Mode Toggle Bar (Study Feed / Subject Tree) */}
+                <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-black/[0.08] dark:border-white/[0.08]">
+                  <div className="flex items-center gap-1 p-1 rounded-full bg-black/[0.04] dark:bg-white/[0.05] border border-black/10 dark:border-white/10">
                     <button
                       type="button"
-                      onClick={handleAddCollection}
-                      className={`px-3 py-1.5 rounded-full text-xs font-semibold cursor-pointer ${primaryBtn}`}
+                      onClick={() => {
+                        setVaultViewMode('threads');
+                        setActiveVaultItem(null);
+                      }}
+                      className={`px-3.5 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors ${
+                        vaultViewMode === 'threads'
+                          ? 'bg-[#FC4C01] text-white shadow-xs'
+                          : 'text-neutral-500 hover:text-current'
+                      }`}
                     >
-                      Add
+                      <MessageSquare className="w-3.5 h-3.5" />
+                      <span>Study Feed</span>
+                      <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/20 dark:bg-white/20 font-medium tabular-nums">
+                        {vaultThreads.length}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setVaultViewMode('tree');
+                        setActiveThread(null);
+                      }}
+                      className={`px-3.5 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors ${
+                        vaultViewMode === 'tree'
+                          ? 'bg-[#FC4C01] text-white shadow-xs'
+                          : 'text-neutral-500 hover:text-current'
+                      }`}
+                    >
+                      <FolderOpen className="w-3.5 h-3.5" />
+                      <span>Subject Tree</span>
+                      <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/20 dark:bg-white/20 font-medium tabular-nums">
+                        {vaultItems.length}
+                      </span>
                     </button>
                   </div>
-                )}
 
-                <div className="space-y-1">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedCollectionId('all')}
-                    className={`w-full text-left px-3.5 py-2 rounded-full text-xs font-medium flex items-center justify-between cursor-pointer ${
-                      selectedCollectionId === 'all'
-                        ? primaryBtn
-                        : 'text-neutral-500 hover:text-current'
-                    }`}
-                  >
-                    <span>All Saved Knowledge</span>
-                    <span className="text-[11px]">{vaultItems.length}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setSelectedCollectionId('pinned')}
-                    className={`w-full text-left px-3.5 py-2 rounded-full text-xs font-medium flex items-center justify-between cursor-pointer ${
-                      selectedCollectionId === 'pinned'
-                        ? primaryBtn
-                        : 'text-neutral-500 hover:text-current'
-                    }`}
-                  >
-                    <span>Pinned Insights</span>
-                    <span className="text-[11px]">
-                      {vaultItems.filter((i) => i.pinned).length}
+                  {copiedShareNotice && (
+                    <span className="text-xs text-[#FC4C01] font-medium bg-[#FC4C01]/10 px-3 py-1 rounded-full">
+                      {copiedShareNotice}
                     </span>
-                  </button>
-
-                  {collections.map((col) => {
-                    const count = vaultItems.filter((i) => i.collectionId === col.id).length;
-                    return (
-                      <button
-                        key={col.id}
-                        type="button"
-                        onClick={() => setSelectedCollectionId(col.id)}
-                        className={`w-full text-left px-3.5 py-2 rounded-full text-xs font-medium flex items-center justify-between cursor-pointer ${
-                          selectedCollectionId === col.id
-                            ? primaryBtn
-                            : 'text-neutral-500 hover:text-current'
-                        }`}
-                      >
-                        <span className="truncate">{col.name}</span>
-                        <span className="text-[11px]">{count}</span>
-                      </button>
-                    );
-                  })}
+                  )}
                 </div>
 
-                <div
-                  className={`pt-3 border-t space-y-2 ${
-                    isDark ? 'border-white/[0.08]' : 'border-black/[0.08]'
-                  }`}
-                >
-                  <div className="text-[11px] uppercase tracking-wider text-neutral-500 font-medium">
-                    Data Portability
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleExportVault('markdown')}
-                    className={`w-full px-3 py-2 rounded-full border text-xs font-medium cursor-pointer text-center ${secondaryBtn}`}
-                  >
-                    Export Vault (.MD)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleExportVault('json')}
-                    className={`w-full px-3 py-2 rounded-full border text-xs font-medium cursor-pointer text-center ${secondaryBtn}`}
-                  >
-                    Export Vault (.JSON)
-                  </button>
-                </div>
-              </div>
-
-              {/* Right Column: Search, List & Reader/Editor */}
-              <div className="md:col-span-9 space-y-4">
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
-                  <div className="relative flex-1">
-                    <Search className="w-3.5 h-3.5 absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-500" />
-                    <input
-                      type="text"
-                      value={vaultSearch}
-                      onChange={(e) => setVaultSearch(e.target.value)}
-                      placeholder="Search your private saved answers, notes, tags, and citations..."
-                      className={`w-full pl-9 pr-4 py-2 rounded-full border text-xs outline-none ${inputSurface}`}
-                    />
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsCreatingNote(true);
-                      setActiveVaultItem(null);
-                    }}
-                    className={`px-4 py-2 rounded-full text-xs font-semibold cursor-pointer shrink-0 ${primaryBtn}`}
-                  >
-                    + New Research Note
-                  </button>
-                </div>
-
-                {isCreatingNote ? (
-                  <div className={`p-4 sm:p-5 rounded-2xl border space-y-3 ${cardSurface}`}>
-                    <div className="text-sm font-semibold">Create Private Research Note</div>
-                    <input
-                      type="text"
-                      value={newNoteTitle}
-                      onChange={(e) => setNewNoteTitle(e.target.value)}
-                      placeholder="Note title..."
-                      className={`w-full px-3.5 py-2 rounded-xl border text-xs outline-none ${inputSurface}`}
-                    />
-                    <input
-                      type="text"
-                      value={newNoteTags}
-                      onChange={(e) => setNewNoteTags(e.target.value)}
-                      placeholder="Tags (comma-separated)..."
-                      className={`w-full px-3.5 py-2 rounded-xl border text-xs outline-none ${inputSurface}`}
-                    />
-                    <textarea
-                      rows={6}
-                      value={newNoteContent}
-                      onChange={(e) => setNewNoteContent(e.target.value)}
-                      placeholder="Write Markdown notes, LaTeX formulas ($...$), or key takeaways..."
-                      className={`w-full px-3.5 py-2.5 rounded-xl border font-mono text-xs outline-none ${inputSurface}`}
-                    />
-                    <div className="flex justify-end gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setIsCreatingNote(false)}
-                        className="px-3.5 py-1.5 rounded-full text-neutral-500 hover:text-current cursor-pointer"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleCreateCustomNote}
-                        className={`px-4 py-1.5 rounded-full font-semibold cursor-pointer ${primaryBtn}`}
-                      >
-                        Save to Vault
-                      </button>
-                    </div>
-                  </div>
-                ) : activeVaultItem ? (
-                  <div className={`p-4 sm:p-5 rounded-2xl border space-y-4 ${cardSurface}`}>
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setActiveVaultItem(null)}
-                        className="text-xs text-neutral-500 hover:text-current cursor-pointer font-medium"
-                      >
-                        ← Back to Vault
-                      </button>
-                      <div className="flex items-center gap-2">
+                {vaultViewMode === 'threads' ? (
+                  activeThread ? (
+                    <div className={`p-4 sm:p-6 rounded-2xl border space-y-5 ${cardSurface}`}>
+                      {/* Top Bar: Back button, Badges & Action Buttons */}
+                      <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-black/[0.08] dark:border-white/[0.08]">
                         <button
                           type="button"
                           onClick={() => {
-                            onContinueVaultItemInChat(activeVaultItem);
-                            onClose();
+                            setActiveThread(null);
+                            setActiveVideoTimeSec(0);
                           }}
-                          className={`px-3.5 py-1.5 rounded-full text-xs font-semibold cursor-pointer ${primaryBtn}`}
+                          className="h-8 px-3.5 rounded-full border border-black/10 dark:border-white/10 text-xs text-neutral-600 dark:text-neutral-300 hover:text-black dark:hover:text-white font-medium inline-flex items-center gap-1 cursor-pointer transition-colors hover:bg-black/5 dark:hover:bg-white/5"
                         >
-                          Continue in Chat
+                          ← Back to Feed
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            KnowledgeVaultStore.deleteItem(activeVaultItem.id);
-                            setActiveVaultItem(null);
-                          }}
-                          className={`px-3 py-1.5 rounded-full border text-xs cursor-pointer ${secondaryBtn}`}
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </div>
 
-                    <h3 className="text-base font-semibold">{activeVaultItem.title}</h3>
-                    <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-0.5">
-                      {collections.map((c) => {
-                        const isSelected = activeVaultItem.collectionId === c.id;
-                        return (
+                        <div className="flex flex-wrap items-center gap-1.5">
                           <button
-                            key={c.id}
                             type="button"
-                            onClick={() => {
-                              const updated = KnowledgeVaultStore.updateItem(activeVaultItem.id, {
-                                collectionId: c.id,
-                              });
-                              if (updated) setActiveVaultItem(updated);
-                            }}
-                            className={`px-2.5 py-1 rounded-full border text-[11px] font-medium whitespace-nowrap transition-colors cursor-pointer shrink-0 ${
-                              isSelected ? primaryBtn : secondaryBtn
+                            onClick={() => handleQuizMeOnThread(activeThread)}
+                            className="h-8 px-3.5 rounded-full bg-[#FC4C01] hover:bg-[#e04300] text-white text-xs font-semibold inline-flex items-center gap-1 cursor-pointer transition-colors shadow-xs"
+                          >
+                            Quiz me
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleFlashcardsOnThread(activeThread)}
+                            className={`h-8 px-3.5 rounded-full border text-xs font-semibold inline-flex items-center gap-1 cursor-pointer transition-colors ${
+                              isDark
+                                ? 'border-white/10 hover:border-white/25 text-neutral-200'
+                                : 'border-black/10 hover:border-black/25 text-neutral-800'
                             }`}
                           >
-                            {c.name}
+                            Flashcards
                           </button>
-                        );
-                      })}
-                      {activeVaultItem.tags.map((t) => (
-                        <span
-                          key={t}
-                          className={`px-2.5 py-0.5 rounded-full text-[11px] shrink-0 ${
-                            isDark
-                              ? 'bg-white/[0.06] text-neutral-300'
-                              : 'bg-black/[0.06] text-neutral-700'
-                          }`}
-                        >
-                          #{t}
-                        </span>
-                      ))}
-                    </div>
+                          <button
+                            type="button"
+                            onClick={() => handleDeepResearchOnThread(activeThread)}
+                            className={`h-8 px-3.5 rounded-full border text-xs font-semibold inline-flex items-center gap-1 cursor-pointer transition-colors ${
+                              isDark
+                                ? 'border-white/10 hover:border-white/25 text-neutral-200'
+                                : 'border-black/10 hover:border-black/25 text-neutral-800'
+                            }`}
+                          >
+                            Deep Research this
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleShareThread(activeThread)}
+                            className={`h-8 px-3.5 rounded-full border text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer transition-colors ${
+                              isDark
+                                ? 'border-white/10 hover:border-white/25 text-neutral-200'
+                                : 'border-black/10 hover:border-black/25 text-neutral-800'
+                            }`}
+                          >
+                            <Share2 className="w-3.5 h-3.5" />
+                            <span>Share</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleForgetThread(activeThread.id)}
+                            className="h-8 px-3.5 rounded-full border border-red-500/30 text-red-500 hover:bg-red-500/10 text-xs font-semibold inline-flex items-center gap-1 cursor-pointer transition-colors"
+                            title="Remove from Vault and wipe agent memory"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Forget this</span>
+                          </button>
+                        </div>
+                      </div>
 
-                    <div
-                      className={`p-4 rounded-xl border prose-grok max-w-none text-xs sm:text-sm leading-relaxed overflow-x-auto ${subCardSurface}`}
-                    >
-                      <ReactMarkdown
-                        remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
-                        rehypePlugins={[rehypeKatex]}
-                      >
-                        {normalizeLatexDelimiters(activeVaultItem.content)}
-                      </ReactMarkdown>
-                    </div>
-                  </div>
-                ) : filteredVaultItems.length === 0 ? (
-                  <div className={`p-8 rounded-2xl border text-center space-y-1.5 ${cardSurface}`}>
-                    <div className="text-sm font-semibold">Your Knowledge Vault is empty</div>
-                    <p className="text-xs text-neutral-500 max-w-md mx-auto">
-                      Save any response in chat, bookmark resources from Discover, or create a private note above.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-2.5">
-                    {filteredVaultItems.map((item) => {
-                      const colName =
-                        collections.find((c) => c.id === item.collectionId)?.name || 'Saved';
-                      return (
-                        <div
-                          key={item.id}
-                          onClick={() => setActiveVaultItem(item)}
-                          className={`p-4 rounded-2xl border flex items-start justify-between gap-3 cursor-pointer transition-colors ${cardSurface}`}
-                        >
-                          <div className="space-y-1 min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
-                              <span
-                                className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${
-                                  isDark
-                                    ? 'bg-white/[0.06] text-neutral-300'
-                                    : 'bg-black/[0.06] text-neutral-700'
-                                }`}
-                              >
-                                {colName}
+                      {/* Main Post Card with Left Reddit Upvote Column */}
+                      <div className="flex items-start gap-4">
+                        {/* Vote Pillar */}
+                        <div className="flex flex-col items-center justify-center py-1.5 px-1 rounded-full bg-black/[0.03] dark:bg-white/[0.04] border border-black/10 dark:border-white/10 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleVoteThread(activeThread.id, 1)}
+                            className="size-7 rounded-full flex items-center justify-center hover:bg-black/5 dark:hover:bg-white/10 text-neutral-500 hover:text-[#FC4C01] cursor-pointer transition-colors"
+                            title="Upvote thread"
+                          >
+                            <ArrowBigUp className="w-4 h-4" />
+                          </button>
+                          <span className="text-xs font-bold font-mono my-0.5 tabular-nums text-neutral-800 dark:text-neutral-200">{activeThread.score || 0}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleVoteThread(activeThread.id, -1)}
+                            className="size-7 rounded-full flex items-center justify-center hover:bg-black/5 dark:hover:bg-white/10 text-neutral-500 hover:text-blue-500 cursor-pointer transition-colors"
+                            title="Downvote thread"
+                          >
+                            <ArrowBigDown className="w-4 h-4" />
+                          </button>
+                        </div>
+
+                        {/* Post Content */}
+                        <div className="flex-1 space-y-4 min-w-0">
+                          <div className="space-y-1.5">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="px-2.5 py-0.5 rounded-md bg-[#FC4C01]/15 border border-[#FC4C01]/35 text-[#FC4C01] font-semibold text-[11px]">
+                                {activeThread.subject || 'General Studies'} → {activeThread.chapter || 'Core Concepts'}
                               </span>
-                              <span className="text-[11px] text-neutral-500">
-                                {new Date(item.updatedAt).toLocaleDateString()}
+                              <span className="px-2 py-0.5 rounded-md border border-black/10 dark:border-white/10 text-[10px] font-mono uppercase opacity-80">
+                                {activeThread.type}
                               </span>
+                              <span className="text-[11px] text-neutral-400">
+                                {formatToIstDate(activeThread.createdAt)}
+                              </span>
+                              {activeThread.sourceUrl && (
+                                <a
+                                  href={activeThread.sourceUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 text-[11px] text-[#FC4C01] hover:underline"
+                                >
+                                  <span>Source Link</span>
+                                  <ExternalLink className="w-3 h-3" />
+                                </a>
+                              )}
                             </div>
-                            <h4 className="text-sm font-semibold truncate">{item.title}</h4>
-                            <p
-                              className={`text-xs line-clamp-2 ${
-                                isDark ? 'text-neutral-400' : 'text-neutral-600'
-                              }`}
-                            >
-                              {item.summary}
+                            <h2 className="text-lg sm:text-xl font-bold tracking-tight">{activeThread.title}</h2>
+                          </div>
+
+                          {/* Source Player / Preview */}
+                          {activeThread.type === 'youtube' && extractYouTubeVideoId(activeThread.sourceUrl) && (
+                            <div className="w-full aspect-video rounded-2xl overflow-hidden border border-black/10 dark:border-white/10 bg-black shadow-md">
+                              <iframe
+                                id="vault-youtube-player"
+                                src={`https://www.youtube.com/embed/${extractYouTubeVideoId(activeThread.sourceUrl)}?start=${activeVideoTimeSec}&autoplay=${activeVideoTimeSec > 0 ? 1 : 0}`}
+                                title={activeThread.title}
+                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                allowFullScreen
+                                className="w-full h-full border-0"
+                              />
+                            </div>
+                          )}
+
+                          {activeThread.type === 'web_link' && activeThread.sourceUrl && (
+                            <div className={`p-3.5 rounded-xl border flex items-center justify-between gap-3 ${secondaryBtn}`}>
+                              <div className="truncate">
+                                <div className="text-xs font-semibold truncate">{activeThread.title}</div>
+                                <div className="text-[11px] text-neutral-400 truncate">{activeThread.sourceUrl}</div>
+                              </div>
+                              <a
+                                href={activeThread.sourceUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-3 py-1.5 rounded-lg bg-[#FC4C01] text-white text-xs font-medium shrink-0 flex items-center gap-1"
+                              >
+                                <span>Visit</span>
+                                <ExternalLink className="w-3 h-3" />
+                              </a>
+                            </div>
+                          )}
+
+                          {/* TL;DR Box with Warm Amber Glow */}
+                          <div
+                            className={`p-3.5 sm:p-4 rounded-xl border space-y-1 ${
+                              isDark
+                                ? 'bg-[#181310] border-[#FC4C01]/40 text-neutral-200'
+                                : 'bg-[#fff8f4] border-[#FC4C01]/35 text-neutral-800'
+                            }`}
+                          >
+                            <div className="text-[11px] uppercase tracking-wider font-bold text-[#FC4C01] flex items-center gap-1.5">
+                              <Sparkles className="w-3.5 h-3.5" />
+                              <span>TL;DR Takeaway</span>
+                            </div>
+                            <p className="text-xs sm:text-[13px] leading-relaxed">
+                              {activeThread.tldr || 'Key study takeaways summarized by Sage.'}
                             </p>
                           </div>
 
-                          <div
-                            className="flex items-center gap-1.5 shrink-0"
-                            onClick={(e) => e.stopPropagation()}
-                          >
+                          {/* Key Points with Tap-to-Seek Timestamps */}
+                          <div className="space-y-2 pt-2">
+                            <div className="text-xs uppercase tracking-wider font-bold text-neutral-400 flex items-center justify-between">
+                              <span>Key Points ({activeThread.keyPoints?.length || 0})</span>
+                              {activeThread.type === 'youtube' && (
+                                <span className="text-[10px] text-[#FC4C01] font-normal">
+                                  Tap any timestamp to jump the video
+                                </span>
+                              )}
+                            </div>
+                            <div className="space-y-2">
+                              {(activeThread.keyPoints || []).map((kp, idx) => (
+                                <div
+                                  key={kp.id || idx}
+                                  className={`p-3 rounded-xl border flex items-start justify-between gap-3 transition-colors ${
+                                    isDark
+                                      ? 'bg-white/[0.02] border-white/10 hover:border-white/20'
+                                      : 'bg-black/[0.02] border-black/10 hover:border-black/20'
+                                  }`}
+                                >
+                                  <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                                    <span className="text-xs font-mono font-bold text-[#FC4C01] shrink-0 mt-0.5">
+                                      {idx + 1}.
+                                    </span>
+                                    {kp.timestamp && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const sec = parseTimestampToSeconds(kp.timestamp);
+                                          setActiveVideoTimeSec(sec);
+                                        }}
+                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#FC4C01]/15 text-[#FC4C01] hover:bg-[#FC4C01]/25 text-[11px] font-mono font-semibold cursor-pointer shrink-0 transition-colors"
+                                        title="Click to jump video to this moment"
+                                      >
+                                        <Play className="w-2.5 h-2.5 fill-current" />
+                                        <span>{kp.timestamp}</span>
+                                      </button>
+                                    )}
+                                    <span className="text-xs sm:text-[13px] leading-relaxed break-words">
+                                      {kp.text}
+                                    </span>
+                                  </div>
+
+                                  <div className="flex items-center gap-1 shrink-0 pt-0.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleVoteKeyPoint(activeThread.id, kp.id, 1)}
+                                      className="p-1 hover:text-[#FC4C01] cursor-pointer text-neutral-400"
+                                      title="Upvote key point"
+                                    >
+                                      <ArrowBigUp className="w-4 h-4" />
+                                    </button>
+                                    <span className="text-[11px] font-mono font-semibold text-neutral-400 min-w-4 text-center">
+                                      {kp.score || 0}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleVoteKeyPoint(activeThread.id, kp.id, -1)}
+                                      className="p-1 hover:text-blue-500 cursor-pointer text-neutral-400"
+                                      title="Downvote key point"
+                                    >
+                                      <ArrowBigDown className="w-4 h-4" />
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Comments Section (Reddit-Style with Agent Comments) */}
+                      <div className="pt-6 border-t border-black/[0.08] dark:border-white/[0.08] space-y-4">
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-sm font-bold flex items-center gap-2">
+                            <MessageSquare className="w-4 h-4 text-[#FC4C01]" />
+                            <span>Discussion & Agent Responses ({activeThread.comments?.length || 0})</span>
+                          </h3>
+                        </div>
+
+                        {/* Top-level Comment Composer */}
+                        <div className="space-y-2">
+                          <textarea
+                            rows={3}
+                            value={threadCommentInput}
+                            onChange={(e) => setThreadCommentInput(e.target.value)}
+                            placeholder="Add a study note, question, or reflection on this thread..."
+                            className={`w-full p-3 rounded-xl border text-xs outline-none resize-none ${inputSurface}`}
+                          />
+                          <div className="flex justify-end">
                             <button
                               type="button"
-                              onClick={() => {
-                                KnowledgeVaultStore.updateItem(item.id, { pinned: !item.pinned });
-                              }}
-                              className={`px-2.5 py-1 rounded-full border text-[11px] cursor-pointer ${
-                                item.pinned ? primaryBtn : secondaryBtn
-                              }`}
+                              onClick={() => handleAddThreadComment()}
+                              className="px-4 py-2 rounded-xl bg-[#FC4C01] hover:bg-[#e04300] text-white text-xs font-semibold cursor-pointer transition-colors"
                             >
-                              {item.pinned ? 'Pinned' : 'Pin'}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                onContinueVaultItemInChat(item);
-                                onClose();
-                              }}
-                              className={`px-2.5 py-1 rounded-full border text-[11px] cursor-pointer ${secondaryBtn}`}
-                            >
-                              Open
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => KnowledgeVaultStore.deleteItem(item.id)}
-                              className="px-2 py-1 rounded-full text-[11px] text-neutral-500 hover:text-current cursor-pointer"
-                            >
-                              Delete
+                              Comment
                             </button>
                           </div>
                         </div>
-                      );
-                    })}
+
+                        {/* Comment List */}
+                        <div className="space-y-3 pt-2">
+                          {(activeThread.comments || [])
+                            .filter((c) => !c.parentId)
+                            .map((comment) => {
+                              const isCollapsed = Boolean(collapsedComments[comment.id]);
+                              const replies = (activeThread.comments || []).filter(
+                                (r) => r.parentId === comment.id
+                              );
+                              const isAgent = comment.author !== 'user';
+
+                              return (
+                                <div
+                                  key={comment.id}
+                                  className={`p-3.5 rounded-xl border space-y-2.5 ${
+                                    isAgent
+                                      ? isDark
+                                        ? 'bg-[#151318] border-[#FC4C01]/30'
+                                        : 'bg-[#fffaf7] border-[#FC4C01]/30'
+                                      : cardSurface
+                                  }`}
+                                >
+                                  {/* Comment Header */}
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="flex items-center gap-2">
+                                      {isAgent ? (
+                                        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#FC4C01]/15 border border-[#FC4C01]/30 text-[#FC4C01] text-[11px] font-bold">
+                                          <Sparkles className="w-3 h-3" />
+                                          <span className="capitalize">{comment.author} (Agent)</span>
+                                        </div>
+                                      ) : (
+                                        <div className="px-2 py-0.5 rounded-md bg-neutral-500/15 text-neutral-400 text-[11px] font-semibold">
+                                          You (Student)
+                                        </div>
+                                      )}
+                                      <span className="text-[11px] text-neutral-400">
+                                        {formatToIstDate(comment.createdAt)}
+                                      </span>
+                                    </div>
+
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setCollapsedComments((prev) => ({
+                                          ...prev,
+                                          [comment.id]: !prev[comment.id],
+                                        }))
+                                      }
+                                      className="text-[11px] font-mono text-neutral-400 hover:text-current cursor-pointer"
+                                    >
+                                      {isCollapsed ? '[+] Expand' : '[-] Collapse'}
+                                    </button>
+                                  </div>
+
+                                  {!isCollapsed && (
+                                    <>
+                                      <div className="text-xs sm:text-[13px] leading-relaxed break-words whitespace-pre-wrap">
+                                        {comment.text}
+                                      </div>
+
+                                      <div className="flex items-center gap-3 pt-1 text-xs text-neutral-400">
+                                        <div className="flex items-center gap-1">
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              handleVoteComment(activeThread.id, comment.id, 1)
+                                            }
+                                            className="hover:text-[#FC4C01] cursor-pointer"
+                                          >
+                                            <ArrowBigUp className="w-4 h-4" />
+                                          </button>
+                                          <span className="font-mono font-semibold">{comment.score || 0}</span>
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              handleVoteComment(activeThread.id, comment.id, -1)
+                                            }
+                                            className="hover:text-blue-500 cursor-pointer"
+                                          >
+                                            <ArrowBigDown className="w-4 h-4" />
+                                          </button>
+                                        </div>
+
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            setReplyingCommentId(
+                                              replyingCommentId === comment.id ? null : comment.id
+                                            )
+                                          }
+                                          className="hover:text-current font-medium cursor-pointer"
+                                        >
+                                          Reply
+                                        </button>
+                                      </div>
+
+                                      {/* Inline Reply Input */}
+                                      {replyingCommentId === comment.id && (
+                                        <div className="pt-2 pl-3 border-l-2 border-[#FC4C01]/40 space-y-2">
+                                          <input
+                                            type="text"
+                                            value={replyTextInput}
+                                            onChange={(e) => setReplyTextInput(e.target.value)}
+                                            placeholder="Write a reply..."
+                                            className={`w-full px-3 py-1.5 rounded-lg border text-xs outline-none ${inputSurface}`}
+                                          />
+                                          <div className="flex justify-end gap-2">
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setReplyingCommentId(null);
+                                                setReplyTextInput('');
+                                              }}
+                                              className="px-2.5 py-1 text-xs text-neutral-400 hover:text-current cursor-pointer"
+                                            >
+                                              Cancel
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => handleAddThreadComment(comment.id)}
+                                              className="px-3 py-1 bg-[#FC4C01] text-white text-xs font-semibold rounded-lg cursor-pointer"
+                                            >
+                                              Send Reply
+                                            </button>
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {/* Nested Replies */}
+                                      {replies.length > 0 && (
+                                        <div className="pl-3 sm:pl-4 border-l-2 border-neutral-700/25 space-y-2 pt-2">
+                                          {replies.map((reply) => (
+                                            <div
+                                              key={reply.id}
+                                              className={`p-2.5 rounded-lg border text-xs space-y-1.5 ${cardSurface}`}
+                                            >
+                                              <div className="flex items-center justify-between text-[11px] text-neutral-400">
+                                                <span className="font-semibold text-current">
+                                                  {reply.author === 'user'
+                                                    ? 'You (Student)'
+                                                    : `${reply.author} (Agent)`}
+                                                </span>
+                                                <span>{formatToIstDate(reply.createdAt)}</span>
+                                              </div>
+                                              <p className="leading-relaxed whitespace-pre-wrap">{reply.text}</p>
+                                              <div className="flex items-center gap-1 text-[11px] text-neutral-400 pt-0.5">
+                                                <button
+                                                  type="button"
+                                                  onClick={() =>
+                                                    handleVoteComment(activeThread.id, reply.id, 1)
+                                                  }
+                                                  className="hover:text-[#FC4C01] cursor-pointer"
+                                                >
+                                                  <ArrowBigUp className="w-3.5 h-3.5" />
+                                                </button>
+                                                <span className="font-mono">{reply.score || 0}</span>
+                                                <button
+                                                  type="button"
+                                                  onClick={() =>
+                                                    handleVoteComment(activeThread.id, reply.id, -1)
+                                                  }
+                                                  className="hover:text-blue-500 cursor-pointer"
+                                                >
+                                                  <ArrowBigDown className="w-3.5 h-3.5" />
+                                                </button>
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </>
+                                  )}
+                                </div>
+                              );
+                            })}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    /* Reddit Feed */
+                    <div className="space-y-4">
+                      {/* Search & Sort / Filter Toolbar */}
+                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+                        <div className="relative flex-1">
+                          <Search className="w-3.5 h-3.5 absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400" />
+                          <input
+                            type="text"
+                            value={vaultSearch}
+                            onChange={(e) => setVaultSearch(e.target.value)}
+                            placeholder="Search study threads, topics, notes..."
+                            className={`w-full pl-9 pr-4 py-2 rounded-full border text-xs outline-none transition-colors ${
+                              isDark
+                                ? 'bg-[#09090b] border-white/15 text-white placeholder-neutral-500 focus:border-[#FC4C01]'
+                                : 'bg-white border-black/15 text-black placeholder-neutral-400 focus:border-[#FC4C01]'
+                            }`}
+                          />
+                        </div>
+
+                        {/* Sort Tabs (New | Top | Revision) */}
+                        <div className="flex items-center gap-1 p-1 rounded-full bg-black/[0.04] dark:bg-white/[0.05] border border-black/10 dark:border-white/10 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => setThreadSort('new')}
+                            className={`px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors ${
+                              threadSort === 'new'
+                                ? 'bg-[#FC4C01] text-white shadow-xs'
+                                : 'text-neutral-500 hover:text-current'
+                            }`}
+                          >
+                            <Sparkles className="w-3 h-3" />
+                            <span>New</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setThreadSort('top')}
+                            className={`px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors ${
+                              threadSort === 'top'
+                                ? 'bg-[#FC4C01] text-white shadow-xs'
+                                : 'text-neutral-500 hover:text-current'
+                            }`}
+                          >
+                            <ArrowBigUp className="w-3.5 h-3.5" />
+                            <span>Top</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setThreadSort('due')}
+                            className={`px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors ${
+                              threadSort === 'due'
+                                ? 'bg-[#FC4C01] text-white shadow-xs'
+                                : 'text-neutral-500 hover:text-current'
+                            }`}
+                          >
+                            <Clock className="w-3 h-3" />
+                            <span>Revision</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Type Filter Pills */}
+                      <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-0.5">
+                        {(
+                          [
+                            { id: 'all', label: 'All Sources' },
+                            { id: 'youtube', label: 'YouTube Lectures' },
+                            { id: 'web_link', label: 'Web Links' },
+                            { id: 'pdf', label: 'PDF Documents' },
+                            { id: 'image', label: 'Diagrams & Images' },
+                            { id: 'text', label: 'Questions & Notes' },
+                          ] as const
+                        ).map((tf) => (
+                          <button
+                            key={tf.id}
+                            type="button"
+                            onClick={() => setThreadTypeFilter(tf.id)}
+                            className={`px-3.5 py-1.5 rounded-full border text-xs font-medium whitespace-nowrap cursor-pointer transition-colors ${
+                              threadTypeFilter === tf.id
+                                ? 'bg-[#FC4C01] text-white border-[#FC4C01] font-semibold shadow-xs'
+                                : isDark
+                                ? 'border-white/10 text-neutral-400 hover:text-white hover:bg-white/[0.05]'
+                                : 'border-black/10 text-neutral-600 hover:text-black hover:bg-black/[0.04]'
+                            }`}
+                          >
+                            {tf.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Study Feed Cards */}
+                      {filteredVaultThreads.length === 0 ? (
+                        <div className={`p-8 text-center rounded-2xl border space-y-2 ${cardSurface}`}>
+                          <div className="text-sm font-semibold">No study threads yet</div>
+                          <p className="text-xs text-neutral-400 max-w-md mx-auto">
+                            Paste a lecture link, article, or question in chat to build your study threads.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {filteredVaultThreads.map((thread) => (
+                            <div
+                              key={thread.id}
+                              onClick={() => {
+                                setActiveThread(thread);
+                                setActiveVideoTimeSec(0);
+                              }}
+                              className={`p-4 rounded-2xl border flex items-start gap-3.5 cursor-pointer transition-all hover:border-[#FC4C01]/50 ${cardSurface}`}
+                            >
+                              {/* Left Reddit Vote Column (Pill-shaped) */}
+                              <div
+                                className="flex flex-col items-center justify-center py-1.5 px-1 rounded-full bg-black/[0.03] dark:bg-white/[0.04] border border-black/10 dark:border-white/10 shrink-0"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => handleVoteThread(thread.id, 1)}
+                                  className="size-7 rounded-full flex items-center justify-center hover:bg-black/5 dark:hover:bg-white/10 text-neutral-500 hover:text-[#FC4C01] cursor-pointer transition-colors"
+                                  title="Upvote"
+                                >
+                                  <ArrowBigUp className="w-4 h-4" />
+                                </button>
+                                <span className="text-xs font-bold font-mono my-0.5 tabular-nums text-neutral-800 dark:text-neutral-200">{thread.score || 0}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleVoteThread(thread.id, -1)}
+                                  className="size-7 rounded-full flex items-center justify-center hover:bg-black/5 dark:hover:bg-white/10 text-neutral-500 hover:text-blue-500 cursor-pointer transition-colors"
+                                  title="Downvote"
+                                >
+                                  <ArrowBigDown className="w-4 h-4" />
+                                </button>
+                              </div>
+
+                              {/* Card Body */}
+                              <div className="flex-1 min-w-0 space-y-2">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="px-2.5 py-0.5 rounded-full bg-[#FC4C01]/10 text-[#FC4C01] font-semibold text-[11px]">
+                                    {thread.subject || 'General Studies'}
+                                  </span>
+                                  <span className="text-[11px] text-neutral-400 font-mono">
+                                    → {thread.chapter || 'Core Concepts'}
+                                  </span>
+                                  <span className="px-2 py-0.5 rounded-full border border-black/10 dark:border-white/10 text-[10px] font-mono uppercase opacity-75">
+                                    {thread.type}
+                                  </span>
+                                  <span className="text-[11px] text-neutral-400">
+                                    · {formatToIstDate(thread.createdAt)}
+                                  </span>
+                                  {thread.pinned && (
+                                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-500 font-semibold">
+                                      Pinned
+                                    </span>
+                                  )}
+                                </div>
+
+                                <h3 className="text-sm sm:text-base font-bold leading-snug hover:text-[#FC4C01] transition-colors truncate">
+                                  {thread.title}
+                                </h3>
+
+                                <p className="text-xs text-neutral-400 line-clamp-2 leading-relaxed">
+                                  {thread.tldr || (thread.keyPoints?.[0]?.text ? `• ${thread.keyPoints[0].text}` : 'Study thread captured by Sage.')}
+                                </p>
+
+                                <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-xs text-neutral-400">
+                                  <div className="flex items-center gap-3">
+                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-black/[0.03] dark:bg-white/[0.03] border border-black/10 dark:border-white/10 text-[11px]">
+                                      <MessageSquare className="w-3 h-3 text-[#FC4C01]" />
+                                      <span>{thread.comments?.length || 0} comments</span>
+                                    </span>
+
+                                    <span className="text-[11px] font-mono text-neutral-400">
+                                      {thread.keyPoints?.length || 0} key points
+                                    </span>
+                                  </div>
+
+                                  <div
+                                    className="flex items-center gap-1"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <button
+                                      type="button"
+                                      onClick={() => handleShareThread(thread)}
+                                      className="size-7 rounded-full flex items-center justify-center hover:bg-black/5 dark:hover:bg-white/10 text-neutral-400 hover:text-current cursor-pointer transition-colors"
+                                      title="Share thread"
+                                    >
+                                      <Share2 className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleForgetThread(thread.id)}
+                                      className="size-7 rounded-full flex items-center justify-center hover:bg-red-500/10 text-neutral-400 hover:text-red-500 cursor-pointer transition-colors"
+                                      title="Forget this thread"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-5">
+                {/* Left Rail: Subjects, Collections, Sage Memory & Export */}
+                <div className="md:col-span-3 space-y-4">
+                  {/* Sage Status Card */}
+                  <div
+                    className={`p-3 rounded-xl border flex items-center justify-between gap-2 ${
+                      isDark
+                        ? 'bg-[#121215] border-[#FC4C01]/30'
+                        : 'bg-[#fffaf7] border-[#FC4C01]/30'
+                    }`}
+                  >
+                    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#FC4C01]">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      Sage Organizer
+                    </span>
+                    <span className="text-[10px] uppercase px-2 py-0.5 rounded bg-[#FC4C01]/15 text-[#FC4C01] font-semibold">
+                      {vaultItems.length} items
+                    </span>
                   </div>
+
+                  {/* Subjects Navigation */}
+                  <div className="space-y-1.5">
+                    <div className="text-[11px] uppercase tracking-wider text-neutral-500 font-semibold">
+                      Subjects
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedSubject('all');
+                        setSelectedCollectionId('all');
+                      }}
+                      className={`w-full text-left px-3 py-2 rounded-xl text-xs font-medium flex items-center justify-between cursor-pointer ${
+                        selectedSubject === 'all' && selectedCollectionId === 'all'
+                          ? 'bg-[#FC4C01] text-white font-semibold'
+                          : 'text-neutral-400 hover:text-current'
+                      }`}
+                    >
+                      <span>All Subjects</span>
+                      <span className="text-[11px]">{vaultItems.length}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedSubject('all');
+                        setSelectedCollectionId('pinned');
+                      }}
+                      className={`w-full text-left px-3 py-2 rounded-xl text-xs font-medium flex items-center justify-between cursor-pointer ${
+                        selectedCollectionId === 'pinned'
+                          ? 'bg-[#FC4C01] text-white font-semibold'
+                          : 'text-neutral-400 hover:text-current'
+                      }`}
+                    >
+                      <span>Pinned Items</span>
+                      <span className="text-[11px]">
+                        {vaultItems.filter((i) => i.pinned).length}
+                      </span>
+                    </button>
+
+                    {allSubjectsWithCounts.map((grp) => (
+                      <button
+                        key={grp.subject}
+                        type="button"
+                        onClick={() => {
+                          setSelectedSubject(grp.subject);
+                          setSelectedCollectionId('all');
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-xl text-xs font-medium flex items-center justify-between cursor-pointer ${
+                          selectedSubject === grp.subject
+                            ? 'bg-[#FC4C01] text-white font-semibold'
+                            : 'text-neutral-400 hover:text-current'
+                        }`}
+                      >
+                        <span className="truncate">{grp.subject}</span>
+                        <span className="text-[11px]">{grp.totalItems}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Agent Memory (per user per agent, capped at 50 entries) */}
+                  <div
+                    className={`pt-3 border-t space-y-2 ${
+                      isDark ? 'border-white/[0.08]' : 'border-black/[0.08]'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] uppercase tracking-wider text-neutral-500 font-semibold">
+                        Agent Memory ({sageMemoryFacts.length}/50)
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="text"
+                        value={newMemoryFactInput}
+                        onChange={(e) => setNewMemoryFactInput(e.target.value)}
+                        placeholder='e.g. "Exam on Dec 12"'
+                        className={`flex-1 px-2.5 py-1.5 rounded-lg border text-[11px] outline-none ${inputSurface}`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!newMemoryFactInput.trim()) return;
+                          const updated = AgentMemoryStore.addFact('sage', newMemoryFactInput.trim());
+                          setSageMemoryFacts(updated);
+                          setNewMemoryFactInput('');
+                        }}
+                        className="px-2.5 py-1.5 rounded-lg bg-[#FC4C01] text-white text-[11px] font-semibold cursor-pointer"
+                      >
+                        Add
+                      </button>
+                    </div>
+                    {sageMemoryFacts.length > 0 && (
+                      <div className="max-h-32 overflow-y-auto space-y-1 pr-1">
+                        {sageMemoryFacts.slice(0, 12).map((fact, idx) => (
+                          <div
+                            key={`${fact}_${idx}`}
+                            className={`text-[11px] px-2.5 py-1 rounded-lg border flex items-center justify-between gap-1.5 ${
+                              isDark
+                                ? 'bg-white/[0.03] border-white/10 text-neutral-300'
+                                : 'bg-black/[0.03] border-black/10 text-neutral-700'
+                            }`}
+                          >
+                            <span className="truncate">{fact}</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const next = sageMemoryFacts.filter((_, i) => i !== idx);
+                                setSageMemoryFacts(AgentMemoryStore.setFacts('sage', next));
+                              }}
+                              className="opacity-50 hover:opacity-100 cursor-pointer"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div
+                    className={`pt-3 border-t space-y-2 ${
+                      isDark ? 'border-white/[0.08]' : 'border-black/[0.08]'
+                    }`}
+                  >
+                    <div className="text-[11px] uppercase tracking-wider text-neutral-500 font-medium">
+                      Data Portability
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleExportVault('markdown')}
+                      className={`w-full px-3 py-2 rounded-xl border text-xs font-medium cursor-pointer text-center ${secondaryBtn}`}
+                    >
+                      Export Vault (.MD)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleExportVault('json')}
+                      className={`w-full px-3 py-2 rounded-xl border text-xs font-medium cursor-pointer text-center ${secondaryBtn}`}
+                    >
+                      Export Vault (.JSON)
+                    </button>
+                  </div>
+                </div>
+
+                {/* Right Column: Search, Type Filters, Subject -> Chapter Tree & Reader */}
+                <div className="md:col-span-9 space-y-4">
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+                    <div className="relative flex-1">
+                      <Search className="w-3.5 h-3.5 absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-500" />
+                      <input
+                        type="text"
+                        value={vaultSearch}
+                        onChange={(e) => setVaultSearch(e.target.value)}
+                        placeholder="Search by subject, chapter, lecture title, tags, or timestamps..."
+                        className={`w-full pl-9 pr-4 py-2 rounded-xl border text-xs outline-none ${inputSurface}`}
+                      />
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCreatingNote(true);
+                        setActiveVaultItem(null);
+                      }}
+                      className="px-4 py-2 rounded-xl bg-[#FC4C01] hover:bg-[#e04300] text-white text-xs font-semibold cursor-pointer shrink-0 transition-colors"
+                    >
+                      + New Study Note
+                    </button>
+                  </div>
+
+                  {/* Filter by Vault Item Type */}
+                  <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-0.5">
+                    {(
+                      [
+                        { id: 'all', label: 'All Types' },
+                        { id: 'lecture', label: 'Lectures (YouTube)' },
+                        { id: 'note', label: 'Notes' },
+                        { id: 'quiz', label: 'Quizzes' },
+                        { id: 'flashcard_deck', label: 'Flashcard Decks' },
+                        { id: 'research_report', label: 'Research Reports' },
+                        { id: 'chat_answer', label: 'Chat Answers' },
+                      ] as const
+                    ).map((tf) => (
+                      <button
+                        key={tf.id}
+                        type="button"
+                        onClick={() => setVaultTypeFilter(tf.id)}
+                        className={`px-3 py-1.5 rounded-lg border text-[11px] font-medium whitespace-nowrap cursor-pointer transition-colors ${
+                          vaultTypeFilter === tf.id
+                            ? 'bg-[#FC4C01] text-white border-[#FC4C01] font-semibold'
+                            : secondaryBtn
+                        }`}
+                      >
+                        {tf.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {isCreatingNote ? (
+                    <div className={`p-4 sm:p-5 rounded-2xl border space-y-3 ${cardSurface}`}>
+                      <div className="text-sm font-semibold">Create Study Note (Sage Auto-Organizes)</div>
+                      <input
+                        type="text"
+                        value={newNoteTitle}
+                        onChange={(e) => setNewNoteTitle(e.target.value)}
+                        placeholder="Note title (e.g. Second Law of Thermodynamics & Entropy)..."
+                        className={`w-full px-3.5 py-2 rounded-xl border text-xs outline-none ${inputSurface}`}
+                      />
+                      <input
+                        type="text"
+                        value={newNoteTags}
+                        onChange={(e) => setNewNoteTags(e.target.value)}
+                        placeholder="Tags (comma-separated, optional — Sage will also tag)..."
+                        className={`w-full px-3.5 py-2 rounded-xl border text-xs outline-none ${inputSurface}`}
+                      />
+                      <textarea
+                        rows={6}
+                        value={newNoteContent}
+                        onChange={(e) => setNewNoteContent(e.target.value)}
+                        placeholder="Write Markdown notes, formulas ($$...$$), or lecture takeaways..."
+                        className={`w-full px-3.5 py-2.5 rounded-xl border font-mono text-xs outline-none ${inputSurface}`}
+                      />
+                      <div className="flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setIsCreatingNote(false)}
+                          className="px-3.5 py-1.5 rounded-xl text-neutral-500 hover:text-current cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleCreateCustomNote}
+                          className="px-4 py-1.5 rounded-xl bg-[#FC4C01] text-white font-semibold cursor-pointer"
+                        >
+                          Save to Vault
+                        </button>
+                      </div>
+                    </div>
+                  ) : activeVaultItem ? (
+                    <div className={`p-4 sm:p-5 rounded-2xl border space-y-4 ${cardSurface}`}>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setActiveVaultItem(null)}
+                          className="text-xs text-neutral-500 hover:text-current cursor-pointer font-medium"
+                        >
+                          ← Back to Vault
+                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              KnowledgeVaultStore.markReviewed(activeVaultItem.id);
+                              onContinueVaultItemInChat(activeVaultItem);
+                              onClose();
+                            }}
+                            className="px-3.5 py-1.5 rounded-xl bg-[#FC4C01] text-white text-xs font-semibold cursor-pointer"
+                          >
+                            Ask Doubt Buddy in Chat
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              KnowledgeVaultStore.deleteItem(activeVaultItem.id);
+                              setActiveVaultItem(null);
+                            }}
+                            className={`px-3 py-1.5 rounded-xl border text-xs cursor-pointer ${secondaryBtn}`}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="px-2.5 py-0.5 rounded-md bg-[#FC4C01]/15 border border-[#FC4C01]/35 text-[#FC4C01] font-semibold text-[11px]">
+                            {activeVaultItem.subject || 'General Studies'} → {activeVaultItem.chapter || 'Core Concepts'}
+                          </span>
+                          <span className="px-2 py-0.5 rounded-md border text-[10px] font-mono uppercase opacity-75">
+                            {activeVaultItem.type || activeVaultItem.sourceType}
+                          </span>
+                          {activeVaultItem.sourceUrl && (
+                            <a
+                              href={activeVaultItem.sourceUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-[11px] text-[#FC4C01] hover:underline"
+                            >
+                              <span>Source Link</span>
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                          )}
+                        </div>
+                        <h3 className="text-base font-bold">{activeVaultItem.title}</h3>
+                      </div>
+
+                      {activeVaultItem.sageNote && (
+                        <div
+                          className={`p-3 rounded-xl border flex items-start gap-2.5 text-xs ${
+                            isDark
+                              ? 'bg-[#141418] border-[#FC4C01]/35 text-neutral-200'
+                              : 'bg-[#fffaf7] border-[#FC4C01]/35 text-neutral-800'
+                          }`}
+                        >
+                          <Sparkles className="w-4 h-4 text-[#FC4C01] shrink-0 mt-0.5" />
+                          <div>
+                            <span className="font-bold text-[#FC4C01] mr-1.5">Sage:</span>
+                            <span>{activeVaultItem.sageNote}</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {Array.isArray(activeVaultItem.relatedItemIds) &&
+                        activeVaultItem.relatedItemIds.length > 0 && (
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#FC4C01]">
+                              <Link2 className="w-3.5 h-3.5" /> Related in your Vault:
+                            </span>
+                            {activeVaultItem.relatedItemIds.map((rid) => {
+                              const linked = vaultItems.find((v) => v.id === rid);
+                              if (!linked) return null;
+                              return (
+                                <button
+                                  key={rid}
+                                  type="button"
+                                  onClick={() => setActiveVaultItem(linked)}
+                                  className={`px-2.5 py-1 rounded-lg border text-[11px] font-medium cursor-pointer transition-colors ${
+                                    isDark
+                                      ? 'bg-white/[0.04] border-white/15 hover:border-[#FC4C01]'
+                                      : 'bg-black/[0.03] border-black/15 hover:border-[#FC4C01]'
+                                  }`}
+                                >
+                                  {linked.title} ({linked.subject} → {linked.chapter})
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                      {Array.isArray(activeVaultItem.timestamps) &&
+                        activeVaultItem.timestamps.length > 0 && (
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-neutral-400">
+                              <Clock className="w-3 h-3" /> Timestamps:
+                            </span>
+                            {activeVaultItem.timestamps.slice(0, 10).map((ts, idx) => (
+                              <span
+                                key={idx}
+                                className={`px-2 py-0.5 rounded-md font-mono text-[10px] border ${
+                                  isDark
+                                    ? 'bg-white/[0.04] border-white/10 text-neutral-300'
+                                    : 'bg-black/[0.04] border-black/10 text-neutral-700'
+                                }`}
+                              >
+                                {typeof ts === 'string'
+                                  ? ts
+                                  : `[${Math.floor((ts.timeSec || 0) / 60)}:${String((ts.timeSec || 0) % 60).padStart(2, '0')}] ${ts.label}`}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                      <div
+                        className={`p-4 rounded-xl border prose-grok max-w-none text-xs sm:text-sm leading-relaxed overflow-x-auto ${subCardSurface}`}
+                      >
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
+                          rehypePlugins={[rehypeKatex]}
+                        >
+                          {normalizeLatexDelimiters(activeVaultItem.content)}
+                        </ReactMarkdown>
+                      </div>
+                    </div>
+                  ) : groupedVaultBySubjectAndChapter.length === 0 ? (
+                    <div className={`p-8 rounded-2xl border text-center space-y-1.5 ${cardSurface}`}>
+                      <div className="text-sm font-semibold">Your Vault is empty</div>
+                      <p className="text-xs text-neutral-500 max-w-md mx-auto">
+                        Click "Save to Vault" on any YouTube Study lecture, Deep Research report, or chat answer — Sage will automatically file it under Subject → Chapter and link related lectures.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-5" data-testid="vault-subject-chapter-groups">
+                      {groupedVaultBySubjectAndChapter.map((subjectGroup) => (
+                        <div
+                          key={subjectGroup.subject}
+                          className={`p-4 rounded-2xl border space-y-3.5 ${cardSurface}`}
+                        >
+                          {/* Subject Header */}
+                          <div className="flex items-center justify-between gap-2 pb-2 border-b border-current/10">
+                            <div className="flex items-center gap-2">
+                              <FolderOpen className="w-4 h-4 text-[#FC4C01]" />
+                              <h3 className="text-sm sm:text-base font-bold tracking-tight">
+                                {subjectGroup.subject}
+                              </h3>
+                            </div>
+                            <span className="text-[11px] font-mono text-neutral-500">
+                              {subjectGroup.totalItems}{' '}
+                              {subjectGroup.totalItems === 1 ? 'item' : 'items'} ·{' '}
+                              {subjectGroup.chapters.length}{' '}
+                              {subjectGroup.chapters.length === 1 ? 'chapter' : 'chapters'}
+                            </span>
+                          </div>
+
+                          {/* Chapters inside Subject */}
+                          <div className="space-y-4">
+                            {subjectGroup.chapters.map((chapterGroup) => (
+                              <div key={chapterGroup.chapter} className="space-y-2">
+                                <div className="flex items-center gap-2 px-1">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-[#FC4C01]" />
+                                  <h4 className="text-xs font-semibold uppercase tracking-wider text-[#FC4C01]">
+                                    {chapterGroup.chapter}
+                                  </h4>
+                                  <span className="text-[10px] font-mono text-neutral-500">
+                                    ({chapterGroup.items.length})
+                                  </span>
+                                </div>
+
+                                <div className="space-y-2">
+                                  {chapterGroup.items.map((item) => {
+                                    const linkedItems = (item.relatedItemIds || [])
+                                      .map((rid) => vaultItems.find((v) => v.id === rid))
+                                      .filter(Boolean) as KnowledgeVaultItem[];
+
+                                    const typeLabelMap: Record<string, string> = {
+                                      lecture: 'Lecture',
+                                      note: 'Note',
+                                      personal_note: 'Note',
+                                      quiz: 'Quiz',
+                                      flashcard_deck: 'Flashcard Deck',
+                                      research_report: 'Research Report',
+                                      chat_answer: 'Chat Answer',
+                                      ai_response: 'Chat Answer',
+                                    };
+                                    const typeBadge =
+                                      typeLabelMap[item.type || item.sourceType] || 'Study Item';
+
+                                    return (
+                                      <div
+                                        key={item.id}
+                                        data-testid={`vault-item-card-${item.id}`}
+                                        onClick={() => {
+                                          KnowledgeVaultStore.markReviewed(item.id);
+                                          setActiveVaultItem(item);
+                                        }}
+                                        className={`p-3.5 rounded-xl border flex flex-col sm:flex-row sm:items-start justify-between gap-3 cursor-pointer transition-all ${
+                                          isDark
+                                            ? 'bg-[#0e0e11] border-white/[0.08] hover:border-[#FC4C01]/50'
+                                            : 'bg-neutral-50/70 border-black/[0.08] hover:border-[#FC4C01]/50'
+                                        }`}
+                                      >
+                                        <div className="space-y-1.5 min-w-0 flex-1">
+                                          <div className="flex flex-wrap items-center gap-1.5">
+                                            <span className="px-2 py-0.5 rounded bg-[#FC4C01]/15 text-[#FC4C01] font-mono text-[10px] font-bold">
+                                              {typeBadge}
+                                            </span>
+                                            {item.organizingStatus === 'organizing' ? (
+                                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/15 text-amber-400 text-[10px] font-medium animate-pulse">
+                                                <Sparkles className="w-2.5 h-2.5" />
+                                                Sage organizing…
+                                              </span>
+                                            ) : item.organizedBySage ? (
+                                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-[#FC4C01]/30 text-[#FC4C01] text-[10px] font-medium">
+                                                <Sparkles className="w-2.5 h-2.5" />
+                                                Sage organized
+                                              </span>
+                                            ) : null}
+                                            <span className="text-[10.5px] text-neutral-500">
+                                              {new Date(item.createdAt).toLocaleDateString()}
+                                            </span>
+                                          </div>
+
+                                          <h5 className="text-xs sm:text-sm font-semibold truncate">
+                                            {item.title}
+                                          </h5>
+
+                                          <p
+                                            className={`text-xs line-clamp-2 ${
+                                              isDark ? 'text-neutral-400' : 'text-neutral-600'
+                                            }`}
+                                          >
+                                            {item.summary}
+                                          </p>
+
+                                          {/* Tags & Timestamps */}
+                                          <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                                            {(item.tags || []).slice(0, 5).map((tag) => (
+                                              <span
+                                                key={tag}
+                                                className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
+                                                  isDark
+                                                    ? 'bg-white/[0.04] text-neutral-400'
+                                                    : 'bg-black/[0.04] text-neutral-600'
+                                                }`}
+                                              >
+                                                #{tag}
+                                              </span>
+                                            ))}
+                                            {Array.isArray(item.timestamps) &&
+                                              item.timestamps.length > 0 && (
+                                                <span className="text-[10px] font-mono text-[#FC4C01]">
+                                                  · {item.timestamps.length} timestamps
+                                                </span>
+                                              )}
+                                          </div>
+
+                                          {/* Linked Related Lectures (Sage) */}
+                                          {(linkedItems.length > 0 || item.sageNote) && (
+                                            <div
+                                              className="pt-1 flex flex-wrap items-center gap-1.5"
+                                              onClick={(e) => e.stopPropagation()}
+                                            >
+                                              {linkedItems.map((li) => (
+                                                <button
+                                                  key={li.id}
+                                                  type="button"
+                                                  onClick={() => setActiveVaultItem(li)}
+                                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#FC4C01]/10 border border-[#FC4C01]/30 text-[#FC4C01] text-[10.5px] font-medium hover:bg-[#FC4C01]/20 cursor-pointer"
+                                                >
+                                                  <Link2 className="w-2.5 h-2.5" />
+                                                  <span>
+                                                    Related to your earlier{' '}
+                                                    {li.type === 'lecture' ? 'lecture' : 'item'} on "
+                                                    {li.title}"
+                                                  </span>
+                                                </button>
+                                              ))}
+                                            </div>
+                                          )}
+                                        </div>
+
+                                        <div
+                                          className="flex items-center gap-1.5 shrink-0"
+                                          onClick={(e) => e.stopPropagation()}
+                                        >
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              KnowledgeVaultStore.updateItem(item.id, {
+                                                pinned: !item.pinned,
+                                              });
+                                            }}
+                                            className={`px-2.5 py-1 rounded-lg border text-[11px] cursor-pointer ${
+                                              item.pinned ? primaryBtn : secondaryBtn
+                                            }`}
+                                          >
+                                            {item.pinned ? 'Pinned' : 'Pin'}
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              KnowledgeVaultStore.markReviewed(item.id);
+                                              onContinueVaultItemInChat(item);
+                                              onClose();
+                                            }}
+                                            className={`px-2.5 py-1 rounded-lg border text-[11px] cursor-pointer ${secondaryBtn}`}
+                                          >
+                                            Study in Chat
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => KnowledgeVaultStore.deleteItem(item.id)}
+                                            className="px-2 py-1 rounded-lg text-[11px] text-neutral-500 hover:text-current cursor-pointer"
+                                          >
+                                            Delete
+                                          </button>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
                 )}
               </div>
-            </div>
+            )
           )}
 
           {/* =========================================================

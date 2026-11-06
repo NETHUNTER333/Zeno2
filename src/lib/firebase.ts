@@ -641,15 +641,24 @@ export async function loadSharedThreadFromFirestore(
 
 export async function saveVaultItemToFirestore(item: {
   id: string;
+  type?: string;
   title: string;
+  subject?: string;
+  chapter?: string;
   content: string;
   summary?: string;
   collectionId: string;
   sourceType: string;
+  sourceUrl?: string;
+  timestamps?: Array<string | { timeSec?: number; label?: string; time?: string }>;
   tags?: string[];
+  relatedItemIds?: string[];
+  sageNote?: string;
+  organizedBySage?: boolean;
   isPinned?: boolean;
   createdAt: number;
   updatedAt: number;
+  lastReviewedAt?: number;
 }) {
   const user = auth.currentUser;
   if (!user) return;
@@ -662,15 +671,32 @@ export async function saveVaultItemToFirestore(item: {
     const payload = stripUndefined({
       id: safeId,
       userId: user.uid,
+      type: String(item.type || item.sourceType || 'chat_answer').slice(0, 40),
       title: String(item.title || 'Saved Insight').slice(0, 200),
+      subject: String(item.subject || 'General Studies').slice(0, 80),
+      chapter: String(item.chapter || 'Core Concepts').slice(0, 120),
       content: String(item.content || '').slice(0, 24000),
       summary: item.summary ? String(item.summary).slice(0, 500) : undefined,
       collectionId: safeCollectionId,
-      sourceType: String(item.sourceType || 'ai_response').slice(0, 40),
+      sourceType: String(item.sourceType || item.type || 'chat_answer').slice(0, 40),
+      sourceUrl: item.sourceUrl ? String(item.sourceUrl).slice(0, 500) : '',
+      timestamps: Array.isArray(item.timestamps)
+        ? item.timestamps.slice(0, 50).map((t) =>
+            typeof t === 'string'
+              ? t.slice(0, 80)
+              : `[${t.time || `${Math.floor((t.timeSec || 0) / 60)}:${String((t.timeSec || 0) % 60).padStart(2, '0')}`}] ${t.label || ''}`.slice(0, 80)
+          )
+        : [],
       tags: Array.isArray(item.tags) ? item.tags.slice(0, 10).map((t) => String(t).slice(0, 32)) : [],
+      relatedItemIds: Array.isArray(item.relatedItemIds)
+        ? item.relatedItemIds.slice(0, 20).map((r) => String(r).slice(0, 128))
+        : [],
+      sageNote: item.sageNote ? String(item.sageNote).slice(0, 300) : '',
+      organizedBySage: Boolean(item.organizedBySage),
       isPinned: Boolean(item.isPinned),
       createdAt: Number(item.createdAt) || Date.now(),
       updatedAt: Number(item.updatedAt) || Date.now(),
+      lastReviewedAt: Number(item.lastReviewedAt || item.updatedAt || item.createdAt) || Date.now(),
     });
     await setDoc(doc(db, 'users', user.uid, 'vault_items', safeId), payload);
   } catch (error) {
@@ -706,6 +732,215 @@ export async function loadUserVaultItemsFromFirestore(): Promise<any[]> {
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, path);
     return [];
+  }
+}
+
+export async function saveVaultThreadToFirestore(thread: {
+  id: string;
+  type: string;
+  title: string;
+  sourceUrl?: string;
+  thumbnail?: string;
+  tldr: string;
+  keyPoints?: any[];
+  subject: string;
+  chapter: string;
+  tags?: string[];
+  createdAt: number;
+  updatedAt: number;
+  pinned?: boolean;
+  score?: number;
+  commentCount?: number;
+}) {
+  const user = auth.currentUser;
+  if (!user) return;
+  const safeId = String(thread.id).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 128);
+  const path = `users/${user.uid}/vault_threads/${safeId}`;
+  try {
+    const payload = stripUndefined({
+      id: safeId,
+      userId: user.uid,
+      type: String(thread.type || 'text').slice(0, 32),
+      title: String(thread.title || 'Untitled Thread').slice(0, 300),
+      sourceUrl: thread.sourceUrl ? String(thread.sourceUrl).slice(0, 2048) : '',
+      thumbnail: thread.thumbnail ? String(thread.thumbnail).slice(0, 1000) : '',
+      tldr: String(thread.tldr || '').slice(0, 600),
+      keyPoints: Array.isArray(thread.keyPoints)
+        ? thread.keyPoints.slice(0, 20).map((kp, idx) => ({
+            id: String(kp.id || `kp_${idx}`).slice(0, 64),
+            text: String(kp.text || '').slice(0, 300),
+            timestamp: kp.timestamp ? String(kp.timestamp).slice(0, 20) : undefined,
+            score: Number(kp.score) || 1,
+          }))
+        : [],
+      subject: String(thread.subject || 'General Studies').slice(0, 120),
+      chapter: String(thread.chapter || 'Core Concepts').slice(0, 160),
+      tags: Array.isArray(thread.tags) ? thread.tags.slice(0, 15).map((t) => String(t).slice(0, 32)) : [],
+      createdAt: Number(thread.createdAt) || Date.now(),
+      updatedAt: Number(thread.updatedAt) || Date.now(),
+      pinned: Boolean(thread.pinned),
+      score: Number(thread.score) || 1,
+      commentCount: Number(thread.commentCount) || 0,
+    });
+    await setDoc(doc(db, 'users', user.uid, 'vault_threads', safeId), payload);
+  } catch (error) {
+    if (!isFirestoreOfflineError(error)) {
+      handleFirestoreError(error, OperationType.WRITE, path);
+    }
+  }
+}
+
+export async function loadVaultThreadsFromFirestore(): Promise<any[]> {
+  const user = auth.currentUser;
+  if (!user) return [];
+  const path = `users/${user.uid}/vault_threads`;
+  try {
+    const q = query(
+      collection(db, 'users', user.uid, 'vault_threads'),
+      where('userId', '==', user.uid)
+    );
+    const snap = await getDocs(q);
+    const threads = snap.docs.map((d) => d.data());
+    threads.sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
+    return threads;
+  } catch (error) {
+    if (!isFirestoreOfflineError(error)) {
+      handleFirestoreError(error, OperationType.LIST, path);
+    }
+    return [];
+  }
+}
+
+export async function deleteVaultThreadFromFirestore(threadId: string) {
+  const user = auth.currentUser;
+  if (!user) return;
+  const safeId = String(threadId).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 128);
+  const path = `users/${user.uid}/vault_threads/${safeId}`;
+  try {
+    await deleteDoc(doc(db, 'users', user.uid, 'vault_threads', safeId));
+  } catch (error) {
+    if (!isFirestoreOfflineError(error)) {
+      handleFirestoreError(error, OperationType.DELETE, path);
+    }
+  }
+}
+
+export async function saveVaultCommentToFirestore(comment: {
+  id: string;
+  threadId: string;
+  author: string;
+  authorName?: string;
+  text: string;
+  createdAt: number;
+  parentId?: string | null;
+  score?: number;
+}) {
+  const user = auth.currentUser;
+  if (!user) return;
+  const safeThreadId = String(comment.threadId).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 128);
+  const safeCommentId = String(comment.id).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 128);
+  const path = `users/${user.uid}/vault_threads/${safeThreadId}/comments/${safeCommentId}`;
+  try {
+    const payload = stripUndefined({
+      id: safeCommentId,
+      threadId: safeThreadId,
+      userId: user.uid,
+      author: String(comment.author || 'user').slice(0, 64),
+      authorName: String(comment.authorName || 'Student').slice(0, 100),
+      text: String(comment.text || '').slice(0, 5000),
+      createdAt: Number(comment.createdAt) || Date.now(),
+      parentId: comment.parentId ? String(comment.parentId).slice(0, 128) : null,
+      score: Number(comment.score) || 1,
+    });
+    await setDoc(doc(db, 'users', user.uid, 'vault_threads', safeThreadId, 'comments', safeCommentId), payload);
+  } catch (error) {
+    if (!isFirestoreOfflineError(error)) {
+      handleFirestoreError(error, OperationType.WRITE, path);
+    }
+  }
+}
+
+export async function saveAgentMemoryToFirestore(agentId: string, facts: string[]) {
+  const user = auth.currentUser;
+  if (!user) return;
+  const safeAgentId = String(agentId || 'sage').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64);
+  const path = `users/${user.uid}/agent_memory/${safeAgentId}`;
+  try {
+    const cleanFacts = Array.from(
+      new Set(
+        (Array.isArray(facts) ? facts : [])
+          .map((f) => String(f || '').trim().slice(0, 160))
+          .filter(Boolean)
+      )
+    ).slice(0, 50);
+    await setDoc(doc(db, 'users', user.uid, 'agent_memory', safeAgentId), {
+      agentId: safeAgentId,
+      userId: user.uid,
+      facts: cleanFacts,
+      updatedAt: Date.now(),
+    });
+  } catch (error) {
+    if (!isFirestoreOfflineError(error)) {
+      handleFirestoreError(error, OperationType.WRITE, path);
+    }
+  }
+}
+
+export async function loadAgentMemoryFromFirestore(agentId = 'sage'): Promise<string[]> {
+  const user = auth.currentUser;
+  if (!user) return [];
+  const safeAgentId = String(agentId || 'sage').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64);
+  const path = `users/${user.uid}/agent_memory/${safeAgentId}`;
+  try {
+    const snap = await getDoc(doc(db, 'users', user.uid, 'agent_memory', safeAgentId));
+    if (!snap.exists()) return [];
+    const data = snap.data();
+    return Array.isArray(data?.facts) ? data.facts.slice(0, 50) : [];
+  } catch (error) {
+    if (!isFirestoreOfflineError(error)) {
+      handleFirestoreError(error, OperationType.GET, path);
+    }
+    return [];
+  }
+}
+
+export async function recordAgentUsageToFirestore(input: {
+  agentId: string;
+  tokensUsed: number;
+  callsCount?: number;
+  usageDate?: string;
+}) {
+  const user = auth.currentUser;
+  if (!user) return;
+  const safeAgentId = String(input.agentId || 'sage').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64);
+  const usageDate = String(input.usageDate || getCurrentUtcDateString()).slice(0, 16);
+  const usageId = `${usageDate}_${safeAgentId}`.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 96);
+  const path = `users/${user.uid}/agent_usage/${usageId}`;
+  const docRef = doc(db, 'users', user.uid, 'agent_usage', usageId);
+  try {
+    let existingTokens = 0;
+    let existingCalls = 0;
+    try {
+      const snap = await getDoc(docRef);
+      if (snap.exists()) {
+        const d = snap.data();
+        existingTokens = Number(d?.tokensUsed || 0);
+        existingCalls = Number(d?.callsCount || 0);
+      }
+    } catch {}
+    await setDoc(docRef, {
+      usageId,
+      userId: user.uid,
+      agentId: safeAgentId,
+      usageDate,
+      tokensUsed: Math.max(0, existingTokens + Math.max(0, Math.floor(Number(input.tokensUsed || 0)))),
+      callsCount: Math.max(0, existingCalls + Math.max(1, Math.floor(Number(input.callsCount || 1)))),
+      updatedAt: Date.now(),
+    });
+  } catch (error) {
+    if (!isFirestoreOfflineError(error)) {
+      handleFirestoreError(error, OperationType.WRITE, path);
+    }
   }
 }
 

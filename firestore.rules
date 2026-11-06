@@ -69,18 +69,81 @@ service cloud.firestore {
 
     function isValidVaultItem(data, userId, itemId) {
       return data.keys().hasAll(['id', 'userId', 'title', 'content', 'collectionId', 'sourceType', 'createdAt', 'updatedAt']) &&
-        data.keys().hasOnly(['id', 'userId', 'title', 'content', 'summary', 'collectionId', 'sourceType', 'tags', 'isPinned', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly([
+          'id', 'userId', 'type', 'title', 'subject', 'chapter', 'tags',
+          'sourceUrl', 'timestamps', 'content', 'summary', 'collectionId',
+          'sourceType', 'isPinned', 'relatedItemIds', 'sageNote',
+          'organizedBySage', 'createdAt', 'lastReviewedAt', 'updatedAt'
+        ]) &&
         data.id is string && data.id == itemId && data.id.size() <= 128 &&
         data.userId is string && data.userId == userId && data.userId.size() <= 128 &&
         data.title is string && data.title.size() <= 200 &&
         data.content is string && data.content.size() <= 24000 &&
+        (!('type' in data) || (data.type is string && data.type.size() <= 40)) &&
+        (!('subject' in data) || (data.subject is string && data.subject.size() <= 120)) &&
+        (!('chapter' in data) || (data.chapter is string && data.chapter.size() <= 160)) &&
+        (!('sourceUrl' in data) || (data.sourceUrl is string && data.sourceUrl.size() <= 2048)) &&
+        (!('timestamps' in data) || (data.timestamps is list && data.timestamps.size() <= 500)) &&
         (!('summary' in data) || (data.summary is string && data.summary.size() <= 500)) &&
         isValidId(data.collectionId) &&
         data.sourceType is string && data.sourceType.size() <= 40 &&
-        (!('tags' in data) || (data.tags is list && data.tags.size() <= 10)) &&
+        (!('tags' in data) || (data.tags is list && data.tags.size() <= 20)) &&
         (!('isPinned' in data) || data.isPinned is bool) &&
+        (!('relatedItemIds' in data) || (data.relatedItemIds is list && data.relatedItemIds.size() <= 30)) &&
+        (!('sageNote' in data) || (data.sageNote is string && data.sageNote.size() <= 1000)) &&
+        (!('organizedBySage' in data) || data.organizedBySage is bool) &&
         data.createdAt is number &&
+        (!('lastReviewedAt' in data) || data.lastReviewedAt is number) &&
         data.updatedAt is number;
+    }
+
+    function isValidAgentMemory(data, userId, agentId) {
+      return data.keys().hasAll(['agentId', 'userId', 'facts', 'updatedAt']) &&
+        data.keys().hasOnly(['agentId', 'userId', 'facts', 'updatedAt']) &&
+        data.agentId is string && data.agentId == agentId && data.agentId.size() <= 64 &&
+        data.userId is string && data.userId == userId && data.userId.size() <= 128 &&
+        data.facts is list && data.facts.size() <= 50 &&
+        data.updatedAt is number;
+    }
+
+    function isValidAgentUsage(data, userId, usageId) {
+      return data.keys().hasAll(['id', 'userId', 'agentId', 'date', 'totalTokens', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'userId', 'agentId', 'date', 'promptTokens', 'completionTokens', 'totalTokens', 'callsCount', 'updatedAt']) &&
+        data.id is string && data.id == usageId && data.id.size() <= 128 &&
+        data.userId is string && data.userId == userId && data.userId.size() <= 128 &&
+        data.agentId is string && data.agentId.size() <= 64 &&
+        data.date is string && data.date.size() <= 32 &&
+        data.totalTokens is number && data.totalTokens >= 0 &&
+        data.updatedAt is number;
+    }
+
+    function isValidRecallCard(data, userId, cardId) {
+      return data.keys().hasAll(['id', 'userId', 'front', 'back', 'dueAt', 'createdAt']) &&
+        data.id is string && data.id == cardId && data.id.size() <= 128 &&
+        data.userId is string && data.userId == userId && data.userId.size() <= 128 &&
+        data.front is string && data.front.size() <= 2000 &&
+        data.back is string && data.back.size() <= 5000 &&
+        data.dueAt is number &&
+        data.createdAt is number;
+    }
+
+    function isValidStudyPlan(data, userId, planId) {
+      return data.keys().hasAll(['id', 'userId', 'examName', 'examDate', 'subjects', 'days', 'createdAt']) &&
+        data.id is string && data.id == planId && data.id.size() <= 128 &&
+        data.userId is string && data.userId == userId && data.userId.size() <= 128 &&
+        data.examName is string && data.examName.size() <= 200 &&
+        data.examDate is string && data.examDate.size() <= 32 &&
+        data.subjects is list && data.subjects.size() <= 30 &&
+        data.days is list && data.days.size() <= 366 &&
+        data.createdAt is number;
+    }
+
+    function isValidMorningBrief(data, userId, briefDate) {
+      return data.keys().hasAll(['id', 'userId', 'briefDate', 'createdAt']) &&
+        data.id is string && data.id == briefDate && data.id.size() <= 128 &&
+        data.userId is string && data.userId == userId && data.userId.size() <= 128 &&
+        data.briefDate is string && data.briefDate.size() <= 32 &&
+        data.createdAt is number;
     }
 
     function isValidPublicArtifact(data, artifactId) {
@@ -170,8 +233,69 @@ service cloud.firestore {
           incoming().id == existing().id &&
           incoming().userId == existing().userId &&
           incoming().createdAt == existing().createdAt &&
-          incoming().diff(existing()).affectedKeys().hasOnly(['title', 'content', 'summary', 'collectionId', 'tags', 'isPinned', 'updatedAt']);
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'type', 'title', 'subject', 'chapter', 'tags', 'sourceUrl',
+            'timestamps', 'content', 'summary', 'collectionId', 'sourceType',
+            'isPinned', 'relatedItemIds', 'sageNote', 'organizedBySage',
+            'lastReviewedAt', 'updatedAt'
+          ]);
         allow delete: if isOwner(userId) && isValidId(userId) && isValidId(itemId);
+      }
+
+      match /vault_threads/{threadId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(threadId);
+        allow list: if isOwner(userId) && existing().userId == request.auth.uid;
+        allow create, update: if isOwner(userId) && isValidId(userId) && isValidId(threadId);
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(threadId);
+
+        match /comments/{commentId} {
+          allow get: if isOwner(userId) && isValidId(userId) && isValidId(commentId);
+          allow list: if isOwner(userId);
+          allow create, update: if isOwner(userId) && isValidId(userId) && isValidId(commentId);
+          allow delete: if isOwner(userId) && isValidId(userId) && isValidId(commentId);
+        }
+      }
+
+      match /vault_memory/{memoryId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(memoryId);
+        allow list: if isOwner(userId) && existing().userId == request.auth.uid;
+        allow create, update: if isOwner(userId) && isValidId(userId) && isValidId(memoryId);
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(memoryId);
+      }
+
+      match /agent_memory/{agentId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(agentId);
+        allow list: if isOwner(userId) && existing().userId == request.auth.uid;
+        allow create, update: if isOwner(userId) && isValidId(userId) && isValidId(agentId) && isValidAgentMemory(incoming(), userId, agentId);
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(agentId);
+      }
+
+      match /agent_usage/{usageId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(usageId);
+        allow list: if isOwner(userId) && existing().userId == request.auth.uid;
+        allow create, update: if isOwner(userId) && isValidId(userId) && isValidId(usageId) && isValidAgentUsage(incoming(), userId, usageId);
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(usageId);
+      }
+
+      match /recall_cards/{cardId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(cardId);
+        allow list: if isOwner(userId) && existing().userId == request.auth.uid;
+        allow create, update: if isOwner(userId) && isValidId(userId) && isValidId(cardId) && isValidRecallCard(incoming(), userId, cardId);
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(cardId);
+      }
+
+      match /study_plans/{planId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(planId);
+        allow list: if isOwner(userId) && existing().userId == request.auth.uid;
+        allow create, update: if isOwner(userId) && isValidId(userId) && isValidId(planId) && isValidStudyPlan(incoming(), userId, planId);
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(planId);
+      }
+
+      match /morning_briefs/{briefDate} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(briefDate);
+        allow list: if isOwner(userId) && existing().userId == request.auth.uid;
+        allow create, update: if isOwner(userId) && isValidId(userId) && isValidId(briefDate) && isValidMorningBrief(incoming(), userId, briefDate);
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(briefDate);
       }
 
       match /quotas/{quotaDate} {

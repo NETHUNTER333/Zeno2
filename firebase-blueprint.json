@@ -76,22 +76,116 @@
     },
     "KnowledgeVaultItem": {
       "title": "Knowledge Vault Item",
-      "description": "A private saved knowledge item, study note, or research synthesis belonging to a user",
+      "description": "A private saved knowledge item (lecture, note, quiz, flashcard_deck, research_report, chat_answer) organized by subject and chapter",
       "type": "object",
       "properties": {
         "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
         "userId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "type": { "type": "string", "maxLength": 40 },
         "title": { "type": "string", "maxLength": 200 },
+        "subject": { "type": "string", "maxLength": 120 },
+        "chapter": { "type": "string", "maxLength": 160 },
+        "tags": { "type": "array" },
+        "sourceUrl": { "type": "string", "maxLength": 2048 },
+        "timestamps": { "type": "array" },
         "content": { "type": "string", "maxLength": 24000 },
         "summary": { "type": "string", "maxLength": 500 },
         "collectionId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
         "sourceType": { "type": "string", "maxLength": 40 },
-        "tags": { "type": "array" },
         "isPinned": { "type": "boolean" },
+        "relatedItemIds": { "type": "array" },
+        "sageNote": { "type": "string", "maxLength": 1000 },
+        "organizedBySage": { "type": "boolean" },
         "createdAt": { "type": "number" },
+        "lastReviewedAt": { "type": "number" },
         "updatedAt": { "type": "number" }
       },
       "required": ["id", "userId", "title", "content", "collectionId", "sourceType", "createdAt", "updatedAt"]
+    },
+    "AgentMemory": {
+      "title": "Agent Memory",
+      "description": "Per-user per-agent memory storing up to 50 short facts in Firestore",
+      "type": "object",
+      "properties": {
+        "agentId": { "type": "string", "maxLength": 64 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "facts": { "type": "array" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["agentId", "userId", "facts", "updatedAt"]
+    },
+    "AgentUsage": {
+      "title": "Agent Usage",
+      "description": "Daily token usage log per agent per user",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "agentId": { "type": "string", "maxLength": 64 },
+        "date": { "type": "string", "maxLength": 32 },
+        "promptTokens": { "type": "number" },
+        "completionTokens": { "type": "number" },
+        "totalTokens": { "type": "number" },
+        "callsCount": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["id", "userId", "agentId", "date", "totalTokens", "updatedAt"]
+    },
+    "RecallCard": {
+      "title": "Recall Card (SM-2)",
+      "description": "Phase 2 Spaced-Repetition flashcard with SM-2 schedule parameters",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "vaultItemId": { "type": "string", "maxLength": 128 },
+        "subject": { "type": "string", "maxLength": 120 },
+        "chapter": { "type": "string", "maxLength": 160 },
+        "front": { "type": "string", "maxLength": 2000 },
+        "back": { "type": "string", "maxLength": 5000 },
+        "repetitions": { "type": "number" },
+        "easinessFactor": { "type": "number" },
+        "intervalDays": { "type": "number" },
+        "dueAt": { "type": "number" },
+        "lastReviewedAt": { "type": "number" },
+        "pushReminderEnabled": { "type": "boolean" },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["id", "userId", "front", "back", "dueAt", "createdAt"]
+    },
+    "StudyPlan": {
+      "title": "Study Plan",
+      "description": "Phase 3 Exam date + subjects day-by-day plan generated from Vault",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "examName": { "type": "string", "maxLength": 200 },
+        "examDate": { "type": "string", "maxLength": 32 },
+        "subjects": { "type": "array" },
+        "days": { "type": "array" },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["id", "userId", "examName", "examDate", "subjects", "days", "createdAt"]
+    },
+    "MorningBrief": {
+      "title": "Morning Brief",
+      "description": "Phase 4 Scheduled daily morning brief (IST default) with due cards, today's plan, and one quiz",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "briefDate": { "type": "string", "maxLength": 32 },
+        "scheduledTime": { "type": "string", "maxLength": 16 },
+        "timezone": { "type": "string", "maxLength": 64 },
+        "dueCardsCount": { "type": "number" },
+        "todayPlanSummary": { "type": "string", "maxLength": 2000 },
+        "dailyQuiz": { "type": "object" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["id", "userId", "briefDate", "createdAt"]
     },
     "PublicArtifact": {
       "title": "Public Artifact",
@@ -130,6 +224,66 @@
         "updatedAt": { "type": "number" }
       },
       "required": ["quotaDate", "userId", "plan", "messagesUsed", "filesUploaded", "searchesUsed", "deepResearchUsed", "pdfStudyUsed", "tokensUsed", "updatedAt"]
+    },
+    "VaultThread": {
+      "title": "Vault Thread",
+      "description": "A Reddit-style auto-captured study thread with key points, TL;DR, tags, and score",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "type": { "type": "string", "enum": ["youtube", "web_link", "pdf", "image", "text"] },
+        "title": { "type": "string", "maxLength": 300 },
+        "sourceUrl": { "type": "string", "maxLength": 2048 },
+        "thumbnail": { "type": "string", "maxLength": 1000 },
+        "tldr": { "type": "string", "maxLength": 600 },
+        "keyPoints": { "type": "array" },
+        "subject": { "type": "string", "maxLength": 120 },
+        "chapter": { "type": "string", "maxLength": 160 },
+        "tags": { "type": "array" },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" },
+        "pinned": { "type": "boolean" },
+        "score": { "type": "number" },
+        "commentCount": { "type": "number" }
+      },
+      "required": ["id", "userId", "type", "title", "createdAt", "updatedAt"]
+    },
+    "VaultThreadComment": {
+      "title": "Vault Thread Comment",
+      "description": "User or agent comment on a Vault thread",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "threadId": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "author": { "type": "string", "maxLength": 64 },
+        "authorName": { "type": "string", "maxLength": 100 },
+        "text": { "type": "string", "maxLength": 10000 },
+        "createdAt": { "type": "number" },
+        "parentId": { "type": "string", "maxLength": 128 },
+        "score": { "type": "number" }
+      },
+      "required": ["id", "threadId", "author", "text", "createdAt"]
+    },
+    "VaultMemoryItem": {
+      "title": "Vault Memory Item",
+      "description": "Key points indexed for cross-chat agent memory recall and citations",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "threadId": { "type": "string", "maxLength": 128 },
+        "type": { "type": "string", "maxLength": 40 },
+        "title": { "type": "string", "maxLength": 300 },
+        "keyPointText": { "type": "string", "maxLength": 1000 },
+        "timestamp": { "type": "string", "maxLength": 64 },
+        "sourceUrl": { "type": "string", "maxLength": 2048 },
+        "subject": { "type": "string", "maxLength": 120 },
+        "chapter": { "type": "string", "maxLength": 160 },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["id", "userId", "threadId", "keyPointText", "createdAt"]
     }
   },
   "firestore": {
@@ -140,6 +294,18 @@
     "/users/{userId}/threads/{threadId}": {
       "schema": { "$ref": "#/entities/ChatThread" },
       "description": "Stores private chat threads and message history for a specific user"
+    },
+    "/users/{userId}/vault_threads/{threadId}": {
+      "schema": { "$ref": "#/entities/VaultThread" },
+      "description": "Stores Reddit-style auto-captured study threads for a user"
+    },
+    "/users/{userId}/vault_threads/{threadId}/comments/{commentId}": {
+      "schema": { "$ref": "#/entities/VaultThreadComment" },
+      "description": "Stores nested comments from users and study agents on a Vault thread"
+    },
+    "/users/{userId}/vault_memory/{memoryId}": {
+      "schema": { "$ref": "#/entities/VaultMemoryItem" },
+      "description": "Stores user key points indexed for agent memory citations"
     },
     "/users/{userId}/bookmarks/{bookmarkId}": {
       "schema": { "$ref": "#/entities/SavedBookmark" },
@@ -152,6 +318,26 @@
     "/users/{userId}/vault_items/{itemId}": {
       "schema": { "$ref": "#/entities/KnowledgeVaultItem" },
       "description": "Stores private personal knowledge vault items for a specific user"
+    },
+    "/users/{userId}/agent_memory/{agentId}": {
+      "schema": { "$ref": "#/entities/AgentMemory" },
+      "description": "Stores per-user per-agent memory facts (max 50 entries)"
+    },
+    "/users/{userId}/agent_usage/{usageId}": {
+      "schema": { "$ref": "#/entities/AgentUsage" },
+      "description": "Stores daily token usage per agent for a specific user"
+    },
+    "/users/{userId}/recall_cards/{cardId}": {
+      "schema": { "$ref": "#/entities/RecallCard" },
+      "description": "Stores SM-2 spaced repetition flashcards for Recall (Phase 2)"
+    },
+    "/users/{userId}/study_plans/{planId}": {
+      "schema": { "$ref": "#/entities/StudyPlan" },
+      "description": "Stores exam study plans generated from Vault (Phase 3)"
+    },
+    "/users/{userId}/morning_briefs/{briefDate}": {
+      "schema": { "$ref": "#/entities/MorningBrief" },
+      "description": "Stores daily scheduled Morning Briefs (Phase 4)"
     },
     "/users/{userId}/quotas/{quotaDate}": {
       "schema": { "$ref": "#/entities/UserDailyQuota" },
