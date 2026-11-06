@@ -851,6 +851,16 @@ export default function App() {
     return () => window.removeEventListener('kinich-open-pricing', handleOpenPricing);
   }, []);
 
+  // Listen for global 'kinich-open-auth' events to open sign-in modal
+  useEffect(() => {
+    const handleOpenAuth = () => {
+      setAccountPageTab('profile');
+      setCurrentView('account');
+    };
+    window.addEventListener('kinich-open-auth', handleOpenAuth);
+    return () => window.removeEventListener('kinich-open-auth', handleOpenAuth);
+  }, []);
+
   // Load Public Shared Thread snapshot (?share=), Public Kinich Page (?artifact=), and Referral attribution (?ref=)
   useEffect(() => {
     try {

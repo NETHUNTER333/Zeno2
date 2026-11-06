@@ -466,7 +466,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
 
   const handleSaveSegmentToVault = (rawSegment?: string, collectionOverride?: string) => {
     if (UserAccountStore.isGuestUser()) {
-      window.dispatchEvent(new CustomEvent('kinich-open-auth'));
+      window.dispatchEvent(new CustomEvent('kinich-open-auth', { detail: { message: 'Sign in to keep this in your Vault.' } }));
       return;
     }
     const targetText = (rawSegment ?? selectedSegmentText).trim();
@@ -548,7 +548,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
 
   const handleSaveToKnowledgeVault = () => {
     if (UserAccountStore.isGuestUser()) {
-      window.dispatchEvent(new CustomEvent('kinich-open-auth'));
+      window.dispatchEvent(new CustomEvent('kinich-open-auth', { detail: { message: 'Sign in to keep this in your Vault.' } }));
       return;
     }
     const check = KnowledgeVaultStore.canSaveToVault();

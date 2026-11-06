@@ -905,14 +905,20 @@ export const StreakModal: React.FC<StreakModalProps> = ({
                             <span>Claimed</span>
                           </span>
                         ) : isUnlocked ? (
-                          <button
-                            type="button"
-                            onClick={() => handleClaimMilestone(m.days)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#FC4C01] hover:bg-[#e04300] text-white text-xs font-semibold transition-colors cursor-pointer"
-                          >
-                            <Gift className="w-3.5 h-3.5" />
-                            <span>Claim Bonus</span>
-                          </button>
+                          UserAccountStore.isGuestUser() ? (
+                            <span className={`text-[11px] font-medium ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
+                              Sign in to claim
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleClaimMilestone(m.days)}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#FC4C01] hover:bg-[#e04300] text-white text-xs font-semibold transition-colors cursor-pointer"
+                            >
+                              <Gift className="w-3.5 h-3.5" />
+                              <span>Claim Bonus</span>
+                            </button>
+                          )
                         ) : (
                           <span
                             className={`text-[11px] font-mono tabular-nums ${

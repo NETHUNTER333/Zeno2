@@ -1398,7 +1398,7 @@ ${fullTranscriptText}`;
     saveType: 'lecture' | 'quiz' | 'flashcard_deck' = 'lecture'
   ) => {
     if (UserAccountStore.isGuestUser()) {
-      window.dispatchEvent(new CustomEvent('kinich-open-auth'));
+      window.dispatchEvent(new CustomEvent('kinich-open-auth', { detail: { message: 'Sign in to keep this in your Vault.' } }));
       return;
     }
     const check = KnowledgeVaultStore.canSaveToVault(savedStudyVaultId || undefined);
