@@ -9933,8 +9933,9 @@ app.post('/api/youtube/study', async (req, res) => {
       Math.ceil((lastSeg?.start_s || 0) + (lastSeg?.duration_s || 5))
     );
 
-    // Format transcript as [mm:ss] text lines. Chunk into ~8k-token (~28,000 char) windows with overlap if very long
-    const formattedLines = activeSegments.map(
+    // Format transcript as [mm:ss] text lines. Sample every 3rd segment beyond the first 60 to keep LLM calls fast.
+    const sampledSegments = activeSegments.filter((_, idx) => idx < 60 || idx % 3 === 0);
+    const formattedLines = sampledSegments.map(
       (s) => `[${formatMmSs(s.start_s)}] (t=${Math.floor(s.start_s)}s) ${s.text}`
     );
     const fullFormattedTranscript = formattedLines.join('\n');
