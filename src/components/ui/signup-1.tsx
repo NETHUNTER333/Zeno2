@@ -579,7 +579,7 @@ const Signup1 = ({
                     } catch {}
                   })();
                 }}
-                disabled={loading || resetLoading || guestLoading}
+                disabled={loading || resetLoading || guestLoading || !consentAccepted}
               >
                 <span className="text-xs sm:text-sm font-medium flex items-center justify-center gap-2">
                   {guestLoading && (

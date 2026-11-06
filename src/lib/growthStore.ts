@@ -717,7 +717,7 @@ export const KnowledgeVaultStore = {
             lastReviewedAt: now,
           };
 
-    if (UserAccountStore.isGuest()) {
+    if (UserAccountStore.isGuestUser()) {
       if (typeof window !== 'undefined') {
         window.dispatchEvent(
           new CustomEvent('kinich-open-auth', {

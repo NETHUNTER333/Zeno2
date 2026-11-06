@@ -111,7 +111,7 @@ export const CancelSubscriptionSection: React.FC<{
   } | null>(null);
 
   const loadSubscriptionState = async () => {
-    if (!auth.currentUser || auth.currentUser.isAnonymous || UserAccountStore.isGuest()) {
+    if (!auth.currentUser || auth.currentUser.isAnonymous || UserAccountStore.isGuestUser()) {
       setCurrentPlan('free');
       return;
     }
@@ -516,7 +516,7 @@ export const RefundPolicySection: React.FC<{
   } | null>(null);
 
   const loadRefundEligibility = async () => {
-    if (!auth.currentUser || auth.currentUser.isAnonymous || UserAccountStore.isGuest()) {
+    if (!auth.currentUser || auth.currentUser.isAnonymous || UserAccountStore.isGuestUser()) {
       setCurrentPlan('free');
       return;
     }
@@ -836,7 +836,7 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
 
   useEffect(() => {
     // Load & sync profile + active model + streak reminder settings with backend on mount (signed-in accounts only)
-    if (!auth.currentUser || auth.currentUser.isAnonymous || UserAccountStore.isGuest()) {
+    if (!auth.currentUser || auth.currentUser.isAnonymous || UserAccountStore.isGuestUser()) {
       return;
     }
     let cancelled = false;
@@ -874,7 +874,7 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
   const [locPref, setLocPref] = useState(() => getStoredLocationPref());
 
   const isAuthenticatedUser = Boolean(
-    auth.currentUser && !auth.currentUser.isAnonymous && !UserAccountStore.isGuest()
+    auth.currentUser && !auth.currentUser.isAnonymous && !UserAccountStore.isGuestUser()
   );
 
   const navItems: { id: AccountTab; label: string; icon: React.ReactNode }[] = [

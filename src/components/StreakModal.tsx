@@ -231,10 +231,10 @@ export const StreakModal: React.FC<StreakModalProps> = ({
     setSelectedDateKey(todayKey);
   };
 
-  const isGuest = UserAccountStore.isGuest();
+  const isGuest = UserAccountStore.isGuestUser();
 
   const handleClaimMilestone = (days: number) => {
-    if (UserAccountStore.isGuest()) {
+    if (UserAccountStore.isGuestUser()) {
       onClose();
       window.dispatchEvent(
         new CustomEvent('kinich-open-auth', {
@@ -255,7 +255,7 @@ export const StreakModal: React.FC<StreakModalProps> = ({
   };
 
   const handleClaimBadge = (badgeId: string) => {
-    if (UserAccountStore.isGuest()) {
+    if (UserAccountStore.isGuestUser()) {
       onClose();
       window.dispatchEvent(
         new CustomEvent('kinich-open-auth', {

@@ -596,12 +596,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
         items.push({
           id: 'action-vault',
           label: 'The Vault',
-          sublabel: UserAccountStore.isGuest()
+          sublabel: UserAccountStore.isGuestUser()
             ? 'Sign in to save'
             : `${vaultItems.length} saved · Grouped by Subject → Chapter`,
           icon: <Bookmark className="w-3.5 h-3.5 text-[#FC4C01]" />,
           onClick: () => {
-            if (UserAccountStore.isGuest()) {
+            if (UserAccountStore.isGuestUser()) {
               window.dispatchEvent(
                 new CustomEvent('kinich-open-auth', {
                   detail: { reason: 'Sign in to keep this in your Vault' },
@@ -637,7 +637,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }
 
     // Sidebar Vault section (Subject -> Chapter preview or Guest "Sign in to save")
-    const isGuestSidebar = UserAccountStore.isGuest();
+    const isGuestSidebar = UserAccountStore.isGuestUser();
     items.push({
       id: 'heading-vault-sidebar',
       label:

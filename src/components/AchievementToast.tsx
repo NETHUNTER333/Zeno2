@@ -30,7 +30,7 @@ export const AchievementToast: React.FC<AchievementToastProps> = ({ isDark }) =>
   const [equippedBadgeId, setEquippedBadgeId] = useState<string>(() => {
     return UserAccountStore.getDailyStreak().featuredBadgeId || 'first-spark';
   });
-  const [isGuest, setIsGuest] = useState<boolean>(() => UserAccountStore.isGuest());
+  const [isGuest, setIsGuest] = useState<boolean>(() => UserAccountStore.isGuestUser());
   const [feedbackText, setFeedbackText] = useState<string | null>(null);
 
   const activeToast = queue[0] || null;
@@ -38,7 +38,7 @@ export const AchievementToast: React.FC<AchievementToastProps> = ({ isDark }) =>
   const syncAccountState = useCallback(() => {
     const latest = UserAccountStore.getDailyStreak();
     setEquippedBadgeId(latest.featuredBadgeId || 'first-spark');
-    setIsGuest(UserAccountStore.isGuest());
+    setIsGuest(UserAccountStore.isGuestUser());
   }, []);
 
   useEffect(() => {
@@ -119,7 +119,7 @@ export const AchievementToast: React.FC<AchievementToastProps> = ({ isDark }) =>
 
   const handleClaim = () => {
     if (isAlreadyClaimed) return;
-    if (UserAccountStore.isGuest()) {
+    if (UserAccountStore.isGuestUser()) {
       window.dispatchEvent(
         new CustomEvent('kinich-open-auth', {
           detail: { reason: 'Sign in to claim your streak bonus' },
