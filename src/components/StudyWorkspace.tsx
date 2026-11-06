@@ -880,7 +880,7 @@ ${fullTranscriptText}`;
           videoAuthor: resolvedAuthor,
           segments: consolidated.length > 0 ? consolidated : [{ start_s: 0, duration_s: 0, text: t }],
         }),
-        signal: AbortSignal.timeout(90000),
+        signal: AbortSignal.timeout(180000),
       });
       if (aiRes.ok) {
         const aiData = await aiRes.json();
@@ -1004,7 +1004,7 @@ ${fullTranscriptText}`;
           videoAuthor: author,
           segments: consolidated,
         }),
-        signal: AbortSignal.timeout(90000),
+        signal: AbortSignal.timeout(180000),
       });
 
       if (!aiRes.ok) {

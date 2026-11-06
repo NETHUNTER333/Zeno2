@@ -9764,7 +9764,7 @@ async function callStudyJsonLLM(
             Authorization: `Bearer ${gw.key}`,
             'Content-Type': 'application/json',
           },
-          signal: AbortSignal.timeout(30000),
+          signal: AbortSignal.timeout(60000),
           body: JSON.stringify({
             model: gw.model,
             messages: [
