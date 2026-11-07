@@ -69,6 +69,7 @@ import { UserAccountStore } from '../lib/userAccountStore';
 import { KnowledgeVaultStore } from '../lib/growthStore';
 import { MathMarkdown } from './MathMarkdown';
 import { StudyLoopPanel } from './StudyLoopPanel';
+import { StudyArsenalPanel } from './StudyArsenalPanel';
 import {
   StudyLoopStore,
   startBackgroundAudioRecap,
@@ -100,7 +101,15 @@ export type WorkspaceTabType =
   | 'transcripts'
   | 'notes'
   | 'chat'
-  | 'map';
+  | 'map'
+  | 'answer_writing'
+  | 'quiz_battles'
+  | 'playlist_course'
+  | 'important_questions'
+  | 'cheat_sheet'
+  | 'mind_map'
+  | 'code_extractor'
+  | 'study_loop';
 
 export interface OpenWorkspaceTab {
   id: string;
@@ -323,6 +332,7 @@ export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
 
   // Collapsible Video / Source Drawer
   const [showSourceViewer, setShowSourceViewer] = useState<boolean>(false);
+  const [showHomeStudyLoop, setShowHomeStudyLoop] = useState<boolean>(false);
   const [seekSeconds, setSeekSeconds] = useState<number>(0);
   const [autoPlayVideo, setAutoPlayVideo] = useState<boolean>(false);
 
@@ -630,6 +640,14 @@ export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
       notes: 'Notes',
       chat: customTitle || 'Tutor',
       map: customTitle || 'Location Map',
+      answer_writing: customTitle || 'Answer Grader',
+      quiz_battles: customTitle || 'Quiz Battles',
+      playlist_course: customTitle || 'Playlist Course',
+      important_questions: customTitle || 'Important Qs',
+      cheat_sheet: customTitle || 'Cheat Sheet',
+      mind_map: customTitle || 'Mind Map',
+      code_extractor: customTitle || 'Code Extractor',
+      study_loop: customTitle || 'Daily Recall',
     };
     const newTab: OpenWorkspaceTab = {
       id: `tab-${type}-${Date.now()}`,
@@ -2511,9 +2529,39 @@ ${fullTranscriptText}`;
               </button>
             </form>
 
-            {/* Complete Kinich Study Loop (Exams, Daily SM-2 Recall, Auto Plan, Weak Spots, Upload Anything, Snap & Solve) */}
-            <div className="pt-2">
-              <StudyLoopPanel embedded={true} />
+            {typeof window !== 'undefined' && window.location.pathname.startsWith('/battle/') && (
+              <div className="pt-1">
+                <StudyArsenalPanel
+                  initialFeature="quiz_battles"
+                  singlePageMode={true}
+                  isDark={isDark}
+                />
+              </div>
+            )}
+
+            {/* Collapsible Study Loop Dropdown on Study Home */}
+            <div className="pt-1">
+              <button
+                type="button"
+                onClick={() => setShowHomeStudyLoop((v) => !v)}
+                className={`w-full px-3.5 py-2.5 rounded-xl border flex items-center justify-between text-xs font-medium transition cursor-pointer ${
+                  isDark
+                    ? 'bg-[#121215] border-white/[0.08] text-neutral-200 hover:border-white/[0.2]'
+                    : 'bg-white border-black/[0.08] text-neutral-800 hover:border-black/[0.2]'
+                }`}
+              >
+                <span>Daily Recall, Exam Plan &amp; Snap Solve</span>
+                <ChevronDown
+                  className={`w-3.5 h-3.5 transition-transform ${
+                    showHomeStudyLoop ? 'rotate-180' : ''
+                  }`}
+                />
+              </button>
+              {showHomeStudyLoop && (
+                <div className="pt-2">
+                  <StudyLoopPanel embedded={true} isDark={isDark} />
+                </div>
+              )}
             </div>
 
             {/* Saved Spaces Section */}
@@ -3495,21 +3543,18 @@ ${fullTranscriptText}`;
                             id: 'summary',
                             label: 'Summary',
                             sub: `${statementBreakdown.length} key points`,
-                            icon: FileText,
                             onClick: () => openOrFocusTab('summary', 'Summary'),
                           },
                           {
                             id: 'quiz',
                             label: 'Quiz',
                             sub: `${quizList.length} questions`,
-                            icon: BookOpen,
                             onClick: () => openOrFocusTab('quiz', 'Quiz'),
                           },
                           {
                             id: 'flashcards',
                             label: 'Flashcards',
                             sub: `${customFlashcards.length} cards`,
-                            icon: Layers,
                             onClick: () => openOrFocusTab('flashcards', 'Flashcards'),
                           },
                           ...(sourceType === 'topic' && topicVideos.length > 0
@@ -3518,7 +3563,6 @@ ${fullTranscriptText}`;
                                   id: 'videos',
                                   label: 'YouTube Videos',
                                   sub: `${topicVideos.length} videos`,
-                                  icon: Video,
                                   onClick: () => openOrFocusTab('videos', `Videos (${topicVideos.length})`),
                                 },
                               ]
@@ -3527,42 +3571,84 @@ ${fullTranscriptText}`;
                             id: 'lesson_plan',
                             label: 'Lesson Plan',
                             sub: `${lessonModules.length} lessons`,
-                            icon: GitBranch,
                             onClick: () => openOrFocusTab('lesson_plan', 'Lesson Plan'),
                           },
                           {
                             id: 'transcripts',
                             label: 'Transcript',
                             sub: `${segments.length} paragraphs`,
-                            icon: ListTree,
                             onClick: () => openOrFocusTab('transcripts', 'Transcript'),
                           },
                           {
                             id: 'podcast',
                             label: 'Audio Summary',
                             sub: 'Listen & review',
-                            icon: Radio,
                             onClick: () => handleTogglePodcast(),
                           },
                           {
                             id: 'notes',
                             label: 'Notes',
                             sub: 'Your notes',
-                            icon: Pencil,
                             onClick: () => openOrFocusTab('notes', 'Notes'),
                           },
                           {
                             id: 'chat',
                             label: 'Tutor Chat',
                             sub: 'Ask questions',
-                            icon: MessageSquare,
                             onClick: () => openOrFocusTab('chat', 'Tutor'),
+                          },
+                          {
+                            id: 'answer_writing',
+                            label: 'Answer Grader',
+                            sub: '5m & 10m exam',
+                            onClick: () => openOrFocusTab('answer_writing', 'Answer Grader'),
+                          },
+                          {
+                            id: 'important_questions',
+                            label: 'Important Questions',
+                            sub: 'Top 10 exam Qs',
+                            onClick: () => openOrFocusTab('important_questions', 'Important Qs'),
+                          },
+                          {
+                            id: 'cheat_sheet',
+                            label: 'Cheat Sheet',
+                            sub: '1-page PDF',
+                            onClick: () => openOrFocusTab('cheat_sheet', 'Cheat Sheet'),
+                          },
+                          {
+                            id: 'mind_map',
+                            label: 'Mind Map',
+                            sub: 'Concept map',
+                            onClick: () => openOrFocusTab('mind_map', 'Mind Map'),
+                          },
+                          {
+                            id: 'quiz_battles',
+                            label: 'Quiz Battles',
+                            sub: 'Share & leaderboard',
+                            onClick: () => openOrFocusTab('quiz_battles', 'Quiz Battles'),
+                          },
+                          {
+                            id: 'playlist_course',
+                            label: 'Playlist Course',
+                            sub: 'Modules & final test',
+                            onClick: () => openOrFocusTab('playlist_course', 'Playlist Course'),
+                          },
+                          {
+                            id: 'code_extractor',
+                            label: 'Code Extractor',
+                            sub: 'Runnable code',
+                            onClick: () => openOrFocusTab('code_extractor', 'Code Extractor'),
+                          },
+                          {
+                            id: 'study_loop',
+                            label: 'Daily Recall',
+                            sub: 'SM-2 & exam plan',
+                            onClick: () => openOrFocusTab('study_loop', 'Daily Recall'),
                           },
                           {
                             id: 'map',
                             label: 'Location & Map',
-                            sub: 'Campus, labs & sites',
-                            icon: MapPin,
+                            sub: 'Campus & sites',
                             onClick: () => {
                               if (!mapLocationQuery) {
                                 setMapLocationQuery(resolvedTitle || 'Boston Public Garden');
@@ -3570,35 +3656,27 @@ ${fullTranscriptText}`;
                               openOrFocusTab('map', 'Location Map');
                             },
                           },
-                        ].map((item) => {
-                          const Icon = item.icon;
-                          return (
-                            <button
-                              key={item.id}
-                              type="button"
-                              onClick={item.onClick}
-                              className={`p-3.5 rounded-2xl border flex items-center gap-3 transition-all cursor-pointer text-left ${
-                                isDark
-                                  ? 'bg-[#121215] border-white/[0.08] hover:border-white/[0.22]'
-                                  : 'bg-white border-black/[0.08] hover:border-black/[0.22]'
-                              }`}
-                            >
-                              <div
-                                className={`size-9 rounded-full flex items-center justify-center shrink-0 ${iconBoxClass}`}
-                              >
-                                <Icon className="w-4 h-4" />
+                        ].map((item) => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={item.onClick}
+                            className={`p-3.5 rounded-2xl border flex items-center justify-between gap-2 transition-all cursor-pointer text-left ${
+                              isDark
+                                ? 'bg-[#121215] border-white/[0.08] hover:border-white/[0.22]'
+                                : 'bg-white border-black/[0.08] hover:border-black/[0.22]'
+                            }`}
+                          >
+                            <div className="min-w-0 flex-1">
+                              <div className="text-xs sm:text-sm font-medium truncate">
+                                {item.label}
                               </div>
-                              <div className="min-w-0 flex-1">
-                                <div className="text-xs sm:text-sm font-medium truncate">
-                                  {item.label}
-                                </div>
-                                <div className={`text-[11px] truncate ${textMuted}`}>
-                                  {item.sub}
-                                </div>
+                              <div className={`text-[11px] truncate ${textMuted}`}>
+                                {item.sub}
                               </div>
-                            </button>
-                          );
-                        })}
+                            </div>
+                          </button>
+                        ))}
                       </div>
                     </div>
 
@@ -6178,6 +6256,38 @@ ${fullTranscriptText}`;
                         isDark={isDark}
                       />
                     </div>
+                  </div>
+                )}
+
+                {/* Dedicated Full-Page Tabs for Exam Arsenal Tools */}
+                {(activeTabObj?.type === 'answer_writing' ||
+                  activeTabObj?.type === 'quiz_battles' ||
+                  activeTabObj?.type === 'playlist_course' ||
+                  activeTabObj?.type === 'important_questions' ||
+                  activeTabObj?.type === 'cheat_sheet' ||
+                  activeTabObj?.type === 'mind_map' ||
+                  activeTabObj?.type === 'code_extractor') && (
+                  <StudyArsenalPanel
+                    key={activeTabObj.type}
+                    singlePageMode={true}
+                    initialFeature={activeTabObj.type}
+                    lectureTitle={resolvedTitle}
+                    lectureContent={
+                      rawSourceText ||
+                      segments.map((s) => s.text).join('\n') ||
+                      studyBundle?.summary?.overview ||
+                      ''
+                    }
+                    lectureQuiz={quizList}
+                    isDark={isDark}
+                    onSwitchFeature={(feat, title) => openOrFocusTab(feat, title)}
+                  />
+                )}
+
+                {/* Dedicated Full-Page Tab for Daily Recall & Study Loop */}
+                {activeTabObj?.type === 'study_loop' && (
+                  <div className="max-w-3xl mx-auto px-4 sm:px-6 py-5 pb-24">
+                    <StudyLoopPanel embedded={true} isDark={isDark} />
                   </div>
                 )}
               </>

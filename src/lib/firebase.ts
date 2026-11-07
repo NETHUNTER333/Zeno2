@@ -1295,3 +1295,230 @@ export async function deleteRecallCardFromFirestore(cardId: string) {
   }
 }
 
+export interface FirestoreQuizBattleQuestion {
+  id: string;
+  question: string;
+  options: string[];
+  correctIndex: number;
+  explanation: string;
+}
+
+export interface FirestoreQuizBattleEntry {
+  id: string;
+  playerName: string;
+  score: number;
+  total: number;
+  timeMs: number;
+  submittedAt: number;
+}
+
+export interface FirestoreQuizBattleDoc {
+  id: string;
+  title: string;
+  topic: string;
+  creatorName: string;
+  questions: FirestoreQuizBattleQuestion[];
+  entries: FirestoreQuizBattleEntry[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+export async function saveQuizBattleToFirestore(battle: FirestoreQuizBattleDoc): Promise<void> {
+  const safeId = String(battle.id || `qb_${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 128);
+  const path = `quiz_battles/${safeId}`;
+  try {
+    const payload: FirestoreQuizBattleDoc = {
+      id: safeId,
+      title: String(battle.title || 'Kinich Quiz Battle').trim().slice(0, 200) || 'Kinich Quiz Battle',
+      topic: String(battle.topic || 'General Studies').trim().slice(0, 160) || 'General Studies',
+      creatorName: String(battle.creatorName || 'Kinich Challenger').trim().slice(0, 100) || 'Kinich Challenger',
+      questions: Array.isArray(battle.questions) ? battle.questions.slice(0, 20) : [],
+      entries: Array.isArray(battle.entries) ? battle.entries.slice(0, 100) : [],
+      createdAt: Number(battle.createdAt) > 0 ? Number(battle.createdAt) : Date.now(),
+      updatedAt: Number(battle.updatedAt) > 0 ? Number(battle.updatedAt) : Date.now(),
+    };
+    await setDoc(doc(db, 'quiz_battles', safeId), payload);
+  } catch (error) {
+    if (!isFirestoreOfflineError(error)) {
+      try {
+        handleFirestoreError(error, OperationType.WRITE, path);
+      } catch {}
+    }
+  }
+}
+
+export async function loadQuizBattleFromFirestore(battleId: string): Promise<FirestoreQuizBattleDoc | null> {
+  const safeId = String(battleId || '').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 128);
+  if (!safeId) return null;
+  const path = `quiz_battles/${safeId}`;
+  try {
+    const snap = await getDoc(doc(db, 'quiz_battles', safeId));
+    if (!snap.exists()) return null;
+    return snap.data() as FirestoreQuizBattleDoc;
+  } catch (error) {
+    if (!isFirestoreOfflineError(error)) {
+      try {
+        handleFirestoreError(error, OperationType.GET, path);
+      } catch {}
+    }
+    return null;
+  }
+}
+
+export async function appendQuizBattleEntryToFirestore(
+  battleId: string,
+  entry: FirestoreQuizBattleEntry
+): Promise<FirestoreQuizBattleDoc | null> {
+  const safeId = String(battleId || '').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 128);
+  if (!safeId) return null;
+  const path = `quiz_battles/${safeId}`;
+  try {
+    const existing = await loadQuizBattleFromFirestore(safeId);
+    if (!existing) return null;
+    const nextEntries = [...(Array.isArray(existing.entries) ? existing.entries : []), entry]
+      .sort((a, b) => b.score - a.score || a.timeMs - b.timeMs)
+      .slice(0, 100);
+    const updated: FirestoreQuizBattleDoc = {
+      ...existing,
+      entries: nextEntries,
+      updatedAt: Date.now(),
+    };
+    await setDoc(doc(db, 'quiz_battles', safeId), updated);
+    return updated;
+  } catch (error) {
+    if (!isFirestoreOfflineError(error)) {
+      try {
+        handleFirestoreError(error, OperationType.UPDATE, path);
+      } catch {}
+    }
+    return null;
+  }
+}
+
+export interface FirestorePlaylistCourseDoc {
+  id: string;
+  userId: string;
+  title: string;
+  playlistUrl: string;
+  modules: Array<{
+    id: string;
+    moduleNumber: number;
+    title: string;
+    durationLabel: string;
+    videoId?: string;
+    keyTakeaways: string[];
+  }>;
+  completedVideoIds: string[];
+  finalTestQuestions: Array<{
+    id: string;
+    question: string;
+    options: string[];
+    correctIndex: number;
+    explanation: string;
+  }>;
+  finalTestScore?: number;
+  progressPercent: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export async function savePlaylistCourseToFirestore(
+  course: Omit<FirestorePlaylistCourseDoc, 'userId'> & { userId?: string }
+): Promise<void> {
+  const user = auth.currentUser;
+  if (!user || user.isAnonymous) return;
+  const safeId = String(course.id || `course_${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 128);
+  const path = `users/${user.uid}/playlist_courses/${safeId}`;
+  try {
+    const payload = stripUndefined({
+      id: safeId,
+      userId: user.uid,
+      title: String(course.title || 'YouTube Playlist Course').trim().slice(0, 240) || 'YouTube Playlist Course',
+      playlistUrl: String(course.playlistUrl || '').slice(0, 2048),
+      modules: Array.isArray(course.modules) ? course.modules.slice(0, 100) : [],
+      completedVideoIds: Array.isArray(course.completedVideoIds) ? course.completedVideoIds.slice(0, 200) : [],
+      finalTestQuestions: Array.isArray(course.finalTestQuestions) ? course.finalTestQuestions.slice(0, 50) : [],
+      finalTestScore: typeof course.finalTestScore === 'number' ? course.finalTestScore : undefined,
+      progressPercent: Math.max(0, Math.min(100, Math.round(Number(course.progressPercent) || 0))),
+      createdAt: Number(course.createdAt) > 0 ? Number(course.createdAt) : Date.now(),
+      updatedAt: Date.now(),
+    });
+    await setDoc(doc(db, 'users', user.uid, 'playlist_courses', safeId), payload);
+  } catch (error) {
+    if (!isFirestoreOfflineError(error)) {
+      handleFirestoreError(error, OperationType.WRITE, path);
+    }
+  }
+}
+
+export async function loadPlaylistCoursesFromFirestore(): Promise<FirestorePlaylistCourseDoc[]> {
+  const user = auth.currentUser;
+  if (!user || user.isAnonymous) return [];
+  const path = `users/${user.uid}/playlist_courses`;
+  try {
+    const q = query(collection(db, 'users', user.uid, 'playlist_courses'), where('userId', '==', user.uid));
+    const snap = await getDocs(q);
+    return snap.docs
+      .map((d) => d.data() as FirestorePlaylistCourseDoc)
+      .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  } catch (error) {
+    if (!isFirestoreOfflineError(error)) {
+      handleFirestoreError(error, OperationType.LIST, path);
+    }
+    return [];
+  }
+}
+
+export interface FirestoreAnswerEvaluationDoc {
+  id: string;
+  userId: string;
+  question: string;
+  maxMarks: 5 | 10;
+  studentAnswer: string;
+  marksAwarded: number;
+  gradeLetter: string;
+  rubricBreakdown: Array<{
+    criterion: string;
+    awarded: number;
+    max: number;
+    comment: string;
+  }>;
+  missingKeywords: string[];
+  examinerFeedback: string;
+  modelTopperAnswer: string;
+  subject: string;
+  createdAt: number;
+}
+
+export async function saveAnswerEvaluationToFirestore(
+  evalDoc: Omit<FirestoreAnswerEvaluationDoc, 'userId'> & { userId?: string }
+): Promise<void> {
+  const user = auth.currentUser;
+  if (!user || user.isAnonymous) return;
+  const safeId = String(evalDoc.id || `eval_${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 128);
+  const path = `users/${user.uid}/answer_evaluations/${safeId}`;
+  try {
+    const payload = stripUndefined({
+      id: safeId,
+      userId: user.uid,
+      question: String(evalDoc.question || '').slice(0, 2000),
+      maxMarks: evalDoc.maxMarks === 5 ? 5 : 10,
+      studentAnswer: String(evalDoc.studentAnswer || '').slice(0, 15000),
+      marksAwarded: Number(evalDoc.marksAwarded) || 0,
+      gradeLetter: String(evalDoc.gradeLetter || 'B+').slice(0, 16),
+      rubricBreakdown: Array.isArray(evalDoc.rubricBreakdown) ? evalDoc.rubricBreakdown.slice(0, 10) : [],
+      missingKeywords: Array.isArray(evalDoc.missingKeywords) ? evalDoc.missingKeywords.slice(0, 25) : [],
+      examinerFeedback: String(evalDoc.examinerFeedback || '').slice(0, 4000),
+      modelTopperAnswer: String(evalDoc.modelTopperAnswer || '').slice(0, 8000),
+      subject: String(evalDoc.subject || 'University Exam').slice(0, 120),
+      createdAt: Number(evalDoc.createdAt) > 0 ? Number(evalDoc.createdAt) : Date.now(),
+    });
+    await setDoc(doc(db, 'users', user.uid, 'answer_evaluations', safeId), payload);
+  } catch (error) {
+    if (!isFirestoreOfflineError(error)) {
+      handleFirestoreError(error, OperationType.WRITE, path);
+    }
+  }
+}
+
+

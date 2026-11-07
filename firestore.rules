@@ -169,6 +169,45 @@ service cloud.firestore {
         data.updatedAt is number;
     }
 
+    function isValidPlaylistCourse(data, userId, courseId) {
+      return data.keys().hasAll(['id', 'userId', 'title', 'modules', 'completedVideoIds', 'finalTestQuestions', 'progressPercent', 'createdAt', 'updatedAt']) &&
+        data.id is string && data.id == courseId && data.id.size() <= 128 &&
+        data.userId is string && data.userId == userId && data.userId.size() <= 128 &&
+        data.title is string && data.title.size() <= 240 &&
+        data.modules is list && data.modules.size() <= 100 &&
+        data.completedVideoIds is list && data.completedVideoIds.size() <= 200 &&
+        data.finalTestQuestions is list && data.finalTestQuestions.size() <= 50 &&
+        data.progressPercent is number &&
+        data.createdAt is number &&
+        data.updatedAt is number;
+    }
+
+    function isValidAnswerEvaluation(data, userId, evalId) {
+      return data.keys().hasAll(['id', 'userId', 'question', 'maxMarks', 'studentAnswer', 'marksAwarded', 'examinerFeedback', 'modelTopperAnswer', 'createdAt']) &&
+        data.id is string && data.id == evalId && data.id.size() <= 128 &&
+        data.userId is string && data.userId == userId && data.userId.size() <= 128 &&
+        data.question is string && data.question.size() <= 2000 &&
+        data.maxMarks is number &&
+        data.studentAnswer is string && data.studentAnswer.size() <= 15000 &&
+        data.marksAwarded is number &&
+        data.examinerFeedback is string && data.examinerFeedback.size() <= 4000 &&
+        data.modelTopperAnswer is string && data.modelTopperAnswer.size() <= 8000 &&
+        data.createdAt is number;
+    }
+
+    function isValidQuizBattle(data, battleId) {
+      return data.keys().hasAll(['id', 'title', 'topic', 'creatorName', 'questions', 'entries', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'title', 'topic', 'creatorName', 'questions', 'entries', 'createdAt', 'updatedAt']) &&
+        data.id is string && data.id == battleId && data.id.size() <= 128 &&
+        data.title is string && data.title.size() <= 200 &&
+        data.topic is string && data.topic.size() <= 160 &&
+        data.creatorName is string && data.creatorName.size() <= 100 &&
+        data.questions is list && data.questions.size() <= 20 &&
+        data.entries is list && data.entries.size() <= 100 &&
+        data.createdAt is number &&
+        data.updatedAt is number;
+    }
+
     function isValidMorningBrief(data, userId, briefDate) {
       return data.keys().hasAll(['id', 'userId', 'briefDate', 'createdAt']) &&
         data.id is string && data.id == briefDate && data.id.size() <= 128 &&
@@ -336,6 +375,20 @@ service cloud.firestore {
         allow delete: if isOwner(userId) && isValidId(userId) && isValidId(cardId);
       }
 
+      match /playlist_courses/{courseId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(courseId);
+        allow list: if isOwner(userId) && existing().userId == request.auth.uid;
+        allow create, update: if isOwner(userId) && isValidId(userId) && isValidId(courseId) && isValidPlaylistCourse(incoming(), userId, courseId);
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(courseId);
+      }
+
+      match /answer_evaluations/{evalId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(evalId);
+        allow list: if isOwner(userId) && existing().userId == request.auth.uid;
+        allow create, update: if isOwner(userId) && isValidId(userId) && isValidId(evalId) && isValidAnswerEvaluation(incoming(), userId, evalId);
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(evalId);
+      }
+
       match /morning_briefs/{briefDate} {
         allow get: if isOwner(userId) && isValidId(userId) && isValidId(briefDate);
         allow list: if isOwner(userId) && existing().userId == request.auth.uid;
@@ -378,6 +431,20 @@ service cloud.firestore {
         incoming().createdAt == existing().createdAt &&
         incoming().diff(existing()).affectedKeys().hasOnly(['authorName', 'title', 'summary', 'content', 'category', 'visibility', 'outputType', 'tags', 'updatedAt']);
       allow delete: if resource != null && isSignedIn() && isValidId(artifactId) && existing().ownerId == request.auth.uid;
+    }
+
+    match /quiz_battles/{battleId} {
+      allow get: if isValidId(battleId);
+      allow list: if false;
+      allow create: if isValidId(battleId) && isValidQuizBattle(incoming(), battleId);
+      allow update: if resource != null && isValidId(battleId) && isValidQuizBattle(incoming(), battleId) &&
+        incoming().id == existing().id &&
+        incoming().title == existing().title &&
+        incoming().topic == existing().topic &&
+        incoming().creatorName == existing().creatorName &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['entries', 'updatedAt']);
+      allow delete: if false;
     }
   }
 }

@@ -98,6 +98,8 @@ export function resolveLegalOr404Route(pathname: string): LegalPageRoute | null 
     clean.startsWith('/invite/') ||
     clean === '/s' ||
     clean.startsWith('/s/') ||
+    clean === '/battle' ||
+    clean.startsWith('/battle/') ||
     clean.startsWith('/share/') ||
     clean.startsWith('/p/') ||
     clean.startsWith('/u/')

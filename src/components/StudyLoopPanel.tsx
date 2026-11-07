@@ -1,31 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
-  Calendar,
-  Flame,
-  Brain,
-  Target,
-  Plus,
   CheckCircle2,
-  AlertTriangle,
-  RefreshCw,
-  Bell,
-  Clock,
-  BookOpen,
-  Sparkles,
-  ChevronRight,
   Trash2,
-  Upload,
-  Camera,
-  FileText,
-  Volume2,
-  Pause,
-  Square,
-  Globe,
   X,
-  Lock,
-  HelpCircle,
-  Layers,
-  Award,
 } from 'lucide-react';
 import {
   StudyLoopStore,
@@ -49,6 +26,7 @@ interface StudyLoopPanelProps {
   onClose?: () => void;
   initialTab?: 'revision' | 'plan' | 'weak_spots' | 'upload' | 'snap_solve';
   embedded?: boolean;
+  isDark?: boolean;
   onOpenPricing?: () => void;
 }
 
@@ -57,8 +35,26 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
   onClose,
   initialTab = 'revision',
   embedded = false,
+  isDark: isDarkProp,
   onOpenPricing,
 }) => {
+  const [detectedDark, setDetectedDark] = useState<boolean>(() => {
+    if (typeof isDarkProp === 'boolean') return isDarkProp;
+    try {
+      return localStorage.getItem('kinich_theme') !== 'light';
+    } catch {
+      return true;
+    }
+  });
+
+  useEffect(() => {
+    if (typeof isDarkProp === 'boolean') {
+      setDetectedDark(isDarkProp);
+    }
+  }, [isDarkProp]);
+
+  const isDark = typeof isDarkProp === 'boolean' ? isDarkProp : detectedDark;
+
   const [activeTab, setActiveTab] = useState<
     'revision' | 'plan' | 'weak_spots' | 'upload' | 'snap_solve'
   >(initialTab);
@@ -184,7 +180,6 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
     };
   }, []);
 
-  // Available chapters from user's Vault items & threads
   const vaultChapters = useMemo(() => {
     const set = new Set<string>();
     try {
@@ -224,6 +219,29 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
 
   const activeCard =
     revisionSummary.mixedQueue[currentCardIndex] || revisionSummary.mixedQueue[0] || null;
+
+  // Theme helper tokens for crisp Light & Dark mode
+  const surfaceOuter = isDark
+    ? 'bg-[#121215] border-white/[0.08] text-neutral-100'
+    : 'bg-white border-black/[0.08] text-neutral-900 shadow-xs';
+  const surfaceHeader = isDark
+    ? 'bg-white/[0.015] border-white/[0.07]'
+    : 'bg-[#f8f8fa] border-black/[0.06]';
+  const surfaceInner = isDark
+    ? 'bg-white/[0.025] border-white/[0.08]'
+    : 'bg-[#f9f9fb] border-black/[0.07]';
+  const surfaceElevated = isDark
+    ? 'bg-black/40 border-white/[0.09]'
+    : 'bg-white border-black/[0.08]';
+  const inputClass = isDark
+    ? 'bg-black/40 border-white/[0.12] text-white placeholder:text-neutral-500 focus:border-[#FC4C01]'
+    : 'bg-white border-black/[0.12] text-neutral-900 placeholder:text-neutral-400 focus:border-[#FC4C01]';
+  const textPrimary = isDark ? 'text-neutral-100' : 'text-neutral-900';
+  const textSecondary = isDark ? 'text-neutral-400' : 'text-neutral-500';
+  const borderSubtle = isDark ? 'border-white/[0.08]' : 'border-black/[0.08]';
+  const btnGhost = isDark
+    ? 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.1] text-neutral-200'
+    : 'bg-black/[0.03] hover:bg-black/[0.07] border-black/[0.1] text-neutral-700';
 
   const handleGradeCard = async (grade: RecallGrade) => {
     if (!activeCard) return;
@@ -391,7 +409,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
     }
   };
 
-  // Phase B: Image OCR Upload Handler (notes or textbook page)
+  // Phase B: Image OCR Upload Handler
   const handleImageStudyUpload = async (file: File) => {
     setUploadError(null);
     setUploadLoading(true);
@@ -467,7 +485,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
     setActiveStudyPack(res.studyPack);
   };
 
-  const handleAddPackToRecall = async ( studyPack: UploadedStudyPack ) => {
+  const handleAddPackToRecall = async (studyPack: UploadedStudyPack) => {
     const itemsToSave = [
       ...studyPack.flashcards.map((f) => ({
         type: 'flashcard' as const,
@@ -643,66 +661,55 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
   if (!isOpen) return null;
 
   const containerClass = embedded
-    ? 'w-full text-[#F5F2EB]'
-    : 'fixed inset-0 z-[120] flex items-center justify-center bg-black/80 backdrop-blur-md p-2 sm:p-4 overflow-y-auto';
+    ? 'w-full'
+    : 'fixed inset-0 z-[120] flex items-center justify-center bg-black/75 backdrop-blur-md p-2 sm:p-4 overflow-y-auto';
 
   const panelClass = embedded
-    ? 'w-full bg-[#111113] border border-white/10 rounded-2xl overflow-hidden shadow-2xl'
-    : 'w-full max-w-5xl bg-[#111113] border border-[#FC4C01]/30 rounded-2xl overflow-hidden shadow-[0_0_50px_rgba(252,76,1,0.12)] max-h-[92vh] flex flex-col';
+    ? `w-full rounded-2xl border overflow-hidden transition-colors ${surfaceOuter}`
+    : `w-full max-w-5xl rounded-2xl border overflow-hidden shadow-2xl max-h-[92vh] flex flex-col ${surfaceOuter}`;
 
   return (
     <div className={containerClass} data-testid="study-loop-panel">
       <div className={panelClass}>
-        {/* Top Header with Exam Countdown Banner + Streak + IST Reminder + Language Selector */}
-        <div className="px-4 py-3.5 sm:px-6 sm:py-4 bg-[#161514] border-b border-white/10 flex flex-col gap-3">
+        {/* Simple Header */}
+        <div className={`px-4 py-3 sm:px-5 sm:py-3.5 border-b flex flex-col gap-2.5 ${surfaceHeader}`}>
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-[#FC4C01]/15 border border-[#FC4C01]/40 flex items-center justify-center text-[#FC4C01] shadow-[0_0_18px_rgba(252,76,1,0.2)]">
-                <Brain className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h2 className="text-base sm:text-lg font-bold tracking-tight text-white">
-                    Kinich Study Loop
-                  </h2>
-                  <span className="px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider rounded-md bg-[#FC4C01]/15 text-[#FC4C01] border border-[#FC4C01]/30">
-                    {planTier.toUpperCase()} TIER
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <h2 className={`text-sm font-semibold tracking-tight ${textPrimary}`}>
+                Study Loop
+              </h2>
+              <span className={`text-xs ${textSecondary}`}>·</span>
+              <span
+                className="text-xs font-semibold text-[#FC4C01]"
+                data-testid="study-streak-counter"
+              >
+                {streak.currentStreak}d streak
+              </span>
+              <span className={`text-xs ${textSecondary}`}>·</span>
+              <span
+                className={`text-xs font-mono tabular-nums ${textSecondary}`}
+                data-testid="daily-revision-summary-badge"
+              >
+                {dailyReviewStats.reviewedToday}/{tierLimits.dailyRecallReviews} reviewed
+              </span>
+              {revisionSummary.nearestExam && (
+                <>
+                  <span className={`text-xs hidden sm:inline ${textSecondary}`}>·</span>
+                  <span
+                    data-testid="exam-countdown-banner"
+                    className="text-xs font-semibold text-[#FC4C01]"
+                  >
+                    {revisionSummary.nearestExam.countdownLabel}
                   </span>
-                </div>
-                <p className="text-xs text-zinc-400">
-                  Material in → Daily SM-2 Recall → Exam Ready (All schedules in IST)
-                </p>
-              </div>
+                </>
+              )}
             </div>
 
-            <div className="flex items-center gap-2 flex-wrap">
-              {/* Nearest Exam Countdown Pill */}
-              {revisionSummary.nearestExam && (
-                <div
-                  data-testid="exam-countdown-banner"
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#FC4C01]/15 border border-[#FC4C01]/40 text-[#FC4C01] text-xs font-semibold shadow-[0_0_14px_rgba(252,76,1,0.18)]"
-                >
-                  <Clock className="w-3.5 h-3.5 shrink-0" />
-                  <span>{revisionSummary.nearestExam.countdownLabel}</span>
-                </div>
-              )}
-
-              <button
-                type="button"
-                data-testid="add-exam-btn"
-                onClick={() => {
-                  setExamFormError(null);
-                  setShowAddExamModal(true);
-                }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#FC4C01] hover:bg-[#e04300] text-white text-xs font-semibold transition cursor-pointer"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Add exam</span>
-              </button>
-
-              {/* Language Switcher (English / తెలుగు / हिन्दी) */}
+            <div className="flex items-center gap-1.5 flex-wrap">
               <div
-                className="flex items-center rounded-xl bg-black/50 border border-white/10 p-0.5 text-xs"
+                className={`inline-flex items-center rounded-lg border p-0.5 text-[11px] ${
+                  isDark ? 'bg-black/40 border-white/10' : 'bg-white border-black/10'
+                }`}
                 data-testid="study-language-toggle"
               >
                 {(['English', 'Telugu', 'Hindi'] as StudyLanguage[]).map((lang) => (
@@ -713,10 +720,12 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                       setLanguage(lang);
                       UserAccountStore.setPreferredStudyLanguage(lang);
                     }}
-                    className={`px-2 py-1 rounded-lg font-medium transition cursor-pointer ${
+                    className={`px-2 py-0.5 rounded-md font-medium transition cursor-pointer ${
                       language === lang
                         ? 'bg-[#FC4C01] text-white'
-                        : 'text-zinc-400 hover:text-white'
+                        : isDark
+                        ? 'text-neutral-400 hover:text-white'
+                        : 'text-neutral-600 hover:text-black'
                     }`}
                   >
                     {lang === 'English' ? 'EN' : lang === 'Telugu' ? 'తెలుగు' : 'हिन्दी'}
@@ -724,11 +733,23 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                 ))}
               </div>
 
+              <button
+                type="button"
+                data-testid="add-exam-btn"
+                onClick={() => {
+                  setExamFormError(null);
+                  setShowAddExamModal(true);
+                }}
+                className="px-2.5 py-1 rounded-lg bg-[#FC4C01] hover:bg-[#e04300] text-white text-xs font-semibold transition cursor-pointer"
+              >
+                + Add exam
+              </button>
+
               {onClose && !embedded && (
                 <button
                   type="button"
                   onClick={onClose}
-                  className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white transition cursor-pointer"
+                  className={`p-1.5 rounded-lg border transition cursor-pointer ${btnGhost}`}
                   aria-label="Close Study Loop"
                 >
                   <X className="w-4 h-4" />
@@ -737,73 +758,14 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
             </div>
           </div>
 
-          {/* Streak Counter & Daily 7:00 PM IST Reminder Bar */}
-          <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-white/5 text-xs">
-            <div className="flex items-center gap-3 flex-wrap">
-              <div
-                className="flex items-center gap-1.5 text-[#FC4C01] font-semibold"
-                data-testid="study-streak-counter"
-              >
-                <Flame className="w-4 h-4 fill-[#FC4C01]" />
-                <span>{streak.currentStreak}-Day Study Streak</span>
-              </div>
-              <span className="text-zinc-500">•</span>
-              <span
-                className="text-zinc-300 font-medium"
-                data-testid="daily-revision-summary-badge"
-              >
-                Today: {revisionSummary.totalCardsToday} cards, ~{revisionSummary.estimatedMinutes}{' '}
-                min
-              </span>
-              <span className="text-zinc-500">•</span>
-              <span className="text-zinc-400">
-                Daily Recall Cap: {dailyReviewStats.reviewedToday}/{tierLimits.dailyRecallReviews}{' '}
-                reviewed
-              </span>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <Bell className="w-3.5 h-3.5 text-[#FC4C01]" />
-              <span className="text-zinc-400">Daily IST Reminder:</span>
-              <input
-                type="time"
-                aria-label="Daily IST reminder time"
-                data-testid="ist-reminder-time-input"
-                value={streak.reminderTime || '19:00'}
-                onChange={(e) => {
-                  UserAccountStore.updateStreakReminderSettings({
-                    reminderEnabled: true,
-                    reminderTime: e.target.value || '19:00',
-                  });
-                  setStreak(UserAccountStore.getDailyStreak());
-                }}
-                className="bg-black/60 border border-white/15 rounded-lg px-2 py-0.5 text-xs text-white focus:outline-none focus:border-[#FC4C01]"
-              />
-              <span className="text-[11px] text-zinc-400">IST</span>
-              <button
-                type="button"
-                onClick={handleToggleWebPush}
-                className={`px-2 py-0.5 rounded-lg text-[11px] font-medium border transition cursor-pointer ${
-                  streak.browserNotificationsEnabled
-                    ? 'bg-[#FC4C01]/15 border-[#FC4C01]/40 text-[#FC4C01]'
-                    : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white'
-                }`}
-              >
-                {streak.browserNotificationsEnabled ? 'Push On' : 'Enable Push'}
-              </button>
-            </div>
-          </div>
-
-          {/* Mobile-First Navigation Tabs */}
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-1">
+          <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5 pt-0.5">
             {[
-              { id: 'revision', label: 'Daily Revision (SM-2)', icon: Brain },
-              { id: 'plan', label: 'Exam Auto Plan', icon: Calendar },
-              { id: 'weak_spots', label: 'Weak Spots', icon: Target },
-              { id: 'upload', label: 'Upload Anything → Study', icon: Upload },
-              { id: 'snap_solve', label: 'Snap & Solve', icon: Camera },
+              { id: 'revision', label: 'Daily Recall' },
+              { id: 'plan', label: 'Exam Plan' },
+              { id: 'weak_spots', label: 'Weak Spots' },
+              { id: 'upload', label: 'Upload Pack' },
+              { id: 'snap_solve', label: 'Snap & Solve' },
             ].map((t) => {
-              const Icon = t.icon;
               const isActive = activeTab === t.id;
               return (
                 <button
@@ -811,14 +773,15 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                   type="button"
                   data-testid={`study-loop-tab-${t.id}`}
                   onClick={() => setActiveTab(t.id as any)}
-                  className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
+                  className={`flex items-center justify-center px-2.5 py-1.5 rounded-xl text-xs font-medium transition cursor-pointer truncate ${
                     isActive
-                      ? 'bg-[#FC4C01] text-white shadow-[0_0_16px_rgba(252,76,1,0.28)]'
-                      : 'bg-white/5 text-zinc-300 hover:bg-white/10 hover:text-white'
+                      ? 'bg-[#FC4C01] text-white'
+                      : isDark
+                      ? 'bg-white/[0.04] text-neutral-300 hover:bg-white/[0.08] hover:text-white border border-white/[0.06]'
+                      : 'bg-white text-neutral-700 hover:bg-black/[0.04] hover:text-black border border-black/[0.07]'
                   }`}
                 >
-                  <Icon className="w-3.5 h-3.5" />
-                  <span>{t.label}</span>
+                  <span className="truncate">{t.label}</span>
                 </button>
               );
             })}
@@ -826,29 +789,35 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
         </div>
 
         {/* Main Content Body */}
-        <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-5">
+        <div className="p-3.5 sm:p-5 overflow-y-auto flex-1 space-y-4">
           {isGuest && (
-            <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 rounded-xl bg-[#FC4C01]/10 border border-[#FC4C01]/30 text-xs text-zinc-200">
+            <div
+              className={`flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-xl border text-xs ${
+                isDark
+                  ? 'bg-[#FC4C01]/10 border-[#FC4C01]/25 text-neutral-200'
+                  : 'bg-[#FC4C01]/[0.06] border-[#FC4C01]/25 text-neutral-800'
+              }`}
+            >
               <span>
-                You’re trying Kinich Study Loop in Guest mode. Try grading cards, generating weak-topic drills, or Snap & Solve — sign in to save your exams and Recall deck in your Vault.
+                Guest mode preview — sign in to save your exams and SM-2 Recall deck to your Vault.
               </span>
               <button
                 type="button"
                 onClick={() => promptGuestSignInForVault('Sign in to keep this in your Vault')}
-                className="px-3 py-1 rounded-lg bg-[#FC4C01] text-white font-semibold hover:bg-[#e04300] transition cursor-pointer shrink-0"
+                className="px-2.5 py-1 rounded-lg bg-[#FC4C01] text-white font-semibold hover:bg-[#e04300] transition cursor-pointer shrink-0"
               >
-                Sign in to save
+                Sign in
               </button>
             </div>
           )}
 
           {recallAddedToast && (
-            <div className="px-4 py-2.5 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-xs font-medium flex items-center justify-between">
+            <div className="px-3.5 py-2 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-600 dark:text-emerald-300 text-xs font-medium flex items-center justify-between">
               <span>{recallAddedToast}</span>
               <button
                 type="button"
                 onClick={() => setRecallAddedToast(null)}
-                className="text-emerald-200 hover:text-white"
+                className="opacity-70 hover:opacity-100"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -859,25 +828,51 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
           {/* TAB 1: DAILY REVISION (SM-2 RECALL ENGINE)                       */}
           {/* ================================================================ */}
           {activeTab === 'revision' && (
-            <div className="space-y-4" data-testid="daily-revision-screen">
-              <div className="flex flex-wrap items-center justify-between gap-3 bg-[#171615] border border-white/10 rounded-2xl p-4">
-                <div>
-                  <div className="text-xs uppercase tracking-wider text-[#FC4C01] font-semibold">
-                    Daily Revision Queue (IST)
-                  </div>
-                  <h3 className="text-lg sm:text-xl font-bold text-white mt-0.5">
-                    Today: {revisionSummary.totalCardsToday} cards, ~
-                    {revisionSummary.estimatedMinutes} min
-                  </h3>
-                  <p className="text-xs text-zinc-400 mt-0.5">
-                    Mixes {revisionSummary.dueCards.length} due cards,{' '}
-                    {revisionSummary.weakCards.length} weak-topic cards, and{' '}
-                    {revisionSummary.nearestExamCards.length} cards for{' '}
-                    {revisionSummary.nearestExam?.exam.name || 'your upcoming exam'}.
-                  </p>
+            <div className="space-y-3" data-testid="daily-revision-screen">
+              {/* Compact Queue Bar + IST Reminder */}
+              <div
+                className={`flex flex-wrap items-center justify-between gap-2.5 rounded-xl border px-3.5 py-2.5 ${surfaceInner}`}
+              >
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className={`font-semibold ${textPrimary}`}>
+                    Today: {revisionSummary.totalCardsToday} cards (~{revisionSummary.estimatedMinutes} min)
+                  </span>
+                  <span className={textSecondary}>
+                    · {revisionSummary.dueCards.length} due, {revisionSummary.weakCards.length} weak-topic,{' '}
+                    {revisionSummary.nearestExamCards.length} exam
+                  </span>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div className={`inline-flex items-center gap-1.5 text-[11px] ${textSecondary}`}>
+                    <input
+                      type="time"
+                      aria-label="Daily IST reminder time"
+                      data-testid="ist-reminder-time-input"
+                      value={streak.reminderTime || '19:00'}
+                      onChange={(e) => {
+                        UserAccountStore.updateStreakReminderSettings({
+                          reminderEnabled: true,
+                          reminderTime: e.target.value || '19:00',
+                        });
+                        setStreak(UserAccountStore.getDailyStreak());
+                      }}
+                      className={`rounded-md border px-1.5 py-0.5 text-[11px] font-mono outline-none ${inputClass}`}
+                    />
+                    <span>IST</span>
+                    <button
+                      type="button"
+                      onClick={handleToggleWebPush}
+                      className={`px-2 py-0.5 rounded-md text-[11px] font-medium border transition cursor-pointer ${
+                        streak.browserNotificationsEnabled
+                          ? 'bg-[#FC4C01]/15 border-[#FC4C01]/40 text-[#FC4C01]'
+                          : btnGhost
+                      }`}
+                    >
+                      {streak.browserNotificationsEnabled ? 'Push On' : 'Push'}
+                    </button>
+                  </div>
+
                   <button
                     type="button"
                     onClick={() => {
@@ -887,10 +882,9 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                       }
                       setShowAddCardForm((v) => !v);
                     }}
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-semibold text-white transition cursor-pointer"
+                    className={`px-2.5 py-1 rounded-lg border text-xs font-semibold transition cursor-pointer ${btnGhost}`}
                   >
-                    <Plus className="w-3.5 h-3.5 text-[#FC4C01]" />
-                    <span>New Recall Card</span>
+                    + New Card
                   </button>
                 </div>
               </div>
@@ -898,27 +892,27 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
               {showAddCardForm && (
                 <form
                   onSubmit={handleQuickAddCard}
-                  className="bg-[#181716] border border-[#FC4C01]/30 rounded-2xl p-4 space-y-3"
+                  className={`rounded-xl border p-3.5 space-y-2.5 ${surfaceInner}`}
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold uppercase tracking-wider text-[#FC4C01]">
-                      Create Flashcard in Recall (SM-2)
+                    <span className="text-xs font-bold text-[#FC4C01]">
+                      New Flashcard in Recall (SM-2)
                     </span>
                     <button
                       type="button"
                       onClick={() => setShowAddCardForm(false)}
-                      className="text-zinc-400 hover:text-white"
+                      className={textSecondary}
                     >
                       <X className="w-4 h-4" />
                     </button>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                     <input
                       type="text"
                       placeholder="Question / Front of card"
                       value={newCardFront}
                       onChange={(e) => setNewCardFront(e.target.value)}
-                      className="w-full bg-black/50 border border-white/15 rounded-xl px-3 py-2 text-xs text-white"
+                      className={`w-full rounded-lg border px-3 py-2 text-xs outline-none ${inputClass}`}
                       required
                     />
                     <input
@@ -926,7 +920,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                       placeholder="Answer / Back of card"
                       value={newCardBack}
                       onChange={(e) => setNewCardBack(e.target.value)}
-                      className="w-full bg-black/50 border border-white/15 rounded-xl px-3 py-2 text-xs text-white"
+                      className={`w-full rounded-lg border px-3 py-2 text-xs outline-none ${inputClass}`}
                       required
                     />
                   </div>
@@ -936,21 +930,21 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                       placeholder="Chapter (e.g. Thermodynamics)"
                       value={newCardChapter}
                       onChange={(e) => setNewCardChapter(e.target.value)}
-                      className="bg-black/50 border border-white/15 rounded-xl px-3 py-1.5 text-xs text-white flex-1"
+                      className={`rounded-lg border px-3 py-1.5 text-xs flex-1 outline-none ${inputClass}`}
                     />
                     <button
                       type="submit"
-                      className="px-4 py-1.5 rounded-xl bg-[#FC4C01] text-white text-xs font-semibold hover:bg-[#e04300] transition cursor-pointer"
+                      className="px-3.5 py-1.5 rounded-lg bg-[#FC4C01] text-white text-xs font-semibold hover:bg-[#e04300] transition cursor-pointer"
                     >
-                      Save to Recall
+                      Save Card
                     </button>
                   </div>
                 </form>
               )}
 
               {revisionBannerMsg && (
-                <div className="p-3.5 rounded-xl bg-[#FC4C01]/15 border border-[#FC4C01]/40 text-xs text-white flex items-center justify-between gap-2">
-                  <span>{revisionBannerMsg}</span>
+                <div className="p-3 rounded-xl bg-[#FC4C01]/10 border border-[#FC4C01]/30 text-xs flex items-center justify-between gap-2">
+                  <span className={textPrimary}>{revisionBannerMsg}</span>
                   {planTier === 'free' && onOpenPricing && (
                     <button
                       type="button"
@@ -965,35 +959,35 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
 
               {activeCard ? (
                 <div
-                  className="bg-[#161514] border border-white/15 rounded-2xl p-5 sm:p-6 space-y-5 shadow-lg"
+                  className={`rounded-xl border p-4 sm:p-5 space-y-4 ${surfaceElevated}`}
                   data-testid="active-recall-card"
                 >
-                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-400">
+                  <div className={`flex flex-wrap items-center justify-between gap-2 text-xs ${textSecondary}`}>
                     <div className="flex items-center gap-2">
-                      <span className="px-2 py-0.5 rounded-md bg-[#FC4C01]/15 text-[#FC4C01] font-semibold">
+                      <span className="font-semibold text-[#FC4C01]">
                         {activeCard.subject} → {activeCard.chapter}
                       </span>
                       {activeCard.pageOrTimestamp && (
-                        <span className="px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-zinc-300 font-mono">
-                          {activeCard.pageOrTimestamp}
+                        <span className="font-mono text-[11px]">
+                          · {activeCard.pageOrTimestamp}
                         </span>
                       )}
                     </div>
-                    <div className="flex items-center gap-3 font-mono text-[11px]">
+                    <div className="flex items-center gap-3 font-mono text-[11px] tabular-nums">
                       <span>
-                        Card {currentCardIndex + 1} of {revisionSummary.mixedQueue.length}
+                        Card {currentCardIndex + 1}/{revisionSummary.mixedQueue.length}
                       </span>
-                      <span>Ease: {activeCard.ease.toFixed(2)}</span>
-                      <span>Interval: {activeCard.interval}d</span>
+                      <span>Ease {activeCard.ease.toFixed(2)}</span>
+                      <span>Int {activeCard.interval}d</span>
                     </div>
                   </div>
 
                   {/* Question / Front */}
-                  <div className="py-3">
-                    <div className="text-[11px] uppercase tracking-wider text-zinc-400 mb-1.5 font-semibold">
-                      {activeCard.type === 'quiz' ? 'Active Recall Quiz Question' : 'Recall Prompt'}
+                  <div className="py-1">
+                    <div className={`text-[11px] uppercase tracking-wider mb-1 font-semibold ${textSecondary}`}>
+                      {activeCard.type === 'quiz' ? 'Active Recall Quiz' : 'Recall Prompt'}
                     </div>
-                    <p className="text-base sm:text-lg font-semibold text-white leading-relaxed">
+                    <p className={`text-sm sm:text-base font-semibold leading-relaxed ${textPrimary}`}>
                       {activeCard.front}
                     </p>
                   </div>
@@ -1006,14 +1000,15 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                         {activeCard.options.map((opt, idx) => {
                           const isSelected = selectedQuizOption === idx;
                           const isCorrect = activeCard.correctIndex === idx;
-                          let btnStyle =
-                            'bg-black/40 border-white/10 text-zinc-200 hover:border-white/25';
+                          let btnStyle = isDark
+                            ? 'bg-white/[0.03] border-white/10 text-neutral-200 hover:border-white/25'
+                            : 'bg-[#f8f8fa] border-black/10 text-neutral-800 hover:border-black/25';
                           if (selectedQuizOption !== null) {
                             if (isCorrect) {
                               btnStyle =
-                                'bg-emerald-500/15 border-emerald-500/50 text-emerald-200';
+                                'bg-emerald-500/15 border-emerald-500/50 text-emerald-600 dark:text-emerald-300 font-semibold';
                             } else if (isSelected) {
-                              btnStyle = 'bg-rose-500/15 border-rose-500/50 text-rose-200';
+                              btnStyle = 'bg-rose-500/15 border-rose-500/50 text-rose-600 dark:text-rose-300';
                             }
                           }
                           return (
@@ -1042,26 +1037,28 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                       type="button"
                       data-testid="reveal-recall-answer-btn"
                       onClick={() => setIsCardFlipped(true)}
-                      className="w-full py-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/15 text-sm font-semibold text-white transition cursor-pointer"
+                      className={`w-full py-2.5 rounded-xl border text-xs sm:text-sm font-semibold transition cursor-pointer ${btnGhost}`}
                     >
-                      Show Answer & Grade Recall
+                      Show Answer &amp; Grade Recall
                     </button>
                   ) : (
-                    <div className="space-y-4 pt-3 border-t border-white/10">
-                      <div className="p-3.5 rounded-xl bg-black/50 border border-[#FC4C01]/30">
+                    <div className={`space-y-3.5 pt-3 border-t ${borderSubtle}`}>
+                      <div className={`p-3.5 rounded-xl border border-[#FC4C01]/30 bg-[#FC4C01]/[0.06]`}>
                         <div className="text-[11px] uppercase tracking-wider text-[#FC4C01] font-semibold mb-1">
                           Verified Answer
                         </div>
-                        <p className="text-sm text-zinc-100 leading-relaxed">{activeCard.back}</p>
+                        <p className={`text-xs sm:text-sm leading-relaxed ${textPrimary}`}>
+                          {activeCard.back}
+                        </p>
                         {activeCard.explanation && (
-                          <p className="text-xs text-zinc-400 mt-2">{activeCard.explanation}</p>
+                          <p className={`text-xs mt-1.5 ${textSecondary}`}>{activeCard.explanation}</p>
                         )}
                       </div>
 
                       {/* SM-2 Grade Buttons: Again / Hard / Good / Easy */}
                       <div>
-                        <div className="text-[11px] text-zinc-400 mb-2 font-medium">
-                          How well did you recall this? (SM-2 Spaced Repetition)
+                        <div className={`text-[11px] mb-2 font-medium ${textSecondary}`}>
+                          Rate your recall (SM-2 Spaced Repetition):
                         </div>
                         <div
                           className="grid grid-cols-2 sm:grid-cols-4 gap-2"
@@ -1071,21 +1068,21 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                             type="button"
                             data-testid="grade-again-btn"
                             onClick={() => handleGradeCard('again')}
-                            className="py-2.5 px-3 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/40 text-rose-200 text-xs font-bold transition cursor-pointer flex flex-col items-center"
+                            className="py-2 px-3 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-600 dark:text-rose-300 text-xs font-bold transition cursor-pointer flex flex-col items-center"
                           >
                             <span>Again</span>
-                            <span className="text-[10px] font-normal text-rose-300/80">
-                              &lt; 10m (Reset)
+                            <span className="text-[10px] font-normal opacity-80">
+                              &lt; 10m
                             </span>
                           </button>
                           <button
                             type="button"
                             data-testid="grade-hard-btn"
                             onClick={() => handleGradeCard('hard')}
-                            className="py-2.5 px-3 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-200 text-xs font-bold transition cursor-pointer flex flex-col items-center"
+                            className="py-2 px-3 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-600 dark:text-amber-300 text-xs font-bold transition cursor-pointer flex flex-col items-center"
                           >
                             <span>Hard</span>
-                            <span className="text-[10px] font-normal text-amber-300/80">
+                            <span className="text-[10px] font-normal opacity-80">
                               {Math.max(1, Math.round((activeCard.interval || 1) * 1.2))}d
                             </span>
                           </button>
@@ -1093,10 +1090,10 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                             type="button"
                             data-testid="grade-good-btn"
                             onClick={() => handleGradeCard('good')}
-                            className="py-2.5 px-3 rounded-xl bg-[#FC4C01]/20 hover:bg-[#FC4C01]/30 border border-[#FC4C01]/50 text-white text-xs font-bold transition cursor-pointer flex flex-col items-center"
+                            className="py-2 px-3 rounded-xl bg-[#FC4C01]/15 hover:bg-[#FC4C01]/25 border border-[#FC4C01]/40 text-[#FC4C01] text-xs font-bold transition cursor-pointer flex flex-col items-center"
                           >
                             <span>Good</span>
-                            <span className="text-[10px] font-normal text-zinc-300">
+                            <span className="text-[10px] font-normal opacity-85">
                               {activeCard.repetitions === 0
                                 ? '1d'
                                 : activeCard.repetitions === 1
@@ -1108,10 +1105,10 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                             type="button"
                             data-testid="grade-easy-btn"
                             onClick={() => handleGradeCard('easy')}
-                            className="py-2.5 px-3 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-emerald-200 text-xs font-bold transition cursor-pointer flex flex-col items-center"
+                            className="py-2 px-3 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-600 dark:text-emerald-300 text-xs font-bold transition cursor-pointer flex flex-col items-center"
                           >
                             <span>Easy</span>
-                            <span className="text-[10px] font-normal text-emerald-300/80">
+                            <span className="text-[10px] font-normal opacity-80">
                               {activeCard.repetitions === 0
                                 ? '4d'
                                 : `${Math.max(5, Math.round(activeCard.interval * activeCard.ease * 1.3))}d`}
@@ -1123,14 +1120,19 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                   )}
                 </div>
               ) : (
-                <div className="p-8 rounded-2xl bg-[#161514] border border-white/10 text-center space-y-3">
-                  <CheckCircle2 className="w-8 h-8 text-[#FC4C01] mx-auto" />
-                  <h4 className="text-base font-bold text-white">
-                    All caught up on Recall cards!
-                  </h4>
-                  <p className="text-xs text-zinc-400 max-w-md mx-auto">
-                    Every flashcard and quiz question you generate from YouTube lectures, uploaded PDFs, or notes automatically enters your SM-2 Recall queue.
-                  </p>
+                <div
+                  className={`px-4 py-3.5 rounded-xl border flex flex-wrap items-center justify-between gap-3 ${surfaceInner}`}
+                >
+                  <span className={`text-xs sm:text-sm font-medium ${textPrimary}`}>
+                    All caught up on Recall cards for today
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('weak_spots')}
+                    className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition cursor-pointer shrink-0 ${btnGhost}`}
+                  >
+                    Practice Weak Spots →
+                  </button>
                 </div>
               )}
             </div>
@@ -1140,23 +1142,17 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
           {/* TAB 2: EXAM COUNTDOWN & AUTO PLAN (IST DAY-BY-DAY SCHEDULE)       */}
           {/* ================================================================ */}
           {activeTab === 'plan' && (
-            <div className="space-y-4" data-testid="exam-auto-plan-screen">
+            <div className="space-y-3.5" data-testid="exam-auto-plan-screen">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <h3 className="text-base sm:text-lg font-bold text-white">
-                    Exam Countdown & Day-by-Day Auto Plan (IST)
-                  </h3>
-                  <p className="text-xs text-zinc-400">
-                    Spreads your exam chapters across remaining days, reserving the last 2 days for Full Revision. Automatically re-plans if you miss a day.
-                  </p>
-                </div>
+                <h3 className={`text-sm font-semibold ${textPrimary}`}>
+                  Exam Plan (IST)
+                </h3>
                 <button
                   type="button"
                   onClick={() => setShowAddExamModal(true)}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#FC4C01] text-white text-xs font-semibold hover:bg-[#e04300] transition cursor-pointer"
+                  className="px-3 py-1.5 rounded-xl bg-[#FC4C01] text-white text-xs font-semibold hover:bg-[#e04300] transition cursor-pointer"
                 >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Add exam ({exams.length}/{tierLimits.maxExams})</span>
+                  + Add exam ({exams.length}/{tierLimits.maxExams})
                 </button>
               </div>
 
@@ -1170,21 +1166,18 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                 return (
                   <div
                     key={exam.id}
-                    className="bg-[#161514] border border-white/10 rounded-2xl p-4 sm:p-5 space-y-4"
+                    className={`rounded-xl border p-4 space-y-3.5 ${surfaceInner}`}
                   >
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-3">
+                    <div className={`flex flex-wrap items-center justify-between gap-2 border-b pb-3 ${borderSubtle}`}>
                       <div>
                         <div className="flex items-center gap-2">
-                          <h4 className="text-base font-bold text-white">{exam.name}</h4>
-                          <span className="px-2.5 py-0.5 rounded-lg bg-[#FC4C01]/15 border border-[#FC4C01]/40 text-[#FC4C01] text-xs font-semibold">
-                            {daysLeft === 0
-                              ? 'Exam Today'
-                              : `${exam.name} in ${daysLeft} day${daysLeft === 1 ? '' : 's'}`}
+                          <h4 className={`text-sm sm:text-base font-bold ${textPrimary}`}>{exam.name}</h4>
+                          <span className="text-xs font-semibold text-[#FC4C01]">
+                            · {daysLeft === 0 ? 'Exam Today' : `in ${daysLeft} day${daysLeft === 1 ? '' : 's'}`}
                           </span>
                         </div>
-                        <p className="text-xs text-zinc-400 mt-0.5">
-                          Exam Date: <span className="text-zinc-200 font-mono">{exam.examDate}</span>{' '}
-                          (IST) • {exam.chapters.length} Chapters
+                        <p className={`text-xs mt-0.5 ${textSecondary}`}>
+                          Exam Date: <span className={`font-mono ${textPrimary}`}>{exam.examDate}</span> (IST) · {exam.chapters.length} Chapters
                         </p>
                       </div>
 
@@ -1196,10 +1189,9 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                             await StudyLoopStore.replanExamNow(exam.id);
                             setExams(StudyLoopStore.getExams());
                           }}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-semibold text-zinc-200 transition cursor-pointer"
+                          className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition cursor-pointer ${btnGhost}`}
                         >
-                          <RefreshCw className="w-3.5 h-3.5 text-[#FC4C01]" />
-                          <span>Missed a day? Re-plan</span>
+                          Missed a day? Re-plan
                         </button>
                         {!exam.id.startsWith('guest_') && (
                           <button
@@ -1208,7 +1200,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                               await StudyLoopStore.deleteExam(exam.id);
                               setExams(StudyLoopStore.getExams());
                             }}
-                            className="p-1.5 rounded-xl bg-white/5 hover:bg-rose-500/20 text-zinc-400 hover:text-rose-300 transition cursor-pointer"
+                            className={`p-1.5 rounded-lg border hover:text-rose-500 transition cursor-pointer ${btnGhost}`}
                             title="Delete exam"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -1217,8 +1209,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                       </div>
                     </div>
 
-                    {/* Simple Day List */}
-                    <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+                    <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
                       {exam.planDays.map((day) => {
                         const todayIst = toIstDateKey();
                         const isToday = day.dateIst === todayIst;
@@ -1227,10 +1218,12 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                             key={day.dateIst}
                             className={`flex items-center justify-between gap-3 p-3 rounded-xl border transition ${
                               day.isFullRevision
-                                ? 'bg-[#FC4C01]/10 border-[#FC4C01]/40'
+                                ? 'bg-[#FC4C01]/[0.07] border-[#FC4C01]/35'
                                 : isToday
-                                ? 'bg-white/[0.06] border-white/25'
-                                : 'bg-black/40 border-white/10'
+                                ? isDark
+                                  ? 'bg-white/[0.05] border-white/20'
+                                  : 'bg-black/[0.03] border-black/20'
+                                : surfaceElevated
                             }`}
                           >
                             <div className="flex items-start gap-3">
@@ -1246,33 +1239,35 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                                 className={`mt-0.5 w-5 h-5 rounded-md border flex items-center justify-center transition cursor-pointer ${
                                   day.completed
                                     ? 'bg-[#FC4C01] border-[#FC4C01] text-white'
-                                    : 'border-white/25 text-transparent hover:border-[#FC4C01]'
+                                    : isDark
+                                    ? 'border-white/25 text-transparent hover:border-[#FC4C01]'
+                                    : 'border-black/25 text-transparent hover:border-[#FC4C01]'
                                 }`}
                               >
                                 <CheckCircle2 className="w-3.5 h-3.5" />
                               </button>
                               <div>
                                 <div className="flex items-center gap-2 flex-wrap">
-                                  <span className="text-xs font-bold text-white">
-                                    Day {day.dayNumber} • {day.dateIst}
+                                  <span className={`text-xs font-bold ${textPrimary}`}>
+                                    Day {day.dayNumber} · {day.dateIst}
                                   </span>
                                   {isToday && (
-                                    <span className="px-1.5 py-0.5 rounded bg-[#FC4C01] text-white text-[10px] font-bold uppercase">
-                                      Today (IST)
+                                    <span className="text-[10px] font-bold uppercase text-[#FC4C01]">
+                                      · Today (IST)
                                     </span>
                                   )}
                                   {day.isFullRevision && (
-                                    <span className="px-2 py-0.5 rounded bg-[#FC4C01]/20 text-[#FC4C01] text-[10px] font-bold uppercase">
-                                      Last 2 Days: Full Revision
+                                    <span className="text-[10px] font-bold uppercase text-[#FC4C01]">
+                                      · Last 2 Days: Full Revision
                                     </span>
                                   )}
                                 </div>
                                 <div
-                                  className={`text-xs mt-1 ${
-                                    day.completed ? 'line-through text-zinc-500' : 'text-zinc-300'
+                                  className={`text-xs mt-0.5 ${
+                                    day.completed ? `line-through ${textSecondary}` : textSecondary
                                   }`}
                                 >
-                                  {day.chapters.join(' • ')}
+                                  {day.chapters.join(' · ')}
                                 </div>
                               </div>
                             </div>
@@ -1290,47 +1285,42 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
           {/* TAB 3: WEAK SPOTS (% CORRECT PER CHAPTER + 5-QUESTION DRILL)      */}
           {/* ================================================================ */}
           {activeTab === 'weak_spots' && (
-            <div className="space-y-4" data-testid="weak-spots-screen">
-              <div>
-                <h3 className="text-base sm:text-lg font-bold text-white">
-                  Weak Spots by Chapter
-                </h3>
-                <p className="text-xs text-zinc-400">
-                  Tracks your % correct across Recall reviews and quizzes. Tap “Practice weak topics” on any chapter to generate 5 targeted questions on that chapter only.
-                </p>
-              </div>
+            <div className="space-y-3.5" data-testid="weak-spots-screen">
+              <h3 className={`text-sm font-semibold ${textPrimary}`}>
+                Weak Spots by Chapter
+              </h3>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {weakSpots.map((ws) => (
                   <div
                     key={ws.chapter}
-                    className="p-4 rounded-2xl bg-[#161514] border border-white/10 flex flex-col justify-between gap-3"
+                    className={`p-3.5 rounded-xl border flex flex-col justify-between gap-3 ${surfaceInner}`}
                   >
                     <div>
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-[11px] uppercase tracking-wider text-zinc-400 font-semibold">
+                        <span className={`text-[11px] uppercase tracking-wider font-semibold ${textSecondary}`}>
                           {ws.subject}
                         </span>
                         <span
-                          className={`text-xs font-bold font-mono ${
+                          className={`text-xs font-bold font-mono tabular-nums ${
                             ws.percentCorrect < 60
-                              ? 'text-rose-400'
+                              ? 'text-rose-500'
                               : ws.percentCorrect < 80
-                              ? 'text-amber-400'
-                              : 'text-emerald-400'
+                              ? 'text-amber-500'
+                              : 'text-emerald-500'
                           }`}
                         >
                           {ws.percentCorrect}% correct
                         </span>
                       </div>
-                      <h4 className="text-sm font-bold text-white mt-1">{ws.chapter}</h4>
-                      <div className="w-full h-2 rounded-full bg-white/10 overflow-hidden mt-2">
+                      <h4 className={`text-sm font-bold mt-0.5 ${textPrimary}`}>{ws.chapter}</h4>
+                      <div className={`w-full h-1.5 rounded-full overflow-hidden mt-2 ${isDark ? 'bg-white/10' : 'bg-black/10'}`}>
                         <div
                           className="h-full bg-[#FC4C01] transition-all"
                           style={{ width: `${Math.max(8, ws.percentCorrect)}%` }}
                         />
                       </div>
-                      <div className="flex items-center justify-between text-[11px] text-zinc-400 mt-1.5">
+                      <div className={`flex items-center justify-between text-[11px] mt-1.5 ${textSecondary}`}>
                         <span>
                           {ws.correctCount} right / {ws.wrongCount} wrong
                         </span>
@@ -1340,26 +1330,22 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
 
                     <button
                       type="button"
-                      data-testid={`practice-weak-topic-btn`}
+                      data-testid="practice-weak-topic-btn"
                       onClick={() => handlePracticeWeakTopic(ws.chapter, ws.subject)}
                       disabled={drillLoading && drillingChapter === ws.chapter}
-                      className="w-full py-2 px-3 rounded-xl bg-[#FC4C01]/15 hover:bg-[#FC4C01] text-[#FC4C01] hover:text-white border border-[#FC4C01]/40 text-xs font-semibold transition cursor-pointer flex items-center justify-center gap-1.5"
+                      className="w-full py-2 px-3 rounded-lg bg-[#FC4C01]/12 hover:bg-[#FC4C01] text-[#FC4C01] hover:text-white border border-[#FC4C01]/30 text-xs font-semibold transition cursor-pointer"
                     >
-                      <Target className="w-3.5 h-3.5" />
-                      <span>
-                        {drillLoading && drillingChapter === ws.chapter
-                          ? 'Generating 5 questions...'
-                          : 'Practice weak topics (5 questions)'}
-                      </span>
+                      {drillLoading && drillingChapter === ws.chapter
+                        ? 'Generating 5 questions...'
+                        : 'Practice weak topics (5 questions)'}
                     </button>
                   </div>
                 ))}
               </div>
 
-              {/* Weak Chapter 5-Question Drill Output */}
               {drillingChapter && (
                 <div
-                  className="bg-[#181716] border border-[#FC4C01]/40 rounded-2xl p-4 sm:p-5 space-y-4"
+                  className={`rounded-xl border p-4 space-y-3.5 ${surfaceInner}`}
                   data-testid="weak-spot-drill-container"
                 >
                   <div className="flex items-center justify-between gap-2">
@@ -1367,29 +1353,27 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                       <span className="text-[11px] uppercase tracking-wider text-[#FC4C01] font-bold">
                         Targeted 5-Question Drill
                       </span>
-                      <h4 className="text-base font-bold text-white">{drillingChapter}</h4>
+                      <h4 className={`text-sm sm:text-base font-bold ${textPrimary}`}>{drillingChapter}</h4>
                     </div>
                     {drillError && (
                       <button
                         type="button"
                         onClick={() => handlePracticeWeakTopic(drillingChapter, 'General Studies')}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#FC4C01] text-white text-xs font-semibold cursor-pointer"
+                        className="px-3 py-1.5 rounded-lg bg-[#FC4C01] text-white text-xs font-semibold cursor-pointer"
                       >
-                        <RefreshCw className="w-3.5 h-3.5" />
-                        <span>Retry</span>
+                        Retry
                       </button>
                     )}
                   </div>
 
                   {drillLoading && (
-                    <div className="py-6 text-center text-xs text-zinc-300 flex items-center justify-center gap-2">
-                      <RefreshCw className="w-4 h-4 animate-spin text-[#FC4C01]" />
-                      <span>Generating 5 targeted exam questions for {drillingChapter}...</span>
+                    <div className={`py-6 text-center text-xs ${textSecondary}`}>
+                      Generating 5 targeted exam questions for {drillingChapter}...
                     </div>
                   )}
 
                   {drillError && (
-                    <div className="p-3.5 rounded-xl bg-rose-500/15 border border-rose-500/40 text-xs text-rose-200 flex items-center justify-between">
+                    <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-xs text-rose-600 dark:text-rose-200 flex items-center justify-between">
                       <span>{drillError}</span>
                       <button
                         type="button"
@@ -1402,29 +1386,30 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                   )}
 
                   {drillQuestions.length > 0 && (
-                    <div className="space-y-3">
+                    <div className="space-y-2.5">
                       {drillQuestions.map((q, qIdx) => {
                         const chosen = drillAnswers[q.id];
                         return (
                           <div
                             key={q.id}
-                            className="p-3.5 rounded-xl bg-black/50 border border-white/10 space-y-2.5"
+                            className={`p-3.5 rounded-xl border space-y-2 ${surfaceElevated}`}
                           >
-                            <div className="text-xs sm:text-sm font-semibold text-white">
+                            <div className={`text-xs sm:text-sm font-semibold ${textPrimary}`}>
                               {qIdx + 1}. {q.question}
                             </div>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                               {q.options.map((opt, oIdx) => {
                                 const isPicked = chosen === oIdx;
                                 const isRight = q.correctIndex === oIdx;
-                                let cls =
-                                  'bg-white/5 border-white/10 text-zinc-200 hover:border-white/25';
+                                let cls = isDark
+                                  ? 'bg-white/[0.03] border-white/10 text-neutral-200 hover:border-white/25'
+                                  : 'bg-[#f8f8fa] border-black/10 text-neutral-800 hover:border-black/25';
                                 if (chosen !== undefined) {
                                   if (isRight) {
                                     cls =
-                                      'bg-emerald-500/15 border-emerald-500/50 text-emerald-200';
+                                      'bg-emerald-500/15 border-emerald-500/50 text-emerald-600 dark:text-emerald-200 font-semibold';
                                   } else if (isPicked) {
-                                    cls = 'bg-rose-500/15 border-rose-500/50 text-rose-200';
+                                    cls = 'bg-rose-500/15 border-rose-500/50 text-rose-600 dark:text-rose-200';
                                   }
                                 }
                                 return (
@@ -1445,9 +1430,9 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                               })}
                             </div>
                             {chosen !== undefined && (
-                              <div className="text-xs text-zinc-300 bg-white/5 p-2.5 rounded-lg border border-white/10">
+                              <div className={`text-xs p-2.5 rounded-lg border ${surfaceInner}`}>
                                 <strong className="text-[#FC4C01]">Explanation:</strong>{' '}
-                                {q.explanation}
+                                <span className={textPrimary}>{q.explanation}</span>
                               </div>
                             )}
                           </div>
@@ -1461,20 +1446,14 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
           )}
 
           {/* ================================================================ */}
-          {/* TAB 4: PHASE B — UPLOAD ANYTHING → STUDY (PDF, IMAGE OCR, TEXT)   */}
-          {/*        + PHASE C AUDIO RECAP + PHASE D TELUGU/HINDI TOGGLE       */}
+          {/* TAB 4: UPLOAD ANYTHING → STUDY (PDF, IMAGE OCR, TEXT)            */}
           {/* ================================================================ */}
           {activeTab === 'upload' && (
-            <div className="space-y-4" data-testid="upload-anything-screen">
+            <div className="space-y-3.5" data-testid="upload-anything-screen">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <h3 className="text-base sm:text-lg font-bold text-white">
-                    Upload Anything → Complete Study Pack
-                  </h3>
-                  <p className="text-xs text-zinc-400">
-                    Upload a PDF (up to {tierLimits.pdfMaxPages} pages on your tier), photo of handwritten/textbook notes (OCR), or pasted text. Deduplicated by SHA-256 hash and cites Page numbers.
-                  </p>
-                </div>
+                <h3 className={`text-sm font-semibold ${textPrimary}`}>
+                  Upload Pack
+                </h3>
 
                 <div className="flex items-center gap-1.5">
                   {(['pdf', 'image', 'text'] as const).map((m) => (
@@ -1482,29 +1461,23 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                       key={m}
                       type="button"
                       onClick={() => setUploadMode(m)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold uppercase transition cursor-pointer ${
+                      className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
                         uploadMode === m
                           ? 'bg-[#FC4C01] text-white'
-                          : 'bg-white/5 text-zinc-300 hover:bg-white/10'
+                          : btnGhost
                       }`}
                     >
-                      {m === 'pdf' ? 'PDF' : m === 'image' ? 'Image / Notes OCR' : 'Paste Text'}
+                      {m === 'pdf' ? 'PDF' : m === 'image' ? 'Image OCR' : 'Paste Text'}
                     </button>
                   ))}
                 </div>
               </div>
 
-              {/* Upload Controls */}
               {uploadMode === 'pdf' && (
-                <div className="p-6 rounded-2xl bg-[#161514] border border-dashed border-[#FC4C01]/40 text-center space-y-3">
-                  <FileText className="w-8 h-8 text-[#FC4C01] mx-auto" />
-                  <div className="text-sm font-semibold text-white">
-                    Select a PDF Textbook Chapter or Lecture Slides
+                <div className={`p-5 rounded-xl border border-dashed border-[#FC4C01]/40 text-center space-y-2.5 ${surfaceInner}`}>
+                  <div className={`text-xs sm:text-sm font-semibold ${textPrimary}`}>
+                    Select a PDF (up to {tierLimits.pdfMaxPages} pages)
                   </div>
-                  <p className="text-xs text-zinc-400">
-                    Extracts text page-by-page (max {tierLimits.pdfMaxPages} pages on{' '}
-                    {planTier.toUpperCase()} tier) and cites exact Page numbers.
-                  </p>
                   <input
                     ref={pdfInputRef}
                     type="file"
@@ -1527,14 +1500,10 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
               )}
 
               {uploadMode === 'image' && (
-                <div className="p-6 rounded-2xl bg-[#161514] border border-dashed border-[#FC4C01]/40 text-center space-y-3">
-                  <Camera className="w-8 h-8 text-[#FC4C01] mx-auto" />
-                  <div className="text-sm font-semibold text-white">
-                    Upload Photo of Handwritten Notes or Textbook Page (Vision OCR)
+                <div className={`p-5 rounded-xl border border-dashed border-[#FC4C01]/40 text-center space-y-2.5 ${surfaceInner}`}>
+                  <div className={`text-xs sm:text-sm font-semibold ${textPrimary}`}>
+                    Upload Photo of Notes or Textbook Page
                   </div>
-                  <p className="text-xs text-zinc-400">
-                    Supports handwritten notes, printed textbook pages, and board diagrams.
-                  </p>
                   <input
                     ref={imageInputRef}
                     type="file"
@@ -1559,21 +1528,21 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
               {uploadMode === 'text' && (
                 <form
                   onSubmit={handlePastedTextUpload}
-                  className="p-4 rounded-2xl bg-[#161514] border border-white/10 space-y-3"
+                  className={`p-4 rounded-xl border space-y-2.5 ${surfaceInner}`}
                 >
                   <input
                     type="text"
                     placeholder="Topic / Chapter Title (e.g. Second Law of Thermodynamics)"
                     value={pastedStudyTitle}
                     onChange={(e) => setPastedStudyTitle(e.target.value)}
-                    className="w-full bg-black/50 border border-white/15 rounded-xl px-3 py-2 text-xs text-white"
+                    className={`w-full rounded-lg border px-3 py-2 text-xs outline-none ${inputClass}`}
                   />
                   <textarea
                     rows={4}
                     placeholder="Paste your lecture notes, textbook excerpt, or syllabus points here..."
                     value={pastedStudyText}
                     onChange={(e) => setPastedStudyText(e.target.value)}
-                    className="w-full bg-black/50 border border-white/15 rounded-xl p-3 text-xs text-white"
+                    className={`w-full rounded-lg border p-3 text-xs outline-none ${inputClass}`}
                     required
                   />
                   <button
@@ -1589,46 +1558,37 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
               )}
 
               {uploadError && (
-                <div className="p-3.5 rounded-xl bg-rose-500/15 border border-rose-500/40 text-xs text-rose-200 flex items-center justify-between gap-2">
+                <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-xs text-rose-600 dark:text-rose-200 flex items-center justify-between gap-2">
                   <span>{uploadError}</span>
                   <button
                     type="button"
                     onClick={handleRetryUpload}
-                    className="flex items-center gap-1 px-3 py-1 rounded-lg bg-[#FC4C01] text-white font-semibold shrink-0 cursor-pointer"
+                    className="px-3 py-1 rounded-lg bg-[#FC4C01] text-white font-semibold shrink-0 cursor-pointer"
                   >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    <span>Retry</span>
+                    Retry
                   </button>
                 </div>
               )}
 
-              {/* Synthesized Study Pack Output */}
               {activeStudyPack && (
                 <div
-                  className="bg-[#161514] border border-white/15 rounded-2xl p-4 sm:p-5 space-y-4"
+                  className={`rounded-xl border p-4 space-y-3.5 ${surfaceInner}`}
                   data-testid="uploaded-study-pack-output"
                 >
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-3">
+                  <div className={`flex flex-wrap items-center justify-between gap-2 border-b pb-3 ${borderSubtle}`}>
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
-                        <h4 className="text-base font-bold text-white">{activeStudyPack.title}</h4>
-                        <span className="px-2 py-0.5 rounded bg-[#FC4C01]/15 text-[#FC4C01] text-[11px] font-semibold">
-                          {activeStudyPack.subject} → {activeStudyPack.chapter}
+                        <h4 className={`text-sm sm:text-base font-bold ${textPrimary}`}>{activeStudyPack.title}</h4>
+                        <span className="text-xs font-semibold text-[#FC4C01]">
+                          · {activeStudyPack.subject} → {activeStudyPack.chapter}
                         </span>
-                        {activeStudyPack.deduplicated && (
-                          <span className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 text-[10px] font-mono">
-                            Instant Cache Hit (SHA-256 Dedup)
-                          </span>
-                        )}
                       </div>
-                      <p className="text-xs text-zinc-400 mt-0.5">
-                        {activeStudyPack.pageCount} page{activeStudyPack.pageCount === 1 ? '' : 's'}{' '}
-                        analyzed • Cited by Page number
+                      <p className={`text-xs mt-0.5 ${textSecondary}`}>
+                        {activeStudyPack.pageCount} page{activeStudyPack.pageCount === 1 ? '' : 's'} analyzed
                       </p>
                     </div>
 
                     <div className="flex items-center gap-2 flex-wrap">
-                      {/* Phase C: Listen (Audio Recap) Button */}
                       <button
                         type="button"
                         data-testid="listen-audio-recap-btn"
@@ -1639,50 +1599,34 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                             activeStudyPack.summaryBullets
                           )
                         }
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-xs font-semibold text-white transition cursor-pointer"
+                        className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition cursor-pointer ${btnGhost}`}
                       >
-                        {audioState === 'playing' ? (
-                          <>
-                            <Square className="w-3.5 h-3.5 text-[#FC4C01]" />
-                            <span>Stop Audio Recap</span>
-                          </>
-                        ) : (
-                          <>
-                            <Volume2 className="w-3.5 h-3.5 text-[#FC4C01]" />
-                            <span>
-                              {audioState === 'loading'
-                                ? 'Preparing Audio...'
-                                : planTier === 'free'
-                                ? 'Listen (30s Preview)'
-                                : 'Listen (2–5m Audio Recap)'}
-                            </span>
-                          </>
-                        )}
+                        {audioState === 'playing'
+                          ? 'Stop Audio'
+                          : audioState === 'loading'
+                          ? 'Preparing Audio...'
+                          : planTier === 'free'
+                          ? 'Listen (30s Preview)'
+                          : 'Listen (Audio Recap)'}
                       </button>
 
-                      {/* Add to Recall Button */}
                       <button
                         type="button"
                         data-testid="add-pack-to-recall-btn"
                         onClick={() => handleAddPackToRecall(activeStudyPack)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#FC4C01] hover:bg-[#e04300] text-white text-xs font-semibold transition cursor-pointer"
+                        className="px-3 py-1.5 rounded-lg bg-[#FC4C01] hover:bg-[#e04300] text-white text-xs font-semibold transition cursor-pointer"
                       >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>Add to Recall</span>
+                        + Add to Recall
                       </button>
                     </div>
                   </div>
 
-                  {/* Audio Recap Status / Script Preview Bar */}
                   {(audioScriptPreview || audioInfoMsg) && (
-                    <div className="p-3 rounded-xl bg-black/50 border border-[#FC4C01]/30 space-y-1.5 text-xs">
+                    <div className={`p-3 rounded-xl border border-[#FC4C01]/30 space-y-1.5 text-xs ${surfaceElevated}`}>
                       <div className="flex items-center justify-between">
-                        <span className="font-semibold text-[#FC4C01] flex items-center gap-1.5">
-                          <Volume2 className="w-3.5 h-3.5" />
-                          <span>
-                            Audio Recap ({language}){' '}
-                            {audioIsPreviewTier ? '• Free Tier 30s Preview' : '• Full Background Playback Ready'}
-                          </span>
+                        <span className="font-semibold text-[#FC4C01]">
+                          Audio Recap ({language}){' '}
+                          {audioIsPreviewTier ? '· Free Tier 30s Preview' : '· Full Playback'}
                         </span>
                         {audioIsPreviewTier && onOpenPricing && (
                           <button
@@ -1690,25 +1634,22 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                             onClick={onOpenPricing}
                             className="text-[11px] font-semibold text-[#FC4C01] underline cursor-pointer"
                           >
-                            Unlock Full 2–5m Recap on Spark
+                            Unlock Full Recap on Spark
                           </button>
                         )}
                       </div>
                       {audioScriptPreview && (
-                        <p className="text-zinc-300 leading-relaxed line-clamp-3">
+                        <p className={`leading-relaxed line-clamp-3 ${textPrimary}`}>
                           {audioScriptPreview}
                         </p>
                       )}
-                      {audioInfoMsg && <p className="text-amber-300">{audioInfoMsg}</p>}
+                      {audioInfoMsg && <p className="text-[#FC4C01]">{audioInfoMsg}</p>}
                     </div>
                   )}
 
-                  {/* Phase D: Explain in Telugu / Hindi Bar */}
-                  <div className="flex flex-wrap items-center justify-between gap-2 bg-black/40 p-2.5 rounded-xl border border-white/10 text-xs">
-                    <span className="text-zinc-300 flex items-center gap-1.5">
-                      <Globe className="w-3.5 h-3.5 text-[#FC4C01]" />
-                      <span>Explain Summary in Local Language (keeps technical terms in English):</span>
-                    </span>
+                  {/* Explain in Telugu / Hindi Bar */}
+                  <div className={`flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-xl border text-xs ${surfaceElevated}`}>
+                    <span className={textSecondary}>Explain in Language:</span>
                     <div className="flex items-center gap-1.5">
                       {(['English', 'Telugu', 'Hindi'] as StudyLanguage[]).map((lang) => (
                         <button
@@ -1719,21 +1660,21 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                           className={`px-2.5 py-1 rounded-lg font-semibold transition cursor-pointer ${
                             language === lang
                               ? 'bg-[#FC4C01] text-white'
-                              : 'bg-white/5 text-zinc-300 hover:text-white'
+                              : btnGhost
                           }`}
                         >
                           {lang === 'English'
                             ? 'English'
                             : lang === 'Telugu'
-                            ? 'Explain in తెలుగు'
-                            : 'Explain in हिन्दी'}
+                            ? 'తెలుగు'
+                            : 'हिन्दी'}
                         </button>
                       ))}
                     </div>
                   </div>
 
                   {packTranslateError && (
-                    <div className="p-2.5 rounded-xl bg-rose-500/15 border border-rose-500/40 text-xs text-rose-200 flex items-center justify-between">
+                    <div className="p-2.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-xs text-rose-600 dark:text-rose-200 flex items-center justify-between">
                       <span>{packTranslateError}</span>
                       <button
                         type="button"
@@ -1745,8 +1686,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                     </div>
                   )}
 
-                  {/* Sub-tabs: Summary / Flashcards / Quiz */}
-                  <div className="flex items-center gap-2 border-b border-white/10 pb-2">
+                  <div className={`flex items-center gap-2 border-b pb-2 ${borderSubtle}`}>
                     {[
                       { id: 'summary', label: 'Summary (Page Cited)' },
                       {
@@ -1761,8 +1701,8 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                         onClick={() => setPackSubTab(st.id as any)}
                         className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
                           packSubTab === st.id
-                            ? 'bg-[#FC4C01]/20 text-[#FC4C01] border border-[#FC4C01]/40'
-                            : 'text-zinc-400 hover:text-white'
+                            ? 'bg-[#FC4C01] text-white'
+                            : btnGhost
                         }`}
                       >
                         {st.label}
@@ -1771,22 +1711,22 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                   </div>
 
                   {packSubTab === 'summary' && (
-                    <div className="space-y-3">
+                    <div className="space-y-2.5">
                       {packTranslatedSummary && (
-                        <div className="p-3.5 rounded-xl bg-[#FC4C01]/10 border border-[#FC4C01]/30 text-xs text-zinc-100 whitespace-pre-wrap leading-relaxed">
+                        <div className={`p-3.5 rounded-xl border border-[#FC4C01]/30 text-xs whitespace-pre-wrap leading-relaxed ${surfaceElevated}`}>
                           {packTranslatedSummary}
                         </div>
                       )}
                       {activeStudyPack.summaryBullets.map((b, i) => (
                         <div
                           key={i}
-                          className="flex items-start justify-between gap-3 p-3 rounded-xl bg-black/40 border border-white/10"
+                          className={`flex items-start justify-between gap-3 p-3 rounded-xl border ${surfaceElevated}`}
                         >
-                          <p className="text-xs sm:text-sm text-zinc-200 leading-relaxed">
+                          <p className={`text-xs sm:text-sm leading-relaxed ${textPrimary}`}>
                             {b.text}
                           </p>
-                          <span className="px-2 py-0.5 rounded bg-[#FC4C01]/15 text-[#FC4C01] text-[11px] font-mono font-semibold shrink-0">
-                            Page {b.page}
+                          <span className="text-[11px] font-mono font-semibold text-[#FC4C01] shrink-0">
+                            p.{b.page}
                           </span>
                         </div>
                       ))}
@@ -1794,7 +1734,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                   )}
 
                   {packSubTab === 'flashcards' && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                       {activeStudyPack.flashcards.map((fc) => {
                         const flipped = Boolean(packFlippedCards[fc.id]);
                         return (
@@ -1803,13 +1743,13 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                             onClick={() =>
                               setPackFlippedCards((prev) => ({ ...prev, [fc.id]: !flipped }))
                             }
-                            className="p-4 rounded-xl bg-black/50 border border-white/10 hover:border-[#FC4C01]/40 transition cursor-pointer space-y-2"
+                            className={`p-3.5 rounded-xl border hover:border-[#FC4C01]/50 transition cursor-pointer space-y-1.5 ${surfaceElevated}`}
                           >
-                            <div className="flex items-center justify-between text-[11px] text-zinc-400">
+                            <div className={`flex items-center justify-between text-[11px] ${textSecondary}`}>
                               <span>{flipped ? 'ANSWER' : 'QUESTION (Tap to flip)'}</span>
                               <span className="font-mono text-[#FC4C01]">{fc.pageLabel}</span>
                             </div>
-                            <p className="text-xs sm:text-sm font-medium text-white">
+                            <p className={`text-xs sm:text-sm font-medium ${textPrimary}`}>
                               {flipped ? fc.back : fc.front}
                             </p>
                           </div>
@@ -1819,19 +1759,19 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                   )}
 
                   {packSubTab === 'quiz' && (
-                    <div className="space-y-3">
+                    <div className="space-y-2.5">
                       {activeStudyPack.quiz.map((q, idx) => {
                         const picked = packQuizAnswers[q.id];
                         return (
                           <div
                             key={q.id}
-                            className="p-3.5 rounded-xl bg-black/50 border border-white/10 space-y-2.5"
+                            className={`p-3.5 rounded-xl border space-y-2.5 ${surfaceElevated}`}
                           >
                             <div className="flex items-center justify-between gap-2">
-                              <span className="text-xs sm:text-sm font-semibold text-white">
+                              <span className={`text-xs sm:text-sm font-semibold ${textPrimary}`}>
                                 {idx + 1}. {q.question}
                               </span>
-                              <span className="px-2 py-0.5 rounded bg-[#FC4C01]/15 text-[#FC4C01] text-[11px] font-mono shrink-0">
+                              <span className="text-[11px] font-mono text-[#FC4C01] shrink-0">
                                 {q.pageLabel}
                               </span>
                             </div>
@@ -1839,13 +1779,15 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                               {q.options.map((opt, oIdx) => {
                                 const isChosen = picked === oIdx;
                                 const isRight = q.correctIndex === oIdx;
-                                let cls = 'bg-white/5 border-white/10 text-zinc-200';
+                                let cls = isDark
+                                  ? 'bg-white/[0.03] border-white/10 text-neutral-200'
+                                  : 'bg-[#f8f8fa] border-black/10 text-neutral-800';
                                 if (picked !== undefined) {
                                   if (isRight)
                                     cls =
-                                      'bg-emerald-500/15 border-emerald-500/50 text-emerald-200';
+                                      'bg-emerald-500/15 border-emerald-500/50 text-emerald-600 dark:text-emerald-200 font-semibold';
                                   else if (isChosen)
-                                    cls = 'bg-rose-500/15 border-rose-500/50 text-rose-200';
+                                    cls = 'bg-rose-500/15 border-rose-500/50 text-rose-600 dark:text-rose-200';
                                 }
                                 return (
                                   <button
@@ -1865,9 +1807,9 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                               })}
                             </div>
                             {picked !== undefined && (
-                              <p className="text-xs text-zinc-300 bg-white/5 p-2 rounded-lg">
+                              <p className={`text-xs p-2.5 rounded-lg border ${surfaceInner}`}>
                                 <strong className="text-[#FC4C01]">Explanation:</strong>{' '}
-                                {q.explanation}
+                                <span className={textPrimary}>{q.explanation}</span>
                               </p>
                             )}
                           </div>
@@ -1881,20 +1823,15 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
           )}
 
           {/* ================================================================ */}
-          {/* TAB 5: PHASE B — SNAP & SOLVE (PHOTO/TEXT OF 1 QUESTION)         */}
+          {/* TAB 5: SNAP & SOLVE (PHOTO/TEXT OF 1 QUESTION)                   */}
           {/* ================================================================ */}
           {activeTab === 'snap_solve' && (
-            <div className="space-y-4" data-testid="snap-and-solve-screen">
-              <div>
-                <h3 className="text-base sm:text-lg font-bold text-white">
-                  Snap & Solve (Single Question Tutor)
-                </h3>
-                <p className="text-xs text-zinc-400">
-                  Snap a photo of one homework/exam question or paste it below → get a step-by-step solution, the core concept behind it, and 1 similar practice question.
-                </p>
-              </div>
+            <div className="space-y-3.5" data-testid="snap-and-solve-screen">
+              <h3 className={`text-sm font-semibold ${textPrimary}`}>
+                Snap &amp; Solve
+              </h3>
 
-              <div className="bg-[#161514] border border-white/10 rounded-2xl p-4 space-y-3">
+              <div className={`rounded-xl border p-3.5 space-y-3 ${surfaceInner}`}>
                 <div className="flex flex-wrap items-center gap-2">
                   <input
                     ref={snapInputRef}
@@ -1912,12 +1849,11 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                     data-testid="snap-photo-upload-btn"
                     onClick={() => snapInputRef.current?.click()}
                     disabled={snapLoading}
-                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#FC4C01] hover:bg-[#e04300] text-white text-xs font-semibold transition cursor-pointer"
+                    className="px-3.5 py-2 rounded-xl bg-[#FC4C01] hover:bg-[#e04300] text-white text-xs font-semibold transition cursor-pointer"
                   >
-                    <Camera className="w-4 h-4" />
-                    <span>Snap / Upload Question Photo</span>
+                    Snap / Upload Question Photo
                   </button>
-                  <span className="text-xs text-zinc-400">or type/paste question below:</span>
+                  <span className={`text-xs ${textSecondary}`}>or type/paste question below:</span>
                 </div>
 
                 <div className="flex flex-col sm:flex-row gap-2">
@@ -1927,45 +1863,44 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                     placeholder="e.g. A Carnot engine operates between 600K and 300K. Find its thermal efficiency..."
                     value={snapQuestionText}
                     onChange={(e) => setSnapQuestionText(e.target.value)}
-                    className="flex-1 bg-black/50 border border-white/15 rounded-xl px-3.5 py-2 text-xs sm:text-sm text-white focus:outline-none focus:border-[#FC4C01]"
+                    className={`flex-1 rounded-xl border px-3.5 py-2 text-xs sm:text-sm outline-none ${inputClass}`}
                   />
                   <button
                     type="button"
                     data-testid="snap-solve-submit-btn"
                     onClick={() => triggerSnapSolve(snapImageDataUrl, snapQuestionText, language)}
                     disabled={snapLoading}
-                    className="px-4 py-2 rounded-xl bg-white/10 hover:bg-[#FC4C01] text-white text-xs font-semibold transition cursor-pointer shrink-0"
+                    className={`px-4 py-2 rounded-xl border text-xs font-semibold transition cursor-pointer shrink-0 ${btnGhost}`}
                   >
-                    {snapLoading ? 'Solving Step-by-Step...' : 'Solve Question'}
+                    {snapLoading ? 'Solving...' : 'Solve Question'}
                   </button>
                 </div>
               </div>
 
               {snapError && (
-                <div className="p-3.5 rounded-xl bg-rose-500/15 border border-rose-500/40 text-xs text-rose-200 flex items-center justify-between gap-2">
+                <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-xs text-rose-600 dark:text-rose-200 flex items-center justify-between gap-2">
                   <span>{snapError}</span>
                   <button
                     type="button"
                     onClick={() => triggerSnapSolve(snapImageDataUrl, snapQuestionText, language)}
-                    className="flex items-center gap-1 px-3 py-1 rounded-lg bg-[#FC4C01] text-white font-semibold cursor-pointer"
+                    className="px-3 py-1 rounded-lg bg-[#FC4C01] text-white font-semibold cursor-pointer"
                   >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    <span>Retry</span>
+                    Retry
                   </button>
                 </div>
               )}
 
               {snapResult && (
                 <div
-                  className="bg-[#161514] border border-white/15 rounded-2xl p-4 sm:p-5 space-y-4"
+                  className={`rounded-xl border p-4 space-y-3.5 ${surfaceInner}`}
                   data-testid="snap-solve-result"
                 >
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-3">
+                  <div className={`flex flex-wrap items-center justify-between gap-2 border-b pb-3 ${borderSubtle}`}>
                     <div>
                       <span className="text-[11px] uppercase tracking-wider text-[#FC4C01] font-bold">
                         Step-by-Step Worked Solution
                       </span>
-                      <h4 className="text-sm sm:text-base font-bold text-white mt-0.5">
+                      <h4 className={`text-sm sm:text-base font-bold mt-0.5 ${textPrimary}`}>
                         {snapResult.questionExtracted}
                       </h4>
                     </div>
@@ -1974,25 +1909,23 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                       {snapResult.checkWithTextbook && (
                         <span
                           data-testid="check-with-textbook-badge"
-                          className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500/15 border border-amber-500/40 text-amber-300 text-xs font-semibold"
+                          className="px-2.5 py-1 rounded-lg bg-amber-500/15 border border-amber-500/35 text-amber-600 dark:text-amber-300 text-xs font-semibold"
                         >
-                          <AlertTriangle className="w-3.5 h-3.5" />
-                          <span>Check with your textbook</span>
+                          Check with your textbook
                         </span>
                       )}
 
-                      {/* Phase D: Telugu / Hindi toggle on Snap & Solve */}
-                      <div className="flex items-center gap-1 bg-black/50 p-1 rounded-xl border border-white/10 text-xs">
+                      <div className={`inline-flex items-center gap-1 p-0.5 rounded-lg border text-xs ${surfaceElevated}`}>
                         {(['English', 'Telugu', 'Hindi'] as StudyLanguage[]).map((lang) => (
                           <button
                             key={lang}
                             type="button"
                             onClick={() => handleExplainSnapSolve(lang)}
                             disabled={snapTranslating}
-                            className={`px-2 py-0.5 rounded-lg font-medium transition cursor-pointer ${
+                            className={`px-2 py-0.5 rounded-md font-medium transition cursor-pointer ${
                               language === lang
                                 ? 'bg-[#FC4C01] text-white'
-                                : 'text-zinc-400 hover:text-white'
+                                : textSecondary
                             }`}
                           >
                             {lang === 'English' ? 'EN' : lang === 'Telugu' ? 'తెలుగు' : 'हिन्दी'}
@@ -2003,7 +1936,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                   </div>
 
                   {snapTranslateError && (
-                    <div className="p-2.5 rounded-xl bg-rose-500/15 border border-rose-500/40 text-xs text-rose-200 flex items-center justify-between">
+                    <div className="p-2.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-xs text-rose-600 dark:text-rose-200 flex items-center justify-between">
                       <span>{snapTranslateError}</span>
                       <button
                         type="button"
@@ -2016,45 +1949,41 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                   )}
 
                   {snapTranslatedText && (
-                    <div className="p-3.5 rounded-xl bg-[#FC4C01]/10 border border-[#FC4C01]/30 text-xs text-zinc-100 whitespace-pre-wrap leading-relaxed">
+                    <div className={`p-3.5 rounded-xl border border-[#FC4C01]/30 text-xs whitespace-pre-wrap leading-relaxed ${surfaceElevated}`}>
                       {snapTranslatedText}
                     </div>
                   )}
 
-                  {/* Steps */}
                   <div className="space-y-2">
                     {snapResult.steps.map((step, idx) => (
                       <div
                         key={idx}
-                        className="p-3 rounded-xl bg-black/40 border border-white/10 text-xs sm:text-sm text-zinc-200 leading-relaxed"
+                        className={`p-3 rounded-xl border text-xs sm:text-sm leading-relaxed ${surfaceElevated} ${textPrimary}`}
                       >
                         {step}
                       </div>
                     ))}
-                    <div className="p-3 rounded-xl bg-[#FC4C01]/15 border border-[#FC4C01]/40 text-xs sm:text-sm font-bold text-white">
+                    <div className="p-3 rounded-xl bg-[#FC4C01]/12 border border-[#FC4C01]/35 text-xs sm:text-sm font-bold text-[#FC4C01]">
                       Final Answer: {snapResult.finalAnswer}
                     </div>
                   </div>
 
-                  {/* Concept Behind It */}
-                  <div className="p-3.5 rounded-xl bg-black/50 border border-white/10 space-y-1">
+                  <div className={`p-3.5 rounded-xl border space-y-1 ${surfaceElevated}`}>
                     <div className="text-[11px] uppercase tracking-wider text-[#FC4C01] font-bold">
-                      Concept Behind It • {snapResult.conceptBehindIt.subject} →{' '}
-                      {snapResult.conceptBehindIt.chapter}
+                      Concept Behind It · {snapResult.conceptBehindIt.subject} → {snapResult.conceptBehindIt.chapter}
                     </div>
-                    <div className="text-sm font-bold text-white">
+                    <div className={`text-sm font-bold ${textPrimary}`}>
                       {snapResult.conceptBehindIt.title}
                     </div>
-                    <p className="text-xs text-zinc-300 leading-relaxed">
+                    <p className={`text-xs leading-relaxed ${textSecondary}`}>
                       {snapResult.conceptBehindIt.explanation}
                     </p>
                   </div>
 
-                  {/* 1 Similar Practice Question */}
-                  <div className="p-4 rounded-xl bg-black/50 border border-[#FC4C01]/30 space-y-3">
+                  <div className={`p-3.5 rounded-xl border border-[#FC4C01]/30 space-y-2.5 ${surfaceElevated}`}>
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold uppercase tracking-wider text-[#FC4C01]">
-                        1 Similar Practice Question (Test Yourself)
+                        1 Similar Practice Question
                       </span>
                       <button
                         type="button"
@@ -2080,7 +2009,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                         + Add to Recall
                       </button>
                     </div>
-                    <p className="text-xs sm:text-sm font-semibold text-white">
+                    <p className={`text-xs sm:text-sm font-semibold ${textPrimary}`}>
                       {snapResult.similarPracticeQuestion.question}
                     </p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -2088,13 +2017,15 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                         const isPicked = snapPracticeAnswer === idx;
                         const isRight =
                           snapResult.similarPracticeQuestion.correctIndex === idx;
-                        let cls = 'bg-white/5 border-white/10 text-zinc-200';
+                        let cls = isDark
+                          ? 'bg-white/[0.03] border-white/10 text-neutral-200'
+                          : 'bg-[#f8f8fa] border-black/10 text-neutral-800';
                         if (snapPracticeAnswer !== null) {
                           if (isRight)
                             cls =
-                              'bg-emerald-500/15 border-emerald-500/50 text-emerald-200';
+                              'bg-emerald-500/15 border-emerald-500/50 text-emerald-600 dark:text-emerald-200 font-semibold';
                           else if (isPicked)
-                            cls = 'bg-rose-500/15 border-rose-500/50 text-rose-200';
+                            cls = 'bg-rose-500/15 border-rose-500/50 text-rose-600 dark:text-rose-200';
                         }
                         return (
                           <button
@@ -2112,9 +2043,11 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                       })}
                     </div>
                     {snapPracticeAnswer !== null && (
-                      <div className="text-xs text-zinc-300 bg-white/5 p-2.5 rounded-lg">
+                      <div className={`text-xs p-2.5 rounded-lg border ${surfaceInner}`}>
                         <strong className="text-[#FC4C01]">Explanation:</strong>{' '}
-                        {snapResult.similarPracticeQuestion.explanation}
+                        <span className={textPrimary}>
+                          {snapResult.similarPracticeQuestion.explanation}
+                        </span>
                       </div>
                     )}
                   </div>
@@ -2129,74 +2062,74 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
       {/* ADD EXAM MODAL                                                       */}
       {/* ==================================================================== */}
       {showAddExamModal && (
-        <div className="fixed inset-0 z-[140] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-[140] flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
           <form
             onSubmit={handleCreateExam}
-            className="w-full max-w-lg bg-[#161514] border border-[#FC4C01]/40 rounded-2xl p-5 space-y-4 shadow-2xl"
+            className={`w-full max-w-lg rounded-2xl border p-5 space-y-4 shadow-2xl ${surfaceOuter}`}
             data-testid="add-exam-modal"
           >
             <div className="flex items-center justify-between">
-              <h3 className="text-base font-bold text-white">
-                Add Exam & Generate Auto Plan (IST)
+              <h3 className={`text-base font-bold ${textPrimary}`}>
+                Add Exam &amp; Generate Auto Plan (IST)
               </h3>
               <button
                 type="button"
                 onClick={() => setShowAddExamModal(false)}
-                className="text-zinc-400 hover:text-white"
+                className={textSecondary}
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             {examFormError && (
-              <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/40 text-xs text-rose-200">
+              <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-xs text-rose-600 dark:text-rose-200">
                 {examFormError}
               </div>
             )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs text-zinc-400 mb-1">Exam Name</label>
+                <label className={`block text-xs mb-1 ${textSecondary}`}>Exam Name</label>
                 <input
                   type="text"
                   data-testid="exam-name-input"
                   placeholder="e.g. Physics Exam"
                   value={examNameInput}
                   onChange={(e) => setExamNameInput(e.target.value)}
-                  className="w-full bg-black/60 border border-white/15 rounded-xl px-3 py-2 text-xs text-white"
+                  className={`w-full rounded-xl border px-3 py-2 text-xs outline-none ${inputClass}`}
                   required
                 />
               </div>
               <div>
-                <label className="block text-xs text-zinc-400 mb-1">Exam Date (IST)</label>
+                <label className={`block text-xs mb-1 ${textSecondary}`}>Exam Date (IST)</label>
                 <input
                   type="date"
                   data-testid="exam-date-input"
                   min={toIstDateKey()}
                   value={examDateInput}
                   onChange={(e) => setExamDateInput(e.target.value)}
-                  className="w-full bg-black/60 border border-white/15 rounded-xl px-3 py-2 text-xs text-white"
+                  className={`w-full rounded-xl border px-3 py-2 text-xs outline-none ${inputClass}`}
                   required
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-xs text-zinc-400 mb-1">Subject</label>
+              <label className={`block text-xs mb-1 ${textSecondary}`}>Subject</label>
               <input
                 type="text"
                 placeholder="e.g. Physics, Biology, Mathematics"
                 value={examSubjectInput}
                 onChange={(e) => setExamSubjectInput(e.target.value)}
-                className="w-full bg-black/60 border border-white/15 rounded-xl px-3 py-2 text-xs text-white"
+                className={`w-full rounded-xl border px-3 py-2 text-xs outline-none ${inputClass}`}
               />
             </div>
 
             <div>
-              <label className="block text-xs text-zinc-400 mb-1">
+              <label className={`block text-xs mb-1 ${textSecondary}`}>
                 Pick Chapters from Vault or Type Custom ({selectedChapters.length} selected)
               </label>
-              <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto p-2 rounded-xl bg-black/40 border border-white/10">
+              <div className={`flex flex-wrap gap-1.5 max-h-28 overflow-y-auto p-2 rounded-xl border ${surfaceInner}`}>
                 {vaultChapters.map((ch) => {
                   const active = selectedChapters.includes(ch);
                   return (
@@ -2211,7 +2144,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                       className={`px-2.5 py-1 rounded-lg text-xs font-medium transition cursor-pointer ${
                         active
                           ? 'bg-[#FC4C01] text-white'
-                          : 'bg-white/5 text-zinc-300 hover:bg-white/10'
+                          : btnGhost
                       }`}
                     >
                       {ch}
@@ -2226,7 +2159,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                   placeholder="Type a custom chapter and press Add..."
                   value={customChapterInput}
                   onChange={(e) => setCustomChapterInput(e.target.value)}
-                  className="flex-1 bg-black/60 border border-white/15 rounded-xl px-3 py-1.5 text-xs text-white"
+                  className={`flex-1 rounded-xl border px-3 py-1.5 text-xs outline-none ${inputClass}`}
                 />
                 <button
                   type="button"
@@ -2237,7 +2170,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                       setCustomChapterInput('');
                     }
                   }}
-                  className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-xs font-semibold text-white cursor-pointer"
+                  className={`px-3 py-1.5 rounded-xl border text-xs font-semibold cursor-pointer ${btnGhost}`}
                 >
                   + Add Chapter
                 </button>
@@ -2248,7 +2181,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
               <button
                 type="button"
                 onClick={() => setShowAddExamModal(false)}
-                className="px-4 py-2 rounded-xl bg-white/5 text-xs font-semibold text-zinc-300"
+                className={`px-4 py-2 rounded-xl border text-xs font-semibold cursor-pointer ${btnGhost}`}
               >
                 Cancel
               </button>
@@ -2257,7 +2190,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                 data-testid="save-exam-submit-btn"
                 className="px-4 py-2 rounded-xl bg-[#FC4C01] hover:bg-[#e04300] text-xs font-semibold text-white cursor-pointer"
               >
-                Save Exam & Build Plan
+                Save Exam &amp; Build Plan
               </button>
             </div>
           </form>

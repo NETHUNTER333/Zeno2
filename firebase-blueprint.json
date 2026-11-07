@@ -334,6 +334,62 @@
         "updatedAt": { "type": "number" }
       },
       "required": ["id", "userId", "type", "front", "back", "subject", "chapter", "ease", "interval", "repetitions", "dueAt", "wrongCount", "correctCount", "createdAt", "updatedAt"]
+    },
+    "QuizBattle": {
+      "title": "Quiz Battle",
+      "description": "Shareable multiplayer quiz battle link for WhatsApp with live leaderboard (no signup required to play)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 200 },
+        "topic": { "type": "string", "maxLength": 160 },
+        "creatorName": { "type": "string", "maxLength": 100 },
+        "questions": { "type": "array" },
+        "entries": { "type": "array" },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["id", "title", "topic", "creatorName", "questions", "entries", "createdAt", "updatedAt"]
+    },
+    "PlaylistCourse": {
+      "title": "Playlist Course",
+      "description": "Full structured course generated from a YouTube playlist with module progress and a final test",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 240 },
+        "playlistUrl": { "type": "string", "maxLength": 2048 },
+        "modules": { "type": "array" },
+        "completedVideoIds": { "type": "array" },
+        "finalTestQuestions": { "type": "array" },
+        "finalTestScore": { "type": "number" },
+        "progressPercent": { "type": "number" },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["id", "userId", "title", "modules", "completedVideoIds", "finalTestQuestions", "progressPercent", "createdAt", "updatedAt"]
+    },
+    "AnswerEvaluation": {
+      "title": "Answer Evaluation (5/10 Marks)",
+      "description": "University exam style 5/10-mark long-answer AI evaluation with rubric breakdown",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "question": { "type": "string", "maxLength": 2000 },
+        "maxMarks": { "type": "number" },
+        "studentAnswer": { "type": "string", "maxLength": 15000 },
+        "marksAwarded": { "type": "number" },
+        "gradeLetter": { "type": "string", "maxLength": 16 },
+        "rubricBreakdown": { "type": "array" },
+        "missingKeywords": { "type": "array" },
+        "examinerFeedback": { "type": "string", "maxLength": 4000 },
+        "modelTopperAnswer": { "type": "string", "maxLength": 8000 },
+        "subject": { "type": "string", "maxLength": 120 },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["id", "userId", "question", "maxMarks", "studentAnswer", "marksAwarded", "examinerFeedback", "modelTopperAnswer", "createdAt"]
     }
   },
   "firestore": {
@@ -393,6 +449,14 @@
       "schema": { "$ref": "#/entities/Card" },
       "description": "Stores SM-2 spaced-repetition review cards (flashcards and quiz questions)"
     },
+    "/users/{userId}/playlist_courses/{courseId}": {
+      "schema": { "$ref": "#/entities/PlaylistCourse" },
+      "description": "Stores playlist-to-course study tracks, lecture completion progress, and final exam scores"
+    },
+    "/users/{userId}/answer_evaluations/{evalId}": {
+      "schema": { "$ref": "#/entities/AnswerEvaluation" },
+      "description": "Stores graded 5/10-mark long-answer university exam evaluations"
+    },
     "/users/{userId}/morning_briefs/{briefDate}": {
       "schema": { "$ref": "#/entities/MorningBrief" },
       "description": "Stores daily scheduled Morning Briefs (Phase 4)"
@@ -408,6 +472,10 @@
     "/public_artifacts/{artifactId}": {
       "schema": { "$ref": "#/entities/PublicArtifact" },
       "description": "Stores published study guides, research summaries, and workflows with visibility controls"
+    },
+    "/quiz_battles/{battleId}": {
+      "schema": { "$ref": "#/entities/QuizBattle" },
+      "description": "Stores shareable WhatsApp Quiz Battles and live leaderboard entries (playable without signup)"
     }
   }
 }

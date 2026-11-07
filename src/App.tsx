@@ -550,7 +550,7 @@ export default function App() {
   const [currentView, setCurrentView] = useState<'chat' | 'account' | 'study'>(() => {
     if (typeof window !== 'undefined') {
       const p = window.location.pathname.toLowerCase();
-      if (p === '/study' || p.startsWith('/study/')) return 'study';
+      if (p === '/study' || p.startsWith('/study/') || p === '/battle' || p.startsWith('/battle/')) return 'study';
       if (p === '/account' || p.startsWith('/account/') || p === '/settings' || p.startsWith('/settings/')) {
         return 'account';
       }
@@ -656,6 +656,8 @@ export default function App() {
       if (
         p === '/study' ||
         p.startsWith('/study/') ||
+        p === '/battle' ||
+        p.startsWith('/battle/') ||
         p === '/vault' ||
         p.startsWith('/vault/') ||
         p === '/pricing' ||
@@ -767,10 +769,12 @@ export default function App() {
 
   const syncViewFromPathname = (pathname: string) => {
     const clean = (pathname || '/').toLowerCase();
-    if (clean === '/study' || clean.startsWith('/study/')) {
+    if (clean === '/study' || clean.startsWith('/study/') || clean === '/battle' || clean.startsWith('/battle/')) {
       setIsSignedIn(true);
       setCurrentView('study');
-      document.title = 'YouTube Study Workspace · Kinich';
+      document.title = clean.startsWith('/battle')
+        ? 'Quiz Battle Arena · Kinich'
+        : 'YouTube Study Workspace · Kinich';
     } else if (clean.startsWith('/settings/billing')) {
       setAccountPageTab('pricing');
       setCurrentView('account');
