@@ -871,7 +871,7 @@ export default function App() {
       setShowEmailFormInModal(false);
       setGuestAuthModal({
         isOpen: true,
-        reason: detail.reason || 'Sign in to keep this in your Vault',
+        reason: detail.reason || detail.message || 'Sign in to keep this in your Vault',
       });
     };
     window.addEventListener('popstate', onPopState);

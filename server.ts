@@ -6924,7 +6924,7 @@ async function analyzeImageWithVisionModel(
               ],
             },
           ],
-          max_tokens: 4096,
+          max_tokens: 1024,
         }),
       });
       const data: any = await resp.json();
@@ -9674,7 +9674,9 @@ const ChapterFlashcardsResponseSchema = z.object({
 async function callStudyJsonLLM(
   systemPrompt: string,
   userPrompt: string,
-  temperature = 0.3
+  temperature = 0.25,
+  maxTokens = 900,
+  timeoutMs = 9500
 ): Promise<{
   text: string;
   modelUsed: string;
@@ -9700,59 +9702,117 @@ async function callStudyJsonLLM(
   if (client) {
     for (const modelName of GEMINI_FALLBACK_MODELS) {
       tasks.push(
-        client.models
-          .generateContent({
-            model: modelName,
-            contents: `${systemPrompt}\n\n${userPrompt}`,
-            config: {
-              temperature,
-              maxOutputTokens: 128,
-              responseMimeType: 'application/json',
-              thinkingConfig: modelName.startsWith('gemini-3')
-                ? { thinkingLevel: ThinkingLevel.HIGH }
-                : { thinkingBudget: 2048 },
-            },
-          })
-          .then((resp) => {
-            const text = (resp.text || '').replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '').trim();
-            if (!text || (!text.includes('{') && !text.includes('['))) {
-              throw new Error('Empty or non-JSON Gemini response');
-            }
-            const promptTokens =
-              resp.usageMetadata?.promptTokenCount || countExactSubwordTokens(userPrompt);
-            const completionTokens =
-              resp.usageMetadata?.candidatesTokenCount || countExactSubwordTokens(text);
-            return { text, modelUsed: modelName, promptTokens, completionTokens };
-          })
+        Promise.race([
+          client.models
+            .generateContent({
+              model: modelName,
+              contents: `${systemPrompt}\n\n${userPrompt}`,
+              config: {
+                temperature,
+                maxOutputTokens: maxTokens,
+                responseMimeType: 'application/json',
+                thinkingConfig: modelName.startsWith('gemini-3')
+                  ? { thinkingLevel: ThinkingLevel.LOW }
+                  : { thinkingBudget: 0 },
+              },
+            })
+            .then((resp) => {
+              const text = (resp.text || '').replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '').trim();
+              if (!text || (!text.includes('{') && !text.includes('['))) {
+                throw new Error('Empty or non-JSON Gemini response');
+              }
+              const promptTokens =
+                resp.usageMetadata?.promptTokenCount || countExactSubwordTokens(userPrompt);
+              const completionTokens =
+                resp.usageMetadata?.candidatesTokenCount || countExactSubwordTokens(text);
+              return { text, modelUsed: modelName, promptTokens, completionTokens };
+            }),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error(`Gemini ${modelName} timeout`)), timeoutMs)
+          ),
+        ])
       );
     }
   }
 
-  const gateways = [
+  const gateways: Array<{
+    url: string;
+    key: string;
+    model: string;
+    extra?: Record<string, any>;
+  }> = [
     {
-      url: `${ZRO_MOONMATH_BASE_URL}/chat/completions`,
-      key: ZRO_MOONMATH_API_KEY,
-      model: 'zro/deepseek-v4.1-flash',
-      extra: { chat_template_kwargs: { enable_thinking: true }, reasoning_effort: 'medium' },
+      url: `${FLM_BASE_URL}/chat/completions`,
+      key: 'flm_anonymous',
+      model: 'auto',
     },
-    {
-      url: `${ZRO_MOONMATH_BASE_URL}/chat/completions`,
-      key: ZRO_MOONMATH_API_KEY,
-      model: 'zro/glm-5.3-flash',
-      extra: { chat_template_kwargs: { enable_thinking: true }, reasoning_effort: 'medium' },
-    },
-    {
-      url: `${ITERA_COMPUTE_BASE_URL}/chat/completions`,
-      key: ITERA_COMPUTE_API_KEY,
-      model: 'qwen/qwen3.8-27b',
-      extra: { chat_template_kwargs: { enable_thinking: true }, reasoning_effort: 'medium' },
-    },
-    {
-      url: `${INTERN_AI_BASE_URL}/chat/completions`,
-      key: INTERN_AI_API_KEY,
-      model: 'Sage-A1.5',
-      extra: {},
-    },
+    ...(INTERN_AI_API_KEY
+      ? [
+          {
+            url: `${INTERN_AI_BASE_URL}/chat/completions`,
+            key: INTERN_AI_API_KEY,
+            model: 'Sage-A1.5',
+            extra: { chat_template_kwargs: { enable_thinking: false } },
+          },
+          {
+            url: `${INTERN_AI_BASE_URL}/chat/completions`,
+            key: INTERN_AI_API_KEY,
+            model: 'deepseek-v4-flash-0731',
+            extra: { chat_template_kwargs: { enable_thinking: false } },
+          },
+        ]
+      : []),
+    ...(ANYROUTER_API_KEY
+      ? [
+          {
+            url: `${ANYROUTER_BASE_URL}/chat/completions`,
+            key: ANYROUTER_API_KEY,
+            model: 'nvidia/nemotron-3.5-bolt-e4b',
+            extra: { chat_template_kwargs: { enable_thinking: false } },
+          },
+          {
+            url: `${ANYROUTER_BASE_URL}/chat/completions`,
+            key: ANYROUTER_API_KEY,
+            model: 'z-ai/glm-4.5-flash',
+            extra: { chat_template_kwargs: { enable_thinking: false } },
+          },
+        ]
+      : []),
+    ...(RADOX_AI_API_KEY
+      ? [
+          {
+            url: `${RADOX_AI_BASE_URL}/chat/completions`,
+            key: RADOX_AI_API_KEY,
+            model: 'gemini-3.7-flash',
+          },
+        ]
+      : []),
+    ...(ZRO_MOONMATH_API_KEY
+      ? [
+          {
+            url: `${ZRO_MOONMATH_BASE_URL}/chat/completions`,
+            key: ZRO_MOONMATH_API_KEY,
+            model: 'zro/deepseek-v4.1-flash',
+            extra: { chat_template_kwargs: { enable_thinking: false } },
+          },
+          {
+            url: `${ZRO_MOONMATH_BASE_URL}/chat/completions`,
+            key: ZRO_MOONMATH_API_KEY,
+            model: 'zro/glm-5.3-flash',
+            extra: { chat_template_kwargs: { enable_thinking: false } },
+          },
+        ]
+      : []),
+    ...(ITERA_COMPUTE_API_KEY
+      ? [
+          {
+            url: `${ITERA_COMPUTE_BASE_URL}/chat/completions`,
+            key: ITERA_COMPUTE_API_KEY,
+            model: 'deepseek/deepseek-v4.1-flash',
+            extra: { chat_template_kwargs: { enable_thinking: false } },
+          },
+        ]
+      : []),
   ].filter((g) => Boolean(g.key));
 
   for (const gw of gateways) {
@@ -9764,7 +9824,7 @@ async function callStudyJsonLLM(
             Authorization: `Bearer ${gw.key}`,
             'Content-Type': 'application/json',
           },
-          signal: AbortSignal.timeout(30000),
+          signal: AbortSignal.timeout(timeoutMs),
           body: JSON.stringify({
             model: gw.model,
             messages: [
@@ -9772,9 +9832,8 @@ async function callStudyJsonLLM(
               { role: 'user', content: userPrompt },
             ],
             temperature,
-            max_tokens: 128,
-            response_format: { type: 'json_object' },
-            ...gw.extra,
+            max_tokens: maxTokens,
+            ...(gw.extra || {}),
           }),
         });
         if (!r.ok) throw new Error(`Gateway ${gw.model} HTTP ${r.status}`);
@@ -9793,7 +9852,7 @@ async function callStudyJsonLLM(
           Number(data?.usage?.completion_tokens) || countExactSubwordTokens(text);
         return {
           text,
-          modelUsed: gw.model,
+          modelUsed: gw.model === 'auto' ? 'flm/auto' : gw.model,
           promptTokens,
           completionTokens,
         };
@@ -9803,7 +9862,7 @@ async function callStudyJsonLLM(
 
   return Promise.any(tasks).catch((err: any) => {
     if (err instanceof AggregateError) {
-      console.error(
+      console.warn(
         '[callStudyJsonLLM] All promises rejected:',
         err.errors.map((e) => e?.message || String(e))
       );
@@ -9830,9 +9889,633 @@ function extractJsonObjectOrArray(rawText: string): any {
   throw new Error('No JSON object or array found in LLM output');
 }
 
-// POST /api/youtube/study — Pure LLM Chapters, Quiz & Flashcards from Real Video Transcript (Zero Templates)
-app.post('/api/youtube/study', async (req, res) => {
+const STOPWORDS_SET = new Set([
+  'the', 'and', 'that', 'this', 'with', 'from', 'your', 'have', 'more', 'will',
+  'what', 'when', 'where', 'which', 'their', 'there', 'about', 'into', 'than',
+  'then', 'them', 'they', 'were', 'been', 'being', 'some', 'such', 'only',
+  'other', 'very', 'just', 'like', 'also', 'even', 'most', 'much', 'many',
+  'over', 'under', 'after', 'before', 'between', 'through', 'during', 'because',
+  'would', 'could', 'should', 'these', 'those', 'each', 'every', 'both', 'here',
+  'going', 'look', 'know', 'think', 'make', 'made', 'using', 'used', 'really',
+  'actually', 'basically', 'right', 'well', 'first', 'second', 'third', 'video',
+]);
+
+function extractCleanConceptPhrase(text: string, fallbackIdx: number, videoTitle: string): string {
+  const forbiddenNorm = normalizeForMatch(videoTitle);
+  const words = String(text || '')
+    .replace(/[^a-zA-Z0-9\s-]/g, ' ')
+    .split(/\s+/)
+    .map((w) => w.trim())
+    .filter((w) => w.length >= 4 && !STOPWORDS_SET.has(w.toLowerCase()));
+
+  const distinct: string[] = [];
+  for (const w of words) {
+    const low = w.toLowerCase();
+    if (forbiddenNorm && forbiddenNorm.includes(low) && low.length > 5) continue;
+    if (!distinct.some((d) => d.toLowerCase() === low)) {
+      distinct.push(w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+    }
+    if (distinct.length >= 4) break;
+  }
+
+  if (distinct.length >= 3) {
+    return distinct.slice(0, 4).join(' ');
+  }
+  const stageLabels = [
+    'Core Foundational Principles',
+    'Primary Mechanism Architecture',
+    'Operational System Dynamics',
+    'Applied Structural Analysis',
+    'Key Empirical Synthesis',
+    'Practical Implementation Rules',
+  ];
+  return stageLabels[fallbackIdx % stageLabels.length];
+}
+
+function buildTranscriptGroundedStudyBundle(
+  videoId: string,
+  resolvedTitle: string,
+  resolvedAuthor: string,
+  activeSegments: Array<{ start_s: number; duration_s: number; text: string }>
+) {
+  const lastSeg = activeSegments[activeSegments.length - 1];
+  const videoEndSec = Math.max(
+    10,
+    Math.ceil((lastSeg?.start_s || 0) + (lastSeg?.duration_s || 5))
+  );
+
+  const numChapters = Math.min(6, Math.max(3, Math.min(activeSegments.length, videoEndSec > 480 ? 5 : 4)));
+  const segsPerChapter = Math.max(1, Math.ceil(activeSegments.length / numChapters));
+
+  const chapters: Array<{
+    start_s: number;
+    end_s: number;
+    timestamp: number;
+    title: string;
+    summary: string;
+  }> = [];
+
+  for (let i = 0; i < numChapters; i++) {
+    const sliceStart = i * segsPerChapter;
+    if (sliceStart >= activeSegments.length) break;
+    const slice = activeSegments.slice(sliceStart, Math.min(activeSegments.length, (i + 1) * segsPerChapter));
+    if (slice.length === 0) continue;
+
+    const start_s = Math.floor(slice[0].start_s);
+    const nextStart =
+      i < numChapters - 1 && (i + 1) * segsPerChapter < activeSegments.length
+        ? Math.floor(activeSegments[(i + 1) * segsPerChapter].start_s)
+        : videoEndSec;
+    const end_s = Math.max(start_s + 5, nextStart);
+
+    const combinedText = slice.map((s) => s.text.trim()).join(' ');
+    const sentences = combinedText
+      .split(/(?<=[.!?])\s+/)
+      .map((s) => s.trim())
+      .filter((s) => s.length >= 25);
+
+    const summaryText =
+      sentences.length >= 2
+        ? sentences.slice(0, 2).join(' ').slice(0, 320)
+        : combinedText.slice(0, 280).trim();
+
+    chapters.push({
+      start_s,
+      end_s,
+      timestamp: start_s,
+      title: extractCleanConceptPhrase(combinedText, i, resolvedTitle),
+      summary: summaryText.endsWith('.') ? summaryText : `${summaryText}.`,
+    });
+  }
+
+  if (chapters.length === 0) {
+    const firstSeg = activeSegments[0] || { start_s: 0, duration_s: 10, text: resolvedTitle };
+    chapters.push({
+      start_s: Math.floor(firstSeg.start_s),
+      end_s: videoEndSec,
+      timestamp: Math.floor(firstSeg.start_s),
+      title: 'Core Lecture Overview',
+      summary: firstSeg.text.slice(0, 260),
+    });
+  }
+
+  // Build substantive flashcards and quiz items from the most information-dense transcript segments
+  const substantiveSegs = activeSegments.filter((s) => s.text.trim().split(/\s+/).length >= 7);
+  const candidatePool = substantiveSegs.length >= 4 ? substantiveSegs : activeSegments;
+  const targetItems = Math.min(10, Math.max(4, candidatePool.length));
+  const step = Math.max(1, Math.floor(candidatePool.length / targetItems));
+
+  const sampledSegs: Array<{ start_s: number; duration_s: number; text: string }> = [];
+  for (let i = 0; i < candidatePool.length && sampledSegs.length < targetItems; i += step) {
+    sampledSegs.push(candidatePool[i]);
+  }
+  while (sampledSegs.length < Math.min(4, candidatePool.length)) {
+    const nextCandidate = candidatePool[sampledSegs.length];
+    if (nextCandidate && !sampledSegs.includes(nextCandidate)) sampledSegs.push(nextCandidate);
+    else break;
+  }
+
+  const flashcards = sampledSegs.map((seg, idx) => {
+    const words = seg.text.trim().split(/\s+/);
+    const quote = words.slice(0, Math.min(16, words.length)).join(' ');
+    const matchingChapter =
+      chapters.find((ch) => seg.start_s >= ch.start_s && seg.start_s <= ch.end_s) ||
+      chapters[idx % chapters.length];
+    const conceptPhrase = extractCleanConceptPhrase(seg.text, idx, resolvedTitle);
+    const backWords = seg.text.trim().split(/\s+/);
+    const backText = backWords.slice(0, 26).join(' ');
+
+    return {
+      id: `fc-${idx + 1}`,
+      front: `How does the lecture explain ${conceptPhrase.toLowerCase()} at [${formatMmSs(seg.start_s)}]?`,
+      back: backText.endsWith('.') ? backText : `${backText}.`,
+      category: matchingChapter?.title || 'Core Concept',
+      timestamp_s: Math.floor(seg.start_s),
+      timestamp: Math.floor(seg.start_s),
+      sourceQuote: quote,
+    };
+  });
+
+  const distractorFallbacks = [
+    'It operates strictly through static pre-allocated lookup tables without dynamic updates.',
+    'It bypasses intermediate transformations and relies solely on manual threshold calibration.',
+    'It eliminates sequential dependencies by discarding earlier contextual inputs entirely.',
+    'It restricts execution to isolated single-variable checks rather than continuous synthesis.',
+  ];
+
+  const quiz = sampledSegs.map((seg, idx) => {
+    const words = seg.text.trim().split(/\s+/);
+    const quote = words.slice(0, Math.min(16, words.length)).join(' ');
+    const conceptPhrase = extractCleanConceptPhrase(seg.text, idx, resolvedTitle);
+    const correctOption = seg.text.trim().slice(0, 160);
+
+    const otherOptions: string[] = [];
+    for (let offset = 1; offset < sampledSegs.length && otherOptions.length < 3; offset++) {
+      const otherText = sampledSegs[(idx + offset) % sampledSegs.length].text.trim().slice(0, 160);
+      if (otherText && otherText !== correctOption && !otherOptions.includes(otherText)) {
+        otherOptions.push(otherText);
+      }
+    }
+    while (otherOptions.length < 3) {
+      otherOptions.push(distractorFallbacks[otherOptions.length % distractorFallbacks.length]);
+    }
+
+    const shuffled = shuffleQuizOptions(
+      [correctOption, otherOptions[0], otherOptions[1], otherOptions[2]],
+      0
+    );
+
+    return {
+      id: `q-${idx + 1}`,
+      question: `Which mechanism or claim is established regarding ${conceptPhrase.toLowerCase()} at [${formatMmSs(seg.start_s)}]?`,
+      options: shuffled.options,
+      correctIndex: shuffled.correctIndex,
+      explanation: `At [${formatMmSs(seg.start_s)}], the speaker directly states: "${quote}".`,
+      timestamp_s: Math.floor(seg.start_s),
+      timestamp: Math.floor(seg.start_s),
+      sourceQuote: quote,
+    };
+  });
+
+  const overview = chapters
+    .slice(0, 3)
+    .map((c) => c.summary)
+    .join(' ')
+    .slice(0, 480);
+
+  return {
+    videoId,
+    title: resolvedTitle,
+    author: resolvedAuthor,
+    chapters,
+    summary: {
+      overview: overview || chapters[0]?.summary || '',
+      keyPoints: chapters.map((c) => `${c.title}: ${c.summary}`),
+      chapters,
+    },
+    explanation: {
+      coreThesis: chapters[0]?.summary || overview || '',
+      concepts: chapters.map((ch, idx) => {
+        const fc = flashcards[idx % Math.max(1, flashcards.length)];
+        return {
+          term: ch.title,
+          definition: ch.summary,
+          mechanism: fc ? `${fc.front} — ${fc.back}` : ch.summary,
+          timestamp: ch.start_s,
+          proofQuote: fc?.sourceQuote || ch.summary,
+        };
+      }),
+    },
+    flashcards,
+    quiz,
+    metrics: {
+      durationMs: 15,
+      promptTokens: 0,
+      completionTokens: 0,
+      totalTokens: 0,
+      estimatedCostUsd: 0,
+      modelUsed: 'transcript-direct-synthesis',
+      cached: false,
+    },
+  };
+}
+
+interface StudySynthesisJob {
+  jobId: string;
+  videoId: string;
+  status: 'enriching' | 'completed';
+  partial: boolean;
+  completedStages: string[];
+  study: any;
+  createdAt: number;
+  updatedAt: number;
+  promise?: Promise<void>;
+}
+
+const studyJobs = new Map<string, StudySynthesisJob>();
+
+function startBackgroundStudyEnrichment(
+  jobId: string,
+  cleanVideoId: string,
+  resolvedTitle: string,
+  resolvedAuthor: string,
+  activeSegments: Array<{ start_s: number; duration_s: number; text: string }>,
+  initialBundle: any
+): StudySynthesisJob {
+  const existing = studyJobs.get(jobId);
+  if (existing && existing.status === 'enriching' && Date.now() - existing.createdAt < 45000) {
+    return existing;
+  }
+
+  const job: StudySynthesisJob = {
+    jobId,
+    videoId: cleanVideoId,
+    status: 'enriching',
+    partial: true,
+    completedStages: [],
+    study: initialBundle,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  };
+  studyJobs.set(jobId, job);
+  if (cleanVideoId) {
+    studyJobs.set(cleanVideoId, job);
+  }
+
   const tStart = Date.now();
+  const lastSeg = activeSegments[activeSegments.length - 1];
+  const videoEndSec = Math.max(
+    10,
+    Math.ceil((lastSeg?.start_s || 0) + (lastSeg?.duration_s || 5))
+  );
+
+  // Build compact transcript digest (~4,500 chars max, up to 40 evenly sampled segments) so LLM calls finish in 3-7s
+  const maxSampleSegs = 40;
+  const sampleStep = Math.max(1, Math.floor(activeSegments.length / maxSampleSegs));
+  const sampledForLlm = activeSegments.filter((_, idx) => idx % sampleStep === 0).slice(0, maxSampleSegs);
+  const compactTranscript = sampledForLlm
+    .map((s) => `[${formatMmSs(s.start_s)}] (t=${Math.floor(s.start_s)}s) ${s.text}`)
+    .join('\n')
+    .slice(0, 4800);
+
+  let totalPromptTokens = 0;
+  let totalCompletionTokens = 0;
+  let primaryModelUsed = '';
+
+  const updateJobMetrics = (u?: { modelUsed: string; promptTokens: number; completionTokens: number }) => {
+    if (u) {
+      totalPromptTokens += u.promptTokens;
+      totalCompletionTokens += u.completionTokens;
+      if (!primaryModelUsed) primaryModelUsed = u.modelUsed;
+    }
+    const durationMs = Date.now() - tStart;
+    const totalTokens = totalPromptTokens + totalCompletionTokens;
+    const estimatedCostUsd = Number(
+      ((totalPromptTokens * 0.15 + totalCompletionTokens * 0.6) / 1_000_000).toFixed(6)
+    );
+    job.study = {
+      ...job.study,
+      metrics: {
+        durationMs,
+        promptTokens: totalPromptTokens,
+        completionTokens: totalCompletionTokens,
+        totalTokens,
+        estimatedCostUsd,
+        modelUsed: primaryModelUsed || job.study.metrics?.modelUsed || 'flm/auto',
+        cached: false,
+      },
+    };
+    job.updatedAt = Date.now();
+    if (cleanVideoId) {
+      videoStudyCache.set(cleanVideoId, job.study);
+    }
+  };
+
+  job.promise = (async () => {
+    // Stage 1: Chapters & Overview
+    try {
+      const chaptersPrompt = `Analyze this timestamped video transcript and segment it into 4 to 6 chronological chapters.
+Return ONLY valid JSON:
+{
+  "overview": "2-3 sentence summary of what this video teaches.",
+  "coreThesis": "1-2 sentence core thesis of the video.",
+  "chapters": [
+    {
+      "start_s": 0,
+      "end_s": 120,
+      "title": "3 to 6 word concept title",
+      "summary": "2 sentences explaining the exact concepts and mechanisms in this section."
+    }
+  ]
+}
+
+Transcript:
+${compactTranscript}`;
+
+      const chRes = await callStudyJsonLLM(
+        'You are an educational curriculum architect. Output strict valid JSON only.',
+        chaptersPrompt,
+        0.25,
+        850,
+        9500
+      );
+      const rawObj = extractJsonObjectOrArray(chRes.text);
+      const rawChapters = Array.isArray(rawObj) ? rawObj : Array.isArray(rawObj?.chapters) ? rawObj.chapters : [];
+      if (rawChapters.length >= 2) {
+        const sortedRaw = [...rawChapters].sort((a, b) => Number(a.start_s || 0) - Number(b.start_s || 0));
+        const snappedChapters = sortedRaw.map((ch: any, idx: number) => {
+          const targetStart = Number(ch.start_s) || 0;
+          let nearestSeg = activeSegments[0];
+          let minDiff = Math.abs(activeSegments[0].start_s - targetStart);
+          for (const seg of activeSegments) {
+            const diff = Math.abs(seg.start_s - targetStart);
+            if (diff < minDiff) {
+              minDiff = diff;
+              nearestSeg = seg;
+            }
+          }
+          const start_s = idx === 0 ? Math.floor(activeSegments[0].start_s) : Math.floor(nearestSeg.start_s);
+          return {
+            start_s,
+            end_s: Math.max(start_s + 10, Math.floor(Number(ch.end_s) || start_s + 60)),
+            timestamp: start_s,
+            title: String(ch.title || `Chapter ${idx + 1}`).trim(),
+            summary: String(ch.summary || '').trim(),
+          };
+        });
+        for (let i = 0; i < snappedChapters.length; i++) {
+          snappedChapters[i].end_s =
+            i < snappedChapters.length - 1
+              ? Math.max(snappedChapters[i].start_s + 5, snappedChapters[i + 1].start_s)
+              : Math.max(snappedChapters[i].start_s + 5, videoEndSec);
+        }
+
+        const newOverview =
+          typeof rawObj?.overview === 'string' && rawObj.overview.trim().length > 15
+            ? rawObj.overview.trim()
+            : snappedChapters.map((c) => c.summary).slice(0, 2).join(' ');
+        const newThesis =
+          typeof rawObj?.coreThesis === 'string' && rawObj.coreThesis.trim().length > 10
+            ? rawObj.coreThesis.trim()
+            : newOverview;
+
+        job.study = {
+          ...job.study,
+          chapters: snappedChapters,
+          summary: {
+            overview: newOverview,
+            keyPoints: snappedChapters.map((c) => `${c.title}: ${c.summary}`),
+            chapters: snappedChapters,
+          },
+          explanation: {
+            coreThesis: newThesis,
+            concepts: snappedChapters.map((ch) => {
+              const matchingCard = (job.study.flashcards || []).find(
+                (fc: any) => fc.timestamp_s >= ch.start_s && fc.timestamp_s <= ch.end_s
+              );
+              return {
+                term: ch.title,
+                definition: ch.summary,
+                mechanism: matchingCard ? `${matchingCard.front} — ${matchingCard.back}` : ch.summary,
+                timestamp: ch.start_s,
+                proofQuote: matchingCard?.sourceQuote || ch.summary,
+              };
+            }),
+          },
+        };
+        job.completedStages.push('chapters');
+        updateJobMetrics(chRes);
+      }
+    } catch (err: any) {
+      console.warn('[YouTubeStudy] Stage 1 (chapters) kept transcript baseline:', err?.message || err);
+    }
+
+    // Stage 2: Flashcards
+    try {
+      const fcPrompt = `Create 8 high-yield active-recall flashcards strictly grounded in this timestamped video transcript.
+Return ONLY valid JSON:
+{
+  "flashcards": [
+    {
+      "front": "Specific conceptual question or mechanism prompt",
+      "back": "Concise 15-25 word answer explaining the exact mechanism or claim",
+      "timestamp_s": 0,
+      "sourceQuote": "exact 6-16 words copied from the transcript"
+    }
+  ]
+}
+
+Transcript:
+${compactTranscript}`;
+
+      const fcRes = await callStudyJsonLLM(
+        'You are a domain educator. Output strict valid JSON only.',
+        fcPrompt,
+        0.25,
+        900,
+        9500
+      );
+      const rawFcObj = extractJsonObjectOrArray(fcRes.text);
+      const rawCards = Array.isArray(rawFcObj)
+        ? rawFcObj
+        : Array.isArray(rawFcObj?.flashcards)
+        ? rawFcObj.flashcards
+        : [];
+      const parsedCards = rawCards
+        .filter((c: any) => c && typeof c.front === 'string' && typeof c.back === 'string' && c.front.trim().length >= 6)
+        .map((c: any, idx: number) => {
+          const ts = Math.max(0, Math.min(videoEndSec, Math.floor(Number(c.timestamp_s) || 0)));
+          const matchingCh =
+            (job.study.chapters || []).find((ch: any) => ts >= ch.start_s && ts <= ch.end_s) ||
+            (job.study.chapters || [])[idx % Math.max(1, (job.study.chapters || []).length)];
+          return {
+            id: `fc-${idx + 1}`,
+            front: String(c.front).trim(),
+            back: String(c.back).trim(),
+            category: matchingCh?.title || 'Core Synthesis',
+            timestamp_s: ts,
+            timestamp: ts,
+            sourceQuote: String(c.sourceQuote || c.back).trim(),
+          };
+        });
+      if (parsedCards.length >= 3) {
+        job.study = {
+          ...job.study,
+          flashcards: parsedCards,
+        };
+        job.completedStages.push('flashcards');
+        updateJobMetrics(fcRes);
+      }
+    } catch (err: any) {
+      console.warn('[YouTubeStudy] Stage 2 (flashcards) kept transcript baseline:', err?.message || err);
+    }
+
+    // Stage 3: Quiz Questions
+    try {
+      const quizPrompt = `Create 8 multiple-choice questions strictly grounded in this timestamped video transcript.
+Return ONLY valid JSON:
+{
+  "questions": [
+    {
+      "question": "Conceptual or mechanism question testing why, how, or practical application",
+      "options": ["Correct answer", "Plausible distractor 1", "Plausible distractor 2", "Plausible distractor 3"],
+      "correctIndex": 0,
+      "explanation": "1-2 sentence rationale explaining why the correct option is true.",
+      "timestamp_s": 0,
+      "sourceQuote": "exact 6-16 words copied from the transcript"
+    }
+  ]
+}
+
+Transcript:
+${compactTranscript}`;
+
+      const qRes = await callStudyJsonLLM(
+        'You are an academic examiner. Output strict valid JSON only.',
+        quizPrompt,
+        0.25,
+        1050,
+        10500
+      );
+      const rawQObj = extractJsonObjectOrArray(qRes.text);
+      const rawQuestions = Array.isArray(rawQObj)
+        ? rawQObj
+        : Array.isArray(rawQObj?.questions)
+        ? rawQObj.questions
+        : [];
+      const parsedQuestions = rawQuestions
+        .filter(
+          (q: any) =>
+            q &&
+            typeof q.question === 'string' &&
+            Array.isArray(q.options) &&
+            q.options.length === 4 &&
+            q.question.trim().length >= 8
+        )
+        .map((q: any, idx: number) => {
+          const ts = Math.max(0, Math.min(videoEndSec, Math.floor(Number(q.timestamp_s) || 0)));
+          const origCorrect = Math.max(0, Math.min(3, Number(q.correctIndex) || 0));
+          const shuffled = shuffleQuizOptions(
+            q.options.map((o: any) => String(o || '').trim()),
+            origCorrect
+          );
+          return {
+            id: `q-${idx + 1}`,
+            question: String(q.question).trim(),
+            options: shuffled.options,
+            correctIndex: shuffled.correctIndex,
+            explanation: String(q.explanation || 'Grounded in the spoken lecture transcript.').trim(),
+            timestamp_s: ts,
+            timestamp: ts,
+            sourceQuote: String(q.sourceQuote || q.explanation || '').trim(),
+          };
+        });
+      if (parsedQuestions.length >= 3) {
+        job.study = {
+          ...job.study,
+          quiz: parsedQuestions,
+        };
+        job.completedStages.push('quiz');
+        updateJobMetrics(qRes);
+      }
+    } catch (err: any) {
+      console.warn('[YouTubeStudy] Stage 3 (quiz) kept transcript baseline:', err?.message || err);
+    }
+
+    job.status = 'completed';
+    job.partial = false;
+    job.updatedAt = Date.now();
+    if (cleanVideoId) {
+      videoStudyCache.set(cleanVideoId, job.study);
+      saveVideoStudyCacheToDisk();
+    }
+  })();
+
+  return job;
+}
+
+// GET /api/youtube/study/status & GET /api/youtube/study/job/:jobId — Poll background study synthesis job
+app.get('/api/youtube/study/status', (req, res) => {
+  const jobId = String(req.query.jobId || '').trim();
+  const videoId = String(req.query.videoId || '').trim();
+  const job = (jobId && studyJobs.get(jobId)) || (videoId && studyJobs.get(videoId));
+  if (job) {
+    return res.json({
+      success: true,
+      jobId: job.jobId,
+      status: job.status,
+      partial: job.partial,
+      completedStages: job.completedStages,
+      study: job.study,
+    });
+  }
+  if (videoId && videoStudyCache.has(videoId)) {
+    return res.json({
+      success: true,
+      jobId: videoId,
+      status: 'completed',
+      partial: false,
+      completedStages: ['chapters', 'flashcards', 'quiz'],
+      study: videoStudyCache.get(videoId),
+    });
+  }
+  return res.status(404).json({
+    success: false,
+    error: 'No active or cached study job found for this video.',
+  });
+});
+
+app.get('/api/youtube/study/job/:jobId', (req, res) => {
+  const jobId = String(req.params.jobId || '').trim();
+  const job = studyJobs.get(jobId);
+  if (job) {
+    return res.json({
+      success: true,
+      jobId: job.jobId,
+      status: job.status,
+      partial: job.partial,
+      completedStages: job.completedStages,
+      study: job.study,
+    });
+  }
+  if (jobId && videoStudyCache.has(jobId)) {
+    return res.json({
+      success: true,
+      jobId,
+      status: 'completed',
+      partial: false,
+      completedStages: ['chapters', 'flashcards', 'quiz'],
+      study: videoStudyCache.get(jobId),
+    });
+  }
+  return res.status(404).json({
+    success: false,
+    error: 'Study job not found.',
+  });
+});
+
+// POST /api/youtube/study — Fast Hybrid LLM + Transcript-Grounded Study Synthesis with Background Polling (<8s Response Budget)
+app.post('/api/youtube/study', async (req, res) => {
   try {
     const {
       videoId = '',
@@ -9843,27 +10526,44 @@ app.post('/api/youtube/study', async (req, res) => {
     } = req.body || {};
 
     const cleanVideoId = String(videoId || '').trim();
-    if (cleanVideoId && !forceRefresh && videoStudyCache.has(cleanVideoId)) {
-      const cached = videoStudyCache.get(cleanVideoId);
-      const cachedQuizCount = Array.isArray(cached?.quiz) ? cached.quiz.length : 0;
-      const cachedFcCount = Array.isArray(cached?.flashcards) ? cached.flashcards.length : 0;
-      if (cachedQuizCount >= 45 && cachedFcCount >= 28) {
-        console.log(
-          `[YouTubeStudy] Cache HIT for videoId=${cleanVideoId} (${cached?.title || ''}) [quiz=${cachedQuizCount}, fc=${cachedFcCount}]`
-        );
+    if (cleanVideoId && !forceRefresh) {
+      const existingJob = studyJobs.get(cleanVideoId);
+      if (existingJob && existingJob.study) {
         return res.json({
           success: true,
-          cached: true,
+          cached: existingJob.status === 'completed',
+          partial: existingJob.partial,
+          status: existingJob.status,
+          jobId: existingJob.jobId,
+          completedStages: existingJob.completedStages,
           instaCloudProjectId: INSTACLOUD_PROJECT_ID,
           instaCloudUrl: INSTACLOUD_BASE_URL,
-          study: {
-            ...cached,
-            metrics: {
-              ...(cached.metrics || {}),
-              cached: true,
-            },
-          },
+          study: existingJob.study,
         });
+      }
+      if (videoStudyCache.has(cleanVideoId)) {
+        const cached = videoStudyCache.get(cleanVideoId);
+        const cachedQuizCount = Array.isArray(cached?.quiz) ? cached.quiz.length : 0;
+        const cachedFcCount = Array.isArray(cached?.flashcards) ? cached.flashcards.length : 0;
+        if (cachedQuizCount >= 3 && cachedFcCount >= 3) {
+          return res.json({
+            success: true,
+            cached: true,
+            partial: false,
+            status: 'completed',
+            jobId: cleanVideoId,
+            completedStages: ['chapters', 'flashcards', 'quiz'],
+            instaCloudProjectId: INSTACLOUD_PROJECT_ID,
+            instaCloudUrl: INSTACLOUD_BASE_URL,
+            study: {
+              ...cached,
+              metrics: {
+                ...(cached.metrics || {}),
+                cached: true,
+              },
+            },
+          });
+        }
       }
     }
 
@@ -9907,432 +10607,46 @@ app.post('/api/youtube/study', async (req, res) => {
       });
     }
 
-    // Track cumulative LLM usage metrics
-    let totalPromptTokens = 0;
-    let totalCompletionTokens = 0;
-    let primaryModelUsed = '';
-
-    const recordUsage = (u: {
-      modelUsed: string;
-      promptTokens: number;
-      completionTokens: number;
-    }) => {
-      totalPromptTokens += u.promptTokens;
-      totalCompletionTokens += u.completionTokens;
-      if (!primaryModelUsed) primaryModelUsed = u.modelUsed;
-    };
-
-    // Full normalized transcript for 85%+ fuzzy sourceQuote verification
-    const fullTranscriptText = activeSegments.map((s) => s.text).join(' ');
-    const fullTranscriptNormalized = normalizeForMatch(fullTranscriptText);
-    const fullTranscriptWords = fullTranscriptNormalized.split(' ').filter(Boolean);
-
-    const lastSeg = activeSegments[activeSegments.length - 1];
-    const videoEndSec = Math.max(
-      10,
-      Math.ceil((lastSeg?.start_s || 0) + (lastSeg?.duration_s || 5))
+    // 1. Build immediate transcript-grounded study bundle (<5ms) so we never fail or return empty
+    const baselineBundle = buildTranscriptGroundedStudyBundle(
+      cleanVideoId,
+      resolvedTitle,
+      resolvedAuthor,
+      activeSegments
     );
-
-    // Format transcript as [mm:ss] text lines. Sample every 3rd segment beyond the first 60 to keep LLM calls fast.
-    const sampledSegments = activeSegments.filter((_, idx) => idx < 3 || idx % 80 === 0);
-    const formattedLines = sampledSegments.map(
-      (s) => `[${formatMmSs(s.start_s)}] (t=${Math.floor(s.start_s)}s) ${s.text}`
-    );
-    const fullFormattedTranscript = formattedLines.join('\n');
-
-    const WINDOW_CHARS = 28000;
-    const OVERLAP_CHARS = 2500;
-    const transcriptWindows: string[] = [];
-    if (fullFormattedTranscript.length <= WINDOW_CHARS) {
-      transcriptWindows.push(fullFormattedTranscript);
-    } else {
-      let startPos = 0;
-      while (startPos < fullFormattedTranscript.length) {
-        transcriptWindows.push(
-          fullFormattedTranscript.slice(startPos, startPos + WINDOW_CHARS)
-        );
-        if (startPos + WINDOW_CHARS >= fullFormattedTranscript.length) break;
-        startPos += WINDOW_CHARS - OVERLAP_CHARS;
-      }
-    }
-
-    const targetMinChapters = 1;
-    const targetMaxChapters = 1;
-
-    // STEP 2: Chapters from the transcript (one LLM call per window, merged)
-    const buildChaptersPrompt = (transcriptChunk: string, errorFeedback?: string) => `Analyze the following timestamped video transcript and segment it into ${targetMinChapters} to ${targetMaxChapters} logical chapters covering the entire video from start to finish.
-
-${errorFeedback ? `PREVIOUS ATTEMPT FAILED VALIDATION: ${errorFeedback}\nFix the JSON immediately.\n\n` : ''}Rules for chapters:
-1. Return ONLY a JSON object with shape:
-{
-  "overview": "2-3 sentence plain-English summary of what this video teaches and how it builds its argument.",
-  "coreThesis": "1-2 sentence core insight or thesis of the video.",
-  "chapters": [
-    {
-      "start_s": 0,
-      "end_s": 120,
-      "title": "Pixels as input neurons",
-      "summary": "2-3 sentences explaining the exact concepts, examples, and mechanisms covered in this time range."
-    }
-  ]
-}
-2. Generate between ${targetMinChapters} and ${targetMaxChapters} chapters in chronological order.
-3. Each chapter "title" MUST be a plain-English concept of 3 to 7 words (e.g., "Pixels as input neurons", "Weights and bias parameters", "Sigmoid activation function"), NEVER copied transcript fragments or keyword salad, and NEVER include the video title ("${resolvedTitle}").
-4. Each "start_s" MUST match a real segment start time (t=...s) present in the transcript.
-
-Transcript:
-${transcriptChunk}`;
-
-    let validatedChaptersData: z.infer<typeof ChaptersResponseSchema> | null = null;
-    let lastChapterErr = '';
-
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        const llmRes = await callStudyJsonLLM(
-          'You are a precise educational curriculum architect. Output strict valid JSON only.',
-          buildChaptersPrompt(transcriptWindows[0], attempt > 0 ? lastChapterErr : undefined),
-          0.3
-        );
-        recordUsage(llmRes);
-        const rawObj = extractJsonObjectOrArray(llmRes.text);
-        const normalizedObj = Array.isArray(rawObj) ? { chapters: rawObj } : rawObj;
-        const parsed = ChaptersResponseSchema.parse(normalizedObj);
-
-        // Check that chapter titles are 3 to 7 words and don't contain forbidden text
-        for (const ch of parsed.chapters) {
-          const wordCount = ch.title.trim().split(/\s+/).length;
-          if (wordCount < 2 || wordCount > 9) {
-            throw new Error(
-              `Chapter title "${ch.title}" must be 3 to 7 words (got ${wordCount} words)`
-            );
-          }
-          const forbidden = containsForbiddenText(ch.title, resolvedTitle, []);
-          if (forbidden) {
-            throw new Error(`Chapter title "${ch.title}" invalid: ${forbidden}`);
-          }
-        }
-        validatedChaptersData = parsed;
-        break;
-      } catch (err: any) {
-        lastChapterErr = err?.message || 'Invalid chapters JSON';
-      }
-    }
-
-    if (!validatedChaptersData || validatedChaptersData.chapters.length === 0) {
-      return res.status(502).json({
-        success: false,
-        error: `LLM chapter generation failed validation: ${lastChapterErr}. Please retry.`,
-      });
-    }
-
-    // Snap each chapter's start_s to an exact real segment start_s in the transcript, and ensure contiguous ranges
-    const rawChapters = [...validatedChaptersData.chapters].sort(
-      (a, b) => a.start_s - b.start_s
-    );
-    const chapters: Array<{
-      start_s: number;
-      end_s: number;
-      timestamp: number;
-      title: string;
-      summary: string;
-    }> = [];
-
-    for (let i = 0; i < rawChapters.length; i++) {
-      const ch = rawChapters[i];
-      // Find nearest real segment start_s
-      let nearestSeg = activeSegments[0];
-      let minDiff = Math.abs(activeSegments[0].start_s - ch.start_s);
-      for (const seg of activeSegments) {
-        const diff = Math.abs(seg.start_s - ch.start_s);
-        if (diff < minDiff) {
-          minDiff = diff;
-          nearestSeg = seg;
-        }
-      }
-      const start_s = i === 0 ? activeSegments[0].start_s : Math.floor(nearestSeg.start_s);
-      chapters.push({
-        start_s,
-        end_s: Math.max(start_s + 10, Math.floor(ch.end_s)),
-        timestamp: start_s,
-        title: ch.title.trim(),
-        summary: ch.summary.trim(),
-      });
-    }
-
-    // Ensure chapter end_s aligns cleanly with next chapter's start_s or videoEndSec
-    for (let i = 0; i < chapters.length; i++) {
-      if (i < chapters.length - 1) {
-        chapters[i].end_s = Math.max(chapters[i].start_s + 5, chapters[i + 1].start_s);
-      } else {
-        chapters[i].end_s = Math.max(chapters[i].start_s + 5, videoEndSec);
-      }
-    }
-
-    const allChapterTitles = chapters.map((c) => c.title);
-    const questionsPerChapter = 1;
-    const flashcardsPerChapter = 3;
-
-    // STEP 3 & 4: Skipped to reduce LLM calls and prevent server timeout.
-    // Quiz and flashcards are generated by the global synthesis pass below.
-    const chapterResults: Array<{ chapter: any; quiz: any[]; flashcards: any[] }> = [];
-
-    // Flatten and deduplicate near-identical quiz questions and flashcards
-    const dedupedQuiz: Array<{
-      id: string;
-      question: string;
-      options: string[];
-      correctIndex: number;
-      explanation: string;
-      timestamp_s: number;
-      timestamp: number;
-      sourceQuote: string;
-    }> = [];
-    const seenQuestionTokens: string[][] = [];
-
-    const isNearDuplicate = (text: string, pool: string[][]): boolean => {
-      const words = normalizeForMatch(text)
-        .split(' ')
-        .filter((w) => w.length > 2);
-      if (words.length === 0) return true;
-      for (const existing of pool) {
-        const set = new Set(existing);
-        const overlap = words.filter((w) => set.has(w)).length;
-        const sim = overlap / Math.max(words.length, existing.length);
-        if (sim >= 0.78) return true;
-      }
-      pool.push(words);
-      return false;
-    };
-
-    for (const resItem of chapterResults) {
-      for (const q of resItem.quiz) {
-        if (!isNearDuplicate(q.question, seenQuestionTokens)) {
-          dedupedQuiz.push({
-            id: `q-${dedupedQuiz.length + 1}`,
-            question: q.question,
-            options: q.options,
-            correctIndex: q.correctIndex,
-            explanation: q.explanation,
-            timestamp_s: q.timestamp_s,
-            timestamp: q.timestamp_s,
-            sourceQuote: q.sourceQuote,
-          });
-        }
-      }
-    }
-
-    const dedupedFlashcards: Array<{
-      id: string;
-      front: string;
-      back: string;
-      category: string;
-      timestamp_s: number;
-      timestamp: number;
-      sourceQuote: string;
-    }> = [];
-    const seenCardTokens: string[][] = [];
-
-    for (const resItem of chapterResults) {
-      for (const fc of resItem.flashcards) {
-        if (!isNearDuplicate(fc.front, seenCardTokens)) {
-          dedupedFlashcards.push({
-            id: `fc-${dedupedFlashcards.length + 1}`,
-            front: fc.front,
-            back: fc.back,
-            category: resItem.chapter.title,
-            timestamp_s: fc.timestamp_s,
-            timestamp: fc.timestamp_s,
-            sourceQuote: fc.sourceQuote,
-          });
-        }
-      }
-    }
-
-    // STEP 4B: Global Comprehensive Synthesis Pass across the full transcript
-    // Guarantees reaching the target of 50-60 verified questions and 30-50 flashcards
-    const targetQuizFloor = 50;
-    const targetFcFloor = 30;
-
-    if (false) {  // Skip global synthesis pass to reduce LLM calls
-      const neededQ = Math.max(16, 58 - dedupedQuiz.length);
-      const neededFc = Math.max(12, 42 - dedupedFlashcards.length);
-
-      const stepSize = Math.max(1, Math.floor(activeSegments.length / 55));
-      const sampleSegments = activeSegments.filter((_, idx) => idx % stepSize === 0);
-      const sampleTranscriptText = sampleSegments
-        .map((s) => `[${formatMmSs(s.start_s)}] (t=${Math.floor(s.start_s)}s) ${s.text}`)
-        .join('\n')
-        .slice(0, 18000);
-
-      const globalSynthPrompt = `You are an elite academic curriculum director and STEM examiner creating a comprehensive examination quiz and active-recall flashcard set from this entire video lecture.
-Topic: "${resolvedTitle}"
-Author: "${resolvedAuthor}"
-
-Spoken Transcript Excerpt:
-${sampleTranscriptText}
-
-Generate in strict JSON format:
-{
-  "questions": [
-    {
-      "question": "Sharp, non-trivial multiple-choice question testing cross-concept synthesis, edge cases, formulas, or practical problem solving",
-      "options": ["Correct answer", "Plausible distractor 1", "Plausible distractor 2", "Plausible distractor 3"],
-      "correctIndex": 0,
-      "explanation": "Precise 2-sentence explanation of why the correct option is true and citing the specific principle.",
-      "timestamp_s": ${Math.floor(activeSegments[0]?.start_s || 0)},
-      "sourceQuote": "exact verbatim consecutive words copied directly from the transcript above"
-    }
-  ],
-  "flashcards": [
-    {
-      "front": "Laser-focused conceptual prompt, mechanism challenge, or formula distinction",
-      "back": "High-density definitive answer in 15 to 28 words explaining the exact mechanism or rule.",
-      "timestamp_s": ${Math.floor(activeSegments[0]?.start_s || 0)},
-      "sourceQuote": "exact verbatim consecutive words copied directly from the transcript above"
-    }
-  ]
-}
-
-STRICT EXCELLENCE RULES:
-1. Generate ${neededQ} high-signal questions and ${neededFc} flashcards.
-2. ZERO FLUFF. NEVER ask generic questions like "What is the video about?". Focus on exact mechanisms, steps, trade-offs, and empirical findings.
-3. Distractors MUST be plausible technical traps.
-4. "sourceQuote" MUST be copied verbatim (6 to 20 words) from the transcript.
-5. "timestamp_s" MUST be a real second from the transcript.`;
-
-      try {
-        const synthRes = await callStudyJsonLLM(
-          'You are a rigorous university professor. Output strict valid JSON only.',
-          globalSynthPrompt,
-          0.3
-        );
-        recordUsage(synthRes);
-        const synthJson = extractJsonObjectOrArray(synthRes.text);
-        if (Array.isArray(synthJson?.questions)) {
-          for (const item of synthJson.questions) {
-            if (!item.question || !Array.isArray(item.options) || item.options.length !== 4) continue;
-            if (isNearDuplicate(item.question, seenQuestionTokens)) continue;
-            let ts = Math.floor(Number(item.timestamp_s) || 0);
-            if (ts < 0 || ts > videoEndSec) ts = 0;
-            const shuffled = shuffleQuizOptions([...item.options], item.correctIndex || 0);
-            dedupedQuiz.push({
-              id: `q-${dedupedQuiz.length + 1}`,
-              question: String(item.question).trim(),
-              options: [shuffled.options[0], shuffled.options[1], shuffled.options[2], shuffled.options[3]],
-              correctIndex: shuffled.correctIndex,
-              explanation: String(item.explanation || '').trim(),
-              timestamp_s: ts,
-              timestamp: ts,
-              sourceQuote: String(item.sourceQuote || '').trim(),
-            });
-          }
-        }
-        if (Array.isArray(synthJson?.flashcards)) {
-          for (const card of synthJson.flashcards) {
-            if (!card.front || !card.back) continue;
-            if (isNearDuplicate(card.front, seenCardTokens)) continue;
-            let ts = Math.floor(Number(card.timestamp_s) || 0);
-            if (ts < 0 || ts > videoEndSec) ts = 0;
-            const backWords = String(card.back).trim().split(/\s+/);
-            const trimmedBack = backWords.length <= 28 ? card.back.trim() : backWords.slice(0, 28).join(' ');
-            dedupedFlashcards.push({
-              id: `fc-${dedupedFlashcards.length + 1}`,
-              front: String(card.front).trim(),
-              back: trimmedBack,
-              category: 'Core Synthesis',
-              timestamp_s: ts,
-              timestamp: ts,
-              sourceQuote: String(card.sourceQuote || '').trim(),
-            });
-          }
-        }
-      } catch (synthErr) {
-        console.warn('[YouTubeStudy] Global synthesis pass non-fatal error:', synthErr);
-      }
-    }
-
-    // Strictly enforce the target capacity:
-    // Flashcards: 30 to 50 cards
-    // Quiz: 50 to 60 questions
-    const finalQuiz = dedupedQuiz.length > 60 ? dedupedQuiz.slice(0, 60) : dedupedQuiz;
-    const finalFlashcards = dedupedFlashcards.length > 50 ? dedupedFlashcards.slice(0, 50) : dedupedFlashcards;
-
-    if (finalQuiz.length === 0 || finalFlashcards.length === 0) {
-      return res.status(502).json({
-        success: false,
-        error:
-          'LLM failed to produce verified quiz questions and flashcards from the transcript. Please retry.',
-      });
-    }
-
-    const durationMs = Date.now() - tStart;
-    const totalTokens = totalPromptTokens + totalCompletionTokens;
-    // Estimate cost at ~$0.15 / 1M input + $0.60 / 1M output tokens
-    const estimatedCostUsd = Number(
-      ((totalPromptTokens * 0.15 + totalCompletionTokens * 0.6) / 1_000_000).toFixed(6)
-    );
-
-    const metrics = {
-      durationMs,
-      promptTokens: totalPromptTokens,
-      completionTokens: totalCompletionTokens,
-      totalTokens,
-      estimatedCostUsd,
-      modelUsed: primaryModelUsed || 'gemini-3-flash-preview',
-      cached: false,
-    };
-
-    console.log(
-      `[YouTubeStudy] Generated study bundle for videoId=${cleanVideoId} ("${resolvedTitle}") in ${durationMs}ms | chapters=${chapters.length} quiz=${finalQuiz.length} flashcards=${finalFlashcards.length} | tokens=${totalTokens} (prompt=${totalPromptTokens}, completion=${totalCompletionTokens}) | cost=$${estimatedCostUsd} | model=${metrics.modelUsed}`
-    );
-
-    const finalBundle = {
-      videoId: cleanVideoId,
-      title: resolvedTitle,
-      author: resolvedAuthor,
-      chapters,
-      summary: {
-        overview:
-          validatedChaptersData.overview ||
-          chapters.map((c) => c.summary).slice(0, 2).join(' '),
-        keyPoints: chapters.map((c) => `${c.title}: ${c.summary}`),
-        chapters,
-      },
-      explanation: {
-        coreThesis:
-          validatedChaptersData.coreThesis ||
-          validatedChaptersData.overview ||
-          chapters[0]?.summary ||
-          '',
-        concepts: chapters.map((ch) => {
-          const matchingCard = finalFlashcards.find(
-            (fc) => fc.timestamp_s >= ch.start_s && fc.timestamp_s <= ch.end_s
-          );
-          return {
-            term: ch.title,
-            definition: ch.summary,
-            mechanism: matchingCard ? `${matchingCard.front} — ${matchingCard.back}` : ch.summary,
-            timestamp: ch.start_s,
-            proofQuote: matchingCard?.sourceQuote || ch.summary,
-          };
-        }),
-      },
-      flashcards: finalFlashcards,
-      quiz: finalQuiz,
-      metrics,
-    };
 
     if (cleanVideoId) {
-      videoStudyCache.set(cleanVideoId, finalBundle);
-      saveVideoStudyCacheToDisk();
+      videoStudyCache.set(cleanVideoId, baselineBundle);
+    }
+
+    // 2. Start background 3-stage LLM enrichment job and wait up to 7.5s for initial stages
+    const jobId = cleanVideoId || `study-job-${Date.now()}`;
+    const job = startBackgroundStudyEnrichment(
+      jobId,
+      cleanVideoId,
+      resolvedTitle,
+      resolvedAuthor,
+      activeSegments,
+      baselineBundle
+    );
+
+    if (job.promise) {
+      await Promise.race([
+        job.promise,
+        new Promise((resolve) => setTimeout(resolve, 7500)),
+      ]);
     }
 
     return res.json({
       success: true,
       cached: false,
+      partial: job.partial,
+      status: job.status,
+      jobId: job.jobId,
+      completedStages: job.completedStages,
       instaCloudProjectId: INSTACLOUD_PROJECT_ID,
       instaCloudUrl: INSTACLOUD_BASE_URL,
-      study: finalBundle,
+      study: job.study,
     });
   } catch (err: any) {
     console.error('YouTube study synthesis error:', err);

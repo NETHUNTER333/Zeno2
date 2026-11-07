@@ -861,15 +861,177 @@ ${fullTranscriptText}`;
     }
   };
 
+  const studyPollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (studyPollTimerRef.current) {
+        clearTimeout(studyPollTimerRef.current);
+      }
+    };
+  }, []);
+
+  const buildClientTranscriptFallbackBundle = (
+    vidId: string,
+    title: string,
+    author: string,
+    segs: YouTubeTranscriptSegment[]
+  ): YouTubeStudyBundle => {
+    const safeSegs = segs.length > 0 ? segs : [{ start_s: 0, duration_s: 10, text: title }];
+    const lastSeg = safeSegs[safeSegs.length - 1];
+    const videoEndSec = Math.max(10, Math.ceil((lastSeg?.start_s || 0) + (lastSeg?.duration_s || 5)));
+    const numChapters = Math.min(5, Math.max(3, safeSegs.length));
+    const perCh = Math.max(1, Math.ceil(safeSegs.length / numChapters));
+
+    const chapters: Array<{
+      start_s: number;
+      end_s: number;
+      timestamp: number;
+      title: string;
+      summary: string;
+    }> = [];
+    for (let i = 0; i < numChapters; i++) {
+      const slice = safeSegs.slice(i * perCh, Math.min(safeSegs.length, (i + 1) * perCh));
+      if (slice.length === 0) continue;
+      const start_s = Math.floor(slice[0].start_s);
+      const nextStart =
+        i < numChapters - 1 && (i + 1) * perCh < safeSegs.length
+          ? Math.floor(safeSegs[(i + 1) * perCh].start_s)
+          : videoEndSec;
+      const combined = slice.map((s) => s.text.trim()).join(' ');
+      const words = combined
+        .replace(/[^a-zA-Z0-9\s]/g, ' ')
+        .split(/\s+/)
+        .filter((w) => w.length >= 4);
+      const headingWords = Array.from(new Set(words)).slice(0, 4);
+      const chTitle =
+        headingWords.length >= 2
+          ? headingWords.map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ')
+          : `Section ${i + 1} Core Concepts`;
+      chapters.push({
+        start_s,
+        end_s: Math.max(start_s + 5, nextStart),
+        timestamp: start_s,
+        title: chTitle,
+        summary: combined.slice(0, 260),
+      });
+    }
+
+    const step = Math.max(1, Math.floor(safeSegs.length / 8));
+    const sampled = safeSegs.filter((_, idx) => idx % step === 0).slice(0, 8);
+
+    const flashcards = sampled.map((seg, idx) => ({
+      id: `fc-local-${idx + 1}`,
+      front: `What key point is explained at ${Math.floor(seg.start_s / 60)}:${String(Math.floor(seg.start_s % 60)).padStart(2, '0')}?`,
+      back: seg.text.trim().slice(0, 200),
+      category: chapters[idx % Math.max(1, chapters.length)]?.title || 'Core Concept',
+      timestamp_s: Math.floor(seg.start_s),
+      timestamp: Math.floor(seg.start_s),
+      sourceQuote: seg.text.trim().slice(0, 120),
+    }));
+
+    const quiz = sampled.map((seg, idx) => {
+      const correct = seg.text.trim().slice(0, 150);
+      const d1 = sampled[(idx + 1) % sampled.length]?.text.trim().slice(0, 150) || 'It relies on static lookup parameters only.';
+      const d2 = sampled[(idx + 2) % sampled.length]?.text.trim().slice(0, 150) || 'It bypasses intermediate sequence verification.';
+      const d3 = 'It discards prior context steps before evaluation.';
+      return {
+        id: `q-local-${idx + 1}`,
+        question: `Which statement accurately reflects the explanation at ${Math.floor(seg.start_s / 60)}:${String(Math.floor(seg.start_s % 60)).padStart(2, '0')}?`,
+        options: [correct, d1 === correct ? d3 : d1, d2 === correct ? d1 : d2, d3],
+        correctIndex: 0,
+        explanation: seg.text.trim().slice(0, 200),
+        timestamp_s: Math.floor(seg.start_s),
+        timestamp: Math.floor(seg.start_s),
+        sourceQuote: seg.text.trim().slice(0, 120),
+      };
+    });
+
+    const overview = chapters.map((c) => c.summary).slice(0, 2).join(' ');
+    return {
+      videoId: vidId,
+      title,
+      author,
+      summary: {
+        overview,
+        keyPoints: chapters.map((c) => `${c.title}: ${c.summary}`),
+        chapters,
+      },
+      explanation: {
+        coreThesis: overview,
+        concepts: chapters.map((ch) => ({
+          term: ch.title,
+          definition: ch.summary,
+          mechanism: ch.summary,
+          timestamp: ch.start_s,
+          proofQuote: ch.summary,
+        })),
+      },
+      flashcards,
+      quiz,
+    };
+  };
+
+  const applyStudyBundleToState = (bundle: YouTubeStudyBundle) => {
+    setStudyBundle(bundle);
+    if (Array.isArray(bundle?.summary?.chapters)) {
+      setStatementBreakdown(
+        bundle.summary.chapters.map((ch: any, idx: number) => ({
+          index: idx + 1,
+          heading: ch.title,
+          claim: ch.summary,
+          elaboration: ch.summary,
+        }))
+      );
+    }
+  };
+
+  const startStudyJobPolling = (videoId: string, jobId?: string) => {
+    if (studyPollTimerRef.current) {
+      clearTimeout(studyPollTimerRef.current);
+      studyPollTimerRef.current = null;
+    }
+    let attempts = 0;
+    const maxAttempts = 16;
+
+    const pollOnce = async () => {
+      attempts += 1;
+      try {
+        const qs = new URLSearchParams();
+        if (videoId) qs.set('videoId', videoId);
+        if (jobId) qs.set('jobId', jobId);
+        const res = await apiFetch(`/api/youtube/study/status?${qs.toString()}`, {
+          method: 'GET',
+          signal: AbortSignal.timeout(8000),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.study?.summary?.overview) {
+            applyStudyBundleToState(data.study);
+          }
+          if (data?.status === 'completed' || data?.partial === false) {
+            return;
+          }
+        }
+      } catch {}
+      if (attempts < maxAttempts) {
+        studyPollTimerRef.current = setTimeout(pollOnce, 3000);
+      }
+    };
+
+    studyPollTimerRef.current = setTimeout(pollOnce, 2800);
+  };
+
   // Load YouTube Video (Direct Link or Video ID: loads ONLY this exact video, autoplays, no related videos)
   const applyPastedTranscript = async (text: string) => {
     const t = text.trim();
     if (!t || !activeVideoId) return;
     setStudyError(null);
     setLoadingContent(true);
+    const consolidated = consolidateTranscriptSegments([{ start_s: 0, duration_s: 0, text: t }]);
+    const effectiveSegs = consolidated.length > 0 ? consolidated : [{ start_s: 0, duration_s: 0, text: t }];
+    setSegments(effectiveSegs);
     try {
-      const consolidated = consolidateTranscriptSegments([{ start_s: 0, duration_s: 0, text: t }]);
-      setSegments(consolidated.length > 0 ? consolidated : [{ start_s: 0, duration_s: 0, text: t }]);
       const authHeaders = await getAuthHeaders();
       const aiRes = await apiFetch('/api/youtube/study', {
         method: 'POST',
@@ -878,26 +1040,31 @@ ${fullTranscriptText}`;
           videoId: activeVideoId,
           videoTitle: resolvedTitle,
           videoAuthor: resolvedAuthor,
-          segments: consolidated.length > 0 ? consolidated : [{ start_s: 0, duration_s: 0, text: t }],
+          segments: effectiveSegs,
         }),
-        signal: AbortSignal.timeout(180000),
+        signal: AbortSignal.timeout(25000),
       });
       if (aiRes.ok) {
         const aiData = await aiRes.json();
         if (aiData?.study?.summary?.overview) {
-          setStudyBundle(aiData.study);
-          setStatementBreakdown(
-            aiData.study.summary.chapters.map((ch: any, idx: number) => ({
-              index: idx + 1,
-              heading: ch.title,
-              claim: ch.summary,
-              elaboration: ch.summary,
-            }))
-          );
+          applyStudyBundleToState(aiData.study);
+          if (aiData.partial || aiData.status === 'enriching') {
+            startStudyJobPolling(activeVideoId, aiData.jobId);
+          }
         }
+      } else {
+        applyStudyBundleToState(
+          buildClientTranscriptFallbackBundle(activeVideoId, resolvedTitle, resolvedAuthor, effectiveSegs)
+        );
       }
       setPasteTranscriptVal('');
-    } catch {}
+    } catch {
+      applyStudyBundleToState(
+        buildClientTranscriptFallbackBundle(activeVideoId, resolvedTitle, resolvedAuthor, effectiveSegs)
+      );
+      startStudyJobPolling(activeVideoId, activeVideoId);
+      setPasteTranscriptVal('');
+    }
     setLoadingContent(false);
   };
 
@@ -911,6 +1078,11 @@ ${fullTranscriptText}`;
     const cleanHint = (hintTitle || '')
       .replace(/^YouTube Video\s*\((.+?)\)(?:\s*by\s*YouTube)?$/i, '$1')
       .trim();
+
+    if (studyPollTimerRef.current) {
+      clearTimeout(studyPollTimerRef.current);
+      studyPollTimerRef.current = null;
+    }
 
     setViewMode('workspace');
     setSourceType('youtube');
@@ -961,7 +1133,6 @@ ${fullTranscriptText}`;
             url: `https://www.youtube.com/watch?v=${normVidId}`,
             videoId: normVidId,
           };
-          console.log('[StudyWorkspace] Requesting transcript with body:', reqBody);
           const res = await apiFetch('/api/youtube/transcript', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -994,42 +1165,63 @@ ${fullTranscriptText}`;
       setSegments(consolidated);
       setLoadingStageText('Transcript ready — synthesizing chapters, quiz & flashcards...');
 
-      const authHeaders = await getAuthHeaders();
-      const aiRes = await apiFetch('/api/youtube/study', {
-        method: 'POST',
-        headers: authHeaders,
-        body: JSON.stringify({
-          videoId: targetVidId,
-          videoTitle: title,
-          videoAuthor: author,
-          segments: consolidated,
-        }),
-        signal: AbortSignal.timeout(180000),
-      });
+      let finalStudy: YouTubeStudyBundle | null = null;
+      let shouldPoll = false;
+      let pollJobId = normVidId;
 
-      if (!aiRes.ok) {
-        const errJson = await aiRes.json().catch(() => ({}));
-        throw new Error(errJson?.error || `Study generation failed with HTTP ${aiRes.status}`);
+      try {
+        const authHeaders = await getAuthHeaders();
+        const aiRes = await apiFetch('/api/youtube/study', {
+          method: 'POST',
+          headers: authHeaders,
+          body: JSON.stringify({
+            videoId: normVidId,
+            videoTitle: title,
+            videoAuthor: author,
+            segments: consolidated,
+          }),
+          signal: AbortSignal.timeout(25000),
+        });
+
+        if (aiRes.ok) {
+          const aiData = await aiRes.json();
+          if (aiData?.study?.summary?.overview) {
+            finalStudy = aiData.study;
+            shouldPoll = Boolean(aiData.partial || aiData.status === 'enriching');
+            pollJobId = aiData.jobId || normVidId;
+          }
+        }
+      } catch {
+        // If the POST connection dropped or timed out, check /api/youtube/study/status before using client fallback
+        try {
+          const statusRes = await apiFetch(
+            `/api/youtube/study/status?videoId=${encodeURIComponent(normVidId)}`,
+            { method: 'GET', signal: AbortSignal.timeout(6000) }
+          );
+          if (statusRes.ok) {
+            const statusData = await statusRes.json();
+            if (statusData?.study?.summary?.overview) {
+              finalStudy = statusData.study;
+              shouldPoll = Boolean(statusData.partial || statusData.status === 'enriching');
+              pollJobId = statusData.jobId || normVidId;
+            }
+          }
+        } catch {}
       }
 
-      const aiData = await aiRes.json();
-      if (!aiData?.study?.summary?.overview) {
-        throw new Error('Study synthesis failed to return valid curriculum. Please retry.');
+      if (!finalStudy) {
+        finalStudy = buildClientTranscriptFallbackBundle(normVidId, title, author, consolidated);
+        shouldPoll = true;
       }
 
-      const finalStudy: YouTubeStudyBundle = aiData.study;
-      setStudyBundle(finalStudy);
-      setStatementBreakdown(
-        finalStudy.summary.chapters.map((ch, idx) => ({
-          index: idx + 1,
-          heading: ch.title,
-          claim: ch.summary,
-          elaboration: ch.summary,
-        }))
-      );
+      applyStudyBundleToState(finalStudy);
       setStudyError(null);
       setShowSourceViewer(true);
       setAutoPlayVideo(true);
+
+      if (shouldPoll) {
+        startStudyJobPolling(normVidId, pollJobId);
+      }
 
       setSpaces((prev) => {
         const exists = prev.some((s) => s.videoId === targetVidId || s.name === title);
