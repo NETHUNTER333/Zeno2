@@ -9747,6 +9747,12 @@ async function callStudyJsonLLM(
       model: 'qwen/qwen3.8-27b',
       extra: { chat_template_kwargs: { enable_thinking: true }, reasoning_effort: 'medium' },
     },
+    {
+      url: `${INTERN_AI_BASE_URL}/chat/completions`,
+      key: INTERN_AI_API_KEY,
+      model: 'Sage-A1.5',
+      extra: {},
+    },
   ].filter((g) => Boolean(g.key));
 
   for (const gw of gateways) {
@@ -9758,7 +9764,7 @@ async function callStudyJsonLLM(
             Authorization: `Bearer ${gw.key}`,
             'Content-Type': 'application/json',
           },
-          signal: AbortSignal.timeout(60000),
+          signal: AbortSignal.timeout(30000),
           body: JSON.stringify({
             model: gw.model,
             messages: [
