@@ -260,19 +260,51 @@ export interface AchievementUnlockPayload {
   unlockedAt: number;
 }
 
+export function toIstDateKey(ts = Date.now()): string {
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(new Date(ts));
+    const y = parts.find((p) => p.type === 'year')?.value || '2026';
+    const m = parts.find((p) => p.type === 'month')?.value || '01';
+    const d = parts.find((p) => p.type === 'day')?.value || '01';
+    return `${y}-${m}-${d}`;
+  } catch {
+    const istDate = new Date(ts + 5.5 * 3600 * 1000);
+    return istDate.toISOString().slice(0, 10);
+  }
+}
+
+export function getIstHoursAndMinutes(now = new Date()): { hours: number; minutes: number } {
+  try {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).formatToParts(now);
+    const h = parseInt(parts.find((p) => p.type === 'hour')?.value || '0', 10) || 0;
+    const m = parseInt(parts.find((p) => p.type === 'minute')?.value || '0', 10) || 0;
+    return { hours: h % 24, minutes: m };
+  } catch {
+    const istMs = now.getTime() + (now.getTimezoneOffset() + 330) * 60000;
+    const istDate = new Date(istMs);
+    return { hours: istDate.getHours(), minutes: istDate.getMinutes() };
+  }
+}
+
 export function toLocalDateKey(ts = Date.now()): string {
-  const d = new Date(ts);
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  return toIstDateKey(ts);
 }
 
 export function getPreviousDateKey(dateKey: string): string {
   const [y, m, d] = dateKey.split('-').map(Number);
-  const dt = new Date(y, (m || 1) - 1, d || 1);
-  dt.setDate(dt.getDate() - 1);
-  return toLocalDateKey(dt.getTime());
+  const dt = new Date(Date.UTC(y || 2026, (m || 1) - 1, d || 1, 12, 0, 0));
+  dt.setUTCDate(dt.getUTCDate() - 1);
+  return dt.toISOString().slice(0, 10);
 }
 
 function computeStreakFromDates(
@@ -677,6 +709,9 @@ export const UserAccountStore = {
       throw err;
     }
   },
+  async signInWithEmail(email: string, pass: string) {
+    return this.loginWithEmail(email, pass);
+  },
   loginAsGuest(displayName = 'Guest Explorer', email = 'guest@kinich.app') {
     const current = this.getProfile();
     const guestProfile: UserProfile = {
@@ -726,6 +761,23 @@ export const UserAccountStore = {
   savePersonalization(p: UserPersonalization): void {
     saveToStorage(STORAGE_KEYS.PERSONALIZATION, p);
     this.emitChange();
+  },
+  getPreferredStudyLanguage(): 'English' | 'Telugu' | 'Hindi' {
+    const p = this.getPersonalization();
+    const lang = String(p.preferredLanguage || 'English');
+    if (lang === 'Telugu' || lang === 'తెలుగు') return 'Telugu';
+    if (lang === 'Hindi' || lang === 'हिन्दी') return 'Hindi';
+    return 'English';
+  },
+  setPreferredStudyLanguage(lang: 'English' | 'Telugu' | 'Hindi'): void {
+    const p = this.getPersonalization();
+    this.savePersonalization({
+      ...p,
+      preferredLanguage: lang,
+    });
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('kinich-language-changed', { detail: { language: lang } }));
+    }
   },
 
 
@@ -1307,7 +1359,7 @@ export const UserAccountStore = {
     const reminderTime =
       typeof raw.reminderTime === 'string' && /^\d{2}:\d{2}$/.test(raw.reminderTime)
         ? raw.reminderTime
-        : '18:00';
+        : '19:00';
     const claimedBadges = Array.isArray(raw.claimedBadges)
       ? Array.from(new Set(raw.claimedBadges.map(String).filter(Boolean)))
       : [];
@@ -1435,7 +1487,7 @@ export const UserAccountStore = {
     const reminderTime =
       typeof raw.reminderTime === 'string' && /^\d{2}:\d{2}$/.test(raw.reminderTime)
         ? raw.reminderTime
-        : '18:00';
+        : '19:00';
 
     const updated: DailyStreakData = {
       currentStreak: computed.currentStreak,
@@ -1682,7 +1734,7 @@ export const UserAccountStore = {
       reminderTime:
         typeof settings.reminderTime === 'string' && /^\d{2}:\d{2}$/.test(settings.reminderTime)
           ? settings.reminderTime
-          : current.reminderTime || '18:00',
+          : current.reminderTime || '19:00',
       browserNotificationsEnabled:
         typeof settings.browserNotificationsEnabled === 'boolean'
           ? settings.browserNotificationsEnabled
@@ -1709,7 +1761,7 @@ export const UserAccountStore = {
   shouldShowStreakReminder(now = new Date()): boolean {
     const streak = this.getDailyStreak();
     if (!streak.reminderEnabled) return false;
-    const todayKey = toLocalDateKey(now.getTime());
+    const todayKey = toIstDateKey(now.getTime());
     if (streak.lastReminderDismissedDate === todayKey) return false;
 
     // If user has already completed their daily interaction today (either explicit interaction or met daily goal), no reminder needed
@@ -1717,13 +1769,34 @@ export const UserAccountStore = {
       return false;
     }
 
-    const [targetHour, targetMin] = (streak.reminderTime || '18:00')
+    const [targetHour, targetMin] = (streak.reminderTime || '19:00')
       .split(':')
       .map((n) => parseInt(n, 10) || 0);
-    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    const { hours, minutes } = getIstHoursAndMinutes(now);
+    const currentMinutes = hours * 60 + minutes;
     const targetMinutes = targetHour * 60 + targetMin;
 
-    return currentMinutes >= targetMinutes;
+    const shouldTrigger = currentMinutes >= targetMinutes;
+    if (
+      shouldTrigger &&
+      streak.browserNotificationsEnabled &&
+      typeof window !== 'undefined' &&
+      'Notification' in window &&
+      Notification.permission === 'granted'
+    ) {
+      try {
+        const pushSentKey = `kinich_web_push_sent_${todayKey}`;
+        if (!localStorage.getItem(pushSentKey)) {
+          localStorage.setItem(pushSentKey, '1');
+          new Notification('Kinich Daily Revision Ready', {
+            body: `Keep your ${streak.currentStreak}-day study streak alive! Complete today's Recall cards (IST ${streak.reminderTime || '19:00'}).`,
+            icon: '/favicon.svg',
+          });
+        }
+      } catch {}
+    }
+
+    return shouldTrigger;
   },
 
   async syncProfileAndSettingsWithBackend(extraPayload?: Record<string, any>): Promise<any> {

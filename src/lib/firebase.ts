@@ -1094,3 +1094,204 @@ export async function syncUserDailyQuotaToFirestore(input: {
     return null;
   }
 }
+
+export interface FirestoreExamPlanDay {
+  dateIst: string; // YYYY-MM-DD in IST
+  dayNumber: number;
+  isFullRevision: boolean;
+  chapters: string[];
+  completed: boolean;
+}
+
+export interface FirestoreExamDoc {
+  id: string;
+  userId: string;
+  name: string;
+  examDate: string; // YYYY-MM-DD in IST
+  subject?: string;
+  chapters: string[];
+  planDays: FirestoreExamPlanDay[];
+  lastReplannedAt?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export async function saveExamToFirestore(exam: Omit<FirestoreExamDoc, 'userId'> & { userId?: string }) {
+  const user = auth.currentUser;
+  if (!user || user.isAnonymous) return;
+  const safeId = String(exam.id || `exam_${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 128);
+  const path = `users/${user.uid}/exams/${safeId}`;
+  try {
+    const cleanChapters = (Array.isArray(exam.chapters) ? exam.chapters : [])
+      .map((c) => String(c || '').trim().slice(0, 160))
+      .filter(Boolean)
+      .slice(0, 100);
+    if (cleanChapters.length === 0) {
+      cleanChapters.push('Core Syllabus');
+    }
+    const cleanPlanDays = (Array.isArray(exam.planDays) ? exam.planDays : [])
+      .slice(0, 366)
+      .map((pd, idx) => ({
+        dateIst: String(pd?.dateIst || '').slice(0, 16),
+        dayNumber: Number(pd?.dayNumber || idx + 1),
+        isFullRevision: Boolean(pd?.isFullRevision),
+        chapters: Array.isArray(pd?.chapters)
+          ? pd.chapters.slice(0, 20).map((c) => String(c || '').slice(0, 160))
+          : [],
+        completed: Boolean(pd?.completed),
+      }));
+
+    const payload = stripUndefined({
+      id: safeId,
+      userId: user.uid,
+      name: String(exam.name || 'Upcoming Exam').trim().slice(0, 160) || 'Upcoming Exam',
+      examDate: String(exam.examDate || '').slice(0, 32) || getCurrentUtcDateString(),
+      subject: exam.subject ? String(exam.subject).slice(0, 120) : 'General Studies',
+      chapters: cleanChapters,
+      planDays: cleanPlanDays,
+      lastReplannedAt: exam.lastReplannedAt ? String(exam.lastReplannedAt).slice(0, 32) : '',
+      createdAt: Number(exam.createdAt) > 0 ? Number(exam.createdAt) : Date.now(),
+      updatedAt: Number(exam.updatedAt) > 0 ? Number(exam.updatedAt) : Date.now(),
+    });
+    await setDoc(doc(db, 'users', user.uid, 'exams', safeId), payload);
+  } catch (error) {
+    if (!isFirestoreOfflineError(error)) {
+      handleFirestoreError(error, OperationType.WRITE, path);
+    }
+  }
+}
+
+export async function loadExamsFromFirestore(): Promise<FirestoreExamDoc[]> {
+  const user = auth.currentUser;
+  if (!user || user.isAnonymous) return [];
+  const path = `users/${user.uid}/exams`;
+  try {
+    const q = query(collection(db, 'users', user.uid, 'exams'), where('userId', '==', user.uid));
+    const snap = await getDocs(q);
+    const exams = snap.docs.map((d) => d.data() as FirestoreExamDoc);
+    exams.sort((a, b) => String(a.examDate || '').localeCompare(String(b.examDate || '')));
+    return exams;
+  } catch (error) {
+    if (!isFirestoreOfflineError(error)) {
+      handleFirestoreError(error, OperationType.LIST, path);
+    }
+    return [];
+  }
+}
+
+export async function deleteExamFromFirestore(examId: string) {
+  const user = auth.currentUser;
+  if (!user || user.isAnonymous) return;
+  const safeId = String(examId).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 128);
+  const path = `users/${user.uid}/exams/${safeId}`;
+  try {
+    await deleteDoc(doc(db, 'users', user.uid, 'exams', safeId));
+  } catch (error) {
+    if (!isFirestoreOfflineError(error)) {
+      handleFirestoreError(error, OperationType.DELETE, path);
+    }
+  }
+}
+
+export interface FirestoreRecallCardDoc {
+  id: string;
+  userId: string;
+  type: 'flashcard' | 'quiz';
+  front: string;
+  back: string;
+  options?: string[];
+  correctIndex?: number;
+  explanation?: string;
+  subject: string;
+  chapter: string;
+  examId?: string;
+  sourceId?: string;
+  pageOrTimestamp?: string;
+  ease: number;
+  interval: number;
+  repetitions: number;
+  dueAt: number;
+  lastReviewedAt?: number;
+  wrongCount: number;
+  correctCount: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export async function saveRecallCardToFirestore(
+  card: Omit<FirestoreRecallCardDoc, 'userId'> & { userId?: string }
+) {
+  const user = auth.currentUser;
+  if (!user || user.isAnonymous) return;
+  const safeId = String(card.id || `card_${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 128);
+  const path = `users/${user.uid}/cards/${safeId}`;
+  try {
+    const payload = stripUndefined({
+      id: safeId,
+      userId: user.uid,
+      type: card.type === 'quiz' ? 'quiz' : 'flashcard',
+      front: String(card.front || 'Question').trim().slice(0, 2000) || 'Question',
+      back: String(card.back || 'Answer').trim().slice(0, 4000) || 'Answer',
+      options: Array.isArray(card.options)
+        ? card.options.slice(0, 6).map((o) => String(o || '').slice(0, 500))
+        : undefined,
+      correctIndex:
+        typeof card.correctIndex === 'number' && card.correctIndex >= 0 && card.correctIndex <= 5
+          ? Math.floor(card.correctIndex)
+          : undefined,
+      explanation: card.explanation ? String(card.explanation).slice(0, 2000) : undefined,
+      subject: String(card.subject || 'General Studies').trim().slice(0, 120) || 'General Studies',
+      chapter: String(card.chapter || 'Core Concepts').trim().slice(0, 160) || 'Core Concepts',
+      examId: card.examId ? String(card.examId).slice(0, 128) : undefined,
+      sourceId: card.sourceId ? String(card.sourceId).slice(0, 128) : undefined,
+      pageOrTimestamp: card.pageOrTimestamp ? String(card.pageOrTimestamp).slice(0, 64) : undefined,
+      ease: Math.max(1.3, Math.min(4.0, Number(card.ease) || 2.5)),
+      interval: Math.max(0, Math.min(3650, Math.floor(Number(card.interval) || 0))),
+      repetitions: Math.max(0, Math.min(10000, Math.floor(Number(card.repetitions) || 0))),
+      dueAt: Number(card.dueAt) > 0 ? Number(card.dueAt) : Date.now(),
+      lastReviewedAt: Number(card.lastReviewedAt) > 0 ? Number(card.lastReviewedAt) : undefined,
+      wrongCount: Math.max(0, Math.floor(Number(card.wrongCount) || 0)),
+      correctCount: Math.max(0, Math.floor(Number(card.correctCount) || 0)),
+      createdAt: Number(card.createdAt) > 0 ? Number(card.createdAt) : Date.now(),
+      updatedAt: Number(card.updatedAt) > 0 ? Number(card.updatedAt) : Date.now(),
+    });
+    await setDoc(doc(db, 'users', user.uid, 'cards', safeId), payload);
+  } catch (error) {
+    if (!isFirestoreOfflineError(error)) {
+      handleFirestoreError(error, OperationType.WRITE, path);
+    }
+  }
+}
+
+export async function loadRecallCardsFromFirestore(): Promise<FirestoreRecallCardDoc[]> {
+  const user = auth.currentUser;
+  if (!user || user.isAnonymous) return [];
+  const path = `users/${user.uid}/cards`;
+  try {
+    const q = query(collection(db, 'users', user.uid, 'cards'), where('userId', '==', user.uid));
+    const snap = await getDocs(q);
+    const cards = snap.docs.map((d) => d.data() as FirestoreRecallCardDoc);
+    cards.sort((a, b) => (a.dueAt || 0) - (b.dueAt || 0));
+    return cards;
+  } catch (error) {
+    if (!isFirestoreOfflineError(error)) {
+      handleFirestoreError(error, OperationType.LIST, path);
+    }
+    return [];
+  }
+}
+
+export async function deleteRecallCardFromFirestore(cardId: string) {
+  const user = auth.currentUser;
+  if (!user || user.isAnonymous) return;
+  const safeId = String(cardId).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 128);
+  const path = `users/${user.uid}/cards/${safeId}`;
+  try {
+    await deleteDoc(doc(db, 'users', user.uid, 'cards', safeId));
+  } catch (error) {
+    if (!isFirestoreOfflineError(error)) {
+      handleFirestoreError(error, OperationType.DELETE, path);
+    }
+  }
+}
+

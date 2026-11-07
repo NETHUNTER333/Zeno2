@@ -138,6 +138,37 @@ service cloud.firestore {
         data.createdAt is number;
     }
 
+    function isValidExam(data, userId, examId) {
+      return data.keys().hasAll(['id', 'userId', 'name', 'examDate', 'chapters', 'planDays', 'createdAt', 'updatedAt']) &&
+        data.id is string && data.id == examId && data.id.size() <= 128 &&
+        data.userId is string && data.userId == userId && data.userId.size() <= 128 &&
+        data.name is string && data.name.size() <= 200 &&
+        data.examDate is string && data.examDate.size() <= 32 &&
+        data.chapters is list && data.chapters.size() <= 150 &&
+        data.planDays is list && data.planDays.size() <= 366 &&
+        data.createdAt is number &&
+        data.updatedAt is number;
+    }
+
+    function isValidCard(data, userId, cardId) {
+      return data.keys().hasAll(['id', 'userId', 'type', 'front', 'back', 'subject', 'chapter', 'ease', 'interval', 'repetitions', 'dueAt', 'wrongCount', 'correctCount', 'createdAt', 'updatedAt']) &&
+        data.id is string && data.id == cardId && data.id.size() <= 128 &&
+        data.userId is string && data.userId == userId && data.userId.size() <= 128 &&
+        data.type in ['flashcard', 'quiz'] &&
+        data.front is string && data.front.size() <= 2000 &&
+        data.back is string && data.back.size() <= 5000 &&
+        data.subject is string && data.subject.size() <= 120 &&
+        data.chapter is string && data.chapter.size() <= 160 &&
+        data.ease is number &&
+        data.interval is number &&
+        data.repetitions is number &&
+        data.dueAt is number &&
+        data.wrongCount is number &&
+        data.correctCount is number &&
+        data.createdAt is number &&
+        data.updatedAt is number;
+    }
+
     function isValidMorningBrief(data, userId, briefDate) {
       return data.keys().hasAll(['id', 'userId', 'briefDate', 'createdAt']) &&
         data.id is string && data.id == briefDate && data.id.size() <= 128 &&
@@ -289,6 +320,20 @@ service cloud.firestore {
         allow list: if isOwner(userId) && existing().userId == request.auth.uid;
         allow create, update: if isOwner(userId) && isValidId(userId) && isValidId(planId) && isValidStudyPlan(incoming(), userId, planId);
         allow delete: if isOwner(userId) && isValidId(userId) && isValidId(planId);
+      }
+
+      match /exams/{examId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(examId);
+        allow list: if isOwner(userId) && existing().userId == request.auth.uid;
+        allow create, update: if isOwner(userId) && isValidId(userId) && isValidId(examId) && isValidExam(incoming(), userId, examId);
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(examId);
+      }
+
+      match /cards/{cardId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(cardId);
+        allow list: if isOwner(userId) && existing().userId == request.auth.uid;
+        allow create, update: if isOwner(userId) && isValidId(userId) && isValidId(cardId) && isValidCard(incoming(), userId, cardId);
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(cardId);
       }
 
       match /morning_briefs/{briefDate} {

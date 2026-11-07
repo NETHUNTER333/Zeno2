@@ -2489,6 +2489,13 @@ export default function App() {
                   setCurrentView('chat');
                   handleSend(prompt);
                 }}
+                onOpenPricing={(highlightPlan, reason) =>
+                  setPricingModalState({
+                    isOpen: true,
+                    highlightPlan: highlightPlan || 'spark',
+                    limitReason: reason || null,
+                  })
+                }
               />
             </div>
           ) : (

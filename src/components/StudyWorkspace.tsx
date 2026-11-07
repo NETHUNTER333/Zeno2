@@ -68,6 +68,13 @@ import { apiFetch } from '../lib/apiBase';
 import { UserAccountStore } from '../lib/userAccountStore';
 import { KnowledgeVaultStore } from '../lib/growthStore';
 import { MathMarkdown } from './MathMarkdown';
+import { StudyLoopPanel } from './StudyLoopPanel';
+import {
+  StudyLoopStore,
+  startBackgroundAudioRecap,
+  stopBackgroundAudioRecap,
+  type StudyLanguage,
+} from '../lib/studyLoopStore';
 
 export interface StudyWorkspaceProps {
   initialVideo?: YouTubeVideoInfo | null;
@@ -79,6 +86,7 @@ export interface StudyWorkspaceProps {
   onBackToChat: () => void;
   isDark?: boolean;
   onAskKinich?: (prompt: string) => void;
+  onOpenPricing?: (highlightPlan?: 'spark' | 'fire', reason?: string) => void;
 }
 
 export type WorkspaceTabType =
@@ -862,12 +870,128 @@ ${fullTranscriptText}`;
   };
 
   const studyPollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [summaryLocalLang, setSummaryLocalLang] = useState<StudyLanguage>(() =>
+    UserAccountStore.getPreferredStudyLanguage()
+  );
+  const [summaryTranslatedText, setSummaryTranslatedText] = useState<string | null>(null);
+  const [summaryTranslating, setSummaryTranslating] = useState(false);
+  const [summaryTranslateError, setSummaryTranslateError] = useState<string | null>(null);
+  const [recallToastMsg, setRecallToastMsg] = useState<string | null>(null);
+  const [bgAudioRecapState, setBgAudioRecapState] = useState<
+    'idle' | 'loading' | 'playing' | 'paused' | 'ended' | 'error'
+  >('idle');
+  const [bgAudioRecapInfo, setBgAudioRecapInfo] = useState<string | null>(null);
+
+  const handleAddCurrentStudyToRecall = async () => {
+    if (!studyBundle) return;
+    const cardsToAdd = [
+      ...(studyBundle.flashcards || []).map((f: any) => ({
+        type: 'flashcard' as const,
+        front: String(f.front || ''),
+        back: String(f.back || ''),
+        subject: sageStudyCard?.subject || 'General Studies',
+        chapter: sageStudyCard?.chapter || resolvedTitle.slice(0, 80),
+        sourceId: activeVideoId || resolvedTitle,
+        pageOrTimestamp:
+          typeof f.timestamp === 'number' ? formatTime(f.timestamp) : undefined,
+      })),
+      ...(studyBundle.quiz || []).map((q: any) => ({
+        type: 'quiz' as const,
+        front: String(q.question || ''),
+        back: String(q.options?.[q.correctIndex] || q.explanation || ''),
+        options: Array.isArray(q.options) ? q.options : undefined,
+        correctIndex: q.correctIndex,
+        explanation: q.explanation,
+        subject: sageStudyCard?.subject || 'General Studies',
+        chapter: sageStudyCard?.chapter || resolvedTitle.slice(0, 80),
+        sourceId: activeVideoId || resolvedTitle,
+        pageOrTimestamp:
+          typeof q.timestamp === 'number' ? formatTime(q.timestamp) : undefined,
+      })),
+    ];
+    const res = await StudyLoopStore.addCardsToRecall(cardsToAdd);
+    if (res.ok) {
+      setRecallToastMsg(
+        `Added ${res.addedCount || cardsToAdd.length} cards to your SM-2 Recall deck!`
+      );
+      setTimeout(() => setRecallToastMsg(null), 4000);
+    }
+  };
+
+  const handleExplainSummaryInLocalLang = async (lang: StudyLanguage) => {
+    setSummaryLocalLang(lang);
+    UserAccountStore.setPreferredStudyLanguage(lang);
+    if (!studyBundle || lang === 'English') {
+      setSummaryTranslatedText(null);
+      setSummaryTranslateError(null);
+      return;
+    }
+    setSummaryTranslating(true);
+    setSummaryTranslateError(null);
+    const sourceText = [
+      studyBundle.summary.overview,
+      ...statementBreakdown.slice(0, 5).map((s) => `${s.heading}: ${s.elaboration}`),
+    ]
+      .filter(Boolean)
+      .join('\n\n');
+    const res = await StudyLoopStore.explainInLanguage(sourceText, lang);
+    setSummaryTranslating(false);
+    if (!res.ok || !res.explainedText) {
+      setSummaryTranslateError(res.error || `Could not explain in ${lang}. Tap Retry.`);
+      return;
+    }
+    setSummaryTranslatedText(res.explainedText);
+  };
+
+  const handleStartSummaryAudioRecap = async () => {
+    if (!studyBundle) return;
+    if (bgAudioRecapState === 'playing') {
+      stopBackgroundAudioRecap();
+      setBgAudioRecapState('idle');
+      return;
+    }
+    setBgAudioRecapState('loading');
+    setBgAudioRecapInfo(null);
+    const fullText = [
+      studyBundle.summary.overview,
+      ...statementBreakdown.slice(0, 5).map((s) => `${s.heading}: ${s.elaboration}`),
+    ]
+      .filter(Boolean)
+      .join('. ');
+
+    const recapRes = await StudyLoopStore.fetchAudioRecap({
+      itemId: activeVideoId || resolvedTitle || 'study_summary',
+      title: resolvedTitle || 'Study Summary',
+      summaryText: fullText,
+      language: summaryLocalLang,
+    });
+
+    if (!recapRes.ok || !recapRes.script) {
+      setBgAudioRecapState('error');
+      setBgAudioRecapInfo(recapRes.error || 'Could not prepare Audio Recap. Tap Retry.');
+      return;
+    }
+
+    await startBackgroundAudioRecap({
+      itemId: activeVideoId || resolvedTitle || 'study_summary',
+      title: resolvedTitle || 'Study Summary',
+      script: recapRes.script,
+      language: summaryLocalLang,
+      isPreview: Boolean(recapRes.isPreview),
+      maxDurationSeconds: recapRes.maxDurationSeconds || 30,
+      onStateChange: (st, info) => {
+        setBgAudioRecapState(st);
+        if (info) setBgAudioRecapInfo(info);
+      },
+    });
+  };
 
   useEffect(() => {
     return () => {
       if (studyPollTimerRef.current) {
         clearTimeout(studyPollTimerRef.current);
       }
+      stopBackgroundAudioRecap();
     };
   }, []);
 
@@ -2386,6 +2510,11 @@ ${fullTranscriptText}`;
                 <ArrowUp className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               </button>
             </form>
+
+            {/* Complete Kinich Study Loop (Exams, Daily SM-2 Recall, Auto Plan, Weak Spots, Upload Anything, Snap & Solve) */}
+            <div className="pt-2">
+              <StudyLoopPanel embedded={true} />
+            </div>
 
             {/* Saved Spaces Section */}
             <div className="space-y-2.5 pt-1">
@@ -3976,7 +4105,68 @@ ${fullTranscriptText}`;
                         {resolvedTitle}
                       </h2>
 
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <button
+                          type="button"
+                          data-testid="study-summary-add-to-recall-btn"
+                          onClick={handleAddCurrentStudyToRecall}
+                          className="h-8 inline-flex items-center gap-1.5 px-3.5 rounded-full bg-[#FC4C01] hover:bg-[#e04300] text-white text-xs font-semibold cursor-pointer transition-colors"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Add to Recall</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          data-testid="study-summary-audio-recap-btn"
+                          onClick={handleStartSummaryAudioRecap}
+                          className={`h-8 inline-flex items-center gap-1.5 px-3.5 rounded-full border text-xs font-semibold cursor-pointer ${
+                            bgAudioRecapState === 'playing'
+                              ? 'bg-[#FC4C01]/20 border-[#FC4C01] text-[#FC4C01]'
+                              : borderSubtle
+                          }`}
+                        >
+                          {bgAudioRecapState === 'playing' ? (
+                            <VolumeX className="w-3.5 h-3.5 text-[#FC4C01]" />
+                          ) : (
+                            <Volume2 className="w-3.5 h-3.5 text-[#FC4C01]" />
+                          )}
+                          <span>
+                            {bgAudioRecapState === 'loading'
+                              ? 'Preparing Audio...'
+                              : bgAudioRecapState === 'playing'
+                              ? 'Stop Audio Recap'
+                              : UserAccountStore.getCurrentPlan() === 'free'
+                              ? 'Listen (30s Preview)'
+                              : 'Listen (Audio Recap)'}
+                          </span>
+                        </button>
+
+                        <div
+                          className="inline-flex items-center rounded-full border border-white/15 bg-black/40 p-0.5 text-xs"
+                          data-testid="study-summary-lang-toggle"
+                        >
+                          {(['English', 'Telugu', 'Hindi'] as StudyLanguage[]).map((lang) => (
+                            <button
+                              key={lang}
+                              type="button"
+                              onClick={() => handleExplainSummaryInLocalLang(lang)}
+                              disabled={summaryTranslating}
+                              className={`px-2.5 py-1 rounded-full font-semibold transition cursor-pointer ${
+                                summaryLocalLang === lang
+                                  ? 'bg-[#FC4C01] text-white'
+                                  : 'text-neutral-400 hover:text-white'
+                              }`}
+                            >
+                              {lang === 'English'
+                                ? 'EN'
+                                : lang === 'Telugu'
+                                ? 'తెలుగు'
+                                : 'हिन्दी'}
+                            </button>
+                          ))}
+                        </div>
+
                         <button
                           type="button"
                           onClick={() => setIsReadingMode(true)}
@@ -3989,19 +4179,6 @@ ${fullTranscriptText}`;
                         >
                           <BookOpen className="w-3.5 h-3.5" />
                           <span>Reading Mode</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={handleToggleListenSummary}
-                          className={`h-8 inline-flex items-center gap-1.5 px-3.5 rounded-full border text-xs font-medium cursor-pointer ${borderSubtle}`}
-                        >
-                          {isListeningSummary ? (
-                            <VolumeX className="w-3.5 h-3.5" />
-                          ) : (
-                            <Volume2 className="w-3.5 h-3.5" />
-                          )}
-                          <span>{isListeningSummary ? 'Stop' : 'Listen'}</span>
                         </button>
 
                         <button
@@ -4023,6 +4200,46 @@ ${fullTranscriptText}`;
                         </button>
                       </div>
                     </div>
+
+                    {recallToastMsg && (
+                      <div className="p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-xs text-emerald-300 font-semibold">
+                        {recallToastMsg}
+                      </div>
+                    )}
+
+                    {bgAudioRecapInfo && (
+                      <div className="p-3 rounded-xl bg-[#FC4C01]/10 border border-[#FC4C01]/30 text-xs text-amber-200 flex items-center justify-between gap-2">
+                        <span>{bgAudioRecapInfo}</span>
+                        {bgAudioRecapState === 'error' && (
+                          <button
+                            type="button"
+                            onClick={handleStartSummaryAudioRecap}
+                            className="px-2.5 py-1 rounded bg-[#FC4C01] text-white font-semibold"
+                          >
+                            Retry
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {summaryTranslateError && (
+                      <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/40 text-xs text-rose-200 flex items-center justify-between gap-2">
+                        <span>{summaryTranslateError}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleExplainSummaryInLocalLang(summaryLocalLang)}
+                          className="px-2.5 py-1 rounded bg-[#FC4C01] text-white font-semibold"
+                        >
+                          Retry
+                        </button>
+                      </div>
+                    )}
+
+                    {summaryTranslatedText && (
+                      <div className="p-4 rounded-2xl bg-[#FC4C01]/10 border border-[#FC4C01]/30 text-sm whitespace-pre-wrap leading-relaxed">
+                        {summaryTranslatedText}
+                      </div>
+                    )}
 
                     {isEditingSummary ? (
                       <textarea

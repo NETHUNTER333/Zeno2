@@ -284,6 +284,56 @@
         "createdAt": { "type": "number" }
       },
       "required": ["id", "userId", "threadId", "keyPointText", "createdAt"]
+    },
+    "Exam": {
+      "title": "Exam",
+      "description": "Exam countdown and auto-replanned daily study schedule in IST",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 200 },
+        "examDate": { "type": "string", "maxLength": 32 },
+        "examTimestamp": { "type": "number" },
+        "subjects": { "type": "array" },
+        "chapters": { "type": "array" },
+        "planDays": { "type": "array" },
+        "lastReplannedDateIst": { "type": "string", "maxLength": 32 },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["id", "userId", "name", "examDate", "chapters", "planDays", "createdAt", "updatedAt"]
+    },
+    "Card": {
+      "title": "Card (SM-2)",
+      "description": "Spaced-repetition review card (flashcard or quiz question) in users/{uid}/cards",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "type": { "type": "string", "enum": ["flashcard", "quiz"] },
+        "front": { "type": "string", "maxLength": 2000 },
+        "back": { "type": "string", "maxLength": 5000 },
+        "options": { "type": "array" },
+        "correctIndex": { "type": "number" },
+        "explanation": { "type": "string", "maxLength": 3000 },
+        "subject": { "type": "string", "maxLength": 120 },
+        "chapter": { "type": "string", "maxLength": 160 },
+        "sourceTitle": { "type": "string", "maxLength": 300 },
+        "sourceRef": { "type": "string", "maxLength": 120 },
+        "ease": { "type": "number" },
+        "interval": { "type": "number" },
+        "repetitions": { "type": "number" },
+        "dueAt": { "type": "number" },
+        "dueDateIst": { "type": "string", "maxLength": 32 },
+        "wrongCount": { "type": "number" },
+        "correctCount": { "type": "number" },
+        "lastGrade": { "type": "string", "maxLength": 32 },
+        "lastReviewedAt": { "type": "number" },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["id", "userId", "type", "front", "back", "subject", "chapter", "ease", "interval", "repetitions", "dueAt", "wrongCount", "correctCount", "createdAt", "updatedAt"]
     }
   },
   "firestore": {
@@ -334,6 +384,14 @@
     "/users/{userId}/study_plans/{planId}": {
       "schema": { "$ref": "#/entities/StudyPlan" },
       "description": "Stores exam study plans generated from Vault (Phase 3)"
+    },
+    "/users/{userId}/exams/{examId}": {
+      "schema": { "$ref": "#/entities/Exam" },
+      "description": "Stores exam countdowns and auto-replanned daily study schedules"
+    },
+    "/users/{userId}/cards/{cardId}": {
+      "schema": { "$ref": "#/entities/Card" },
+      "description": "Stores SM-2 spaced-repetition review cards (flashcards and quiz questions)"
     },
     "/users/{userId}/morning_briefs/{briefDate}": {
       "schema": { "$ref": "#/entities/MorningBrief" },

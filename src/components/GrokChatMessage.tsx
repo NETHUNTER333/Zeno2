@@ -85,6 +85,7 @@ import { PeleDiagram } from './PeleDiagram';
 import { TtsPopup } from './TtsPopup';
 import { UserAccountStore } from '../lib/userAccountStore';
 import { KnowledgeVaultStore } from '../lib/growthStore';
+import { StudyLoopStore, StudyExplainLanguage } from '../lib/studyLoopStore';
 import { YouTubeTranscriptModal, extractYouTubeIdFromInput } from './YouTubeTranscriptModal';
 import { ModelOption } from './GrokModelPicker';
 
@@ -381,6 +382,36 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
 
   const [savedToVault, setSavedToVault] = useState(false);
   const [showActionsOnTap, setShowActionsOnTap] = useState(false);
+  const [chatExplainLang, setChatExplainLang] = useState<StudyExplainLanguage>('English');
+  const [chatTranslatedContent, setChatTranslatedContent] = useState<string | null>(null);
+  const [chatTranslating, setChatTranslating] = useState(false);
+  const [chatTranslateError, setChatTranslateError] = useState<string | null>(null);
+
+  const handleChatExplainInLanguage = async (lang: StudyExplainLanguage) => {
+    setChatExplainLang(lang);
+    setChatTranslateError(null);
+    if (lang === 'English') {
+      setChatTranslatedContent(null);
+      return;
+    }
+    const cleanText = String(message.content || '')
+      .replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '')
+      .trim();
+    if (!cleanText) return;
+    setChatTranslating(true);
+    try {
+      const res = await StudyLoopStore.explainInLanguage(cleanText, lang);
+      if (res.ok && res.explainedText) {
+        setChatTranslatedContent(res.explainedText);
+      } else {
+        setChatTranslateError(res.error || `Could not explain in ${lang}. Please retry.`);
+      }
+    } catch (err: any) {
+      setChatTranslateError(err?.message || `Could not explain in ${lang}. Please retry.`);
+    } finally {
+      setChatTranslating(false);
+    }
+  };
 
   // Highlight & Save Segment to Knowledge Vault state
   const messageContentRef = React.useRef<HTMLDivElement>(null);
@@ -2578,16 +2609,70 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
             </div>
           )}
 
+          {/* Phase D: Inline Telugu / Hindi Explanation Box */}
+          {(chatTranslating || chatTranslateError || (chatExplainLang !== 'English' && chatTranslatedContent)) && (
+            <div
+              className={`mt-2.5 p-3.5 rounded-xl border text-xs leading-relaxed space-y-2 ${
+                isDark
+                  ? 'bg-[#FC4C01]/[0.05] border-[#FC4C01]/30 text-neutral-200'
+                  : 'bg-[#FC4C01]/[0.04] border-[#FC4C01]/25 text-neutral-800'
+              }`}
+              data-testid="chat-translated-explanation"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-bold text-[#FC4C01] flex items-center gap-1.5">
+                  <Globe className="w-3.5 h-3.5" />
+                  <span>
+                    {chatExplainLang === 'Telugu' ? 'తెలుగు వివరణ (Telugu)' : 'हिन्दी व्याख्या (Hindi)'} · Technical terms in English
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handleChatExplainInLanguage('English')}
+                  className="text-[10px] font-semibold text-neutral-400 hover:text-white cursor-pointer"
+                >
+                  Hide
+                </button>
+              </div>
+              {chatTranslating ? (
+                <div className="flex items-center gap-2 text-neutral-400 py-1">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-[#FC4C01]" />
+                  <span>Translating explanation to {chatExplainLang}…</span>
+                </div>
+              ) : chatTranslateError ? (
+                <div className="flex items-center justify-between gap-2 text-red-400">
+                  <span>{chatTranslateError}</span>
+                  <button
+                    type="button"
+                    onClick={() => handleChatExplainInLanguage(chatExplainLang)}
+                    className="px-2.5 py-1 rounded-lg bg-[#FC4C01] text-white text-[11px] font-bold cursor-pointer shrink-0"
+                  >
+                    Retry
+                  </button>
+                </div>
+              ) : (
+                <div className="whitespace-pre-wrap">{chatTranslatedContent}</div>
+              )}
+            </div>
+          )}
+
           {/* Assistant Action Bar & Timing Tooltip (Hidden until hover or tap) */}
           {!message.isStreaming && (
             <div
               className={`items-center justify-between transition-opacity duration-150 ${
-                showActionsOnTap || showTtsPopup || copied || savedToVault || showSegmentPicker || segmentSavedToast
+                showActionsOnTap ||
+                showTtsPopup ||
+                copied ||
+                savedToVault ||
+                showSegmentPicker ||
+                segmentSavedToast ||
+                chatExplainLang !== 'English' ||
+                chatTranslating
                   ? 'mt-1 flex opacity-100'
                   : 'hidden group-hover/msg:mt-1 group-hover/msg:flex group-hover/msg:opacity-100'
               }`}
             >
-              <div className={`flex items-center gap-1.5 ${isDark ? 'text-[#6b6b6b]' : 'text-[#9ca3af]'}`}>
+              <div className={`flex flex-wrap items-center gap-1.5 ${isDark ? 'text-[#6b6b6b]' : 'text-[#9ca3af]'}`}>
                 {/* On-demand Read Aloud Icon + Popup */}
                 <button
                   type="button"
@@ -2711,6 +2796,36 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                       : 'Save to Vault'}
                   </span>
                 </button>
+
+                {/* Phase D: Explain in Telugu / Hindi toggle on chat answers */}
+                <div
+                  className={`inline-flex items-center rounded-lg border p-0.5 text-[10.5px] font-semibold ${
+                    isDark ? 'border-white/10 bg-white/[0.03]' : 'border-black/10 bg-black/[0.03]'
+                  }`}
+                  data-testid="chat-explain-lang-toggle"
+                >
+                  {(['English', 'Telugu', 'Hindi'] as StudyExplainLanguage[]).map((lang) => {
+                    const active = chatExplainLang === lang;
+                    return (
+                      <button
+                        key={lang}
+                        type="button"
+                        onClick={() => handleChatExplainInLanguage(lang)}
+                        disabled={chatTranslating}
+                        className={`px-1.5 py-0.5 rounded-md transition-colors cursor-pointer ${
+                          active
+                            ? 'bg-[#FC4C01] text-white'
+                            : isDark
+                            ? 'text-neutral-400 hover:text-white'
+                            : 'text-neutral-600 hover:text-black'
+                        }`}
+                        title={`Explain answer in ${lang}`}
+                      >
+                        {lang === 'English' ? 'EN' : lang === 'Telugu' ? 'తెలుగు' : 'हिन्दी'}
+                      </button>
+                    );
+                  })}
+                </div>
 
                 {onOpenShareStudio && (
                   <button
