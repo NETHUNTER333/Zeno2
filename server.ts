@@ -10147,7 +10147,7 @@ ${transcriptChunk}`;
     const targetQuizFloor = 50;
     const targetFcFloor = 30;
 
-    if (dedupedQuiz.length < targetQuizFloor || dedupedFlashcards.length < targetFcFloor) {
+    if (false) {  // Skip global synthesis pass to reduce LLM calls
       const neededQ = Math.max(16, 58 - dedupedQuiz.length);
       const neededFc = Math.max(12, 42 - dedupedFlashcards.length);
 
