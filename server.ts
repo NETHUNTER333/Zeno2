@@ -9928,7 +9928,7 @@ app.post('/api/youtube/study', async (req, res) => {
     );
 
     // Format transcript as [mm:ss] text lines. Sample every 3rd segment beyond the first 60 to keep LLM calls fast.
-    const sampledSegments = activeSegments.filter((_, idx) => idx < 5 || idx % 40 === 0);
+    const sampledSegments = activeSegments.filter((_, idx) => idx < 3 || idx % 80 === 0);
     const formattedLines = sampledSegments.map(
       (s) => `[${formatMmSs(s.start_s)}] (t=${Math.floor(s.start_s)}s) ${s.text}`
     );
