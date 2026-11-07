@@ -752,7 +752,7 @@ ${fullTranscriptText}`;
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({ query: cleanTopic }),
-        signal: AbortSignal.timeout(25000),
+        signal: AbortSignal.timeout(120000),
       });
 
       if (!res.ok) {
@@ -1042,7 +1042,7 @@ ${fullTranscriptText}`;
           videoAuthor: resolvedAuthor,
           segments: effectiveSegs,
         }),
-        signal: AbortSignal.timeout(25000),
+        signal: AbortSignal.timeout(120000),
       });
       if (aiRes.ok) {
         const aiData = await aiRes.json();
@@ -1180,7 +1180,7 @@ ${fullTranscriptText}`;
             videoAuthor: author,
             segments: consolidated,
           }),
-          signal: AbortSignal.timeout(25000),
+          signal: AbortSignal.timeout(120000),
         });
 
         if (aiRes.ok) {
