@@ -954,6 +954,7 @@ export const StudyLoopStore = {
     const updatedCard: RecallCard = {
       ...target,
       ...nextMetrics,
+      lastGrade: grade,
       lastReviewedAt: Date.now(),
       updatedAt: Date.now(),
     };
@@ -962,8 +963,107 @@ export const StudyLoopStore = {
     this.saveCardsLocal(nextCards);
     this.incrementDailyReviewCount();
 
+    saveRecallCardToFirestore(updatedCard).catch(() => {});
     if (!UserAccountStore.isGuest()) {
-      saveRecallCardToFirestore(updatedCard).catch(() => {});
+      UserAccountStore.recordDailyInteraction();
+    }
+
+    return { ok: true, card: updatedCard };
+  },
+
+  getCardGrade(idOrFront: string): RecallGrade | undefined {
+    const key = String(idOrFront || '').trim();
+    if (!key) return undefined;
+    const safeId = key.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 128);
+    const cards = this.getCards();
+    const found = cards.find(
+      (c) =>
+        c.id === key ||
+        c.id === safeId ||
+        c.front.trim().toLowerCase() === key.toLowerCase()
+    );
+    return found?.lastGrade;
+  },
+
+  async rateOrUpsertCard(
+    item: {
+      id?: string;
+      type: 'flashcard' | 'quiz';
+      front: string;
+      back: string;
+      options?: string[];
+      correctIndex?: number;
+      explanation?: string;
+      subject?: string;
+      chapter?: string;
+      sourceId?: string;
+      pageOrTimestamp?: string;
+    },
+    grade: RecallGrade
+  ): Promise<{ ok: boolean; card?: RecallCard; error?: string }> {
+    const cleanFront = String(item.front || '').trim();
+    const cleanBack = String(item.back || 'Answer').trim() || 'Answer';
+    if (!cleanFront) {
+      return { ok: false, error: 'Missing card prompt.' };
+    }
+
+    const cards = this.getCards();
+    const rawId = String(item.id || `sm2_${cleanFront.slice(0, 48)}`).replace(
+      /[^a-zA-Z0-9_-]/g,
+      '_'
+    ).slice(0, 128);
+
+    const existing = cards.find(
+      (c) =>
+        c.id === rawId ||
+        c.id === item.id ||
+        c.front.trim().toLowerCase() === cleanFront.toLowerCase()
+    );
+
+    if (existing) {
+      return this.gradeCard(existing.id, grade);
+    }
+
+    const now = Date.now();
+    const uid = auth.currentUser?.uid || UserAccountStore.getProfile().id || 'user';
+    const baseCard: RecallCard = {
+      id: rawId || `rc_${now}`,
+      userId: uid,
+      type: item.type === 'quiz' ? 'quiz' : 'flashcard',
+      front: cleanFront.slice(0, 1500),
+      back: cleanBack.slice(0, 3000),
+      options: Array.isArray(item.options) ? item.options.slice(0, 6) : undefined,
+      correctIndex: item.correctIndex,
+      explanation: item.explanation,
+      subject: (item.subject || 'General Studies').trim().slice(0, 80),
+      chapter: (item.chapter || 'Core Concepts').trim().slice(0, 120),
+      sourceId: item.sourceId,
+      pageOrTimestamp: item.pageOrTimestamp,
+      ease: 2.5,
+      interval: 0,
+      repetitions: 0,
+      dueAt: now,
+      wrongCount: 0,
+      correctCount: 0,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const nextMetrics = computeSm2Local(baseCard, grade, now);
+    const updatedCard: RecallCard = {
+      ...baseCard,
+      ...nextMetrics,
+      lastGrade: grade,
+      lastReviewedAt: now,
+      updatedAt: now,
+    };
+
+    const nextCards = [updatedCard, ...cards];
+    this.saveCardsLocal(nextCards);
+    this.incrementDailyReviewCount();
+
+    saveRecallCardToFirestore(updatedCard).catch(() => {});
+    if (!UserAccountStore.isGuest()) {
       UserAccountStore.recordDailyInteraction();
     }
 

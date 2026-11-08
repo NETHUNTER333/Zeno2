@@ -530,4 +530,10 @@ describe('Phase 4 — Firestore Security Rules & Dirty Dozen Authorization Audit
       })
     ).toBe(false);
   });
+
+  it('validates SM-2 spaced repetition cards under /users/{userId}/cards/{cardId}', () => {
+    expect(rulesContent).toContain('match /cards/{cardId}');
+    expect(rulesContent).toContain('isValidCard(incoming(), userId, cardId)');
+    expect(rulesContent).toContain("data.lastGrade in ['again', 'hard', 'good', 'easy']");
+  });
 });

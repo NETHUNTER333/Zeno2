@@ -46,6 +46,7 @@ import {
   DocumentStudyBundle,
   extractTextFromPdfFile,
 } from '../lib/pdfStudyEngine';
+import { StudyLoopStore, type RecallGrade } from '../lib/studyLoopStore';
 
 export type PdfStudioTab =
   | 'learn'
@@ -1552,41 +1553,90 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
                               </div>
                             )}
 
-                            {/* Ask Chat & Don't Know Row */}
-                            <div className="mt-3 pt-2.5 flex items-center justify-end gap-2">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setStudioTab('chat');
-                                  handleSendPdfChat(`Walk me through this question: "${q.question}"`);
-                                }}
-                                className={`px-3 py-1.5 rounded-full border text-[11px] font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
-                                  isDark
-                                    ? 'border-white/[0.1] text-neutral-300 hover:bg-white/[0.06]'
-                                    : 'border-black/[0.1] text-neutral-700 hover:bg-black/[0.04]'
-                                }`}
-                              >
-                                <MessageSquare className="w-3 h-3" />
-                                <span>Ask chat</span>
-                              </button>
-                              {!hasAnswered && (
+                            {/* SM-2 + Ask Chat & Don't Know Row */}
+                            <div className="mt-3 pt-2.5 flex flex-wrap items-center justify-between gap-2">
+                              <div className="flex items-center gap-1.5">
+                                {(['again', 'hard', 'good', 'easy'] as const).map((g) => {
+                                  const activeGrade =
+                                    StudyLoopStore.getCardGrade(`pdf_${q.id}`) ||
+                                    StudyLoopStore.getCardGrade(q.question);
+                                  const isSelected = activeGrade === g;
+                                  const label = g.charAt(0).toUpperCase() + g.slice(1);
+                                  return (
+                                    <button
+                                      key={g}
+                                      type="button"
+                                      onClick={async () => {
+                                        await StudyLoopStore.rateOrUpsertCard(
+                                          {
+                                            id: `pdf_${q.id}`,
+                                            type: 'quiz',
+                                            front: q.question,
+                                            back: q.options[q.correctIndex] || q.explanation,
+                                            options: q.options,
+                                            correctIndex: q.correctIndex,
+                                            explanation: q.explanation,
+                                            subject: 'Document Study',
+                                            chapter: activePdfName.slice(0, 80),
+                                            sourceId: activePdfName,
+                                            pageOrTimestamp: q.pageRef ? `Page ${q.pageRef}` : undefined,
+                                          },
+                                          g as RecallGrade
+                                        );
+                                        setQuizAnswers((prev) => ({
+                                          ...prev,
+                                          [q.id]: prev[q.id] ?? q.correctIndex,
+                                        }));
+                                      }}
+                                      className={`px-3 py-1 rounded-full border text-[11px] font-medium transition-colors cursor-pointer ${
+                                        isSelected
+                                          ? 'bg-[#FC4C01] text-white border-[#FC4C01]'
+                                          : isDark
+                                          ? 'border-white/[0.1] text-neutral-300 hover:bg-white/[0.06]'
+                                          : 'border-black/[0.1] text-neutral-700 hover:bg-black/[0.04]'
+                                      }`}
+                                    >
+                                      {label}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+
+                              <div className="flex items-center gap-2">
                                 <button
                                   type="button"
-                                  onClick={() =>
-                                    setQuizAnswers((prev) => ({
-                                      ...prev,
-                                      [q.id]: q.correctIndex,
-                                    }))
-                                  }
-                                  className={`px-3 py-1.5 rounded-full border text-[11px] font-medium transition-colors cursor-pointer ${
+                                  onClick={() => {
+                                    setStudioTab('chat');
+                                    handleSendPdfChat(`Walk me through this question: "${q.question}"`);
+                                  }}
+                                  className={`px-3 py-1.5 rounded-full border text-[11px] font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
                                     isDark
                                       ? 'border-white/[0.1] text-neutral-300 hover:bg-white/[0.06]'
                                       : 'border-black/[0.1] text-neutral-700 hover:bg-black/[0.04]'
                                   }`}
                                 >
-                                  Don't know
+                                  <MessageSquare className="w-3 h-3" />
+                                  <span>Ask chat</span>
                                 </button>
-                              )}
+                                {!hasAnswered && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setQuizAnswers((prev) => ({
+                                        ...prev,
+                                        [q.id]: q.correctIndex,
+                                      }))
+                                    }
+                                    className={`px-3 py-1.5 rounded-full border text-[11px] font-medium transition-colors cursor-pointer ${
+                                      isDark
+                                        ? 'border-white/[0.1] text-neutral-300 hover:bg-white/[0.06]'
+                                        : 'border-black/[0.1] text-neutral-700 hover:bg-black/[0.04]'
+                                    }`}
+                                  >
+                                    Don't know
+                                  </button>
+                                )}
+                              </div>
                             </div>
                           </div>
                         );
@@ -1716,8 +1766,8 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
                           </div>
                         </div>
 
-                        {/* Compact Flashcard Navigation Pills */}
-                        <div className="flex items-center justify-between gap-2">
+                        {/* Compact Flashcard Navigation & SM-2 Pills */}
+                        <div className="flex flex-wrap items-center justify-between gap-2">
                           <button
                             type="button"
                             disabled={safeCardIndex === 0}
@@ -1725,7 +1775,7 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
                               setIsCardFlipped(false);
                               setCardIndex(Math.max(0, safeCardIndex - 1));
                             }}
-                            className={`px-3.5 py-2 rounded-full border text-xs font-medium transition-colors cursor-pointer disabled:opacity-35 ${
+                            className={`px-3.5 py-1.5 rounded-full border text-xs font-medium transition-colors cursor-pointer disabled:opacity-35 ${
                               isDark
                                 ? 'bg-[#14161f] border-white/[0.1] text-white'
                                 : 'bg-white border-black/[0.1] text-black'
@@ -1735,51 +1785,53 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
                           </button>
 
                           <div className="flex items-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setCardMastery((prev) => ({
-                                  ...prev,
-                                  [currentCard.id]: 'review',
-                                }));
-                                setIsCardFlipped(false);
-                                if (safeCardIndex < deckCards.length - 1) {
-                                  setCardIndex(safeCardIndex + 1);
-                                }
-                              }}
-                              className={`px-3.5 py-2 rounded-full border text-xs font-medium transition-colors cursor-pointer ${
-                                cardMastery[currentCard.id] === 'review'
-                                  ? isDark
-                                    ? 'bg-white/15 border-white/40 text-white'
-                                    : 'bg-black/10 border-black/40 text-black'
-                                  : isDark
-                                  ? 'bg-[#14161f] border-white/[0.1] text-neutral-300'
-                                  : 'bg-white border-black/[0.1] text-neutral-700'
-                              }`}
-                            >
-                              Review
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setCardMastery((prev) => ({
-                                  ...prev,
-                                  [currentCard.id]: 'known',
-                                }));
-                                setIsCardFlipped(false);
-                                if (safeCardIndex < deckCards.length - 1) {
-                                  setCardIndex(safeCardIndex + 1);
-                                }
-                              }}
-                              className={`px-3.5 py-2 rounded-full border text-xs font-semibold transition-colors cursor-pointer ${
-                                isDark
-                                  ? 'bg-white text-black border-white'
-                                  : 'bg-[#0d0d0d] text-white border-[#0d0d0d]'
-                              }`}
-                            >
-                              Known
-                            </button>
+                            {(['again', 'hard', 'good', 'easy'] as const).map((g) => {
+                              const activeGrade =
+                                StudyLoopStore.getCardGrade(`pdf_${currentCard.id}`) ||
+                                StudyLoopStore.getCardGrade(currentCard.front);
+                              const isSelected = activeGrade === g;
+                              const label = g.charAt(0).toUpperCase() + g.slice(1);
+                              return (
+                                <button
+                                  key={g}
+                                  type="button"
+                                  onClick={async () => {
+                                    setCardMastery((prev) => ({
+                                      ...prev,
+                                      [currentCard.id]: g === 'again' || g === 'hard' ? 'review' : 'known',
+                                    }));
+                                    await StudyLoopStore.rateOrUpsertCard(
+                                      {
+                                        id: `pdf_${currentCard.id}`,
+                                        type: 'flashcard',
+                                        front: currentCard.front,
+                                        back: currentCard.back,
+                                        subject: 'Document Study',
+                                        chapter: currentCard.category || activePdfName.slice(0, 80),
+                                        sourceId: activePdfName,
+                                        pageOrTimestamp: currentCard.pageRef
+                                          ? `Page ${currentCard.pageRef}`
+                                          : undefined,
+                                      },
+                                      g
+                                    );
+                                    setIsCardFlipped(false);
+                                    if (safeCardIndex < deckCards.length - 1) {
+                                      setCardIndex(safeCardIndex + 1);
+                                    }
+                                  }}
+                                  className={`px-3.5 py-1.5 rounded-full border text-xs font-medium transition-colors cursor-pointer ${
+                                    isSelected
+                                      ? 'bg-[#FC4C01] text-white border-[#FC4C01]'
+                                      : isDark
+                                      ? 'bg-[#14161f] border-white/[0.1] text-neutral-200 hover:bg-white/[0.08]'
+                                      : 'bg-white border-black/[0.1] text-neutral-800 hover:bg-black/[0.04]'
+                                  }`}
+                                >
+                                  {label}
+                                </button>
+                              );
+                            })}
                           </div>
 
                           <button
@@ -1789,7 +1841,7 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
                               setIsCardFlipped(false);
                               setCardIndex(Math.min(deckCards.length - 1, safeCardIndex + 1));
                             }}
-                            className={`px-3.5 py-2 rounded-full border text-xs font-medium transition-colors cursor-pointer disabled:opacity-35 ${
+                            className={`px-3.5 py-1.5 rounded-full border text-xs font-medium transition-colors cursor-pointer disabled:opacity-35 ${
                               isDark
                                 ? 'bg-[#14161f] border-white/[0.1] text-white'
                                 : 'bg-white border-black/[0.1] text-black'

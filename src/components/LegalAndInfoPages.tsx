@@ -44,6 +44,16 @@ export function resolveLegalOr404Route(pathname: string): LegalPageRoute | null 
   const raw = (pathname || '/').replace(/\/+$/, '').toLowerCase() || '/';
   const clean = raw.endsWith('.html') && raw !== '/index.html' ? raw.slice(0, -5) : raw;
 
+  if (
+    clean === '/docs' ||
+    clean === '/doc' ||
+    clean === '/dox' ||
+    clean === '/guide' ||
+    clean === '/guides' ||
+    clean === '/info'
+  ) {
+    return 'docs';
+  }
   if (clean === '/legal' || clean === '/policies' || clean === '/trust') return 'legal';
   if (clean === '/privacy' || clean === '/privacy-policy') return 'privacy';
   if (clean === '/terms' || clean === '/terms-of-service' || clean === '/tos') return 'terms';
@@ -264,6 +274,7 @@ export const SiteFooter: React.FC<SiteFooterProps> = ({
 }) => {
   const year = new Date().getFullYear();
   const links: Array<{ label: string; path: string }> = [
+    { label: 'Docs & Guide', path: '/docs' },
     { label: 'Terms', path: '/terms' },
     { label: 'Privacy', path: '/privacy' },
     { label: 'Refunds', path: '/refund' },
@@ -858,6 +869,7 @@ export const LegalAndInfoPages: React.FC<LegalAndInfoPagesProps> = ({
     path: string;
     icon: React.ReactNode;
   }> = [
+    { id: 'docs', label: 'Docs & Guide', path: '/docs', icon: <FileText className="w-3.5 h-3.5" /> },
     { id: 'legal', label: 'Legal Hub', path: '/legal', icon: <Scale className="w-3.5 h-3.5" /> },
     { id: 'terms', label: 'Terms', path: '/terms', icon: <FileText className="w-3.5 h-3.5" /> },
     { id: 'privacy', label: 'Privacy', path: '/privacy', icon: <Shield className="w-3.5 h-3.5" /> },

@@ -1028,66 +1028,29 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                         )}
                       </div>
 
-                      {/* SM-2 Grade Buttons: Again / Hard / Good / Easy */}
-                      <div>
-                        <div className={`text-[11px] mb-2 font-medium ${textSecondary}`}>
-                          Rate your recall (SM-2 Spaced Repetition):
-                        </div>
-                        <div
-                          className="grid grid-cols-2 sm:grid-cols-4 gap-2"
-                          data-testid="sm2-grade-buttons"
-                        >
-                          <button
-                            type="button"
-                            data-testid="grade-again-btn"
-                            onClick={() => handleGradeCard('again')}
-                            className="py-2 px-3 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-600 dark:text-rose-300 text-xs font-bold transition cursor-pointer flex flex-col items-center"
-                          >
-                            <span>Again</span>
-                            <span className="text-[10px] font-normal opacity-80">
-                              &lt; 10m
-                            </span>
-                          </button>
-                          <button
-                            type="button"
-                            data-testid="grade-hard-btn"
-                            onClick={() => handleGradeCard('hard')}
-                            className="py-2 px-3 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-600 dark:text-amber-300 text-xs font-bold transition cursor-pointer flex flex-col items-center"
-                          >
-                            <span>Hard</span>
-                            <span className="text-[10px] font-normal opacity-80">
-                              {Math.max(1, Math.round((activeCard.interval || 1) * 1.2))}d
-                            </span>
-                          </button>
-                          <button
-                            type="button"
-                            data-testid="grade-good-btn"
-                            onClick={() => handleGradeCard('good')}
-                            className="py-2 px-3 rounded-xl bg-[#FC4C01]/15 hover:bg-[#FC4C01]/25 border border-[#FC4C01]/40 text-[#FC4C01] text-xs font-bold transition cursor-pointer flex flex-col items-center"
-                          >
-                            <span>Good</span>
-                            <span className="text-[10px] font-normal opacity-85">
-                              {activeCard.repetitions === 0
-                                ? '1d'
-                                : activeCard.repetitions === 1
-                                ? '3d'
-                                : `${Math.max(4, Math.round(activeCard.interval * activeCard.ease))}d`}
-                            </span>
-                          </button>
-                          <button
-                            type="button"
-                            data-testid="grade-easy-btn"
-                            onClick={() => handleGradeCard('easy')}
-                            className="py-2 px-3 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-600 dark:text-emerald-300 text-xs font-bold transition cursor-pointer flex flex-col items-center"
-                          >
-                            <span>Easy</span>
-                            <span className="text-[10px] font-normal opacity-80">
-                              {activeCard.repetitions === 0
-                                ? '4d'
-                                : `${Math.max(5, Math.round(activeCard.interval * activeCard.ease * 1.3))}d`}
-                            </span>
-                          </button>
-                        </div>
+                      <div
+                        className="flex flex-wrap items-center justify-center gap-2"
+                        data-testid="sm2-grade-buttons"
+                      >
+                        {(['again', 'hard', 'good', 'easy'] as const).map((g) => {
+                          const label = g.charAt(0).toUpperCase() + g.slice(1);
+                          const isSelected = activeCard.lastGrade === g;
+                          return (
+                            <button
+                              key={g}
+                              type="button"
+                              data-testid={`grade-${g}-btn`}
+                              onClick={() => handleGradeCard(g)}
+                              className={`px-4 py-1.5 rounded-full border text-xs font-medium transition cursor-pointer ${
+                                isSelected
+                                  ? 'bg-[#FC4C01] text-white border-[#FC4C01]'
+                                  : btnGhost
+                              }`}
+                            >
+                              {label}
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
                   )}
@@ -1710,21 +1673,60 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                       {activeStudyPack.flashcards.map((fc) => {
                         const flipped = Boolean(packFlippedCards[fc.id]);
+                        const activeGrade = StudyLoopStore.getCardGrade(fc.id) || StudyLoopStore.getCardGrade(fc.front);
                         return (
                           <div
                             key={fc.id}
                             onClick={() =>
                               setPackFlippedCards((prev) => ({ ...prev, [fc.id]: !flipped }))
                             }
-                            className={`p-3.5 rounded-xl border hover:border-[#FC4C01]/50 transition cursor-pointer space-y-1.5 ${surfaceElevated}`}
+                            className={`p-3.5 rounded-xl border hover:border-[#FC4C01]/50 transition cursor-pointer space-y-2.5 ${surfaceElevated}`}
                           >
                             <div className={`flex items-center justify-between text-[11px] ${textSecondary}`}>
-                              <span>{flipped ? 'ANSWER' : 'QUESTION (Tap to flip)'}</span>
+                              <span>{flipped ? 'Answer' : 'Question'}</span>
                               <span className="font-mono text-[#FC4C01]">{fc.pageLabel}</span>
                             </div>
                             <p className={`text-xs sm:text-sm font-medium ${textPrimary}`}>
                               {flipped ? fc.back : fc.front}
                             </p>
+                            <div
+                              className="flex items-center gap-1.5 pt-1"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {(['again', 'hard', 'good', 'easy'] as const).map((g) => {
+                                const isSelected = activeGrade === g;
+                                const label = g.charAt(0).toUpperCase() + g.slice(1);
+                                return (
+                                  <button
+                                    key={g}
+                                    type="button"
+                                    onClick={async () => {
+                                      await StudyLoopStore.rateOrUpsertCard(
+                                        {
+                                          id: fc.id,
+                                          type: 'flashcard',
+                                          front: fc.front,
+                                          back: fc.back,
+                                          subject: activeStudyPack.subject,
+                                          chapter: fc.chapter || activeStudyPack.chapter,
+                                          sourceId: activeStudyPack.id,
+                                          pageOrTimestamp: fc.pageLabel || `Page ${fc.page}`,
+                                        },
+                                        g
+                                      );
+                                      setCards(StudyLoopStore.getCards());
+                                    }}
+                                    className={`px-2.5 py-1 rounded-full border text-[11px] font-medium transition cursor-pointer ${
+                                      isSelected
+                                        ? 'bg-[#FC4C01] text-white border-[#FC4C01]'
+                                        : btnGhost
+                                    }`}
+                                  >
+                                    {label}
+                                  </button>
+                                );
+                              })}
+                            </div>
                           </div>
                         );
                       })}
@@ -1735,6 +1737,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                     <div className="space-y-2.5">
                       {activeStudyPack.quiz.map((q, idx) => {
                         const picked = packQuizAnswers[q.id];
+                        const activeGrade = StudyLoopStore.getCardGrade(q.id) || StudyLoopStore.getCardGrade(q.question);
                         return (
                           <div
                             key={q.id}
@@ -1785,6 +1788,44 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                                 <span className={textPrimary}>{q.explanation}</span>
                               </p>
                             )}
+                            <div className="flex items-center gap-1.5 pt-1">
+                              {(['again', 'hard', 'good', 'easy'] as const).map((g) => {
+                                const isSelected = activeGrade === g;
+                                const label = g.charAt(0).toUpperCase() + g.slice(1);
+                                return (
+                                  <button
+                                    key={g}
+                                    type="button"
+                                    onClick={async () => {
+                                      await StudyLoopStore.rateOrUpsertCard(
+                                        {
+                                          id: q.id,
+                                          type: 'quiz',
+                                          front: q.question,
+                                          back: q.options[q.correctIndex] || q.explanation,
+                                          options: q.options,
+                                          correctIndex: q.correctIndex,
+                                          explanation: q.explanation,
+                                          subject: activeStudyPack.subject,
+                                          chapter: q.chapter || activeStudyPack.chapter,
+                                          sourceId: activeStudyPack.id,
+                                          pageOrTimestamp: q.pageLabel || `Page ${q.page}`,
+                                        },
+                                        g
+                                      );
+                                      setCards(StudyLoopStore.getCards());
+                                    }}
+                                    className={`px-2.5 py-1 rounded-full border text-[11px] font-medium transition cursor-pointer ${
+                                      isSelected
+                                        ? 'bg-[#FC4C01] text-white border-[#FC4C01]'
+                                        : btnGhost
+                                    }`}
+                                  >
+                                    {label}
+                                  </button>
+                                );
+                              })}
+                            </div>
                           </div>
                         );
                       })}

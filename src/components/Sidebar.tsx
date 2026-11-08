@@ -598,7 +598,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           label: 'The Vault',
           sublabel: UserAccountStore.isGuestUser()
             ? 'Sign in to save'
-            : `${vaultItems.length} saved · Grouped by Subject → Chapter`,
+            : `${vaultItems.length} saved`,
           icon: <Bookmark className="w-3.5 h-3.5 text-[#FC4C01]" />,
           onClick: () => {
             if (UserAccountStore.isGuestUser()) {
@@ -636,147 +636,47 @@ export const Sidebar: React.FC<SidebarProps> = ({
       }
     }
 
-    // Sidebar Vault section (Subject -> Chapter preview or Guest "Sign in to save")
-    const isGuestSidebar = UserAccountStore.isGuestUser();
-    items.push({
-      id: 'heading-vault-sidebar',
-      label:
-        !isGuestSidebar && vaultItems.length > 0
-          ? `The Vault (${vaultItems.length})`
-          : 'The Vault',
-      heading: true,
-      onClick: () => {
-        if (isGuestSidebar) {
-          window.dispatchEvent(
-            new CustomEvent('kinich-open-auth', {
-              detail: { reason: 'Sign in to keep this in your Vault' },
-            })
-          );
-          if (window.innerWidth < 768) onClose();
-        } else if (onOpenGrowthHub) {
-          onOpenGrowthHub('vault');
-          if (window.innerWidth < 768) onClose();
-        }
-      },
-      trailing: (
-        <span className="text-[10px] font-medium text-[#FC4C01]">
-          {isGuestSidebar ? 'Sign in →' : `${vaultItems.length} saved · Open Vault →`}
-        </span>
-      ),
-    });
-
-    if (isGuestSidebar) {
-      items.push({
-        id: 'vault-guest-signin',
-        label: 'Sign in to save',
-        sublabel: 'Save lectures, notes, quizzes & flashcards to your Vault',
-        icon: <Bookmark className="w-3 h-3 text-[#FC4C01]" />,
-        onClick: () => {
-          window.dispatchEvent(
-            new CustomEvent('kinich-open-auth', {
-              detail: { reason: 'Sign in to keep this in your Vault' },
-            })
-          );
-          if (window.innerWidth < 768) onClose();
-        },
-      });
-    } else if (vaultItems.length === 0) {
-      items.push({
-        id: 'vault-empty-hint',
-        label: '0 saved · Grouped by Subject → Chapter',
-        sublabel: 'Click "Save to Vault" on any chat, lecture, or report',
-        onClick: () => {
-          if (onOpenGrowthHub) {
-            onOpenGrowthHub('vault');
-            if (window.innerWidth < 768) onClose();
-          }
-        },
-      });
-    } else {
-      const filteredVault = normalizedQuery
-        ? vaultItems.filter(
-            (v) =>
-              (v.title || '').toLowerCase().includes(normalizedQuery) ||
-              (v.subject || '').toLowerCase().includes(normalizedQuery) ||
-              (v.chapter || '').toLowerCase().includes(normalizedQuery) ||
-              (v.tags || []).some((t) => t.toLowerCase().includes(normalizedQuery))
-          )
-        : vaultItems.slice(0, 5);
-
-      filteredVault.slice(0, 5).forEach((v) => {
-        const subjectLabel = v.subject || 'General Studies';
-        const chapterLabel = v.chapter || 'Core Concepts';
-        items.push({
-          id: `vault-item-${v.id}`,
-          label: v.title,
-          sublabel: `${subjectLabel} → ${chapterLabel}${
-            Array.isArray(v.relatedItemIds) && v.relatedItemIds.length > 0
-              ? ` · ${v.relatedItemIds.length} linked`
-              : ''
-          }`,
-          icon: <BookOpen className="w-3 h-3 text-[#FC4C01]" />,
-          onClick: () => {
-            if (onOpenGrowthHub) {
-              onOpenGrowthHub('vault');
-              if (window.innerWidth < 768) onClose();
-            }
-          },
-        });
-      });
-    }
-
-    if (filteredPinnedMessages.length > 0 || !normalizedQuery) {
+    if (filteredPinnedMessages.length > 0) {
       items.push({
         id: 'heading-pinned-messages',
-        label:
-          filteredPinnedMessages.length > 0
-            ? `Pinned Messages (${filteredPinnedMessages.length})`
-            : 'Pinned Messages',
+        label: `Pinned Messages (${filteredPinnedMessages.length})`,
         heading: true,
       });
 
-      if (filteredPinnedMessages.length === 0) {
+      filteredPinnedMessages.forEach((bm) => {
         items.push({
-          id: 'pinned-empty-hint',
-          label: 'No pinned responses yet',
-          sublabel: 'Click the pin icon on any response',
+          id: `pin-${bm.id}`,
+          label: bm.snippet,
+          sublabel: bm.threadTitle,
+          icon: <Pin className="w-3 h-3 text-[#FC4C01] fill-current" />,
+          onClick: () => {
+            if (onSelectPinnedMessage) {
+              onSelectPinnedMessage(bm.threadId, bm.messageId, bm.snippet);
+            } else {
+              onSelectThread(bm.threadId);
+            }
+            if (window.innerWidth < 768) onClose();
+          },
+          trailing: (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                UserAccountStore.toggleBookmark(bm);
+              }}
+              className={`p-1 rounded-lg transition-colors cursor-pointer ${
+                isDark
+                  ? 'text-[#8a8a8a] hover:text-white hover:bg-[#2c2c2c]'
+                  : 'text-[#666666] hover:text-[#0d0d0d] hover:bg-[#e0e0e0]'
+              }`}
+              title="Unpin message"
+              aria-label="Unpin message"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          ),
         });
-      } else {
-        filteredPinnedMessages.forEach((bm) => {
-          items.push({
-            id: `pin-${bm.id}`,
-            label: bm.snippet,
-            sublabel: bm.threadTitle,
-            icon: <Pin className="w-3 h-3 text-[#FC4C01] fill-current" />,
-            onClick: () => {
-              if (onSelectPinnedMessage) {
-                onSelectPinnedMessage(bm.threadId, bm.messageId, bm.snippet);
-              } else {
-                onSelectThread(bm.threadId);
-              }
-              if (window.innerWidth < 768) onClose();
-            },
-            trailing: (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  UserAccountStore.toggleBookmark(bm);
-                }}
-                className={`p-1 rounded-lg transition-colors cursor-pointer ${
-                  isDark
-                    ? 'text-[#8a8a8a] hover:text-white hover:bg-[#2c2c2c]'
-                    : 'text-[#666666] hover:text-[#0d0d0d] hover:bg-[#e0e0e0]'
-                }`}
-                title="Unpin message"
-                aria-label="Unpin message"
-              >
-                <X className="w-3 h-3" />
-              </button>
-            ),
-          });
-        });
-      }
+      });
     }
 
     if (filteredThreads.length > 0) {

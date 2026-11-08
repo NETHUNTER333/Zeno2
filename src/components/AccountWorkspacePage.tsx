@@ -648,44 +648,8 @@ export const RefundPolicySection: React.FC<{
           className="px-4 py-2 rounded-xl bg-[#FC4C01] hover:bg-[#e04300] text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer transition-colors shadow-xs disabled:opacity-50"
         >
           <RotateCcw className={`w-3.5 h-3.5 ${refundBusy ? 'animate-spin' : ''}`} />
-          <span>{refundBusy ? 'Processing Refund via Dodo API...' : 'Request Refund'}</span>
+          <span>{refundBusy ? 'Processing Refund...' : 'Request Refund'}</span>
         </button>
-      </div>
-
-      {/* Policy Explanation Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-        <div
-          className={`p-3.5 rounded-xl border ${
-            isDark ? 'bg-black/30 border-white/10' : 'bg-neutral-50 border-black/10'
-          }`}
-        >
-          <div className="font-bold text-[#FC4C01] mb-1">1. 7-Day Guarantee</div>
-          <p className={`text-[11px] leading-relaxed ${isDark ? 'text-neutral-300' : 'text-neutral-600'}`}>
-            First-time Spark (₹99 / $3) and Fire (₹249 / $7) subscribers are eligible for a 100% full refund within 7 calendar days of purchase—even if you already cancelled your plan.
-          </p>
-        </div>
-
-        <div
-          className={`p-3.5 rounded-xl border ${
-            isDark ? 'bg-black/30 border-white/10' : 'bg-neutral-50 border-black/10'
-          }`}
-        >
-          <div className="font-bold text-[#FC4C01] mb-1">2. Direct Dodo API Reversal</div>
-          <p className={`text-[11px] leading-relaxed ${isDark ? 'text-neutral-300' : 'text-neutral-600'}`}>
-            Clicking <strong>Request Refund</strong> sends an immediate refund instruction to the Dodo Payments API and reverses the charge to your original UPI, Card, NetBanking, or Wallet.
-          </p>
-        </div>
-
-        <div
-          className={`p-3.5 rounded-xl border ${
-            isDark ? 'bg-black/30 border-white/10' : 'bg-neutral-50 border-black/10'
-          }`}
-        >
-          <div className="font-bold text-[#FC4C01] mb-1">3. Settlement Speed</div>
-          <p className={`text-[11px] leading-relaxed ${isDark ? 'text-neutral-300' : 'text-neutral-600'}`}>
-            Refund IDs (<code>ref_...</code>) are issued immediately. UPI &amp; wallet refunds typically settle within 24–48 hours; credit/debit cards settle within 3–5 business days.
-          </p>
-        </div>
       </div>
 
       {/* Refund Selector Bar */}
@@ -1361,16 +1325,33 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
                 </div>
 
                 {isAuthenticatedUser ? (
-                  <>
-                    {/* Refund Policy & Eligibility Section */}
-                    <RefundPolicySection isDark={isDark} />
-
-                    {/* Cancel Subscription Section (with Survey & Confirmation Modal) */}
-                    <CancelSubscriptionSection isDark={isDark} />
-
-                    {/* Billing History & Past Invoices Component */}
-                    <BillingHistorySection isDark={isDark} />
-                  </>
+                  <div
+                    className={`p-4 rounded-2xl border flex flex-wrap items-center justify-between gap-3 ${
+                      isDark ? 'bg-white/[0.02] border-white/10' : 'bg-white border-black/10 shadow-xs'
+                    }`}
+                  >
+                    <div className="text-xs font-semibold">
+                      Subscription, invoices &amp; refunds
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('pricing')}
+                        className={`px-3 py-1.5 rounded-xl border text-xs font-semibold cursor-pointer ${
+                          isDark ? 'border-white/15 hover:bg-white/5 text-white' : 'border-black/15 hover:bg-black/5 text-black'
+                        }`}
+                      >
+                        Plans
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('billing')}
+                        className="px-3 py-1.5 rounded-xl bg-[#FC4C01] hover:bg-[#e04300] text-white text-xs font-semibold cursor-pointer"
+                      >
+                        Billing &amp; Refunds
+                      </button>
+                    </div>
+                  </div>
                 ) : (
                   <div
                     className={`p-5 rounded-2xl border flex flex-wrap items-center justify-between gap-3 ${

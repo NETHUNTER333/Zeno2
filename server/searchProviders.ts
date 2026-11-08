@@ -538,12 +538,17 @@ export function scoreSourceRelevanceToQuery(
   }
 
   const stopWords = new Set([
-    'what', 'which', 'who', 'whom', 'whose', 'where', 'when', 'why', 'how',
+    'what', 'whats', 'which', 'who', 'whom', 'whose', 'where', 'when', 'why', 'how',
     'are', 'is', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had',
     'do', 'does', 'did', 'the', 'and', 'for', 'with', 'from', 'into', 'about',
     'that', 'this', 'these', 'those', 'best', 'top', 'most', 'more', 'some',
     'in', 'on', 'at', 'to', 'of', 'by', 'as', 'an', 'a', 'or', 'handle',
-    'week', 'today', 'latest', 'recent', 'news', 'updates', 'happened', 'one', 'matters',
+    'week', 'today', 'yesterday', 'tomorrow', 'morning', 'evening', 'night',
+    'latest', 'recent', 'news', 'updates', 'happened', 'happening', 'going',
+    'one', 'matters', 'hey', 'hi', 'hello', 'up', 'please', 'pls', 'plz',
+    'bro', 'dude', 'tell', 'give', 'show', 'check',
+    'january', 'february', 'march', 'april', 'may', 'june',
+    'july', 'august', 'september', 'october', 'november', 'december',
   ]);
 
   const rawTokens = q
@@ -556,8 +561,14 @@ export function scoreSourceRelevanceToQuery(
 
   // Strict location & proper noun entity enforcement (e.g. "india", "hyderabad", "rbi")
   const keyEntitiesToEnforce: { term: string; altRegex: RegExp }[] = [];
-  if (/\bindia\b/i.test(q)) keyEntitiesToEnforce.push({ term: 'india', altRegex: /\b(india|indian)\b/i });
-  if (/\bhyderabad\b/i.test(q)) keyEntitiesToEnforce.push({ term: 'hyderabad', altRegex: /\bhyderabad\b/i });
+  if (/\bindia\b/i.test(q)) {
+    keyEntitiesToEnforce.push({
+      term: 'india',
+      altRegex:
+        /\b(india|indian|telangana|andhra|hyderabad|peddapalli|godavarikhani|godhavarikhani|ramagundam|karimnagar|warangal|nizamabad|khammam|maharashtra|mumbai|pune|delhi|karnataka|bengaluru|bangalore|tamil\s*nadu|chennai|kerala|gujarat|rajasthan|uttar\s*pradesh|bihar|bengal|kolkata|punjab|haryana|odisha|assam|ndtv|thehindu|timesofindia|hindustantimes|indianexpress|telanganatoday|deccanchronicle|eenadu|sakshi)\b|\.in\b/i,
+    });
+  }
+  if (/\bhyderabad\b/i.test(q)) keyEntitiesToEnforce.push({ term: 'hyderabad', altRegex: /\b(hyderabad|telangana|secunderabad|cyberabad)\b/i });
   if (/\brbi\b/i.test(q)) keyEntitiesToEnforce.push({ term: 'rbi', altRegex: /\b(rbi|reserve\s+bank)\b/i });
   if (/\btransformer\b/i.test(q)) keyEntitiesToEnforce.push({ term: 'transformer', altRegex: /\b(transformers?|attention)\b/i });
 
@@ -570,37 +581,54 @@ export function scoreSourceRelevanceToQuery(
   let score = 0;
   let matchedCoreTokens = 0;
 
+  const deAspirate = (w: string): string =>
+    w
+      .replace(/^thiple$/i, 'triple')
+      .replace(/([kgcjtdpb])h/gi, '$1')
+      .replace(/aa/gi, 'a')
+      .replace(/ee/gi, 'i')
+      .replace(/oo/gi, 'u');
+
+  const titleDeAsp = deAspirate(title);
+  const snippetDeAsp = deAspirate(snippet);
+
   for (const tok of rawTokens) {
     const isYear = /^202\d$/.test(tok);
     const stem = tok.endsWith('s') && tok.length > 4 ? tok.slice(0, -1) : tok;
+    const tokDeAsp = deAspirate(tok);
+    const stemDeAsp = deAspirate(stem);
     const altSpace = tok.includes('-') ? tok.replace(/-/g, ' ') : '';
     const isOpenSourceTok = tok === 'open-source' || tok === 'opensource';
     const isLlmTok = tok === 'llm' || tok === 'llms';
-    const isAiTok = tok === 'ai';
+    const isAiTok = tok === 'ai' || tok === 'artificial' || tok === 'intelligence';
 
     const inTitle =
       (isAiTok
-        ? /\b(ai|artificial\s+intelligence|openai|anthropic|claude|gemini|gpt|llama|deepseek|mistral|llm|machine\s+learning|neural)\b/i.test(
+        ? /\b(ai|artificial\s+intelligence|openai|anthropic|claude|gemini|gpt|llama|deepseek|mistral|qwen|llm|machine\s+learning|neural)\b/i.test(
             title
           )
         : title.includes(tok)) ||
       (stem.length >= 4 && title.includes(stem)) ||
+      (tokDeAsp.length >= 4 && titleDeAsp.includes(tokDeAsp)) ||
+      (stemDeAsp.length >= 4 && titleDeAsp.includes(stemDeAsp)) ||
       (altSpace.length >= 4 && title.includes(altSpace)) ||
       (isOpenSourceTok && /\b(open[\s-]*source|open[\s-]*weight)\b/i.test(title)) ||
       (isLlmTok && /\b(llms?|language\s+models?|llama|mistral|qwen|deepseek|gemma)\b/i.test(title));
 
     const inSnippet =
       (isAiTok
-        ? /\b(ai|artificial\s+intelligence|openai|anthropic|claude|gemini|gpt|llama|deepseek|mistral|llm|machine\s+learning|neural)\b/i.test(
+        ? /\b(ai|artificial\s+intelligence|openai|anthropic|claude|gemini|gpt|llama|deepseek|mistral|qwen|llm|machine\s+learning|neural)\b/i.test(
             snippet
           )
         : snippet.includes(tok)) ||
       (stem.length >= 4 && snippet.includes(stem)) ||
+      (tokDeAsp.length >= 4 && snippetDeAsp.includes(tokDeAsp)) ||
+      (stemDeAsp.length >= 4 && snippetDeAsp.includes(stemDeAsp)) ||
       (altSpace.length >= 4 && snippet.includes(altSpace)) ||
       (isOpenSourceTok && /\b(open[\s-]*source|open[\s-]*weight)\b/i.test(snippet)) ||
       (isLlmTok && /\b(llms?|language\s+models?|llama|mistral|qwen|deepseek|gemma)\b/i.test(snippet));
 
-    const inDomain = !isAiTok && domain.includes(tok);
+    const inDomain = !isAiTok && (domain.includes(tok) || (tokDeAsp.length >= 4 && domain.includes(tokDeAsp)));
 
     if (inTitle) {
       score += isYear ? 1.0 : 2.5;
@@ -618,13 +646,13 @@ export function scoreSourceRelevanceToQuery(
     return -25.0;
   }
 
-  if (nonYearTokens.length >= 3 && tokenMatchRatio < 0.4) {
+  if (nonYearTokens.length >= 3 && tokenMatchRatio < 0.4 && matchedCoreTokens < 2) {
     return -15.0;
   }
 
   // Only apply outlet quality boost if the article matches the core entity terms of the query
   if (isNewsQuery && isPreferredNewsOutlet(source) && tokenMatchRatio >= 0.5) {
-    score += 3.0;
+    score += 8.0;
   }
 
   const isOpenSourceLlmQuery =
@@ -931,6 +959,37 @@ export async function fallbackPublicWebSearchWithStatus(
   const isTechOrCode = /\b(code|programming|react|typescript|javascript|python|rust|error|bug|api|github|framework|library|sql|docker|linux)\b/i.test(
     query
   );
+  const cleanUpstreamQuery =
+    query
+      .replace(
+        /\b((?:january|february|march|april|may|june|july|august|september|october|november|december)\s+202\d)\b/gi,
+        ' '
+      )
+      .replace(/[,.;:!?]+/g, ' ')
+      .replace(
+        /\b(hey|hi|hello|what's|whats|what\s+is|up\s+with|going\s+on\s+with|happened\s+in|happened\s+with|tell\s+me\s+about|can\s+you|please|pls|plz|bro|dude)\b/gi,
+        ' '
+      )
+      .replace(/\bthiple\b/gi, 'triple')
+      .replace(/\bgodhavarikhani\b/gi, 'Godavarikhani')
+      .replace(/\bartificial\s+intelligence\b/gi, 'AI')
+      .replace(/\s+/g, ' ')
+      .trim() || query;
+  const conciseTopicQuery =
+    cleanUpstreamQuery
+      .replace(
+        /\b(this\s+week|today|yesterday|tomorrow|latest|news|headlines|breaking|recent|updates?|the|in|on|at|with|from|for|of|about|is|are|was|were)\b/gi,
+        ' '
+      )
+      .replace(/\s+/g, ' ')
+      .trim() || cleanUpstreamQuery;
+  const broadTopicTokens = conciseTopicQuery
+    .split(/\s+/)
+    .filter((w) => w.length >= 3 && !/^(india|ride|triple|thiple)$/i.test(w));
+  const broadTopicQuery =
+    broadTopicTokens.length >= 2 && broadTopicTokens.length < conciseTopicQuery.split(/\s+/).length
+      ? broadTopicTokens.slice(0, 5).join(' ')
+      : '';
 
   // 1. Google News RSS + Curated Preferred News Outlet RSS (Reuters, The Verge, TechCrunch, AP, The Guardian, Ars Technica)
   const fetchGoogleNewsRss = async (): Promise<SearchResultItem[]> => {
@@ -1027,17 +1086,29 @@ export async function fallbackPublicWebSearchWithStatus(
     };
 
     try {
-      const strippedTopic =
-        query
-          .replace(/\b(this\s+week|today|latest|news|headlines|breaking|\(?[a-z]{3,9}\s+\d{1,2},?\s+202\d.*?\)?)\b/gi, ' ')
-          .replace(/\s+/g, ' ')
-          .trim() || query;
+      const strippedTopic = conciseTopicQuery || query;
+      void isAiOrTechNews;
 
       const googleNewsSearchExpr = !isStockQ
         ? `${strippedTopic} -stock -stocks -earnings -shares -zacks -seekingalpha`
-        : query;
+        : strippedTopic;
 
       const feedPromises: Promise<SearchResultItem[]>[] = [
+        (async () => {
+          const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(strippedTopic)}&hl=${hlParam}&gl=${glParam}&ceid=${ceidParam}`;
+          const res = await fetch(rssUrl, {
+            headers: {
+              'User-Agent':
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+              Accept: 'application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8',
+              'Accept-Language': `${hlParam},en;q=0.9`,
+            },
+            signal: signal || AbortSignal.timeout(3_200),
+          });
+          if (!res.ok) return [];
+          succeededProviders += 1;
+          return parseRssBlockList(await res.text());
+        })().catch(() => []),
         (async () => {
           const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(googleNewsSearchExpr)}&hl=${hlParam}&gl=${glParam}&ceid=${ceidParam}`;
           const res = await fetch(rssUrl, {
@@ -1053,25 +1124,27 @@ export async function fallbackPublicWebSearchWithStatus(
           succeededProviders += 1;
           return parseRssBlockList(await res.text());
         })().catch(() => []),
-        (async () => {
-          const generalExpr = !isStockQ
-            ? `${query.replace(/\([^)]*\)/g, '').trim()} -stock -stocks -earnings -shares -zacks -seekingalpha`
-            : query;
-          const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(generalExpr)}&hl=${hlParam}&gl=${glParam}&ceid=${ceidParam}`;
-          const res = await fetch(rssUrl, {
-            headers: {
-              'User-Agent':
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-              Accept: 'application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8',
-              'Accept-Language': `${hlParam},en;q=0.9`,
-            },
-            signal: signal || AbortSignal.timeout(3_200),
-          });
-          if (!res.ok) return [];
-          succeededProviders += 1;
-          return parseRssBlockList(await res.text());
-        })().catch(() => []),
       ];
+
+      if (broadTopicQuery && broadTopicQuery.toLowerCase() !== strippedTopic.toLowerCase()) {
+        feedPromises.push(
+          (async () => {
+            const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(broadTopicQuery)}&hl=${hlParam}&gl=${glParam}&ceid=${ceidParam}`;
+            const res = await fetch(rssUrl, {
+              headers: {
+                'User-Agent':
+                  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                Accept: 'application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8',
+                'Accept-Language': `${hlParam},en;q=0.9`,
+              },
+              signal: signal || AbortSignal.timeout(3_200),
+            });
+            if (!res.ok) return [];
+            succeededProviders += 1;
+            return parseRssBlockList(await res.text());
+          })().catch(() => [])
+        );
+      }
 
       const feedBatches = await Promise.all(feedPromises);
       const reversedBatches = [...feedBatches].reverse();
@@ -1093,7 +1166,7 @@ export async function fallbackPublicWebSearchWithStatus(
   const fetchBingWebRss = async (): Promise<SearchResultItem[]> => {
     const items: SearchResultItem[] = [];
     try {
-      const bingUrl = `https://www.bing.com/search?q=${encodeURIComponent(query)}&setlang=${hlParam}&cc=${glParam}&format=rss`;
+      const bingUrl = `https://www.bing.com/search?q=${encodeURIComponent(cleanUpstreamQuery)}&setlang=${hlParam}&cc=${glParam}&format=rss`;
       const res = await fetch(bingUrl, {
         headers: {
           'User-Agent':
@@ -1151,7 +1224,7 @@ export async function fallbackPublicWebSearchWithStatus(
     const acceptLang = glParam === 'IN' ? 'en-IN,en-US;q=0.9,en;q=0.8' : 'en-US,en;q=0.9';
     try {
       const ddgRes = await fetch(
-        `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}&kl=${ddgKl}&kp=1`,
+        `https://html.duckduckgo.com/html/?q=${encodeURIComponent(cleanUpstreamQuery)}&kl=${ddgKl}&kp=1`,
         {
           headers: {
             'User-Agent':
@@ -1214,7 +1287,7 @@ export async function fallbackPublicWebSearchWithStatus(
     const items: SearchResultItem[] = [];
     try {
       const hnRes = await fetch(
-        `https://hn.algolia.com/api/v1/search?query=${encodeURIComponent(query)}&tags=story&hitsPerPage=5`,
+        `https://hn.algolia.com/api/v1/search?query=${encodeURIComponent(conciseTopicQuery)}&tags=story&hitsPerPage=5`,
         {
           headers: { 'User-Agent': 'KinichSearch/1.0' },
           signal: signal || AbortSignal.timeout(3_000),
@@ -1266,7 +1339,7 @@ export async function fallbackPublicWebSearchWithStatus(
     const items: SearchResultItem[] = [];
     try {
       const redditRes = await fetch(
-        `https://www.reddit.com/search.json?q=${encodeURIComponent(query)}&sort=relevance&t=year&limit=3`,
+        `https://www.reddit.com/search.json?q=${encodeURIComponent(conciseTopicQuery)}&sort=relevance&t=year&limit=3`,
         {
           headers: {
             'User-Agent': 'Mozilla/5.0 (compatible; KinichSearch/1.0; +https://kinich.app)',
@@ -1651,8 +1724,7 @@ export async function searchWebReliable(
     const isStockQuery = isStockOrFinanceSearchQuery(trimmed);
     const isLocalOrNewsQuery =
       isWeatherQuery ||
-      isNewsModeOrQuery ||
-      /\b(weather|near me|nearby|prices?|news|events?|restaurants?|hospitals?|cinemas?|malls?|stores?|flight|temperature|forecast|in my city|local|today|latest)\b/i.test(
+      /\b(weather|near me|nearby|restaurants?|hospitals?|cinemas?|malls?|stores?|flight|temperature|forecast|in my city|local)\b/i.test(
         trimmed
       );
 

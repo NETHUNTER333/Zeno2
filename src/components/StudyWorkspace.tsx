@@ -75,6 +75,7 @@ import {
   startBackgroundAudioRecap,
   stopBackgroundAudioRecap,
   type StudyLanguage,
+  type RecallGrade,
 } from '../lib/studyLoopStore';
 
 export interface StudyWorkspaceProps {
@@ -428,6 +429,7 @@ export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
   const [isCardFlipped, setIsCardFlipped] = useState<boolean>(false);
   const [showCardHint, setShowCardHint] = useState<boolean>(false);
   const [cardMastery, setCardMastery] = useState<Record<string, 'known' | 'review'>>({});
+  const [sm2Ratings, setSm2Ratings] = useState<Record<string, RecallGrade>>({});
 
   // Transcripts Language Selector State
   const [selectedLang, setSelectedLang] = useState(LANGUAGES[0]);
@@ -933,6 +935,43 @@ ${fullTranscriptText}`;
         `Added ${res.addedCount || cardsToAdd.length} cards to your SM-2 Recall deck!`
       );
       setTimeout(() => setRecallToastMsg(null), 4000);
+    }
+  };
+
+  const handleRateStudyItem = async (
+    item: {
+      id: string;
+      type: 'flashcard' | 'quiz';
+      front: string;
+      back: string;
+      options?: string[];
+      correctIndex?: number;
+      explanation?: string;
+      timestamp?: number;
+    },
+    grade: RecallGrade,
+    advanceNext?: () => void
+  ) => {
+    setSm2Ratings((prev) => ({ ...prev, [item.id]: grade }));
+    await StudyLoopStore.rateOrUpsertCard(
+      {
+        id: `${activeVideoId || 'study'}_${item.id}`,
+        type: item.type,
+        front: item.front,
+        back: item.back,
+        options: item.options,
+        correctIndex: item.correctIndex,
+        explanation: item.explanation,
+        subject: sageStudyCard?.subject || 'General Studies',
+        chapter: sageStudyCard?.chapter || resolvedTitle.slice(0, 80),
+        sourceId: activeVideoId || resolvedTitle,
+        pageOrTimestamp:
+          typeof item.timestamp === 'number' ? formatTime(item.timestamp) : undefined,
+      },
+      grade
+    );
+    if (advanceNext) {
+      advanceNext();
     }
   };
 
@@ -3656,12 +3695,16 @@ ${fullTranscriptText}`;
                               openOrFocusTab('map', 'Location Map');
                             },
                           },
-                        ].map((item) => (
+                        ].map((item, idx, arr) => (
                           <button
                             key={item.id}
                             type="button"
                             onClick={item.onClick}
                             className={`p-3.5 rounded-2xl border flex items-center justify-between gap-2 transition-all cursor-pointer text-left ${
+                              idx === arr.length - 1 && arr.length % 2 === 1
+                                ? 'col-span-2 sm:col-span-1'
+                                : ''
+                            } ${
                               isDark
                                 ? 'bg-[#121215] border-white/[0.08] hover:border-white/[0.22]'
                                 : 'bg-white border-black/[0.08] hover:border-black/[0.22]'
@@ -5029,6 +5072,64 @@ ${fullTranscriptText}`;
                     </div>
 
                     <div
+                      className="flex items-center justify-center gap-2 pt-2"
+                      data-testid="quiz-sm2-pills"
+                    >
+                      {(['again', 'hard', 'good', 'easy'] as const).map((g) => {
+                        const activeGrade =
+                          sm2Ratings[currentQuizItem.id] ||
+                          StudyLoopStore.getCardGrade(
+                            `${activeVideoId || 'study'}_${currentQuizItem.id}`
+                          );
+                        const isSelected = activeGrade === g;
+                        const label = g.charAt(0).toUpperCase() + g.slice(1);
+                        return (
+                          <button
+                            key={g}
+                            type="button"
+                            data-testid={`quiz-grade-${g}-btn`}
+                            onClick={() =>
+                              handleRateStudyItem(
+                                {
+                                  id: currentQuizItem.id,
+                                  type: 'quiz',
+                                  front: currentQuizItem.question,
+                                  back:
+                                    currentQuizItem.options?.[currentQuizItem.correctIndex] ||
+                                    currentQuizItem.explanation ||
+                                    'Answer',
+                                  options: currentQuizItem.options,
+                                  correctIndex: currentQuizItem.correctIndex,
+                                  explanation: currentQuizItem.explanation,
+                                  timestamp:
+                                    currentQuizItem.timestamp_s ?? currentQuizItem.timestamp,
+                                },
+                                g,
+                                () => {
+                                  setSelectedQuizOption(null);
+                                  if (safeQuizIdx < quizList.length - 1) {
+                                    setCurrentQuizIdx(safeQuizIdx + 1);
+                                  } else {
+                                    setCurrentQuizIdx(0);
+                                  }
+                                }
+                              )
+                            }
+                            className={`px-4 py-1.5 rounded-full border text-xs font-medium transition-colors cursor-pointer ${
+                              isSelected
+                                ? 'bg-[#FC4C01] text-white border-[#FC4C01]'
+                                : isDark
+                                ? 'bg-white/[0.04] hover:bg-white/[0.09] border-white/[0.1] text-neutral-200'
+                                : 'bg-black/[0.03] hover:bg-black/[0.07] border-black/[0.1] text-neutral-800'
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div
                       className={`pt-4 border-t flex items-center justify-between ${borderSubtle}`}
                     >
                       <button
@@ -5201,6 +5302,60 @@ ${fullTranscriptText}`;
                               <div className={`text-center text-xs ${textMuted}`}>
                                 {isCardFlipped ? 'Answer · Tap to flip' : 'Question · Tap to flip'}
                               </div>
+                            </div>
+
+                            <div
+                              className="flex items-center justify-center gap-2"
+                              data-testid="flashcard-sm2-pills"
+                            >
+                              {(['again', 'hard', 'good', 'easy'] as const).map((g) => {
+                                const currentFc = customFlashcards[cardIndex];
+                                const activeGrade =
+                                  sm2Ratings[currentFc.id] ||
+                                  StudyLoopStore.getCardGrade(
+                                    `${activeVideoId || 'study'}_${currentFc.id}`
+                                  );
+                                const isSelected = activeGrade === g;
+                                const label = g.charAt(0).toUpperCase() + g.slice(1);
+                                return (
+                                  <button
+                                    key={g}
+                                    type="button"
+                                    data-testid={`flashcard-grade-${g}-btn`}
+                                    onClick={() =>
+                                      handleRateStudyItem(
+                                        {
+                                          id: currentFc.id,
+                                          type: 'flashcard',
+                                          front: currentFc.front,
+                                          back: currentFc.back,
+                                          timestamp:
+                                            currentFc.timestamp_s ?? currentFc.timestamp,
+                                        },
+                                        g,
+                                        () => {
+                                          setIsCardFlipped(false);
+                                          setShowCardHint(false);
+                                          if (cardIndex < customFlashcards.length - 1) {
+                                            setCardIndex((i) => i + 1);
+                                          } else {
+                                            setCardIndex(0);
+                                          }
+                                        }
+                                      )
+                                    }
+                                    className={`px-4 py-1.5 rounded-full border text-xs font-medium transition-colors cursor-pointer ${
+                                      isSelected
+                                        ? 'bg-[#FC4C01] text-white border-[#FC4C01]'
+                                        : isDark
+                                        ? 'bg-white/[0.04] hover:bg-white/[0.09] border-white/[0.1] text-neutral-200'
+                                        : 'bg-black/[0.03] hover:bg-black/[0.07] border-black/[0.1] text-neutral-800'
+                                    }`}
+                                  >
+                                    {label}
+                                  </button>
+                                );
+                              })}
                             </div>
 
                             <div className="flex items-center justify-between px-2">

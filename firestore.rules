@@ -163,6 +163,8 @@ service cloud.firestore {
         data.interval is number &&
         data.repetitions is number &&
         data.dueAt is number &&
+        (!('lastGrade' in data) || data.lastGrade in ['again', 'hard', 'good', 'easy']) &&
+        (!('lastReviewedAt' in data) || data.lastReviewedAt is number) &&
         data.wrongCount is number &&
         data.correctCount is number &&
         data.createdAt is number &&

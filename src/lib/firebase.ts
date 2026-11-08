@@ -1211,6 +1211,7 @@ export interface FirestoreRecallCardDoc {
   interval: number;
   repetitions: number;
   dueAt: number;
+  lastGrade?: 'again' | 'hard' | 'good' | 'easy';
   lastReviewedAt?: number;
   wrongCount: number;
   correctCount: number;
@@ -1222,10 +1223,17 @@ export async function saveRecallCardToFirestore(
   card: Omit<FirestoreRecallCardDoc, 'userId'> & { userId?: string }
 ) {
   const user = auth.currentUser;
-  if (!user || user.isAnonymous) return;
+  if (!user) return;
   const safeId = String(card.id || `card_${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 128);
   const path = `users/${user.uid}/cards/${safeId}`;
   try {
+    const validGrade =
+      card.lastGrade === 'again' ||
+      card.lastGrade === 'hard' ||
+      card.lastGrade === 'good' ||
+      card.lastGrade === 'easy'
+        ? card.lastGrade
+        : undefined;
     const payload = stripUndefined({
       id: safeId,
       userId: user.uid,
@@ -1249,6 +1257,7 @@ export async function saveRecallCardToFirestore(
       interval: Math.max(0, Math.min(3650, Math.floor(Number(card.interval) || 0))),
       repetitions: Math.max(0, Math.min(10000, Math.floor(Number(card.repetitions) || 0))),
       dueAt: Number(card.dueAt) > 0 ? Number(card.dueAt) : Date.now(),
+      lastGrade: validGrade,
       lastReviewedAt: Number(card.lastReviewedAt) > 0 ? Number(card.lastReviewedAt) : undefined,
       wrongCount: Math.max(0, Math.floor(Number(card.wrongCount) || 0)),
       correctCount: Math.max(0, Math.floor(Number(card.correctCount) || 0)),
@@ -1265,7 +1274,7 @@ export async function saveRecallCardToFirestore(
 
 export async function loadRecallCardsFromFirestore(): Promise<FirestoreRecallCardDoc[]> {
   const user = auth.currentUser;
-  if (!user || user.isAnonymous) return [];
+  if (!user) return [];
   const path = `users/${user.uid}/cards`;
   try {
     const q = query(collection(db, 'users', user.uid, 'cards'), where('userId', '==', user.uid));
@@ -1283,7 +1292,7 @@ export async function loadRecallCardsFromFirestore(): Promise<FirestoreRecallCar
 
 export async function deleteRecallCardFromFirestore(cardId: string) {
   const user = auth.currentUser;
-  if (!user || user.isAnonymous) return;
+  if (!user) return;
   const safeId = String(cardId).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 128);
   const path = `users/${user.uid}/cards/${safeId}`;
   try {

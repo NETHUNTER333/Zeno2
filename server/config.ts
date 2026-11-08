@@ -30,18 +30,21 @@ let cachedRouterKeys: Record<string, any> | null = null;
 function loadLocalRouterKeys(): Record<string, any> {
   if (cachedRouterKeys) return cachedRouterKeys;
   const candidates = [
-    path.resolve(process.cwd(), 'keys/keysAndRouters.json'),
     path.resolve(process.cwd(), 'keysAndRouters.json'),
+    path.resolve(process.cwd(), 'keys/keysAndRouters.json'),
   ];
+  const merged: Record<string, any> = { tokens: {}, baseUrls: {} };
   for (const filePath of candidates) {
     try {
       if (fs.existsSync(filePath)) {
-        cachedRouterKeys = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-        return cachedRouterKeys || {};
+        const parsed = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+        Object.assign(merged, parsed);
+        merged.tokens = { ...merged.tokens, ...(parsed?.tokens || {}) };
+        merged.baseUrls = { ...merged.baseUrls, ...(parsed?.baseUrls || {}) };
       }
     } catch {}
   }
-  cachedRouterKeys = {};
+  cachedRouterKeys = merged;
   return cachedRouterKeys;
 }
 
@@ -49,10 +52,17 @@ export function getTregToken(): string {
   if (process.env.NODE_ENV === 'test' || process.env.VITEST === 'true') {
     return (process.env.TREG_TOKEN || '').trim();
   }
-  const envVal = (process.env.TREG_TOKEN || '').trim();
+  const envVal = (process.env.TREG_TOKEN || process.env.TREG_API_KEY || '').trim();
   if (envVal) return envVal;
   const localKeys = loadLocalRouterKeys();
-  return String(localKeys?.treg?.token || localKeys?.TREG_TOKEN || '').trim();
+  return String(
+    localKeys?.treg?.token ||
+      localKeys?.treg?.apiKey ||
+      localKeys?.tokens?.treg ||
+      localKeys?.tokens?.tregToken ||
+      localKeys?.TREG_TOKEN ||
+      ''
+  ).trim();
 }
 
 export function getTregOrg(): string {
@@ -67,10 +77,17 @@ export function getTinyfishApiKey(): string {
   if (process.env.NODE_ENV === 'test' || process.env.VITEST === 'true') {
     return (process.env.TINYFISH_API_KEY || '').trim();
   }
-  const envVal = (process.env.TINYFISH_API_KEY || '').trim();
+  const envVal = (process.env.TINYFISH_API_KEY || process.env.TINYFISH_TOKEN || '').trim();
   if (envVal) return envVal;
   const localKeys = loadLocalRouterKeys();
-  return String(localKeys?.tinyfish?.apiKey || localKeys?.TINYFISH_API_KEY || '').trim();
+  return String(
+    localKeys?.tinyfish?.apiKey ||
+      localKeys?.tinyfish?.token ||
+      localKeys?.tokens?.tinyfish ||
+      localKeys?.tokens?.tinyFish ||
+      localKeys?.TINYFISH_API_KEY ||
+      ''
+  ).trim();
 }
 
 export function getTinyfishBaseUrl(): string {

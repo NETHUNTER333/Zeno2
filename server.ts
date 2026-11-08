@@ -2642,6 +2642,81 @@ async function searchArxiv(query: string, maxResults = 8) {
 }
 
 // Search GitHub Repositories via GitHub REST API
+const FALLBACK_DISCOVER_REPOS = [
+  {
+    id: 'gh_vllm',
+    name: 'vllm-project/vllm',
+    fullName: 'vllm-project/vllm',
+    owner: 'vllm-project',
+    url: 'https://github.com/vllm-project/vllm',
+    description: 'High-throughput and memory-efficient inference and serving engine for LLMs with PagedAttention.',
+    stars: 42800,
+    forks: 6400,
+    language: 'Python',
+    topics: ['llm', 'inference', 'paged-attention', 'cuda', 'transformers'],
+  },
+  {
+    id: 'gh_deepseek_v3',
+    name: 'deepseek-ai/DeepSeek-V3',
+    fullName: 'deepseek-ai/DeepSeek-V3',
+    owner: 'deepseek-ai',
+    url: 'https://github.com/deepseek-ai/DeepSeek-V3',
+    description: 'DeepSeek-V3 & R1 mixture-of-experts architecture with Multi-head Latent Attention (MLA) and FP8 training.',
+    stars: 68400,
+    forks: 9200,
+    language: 'Python',
+    topics: ['deepseek', 'moe', 'llm', 'reasoning', 'open-weights'],
+  },
+  {
+    id: 'gh_ts_fsrs',
+    name: 'open-spaced-repetition/ts-fsrs',
+    fullName: 'open-spaced-repetition/ts-fsrs',
+    owner: 'open-spaced-repetition',
+    url: 'https://github.com/open-spaced-repetition/ts-fsrs',
+    description: 'TypeScript implementation of Free Spaced Repetition Scheduler (FSRS) and SM-2 memory scheduling algorithms.',
+    stars: 1450,
+    forks: 140,
+    language: 'TypeScript',
+    topics: ['spaced-repetition', 'fsrs', 'sm2', 'flashcards', 'learning'],
+  },
+  {
+    id: 'gh_llamaindex',
+    name: 'run-llama/llama_index',
+    fullName: 'run-llama/llama_index',
+    owner: 'run-llama',
+    url: 'https://github.com/run-llama/llama_index',
+    description: 'Data framework for LLM applications to ingest, structure, and access private or domain-specific data (RAG).',
+    stars: 39500,
+    forks: 5600,
+    language: 'Python',
+    topics: ['rag', 'agents', 'vector-search', 'knowledge-graph'],
+  },
+  {
+    id: 'gh_ollama',
+    name: 'ollama/ollama',
+    fullName: 'ollama/ollama',
+    owner: 'ollama',
+    url: 'https://github.com/ollama/ollama',
+    description: 'Get up and running with Llama, DeepSeek, Mistral, Qwen, and Gemma locally from the command line.',
+    stars: 118000,
+    forks: 9400,
+    language: 'Go',
+    topics: ['local-llm', 'inference', 'gguf', 'developer-tools'],
+  },
+  {
+    id: 'gh_typst',
+    name: 'typst/typst',
+    fullName: 'typst/typst',
+    owner: 'typst',
+    url: 'https://github.com/typst/typst',
+    description: 'A new markup-based typesetting system that is powerful and easy to learn for scientific papers and notes.',
+    stars: 38200,
+    forks: 1050,
+    language: 'Rust',
+    topics: ['typesetting', 'latex', 'academic', 'pdf', 'rust'],
+  },
+];
+
 async function searchGithubRepos(query: string, maxResults = 5) {
   try {
     const cleanQuery = query
@@ -2655,20 +2730,25 @@ async function searchGithubRepos(query: string, maxResults = 5) {
         'Accept': 'application/vnd.github.v3+json',
         'User-Agent': 'Zeno-AI-App',
       },
+      signal: AbortSignal.timeout(4500),
     });
 
-    if (!response.ok) return [];
+    if (!response.ok) return FALLBACK_DISCOVER_REPOS.slice(0, maxResults);
 
     const data = await response.json();
-    if (!data.items || !Array.isArray(data.items)) return [];
+    if (!data.items || !Array.isArray(data.items) || data.items.length === 0) {
+      return FALLBACK_DISCOVER_REPOS.slice(0, maxResults);
+    }
 
     return data.items.map((item: any) => ({
-      name: item.full_name || item.name,
-      fullName: item.full_name,
+      id: String(item.id || item.full_name || item.name),
+      name: item.name || item.full_name,
+      fullName: item.full_name || item.name,
+      owner: item.owner?.login || (item.full_name ? String(item.full_name).split('/')[0] : 'github'),
       url: item.html_url,
       description: item.description || 'No description provided.',
-      stars: item.stargazers_count,
-      forks: item.forks_count,
+      stars: item.stargazers_count ?? 0,
+      forks: item.forks_count ?? 0,
       language: item.language || 'Code',
       ownerAvatar: item.owner?.avatar_url,
       topics: Array.isArray(item.topics) ? item.topics.slice(0, 5) : [],
@@ -2678,7 +2758,7 @@ async function searchGithubRepos(query: string, maxResults = 5) {
     }));
   } catch (err: any) {
     console.warn('GitHub search error:', err.message);
-    return [];
+    return FALLBACK_DISCOVER_REPOS.slice(0, maxResults);
   }
 }
 
@@ -6521,40 +6601,40 @@ app.get('/api/discover/live', async (req, res) => {
 
     const categoryQueryMap: Record<string, { arxiv: string; github: string }> = {
       All: {
-        arxiv: 'large language models reasoning agents transformer architecture',
-        github: 'llm agent rag inference typescript rust python stars:>300',
+        arxiv: 'large language models reasoning agents transformer',
+        github: 'llm agent stars:>500',
       },
       Learning: {
-        arxiv: 'active recall spaced repetition educational AI tutoring systems',
-        github: 'flashcards spaced-repetition learning education study stars:>100',
+        arxiv: 'active recall spaced repetition educational tutoring',
+        github: 'spaced-repetition flashcards stars:>100',
       },
       Research: {
-        arxiv: 'retrieval augmented generation deep research autonomous agents benchmark',
-        github: 'deep-research arxiv rag autonomous-agent literature-review stars:>150',
+        arxiv: 'retrieval augmented generation autonomous agents benchmark',
+        github: 'rag autonomous-agent stars:>200',
       },
       Science: {
-        arxiv: 'quantum error correction molecular dynamics protein folding astrophysics',
-        github: 'quantum-computing bioinformatics physics-simulation molecular stars:>150',
+        arxiv: 'quantum error correction molecular dynamics protein folding',
+        github: 'quantum-computing simulation stars:>150',
       },
       Technology: {
-        arxiv: 'distributed systems consensus GPU kernel optimization inference engine',
-        github: 'distributed-systems database vector-search inference engine stars:>400',
+        arxiv: 'distributed systems GPU kernel inference engine',
+        github: 'inference engine vector-search stars:>400',
       },
       Programming: {
-        arxiv: 'program synthesis compiler optimization static analysis code generation',
-        github: 'compiler codegen developer-tools cli parser stars:>300',
+        arxiv: 'program synthesis compiler optimization code generation',
+        github: 'compiler developer-tools stars:>400',
       },
       Writing: {
-        arxiv: 'natural language generation citation verification factual grounding',
-        github: 'markdown-editor knowledge-base PKM latex typst stars:>200',
+        arxiv: 'natural language generation citation verification grounding',
+        github: 'markdown knowledge-base stars:>200',
       },
       Productivity: {
-        arxiv: 'human computer interaction workflow automation knowledge graph',
-        github: 'productivity workflow knowledge-graph local-first stars:>250',
+        arxiv: 'human computer interaction workflow knowledge graph',
+        github: 'local-first knowledge-graph stars:>250',
       },
       'Study Resources': {
-        arxiv: 'computer science curriculum machine learning foundations mathematics',
-        github: 'awesome-machine-learning computer-science algorithms papers-we-love stars:>500',
+        arxiv: 'computer science curriculum machine learning foundations',
+        github: 'awesome-machine-learning algorithms stars:>500',
       },
     };
 
@@ -6564,7 +6644,7 @@ app.get('/api/discover/live', async (req, res) => {
 
     const [rawPapers, rawRepos] = await Promise.all([
       searchArxiv(arxivSearchQuery, 6).catch(() => []),
-      searchGithubRepos(githubSearchQuery, 6).catch(() => []),
+      searchGithubRepos(githubSearchQuery, 6).catch(() => FALLBACK_DISCOVER_REPOS),
     ]);
 
     let enrichedPapers = rawPapers;
@@ -6577,22 +6657,29 @@ app.get('/api/discover/live', async (req, res) => {
     // Also link any paper without a matched repo to a top relevant repo from rawRepos if topics overlap
     const finalPapers = enrichedPapers.map((paper: any, idx: number) => {
       const existingRepos = Array.isArray(paper.githubRepos) ? paper.githubRepos : [];
-      if (existingRepos.length === 0 && rawRepos[idx]) {
-        const candidate = rawRepos[idx];
-        return {
-          ...paper,
-          githubRepos: [
+      const fallbackConnected = rawRepos[idx]
+        ? [
             {
-              name: candidate.name || candidate.fullName,
-              url: candidate.url,
-              description: candidate.description || '',
-              stars: String(candidate.stars || '100+'),
-              language: candidate.language || 'Python',
+              id: String(rawRepos[idx].id || rawRepos[idx].fullName),
+              name: rawRepos[idx].name || rawRepos[idx].fullName,
+              fullName: rawRepos[idx].fullName || rawRepos[idx].name,
+              owner: rawRepos[idx].owner || 'github',
+              url: rawRepos[idx].url,
+              description: rawRepos[idx].description || '',
+              stars: Number(rawRepos[idx].stars) || 100,
+              forks: Number(rawRepos[idx].forks) || 10,
+              language: rawRepos[idx].language || 'Python',
+              topics: rawRepos[idx].topics || [],
             },
-          ],
-        };
-      }
-      return paper;
+          ]
+        : [];
+      const connectedRepos = existingRepos.length > 0 ? existingRepos : fallbackConnected;
+      return {
+        ...paper,
+        primaryCategory: paper.categories?.[0] || 'CS.AI',
+        githubRepos: connectedRepos,
+        connectedRepos,
+      };
     });
 
     return res.json({
@@ -6601,7 +6688,7 @@ app.get('/api/discover/live', async (req, res) => {
       category,
       updatedAt: Date.now(),
       arxivPapers: finalPapers,
-      githubRepos: rawRepos,
+      githubRepos: rawRepos.length > 0 ? rawRepos : FALLBACK_DISCOVER_REPOS,
     });
   } catch (err: any) {
     return res.status(500).json({
@@ -6718,11 +6805,11 @@ function extractTopicFromText(text: string): string {
     .replace(/https?:\/\/\S+/gi, ' ')
     // Strip leading interrogative phrases so "How much does..." or "What happened in..." never leave "much" or "happened"
     .replace(
-      /^\s*(?:how\s+much|how\s+many|how\s+long|how\s+old|how\s+far|how\s+often|what\s+happened|what's\s+happening|whats\s+happening|what\s+is\s+going\s+on|what\s+are\s+the|what\s+is\s+the|can\s+you\s+tell\s+me|tell\s+me\s+about)\b/gi,
+      /^\s*(?:hey|hi|hello|yo)?\s*(?:what's\s+up\s+with|whats\s+up\s+with|what\s+is\s+up\s+with|how\s+much|how\s+many|how\s+long|how\s+old|how\s+far|how\s+often|what\s+happened|what's\s+happening|whats\s+happening|what\s+is\s+going\s+on|what\s+are\s+the|what\s+is\s+the|can\s+you\s+tell\s+me|tell\s+me\s+about)\b/gi,
       ' '
     )
     .replace(
-      /\b(fentch|featch|fetech|fetc|fetch|scrape|pull|grab|show|find|get|search|give|display|play|watch|embed|render|create|make|build|add|implement|remove|fix|update|explain|tell|describe|know|learn|see|look|view|open|use|using|images?|imgs?|photos?|pics?|pictures?|wallpapers?|gallery|diagrams?|illustrations?|scans?|figures?|videos?|clips?|youtube|yt|internet|web|streams?|playback|footage|scenes?|movies?|trailers?|tutorials?|generative|gen|ui|widget|component|interactive|simulation|simulator|visualizer|dashboard|module|slop|front|eh|from|for|of|about|on|in|to|with|by|at|as|into|like|same|every|any|some|multiple|all|everything|stuff|things?|more|other|parts?|also|too|both|either|there|here|now|then|please|plz|pls|ok|okay|k|soo+|so|well|just|even|they|them|their|it|its|that|these|those|what|which|who|whom|whose|where|when|why|how|much|many|happened|happen|happening|is|are|was|were|be|been|being|do|does|did|doing|done|actually|really|literally|basically|can|could|would|should|will|shall|may|might|must|have|has|had|having|not|no|dont|doesnt|didnt|cant|cannot|wont|i|me|my|mine|you|your|yours|we|us|our|he|him|his|she|her|asked|gave|give|got|an|a|the|and|or|but|if|because|until|while)\b/gi,
+      /\b(fentch|featch|fetech|fetc|fetch|scrape|pull|grab|show|find|get|search|give|display|play|watch|embed|render|create|make|build|add|implement|remove|fix|update|explain|tell|describe|know|learn|see|look|view|open|use|using|images?|imgs?|photos?|pics?|pictures?|wallpapers?|gallery|diagrams?|illustrations?|scans?|figures?|videos?|clips?|youtube|yt|internet|web|streams?|playback|footage|scenes?|movies?|trailers?|tutorials?|generative|gen|ui|widget|component|interactive|simulation|simulator|visualizer|dashboard|module|slop|front|eh|from|for|of|about|on|in|to|with|by|at|as|into|like|same|every|any|some|multiple|all|everything|stuff|things?|more|other|parts?|also|too|both|either|there|here|now|then|please|plz|pls|ok|okay|k|soo+|so|well|just|even|they|them|their|it|its|that|these|those|what|whats|which|who|whom|whose|where|when|why|how|much|many|happened|happen|happening|is|are|was|were|be|been|being|do|does|did|doing|done|actually|really|literally|basically|can|could|would|should|will|shall|may|might|must|have|has|had|having|not|no|dont|doesnt|didnt|cant|cannot|wont|i|me|my|mine|you|your|yours|we|us|our|he|him|his|she|her|asked|gave|give|got|an|a|the|and|or|but|if|because|until|while|hey|hi|hello|up|yesterday|tomorrow|bro|dude)\b/gi,
       ' '
     )
     // Strip standalone "this" or "today" unless part of temporal news context
@@ -11450,7 +11537,7 @@ ${transcriptSnippet
 
               const [outcome, liveWeatherSources] = await Promise.all([
                 searchWebReliable(
-                  queryWithDateIfNews,
+                  effectiveSearchQuery,
                   isEffectiveNews ? 'news' : 'organic',
                   Boolean(nsfwMode),
                   abortController.signal,
@@ -11712,7 +11799,7 @@ ${transcriptSnippet
       if (tasks.length > 0) {
         await Promise.race([
           Promise.allSettled(tasks),
-          new Promise<void>((resolve) => setTimeout(resolve, 3800)),
+          new Promise<void>((resolve) => setTimeout(resolve, 5500)),
         ]);
       }
 
@@ -12706,6 +12793,29 @@ Rules:
     );
     replyText = sanitizeNormalEnglishText(replyText, requestedLanguage, userQuery);
 
+    const isRealtimeSearchRefusalPattern = (text: string): boolean =>
+      /\b((?:do\s+not|don'?t)\s+have\s+access\s+to\s+(?:real[-\s]*time|live|current)\s+(?:local\s+)?(?:search|information|data|news|web|incident)|cannot\s+(?:verify\s+current\s+headlines|provide\s+specific\s+details|access\s+real[-\s]*time)|consult\s+a\s+live\s+news\s+aggregator|recommend\s+checking\s+local\b[\s\S]{0,60}\bnews|my\s+knowledge\s+cutoff|unable\s+to\s+browse\s+the\s+(?:live\s+)?(?:internet|web))\b/i.test(
+        String(text || '')
+      );
+
+    // If the LLM responded with a real-time search refusal and searchSources is empty, run an immediate fallback search
+    if (
+      !isResearchCall &&
+      !isClockQuery &&
+      !isCasualOrGreeting &&
+      !isPureCodeOrMath &&
+      searchSources.length === 0 &&
+      isRealtimeSearchRefusalPattern(replyText)
+    ) {
+      try {
+        const emergencySearch = await searchWebReliable(coreTopic || userQuery, 'organic', false);
+        const filteredEmergency = filterUnsolicitedCjkSources(emergencySearch.results);
+        if (filteredEmergency.length > 0) {
+          searchSources = filteredEmergency.slice(0, 6);
+        }
+      } catch {}
+    }
+
     // Normal Search Grounding Verification, Retry on Missing/Ungrounded [n] Citations, and First-Appearance Renumbering (FIX 1 & FIX 2)
     let sourcesNotLinked = false;
     if (
@@ -12765,9 +12875,12 @@ Rules:
           )
           .replace(/\[(\d{1,2})\],\s*(?=\[\d{1,2}\](?!\())/g, '[$1]');
 
+      const isRealtimeSearchRefusal = (text: string): boolean => isRealtimeSearchRefusalPattern(text);
+
       const isTextGroundedInSources = (text: string): boolean => {
         const normalized = normalizeCitationMarkers(text);
         if (!normalized.trim()) return false;
+        if (isRealtimeSearchRefusal(normalized)) return false;
         const lines = normalized
           .split(/\r?\n/)
           .map((l) => l.trim())

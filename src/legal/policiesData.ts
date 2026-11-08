@@ -5,6 +5,7 @@ import {
 } from './config';
 
 export type LegalDocId =
+  | 'docs'
   | 'legal'
   | 'terms'
   | 'privacy'
@@ -1043,6 +1044,94 @@ export const LEGAL_DOCUMENTS: Record<LegalDocId, PolicyDocument> = {
         version: LEGAL_CONFIG.CONSENT_VERSION,
         date: LEGAL_CONFIG.EFFECTIVE_DATE,
         changes: 'Published complete support directory, Grievance Officer SLA, and rate-limited support ticket form.',
+      },
+    ],
+  },
+
+  docs: {
+    id: 'docs',
+    path: '/docs',
+    title: 'Product Guide, Plans & Billing Docs',
+    pageTitle: `Docs & Guide · ${LEGAL_CONFIG.TRADE_NAME}`,
+    metaDescription: `Complete product guide, plan quotas, model access matrix, payment methods (UPI AutoPay / RBI e-Mandates), and cancellation & refund documentation for ${LEGAL_CONFIG.TRADE_NAME}.`,
+    kicker: 'DOCUMENTATION // GUIDE & BILLING REFERENCE',
+    subtitle: `Everything you need to know about ${LEGAL_CONFIG.TRADE_NAME} plans, daily quotas, supported payment methods, cancellations, refunds, and study tools.`,
+    effectiveDate: LEGAL_CONFIG.EFFECTIVE_DATE,
+    lastUpdated: LEGAL_CONFIG.EFFECTIVE_DATE,
+    version: LEGAL_CONFIG.CONSENT_VERSION,
+    shortVersionBullets: [
+      'Free Tier ($0 / ₹0) includes 5 daily prompts, 3 file uploads, 5 web searches, 3 Deep Research runs, and 5 Study sessions every day.',
+      'Spark (₹99/mo + GST or $3/mo) unlocks 10x daily quotas (1,500 prompts/day, 250 uploads/day, 750 searches/day) and high-speed reasoning models.',
+      'Fire (₹249/mo + GST or $7/mo) unlocks 5,000 prompts/day, 1,000 uploads/day, all frontier models, and Personal Study Agents.',
+      'Subscriptions in India support UPI AutoPay, RuPay, Visa, and Mastercard with RBI-compliant e-mandates through Dodo Payments.',
+      'Cancelling a plan stops future charges; clicking Request Refund returns your payment within the 7-day guarantee window.',
+    ],
+    sections: [
+      {
+        id: 'plan-quotas-matrix',
+        number: '01',
+        title: 'Plan Quotas & Model Access Matrix',
+        paragraphs: [
+          'All daily quotas reset automatically at 00:00 UTC (05:30 AM IST). Unused referral bonus credits carry over across days.',
+        ],
+        table: {
+          headers: ['Feature / Capability', 'Free Tier (₹0 / $0)', 'Spark (₹99/mo · $3/mo)', 'Fire (₹249/mo · $7/mo)'],
+          rows: [
+            ['Daily Chat Prompts', '5 / day', '1,500 / day', '5,000 / day'],
+            ['File & PDF Uploads', '3 / day (5 / msg)', '250 / day (25 / msg)', '1,000 / day (50 / msg)'],
+            ['Live Web Searches', '5 / day', '750 / day', '2,500 / day'],
+            ['Deep Research Runs', '3 / day', '100 / day', '300 / day'],
+            ['YouTube & PDF Study Sessions', '5 / day', '200 / day', '500 / day'],
+            ['Vault Storage', '100 MB', '10 GB', '100 GB'],
+            ['Personal Study Agents', 'View-only', 'View-only', 'Included (Recall, Planner, Tutor, Morning Brief)'],
+            ['Fast Reasoning & Chat Models', 'Default models', 'GLM 4.7 Flash, Kimi K2.5, Qwen3 30B', 'All Spark + Frontier Models'],
+            ['Frontier & Deep Thinking Models', '—', '—', 'GPT-6 Astra, DeepSeek R1, Qwen3 235B, Llama 3.3 70B'],
+          ],
+        },
+      },
+      {
+        id: 'payment-methods-india',
+        number: '02',
+        title: 'Billing Country, Local Currency & Supported Payment Methods',
+        paragraphs: [
+          'All paid subscriptions are processed by Dodo Payments acting as our authorized Merchant of Record, handling local currency checkout, GST/VAT tax invoices, and refunds.',
+        ],
+        bullets: [
+          'India (INR + 18% GST): Supports UPI AutoPay (GPay, PhonePe, Paytm, BHIM), RuPay Cards, and Visa/Mastercard Credit & Debit Cards.',
+          'RBI e-Mandate Rules (India): Recurring subscriptions in India use RBI-compliant e-mandates. You will receive a 24-hour pre-debit notification before renewal and can pause or revoke the mandate anytime from your UPI app or in-app billing settings.',
+          'International (USD & Global Cards): Supports Visa, Mastercard, American Express, Apple Pay, and Google Pay in 18+ billing countries.',
+        ],
+      },
+      {
+        id: 'cancellation-vs-refunds',
+        number: '03',
+        title: 'How Cancellation vs. Refunds Work',
+        paragraphs: [
+          'We separate subscription cancellation from refund requests so you always have full control over your plan and your money:',
+        ],
+        bullets: [
+          'Cancel Auto-Renewal: Stops all future recurring charges while letting you keep your paid Spark or Fire plan until the end of the current billing period.',
+          'Cancel Plan Immediately: Terminates your subscription immediately and switches your account back to the Free Tier.',
+          'Request Refund (7-Day Guarantee): Cancelling a plan stops future charges, it does not automatically refund your payment. To get your money back within 7 days of your first purchase (even if you already cancelled), click Request Refund in Plans or Billing settings.',
+        ],
+      },
+      {
+        id: 'study-tools-guide',
+        number: '04',
+        title: 'Study Tools, Exam Arsenal & The Vault',
+        bullets: [
+          'Study Tools Workspace (/study): Paste any YouTube lecture, playlist, or PDF to generate structured notes, flashcards, quizzes, mind maps, cheat sheets, important exam questions, and runnable code.',
+          'Long-Answer Grading: Write a 5-mark or 10-mark university exam answer inside Study Tools → Answer Writing to get instant rubric-based marks and model answers.',
+          'Daily Recall & Exam Countdown: Set your exam date and review spaced-repetition flashcards daily in IST.',
+          'The Vault (/vault): Save any chat synthesis, highlight, or study guide organized by Subject and Chapter.',
+        ],
+      },
+    ],
+    versionHistory: [
+      {
+        version: LEGAL_CONFIG.CONSENT_VERSION,
+        date: LEGAL_CONFIG.EFFECTIVE_DATE,
+        changes: 'Consolidated product guide, plan quota matrix, RBI e-mandate notes, and refund workflow into /docs.',
       },
     ],
   },
