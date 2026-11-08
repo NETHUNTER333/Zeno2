@@ -10187,7 +10187,7 @@ function buildTranscriptGroundedStudyBundle(
         return {
           term: ch.title,
           definition: ch.summary,
-          mechanism: fc ? `${fc.front} — ${fc.back}` : ch.summary,
+          mechanism: '',
           timestamp: ch.start_s,
           proofQuote: fc?.sourceQuote || ch.summary,
         };
@@ -10383,7 +10383,7 @@ ${compactTranscript}`;
               return {
                 term: ch.title,
                 definition: ch.summary,
-                mechanism: matchingCard ? `${matchingCard.front} — ${matchingCard.back}` : ch.summary,
+                mechanism: '',
                 timestamp: ch.start_s,
                 proofQuote: matchingCard?.sourceQuote || ch.summary,
               };

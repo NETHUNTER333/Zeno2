@@ -67,6 +67,7 @@ import {
   detectAndSaveHomeCityFromText,
 } from './lib/locationStore';
 import { ModelRadiantBackground } from './components/ModelRadiantBackground';
+import { PullToRefresh } from './components/PullToRefresh';
 import {
   BackgroundGradientMode,
   getStoredBackgroundGradientMode,
@@ -2383,6 +2384,7 @@ export default function App() {
           : 'text-[#000000]'
       }`}
     >
+      <PullToRefresh isDark={isDark} />
       <ModelRadiantBackground
         modelId={selectedModel.id}
         theme={theme}

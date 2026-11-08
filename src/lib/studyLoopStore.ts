@@ -15,7 +15,59 @@ import { UserAccountStore, toIstDateKey } from './userAccountStore';
 import { KnowledgeVaultStore } from './growthStore';
 
 export type RecallGrade = 'again' | 'hard' | 'good' | 'easy';
-export type StudyLanguage = 'English' | 'Telugu' | 'Hindi';
+
+export interface StudyLanguageOption {
+  id: string;
+  code: string;
+  label: string;
+  nativeLabel: string;
+  flag: string;
+  bcp47: string;
+  countries: string;
+}
+
+export const SUPPORTED_STUDY_LANGUAGES: StudyLanguageOption[] = [
+  { id: 'English', code: 'en', label: 'English', nativeLabel: 'English', flag: '🇺🇸', bcp47: 'en-US', countries: 'US, UK, CA, AU, SG, NZ, ZA, NG, IE' },
+  { id: 'Hindi', code: 'hi', label: 'Hindi', nativeLabel: 'हिन्दी (Hindi)', flag: '🇮🇳', bcp47: 'hi-IN', countries: 'India' },
+  { id: 'Telugu', code: 'te', label: 'Telugu', nativeLabel: 'తెలుగు (Telugu)', flag: '🇮🇳', bcp47: 'te-IN', countries: 'India' },
+  { id: 'Tamil', code: 'ta', label: 'Tamil', nativeLabel: 'தமிழ் (Tamil)', flag: '🇮🇳', bcp47: 'ta-IN', countries: 'India, Singapore, Malaysia' },
+  { id: 'Kannada', code: 'kn', label: 'Kannada', nativeLabel: 'ಕನ್ನಡ (Kannada)', flag: '🇮🇳', bcp47: 'kn-IN', countries: 'India' },
+  { id: 'Malayalam', code: 'ml', label: 'Malayalam', nativeLabel: 'മലയാളം (Malayalam)', flag: '🇮🇳', bcp47: 'ml-IN', countries: 'India' },
+  { id: 'Marathi', code: 'mr', label: 'Marathi', nativeLabel: 'मराठी (Marathi)', flag: '🇮🇳', bcp47: 'mr-IN', countries: 'India' },
+  { id: 'Bengali', code: 'bn', label: 'Bengali', nativeLabel: 'বাংলা (Bengali)', flag: '🇮🇳', bcp47: 'bn-IN', countries: 'India' },
+  { id: 'Gujarati', code: 'gu', label: 'Gujarati', nativeLabel: 'ગુજરાતી (Gujarati)', flag: '🇮🇳', bcp47: 'gu-IN', countries: 'India' },
+  { id: 'Punjabi', code: 'pa', label: 'Punjabi', nativeLabel: 'ਪੰਜਾਬੀ (Punjabi)', flag: '🇮🇳', bcp47: 'pa-IN', countries: 'India' },
+  { id: 'Spanish', code: 'es', label: 'Spanish', nativeLabel: 'Español (Spanish)', flag: '🇪🇸', bcp47: 'es-ES', countries: 'Spain, Mexico, Argentina, Chile, Colombia, Peru' },
+  { id: 'French', code: 'fr', label: 'French', nativeLabel: 'Français (French)', flag: '🇫🇷', bcp47: 'fr-FR', countries: 'France, Canada, Belgium, Switzerland' },
+  { id: 'German', code: 'de', label: 'German', nativeLabel: 'Deutsch (German)', flag: '🇩🇪', bcp47: 'de-DE', countries: 'Germany, Austria, Switzerland' },
+  { id: 'Portuguese', code: 'pt', label: 'Portuguese', nativeLabel: 'Português (Portuguese)', flag: '🇧🇷', bcp47: 'pt-BR', countries: 'Brazil, Portugal' },
+  { id: 'Italian', code: 'it', label: 'Italian', nativeLabel: 'Italiano (Italian)', flag: '🇮🇹', bcp47: 'it-IT', countries: 'Italy, Switzerland' },
+  { id: 'Dutch', code: 'nl', label: 'Dutch', nativeLabel: 'Nederlands (Dutch)', flag: '🇳🇱', bcp47: 'nl-NL', countries: 'Netherlands, Belgium' },
+  { id: 'Polish', code: 'pl', label: 'Polish', nativeLabel: 'Polski (Polish)', flag: '🇵🇱', bcp47: 'pl-PL', countries: 'Poland' },
+  { id: 'Swedish', code: 'sv', label: 'Swedish', nativeLabel: 'Svenska (Swedish)', flag: '🇸🇪', bcp47: 'sv-SE', countries: 'Sweden' },
+  { id: 'Norwegian', code: 'no', label: 'Norwegian', nativeLabel: 'Norsk (Norwegian)', flag: '🇳🇴', bcp47: 'nb-NO', countries: 'Norway' },
+  { id: 'Danish', code: 'da', label: 'Danish', nativeLabel: 'Dansk (Danish)', flag: '🇩🇰', bcp47: 'da-DK', countries: 'Denmark' },
+  { id: 'Finnish', code: 'fi', label: 'Finnish', nativeLabel: 'Suomi (Finnish)', flag: '🇫🇮', bcp47: 'fi-FI', countries: 'Finland' },
+  { id: 'Japanese', code: 'ja', label: 'Japanese', nativeLabel: '日本語 (Japanese)', flag: '🇯🇵', bcp47: 'ja-JP', countries: 'Japan' },
+  { id: 'Korean', code: 'ko', label: 'Korean', nativeLabel: '한국어 (Korean)', flag: '🇰🇷', bcp47: 'ko-KR', countries: 'South Korea' },
+  { id: 'Chinese', code: 'zh', label: 'Chinese', nativeLabel: '中文 (Chinese)', flag: '🇭🇰', bcp47: 'zh-TW', countries: 'Hong Kong, Taiwan, Singapore' },
+  { id: 'Arabic', code: 'ar', label: 'Arabic', nativeLabel: 'العربية (Arabic)', flag: '🇦🇪', bcp47: 'ar-SA', countries: 'UAE, Saudi Arabia, Egypt' },
+  { id: 'Filipino', code: 'tl', label: 'Filipino', nativeLabel: 'Filipino (Tagalog)', flag: '🇵🇭', bcp47: 'fil-PH', countries: 'Philippines' },
+  { id: 'Malay', code: 'ms', label: 'Malay', nativeLabel: 'Bahasa Melayu (Malay)', flag: '🇲🇾', bcp47: 'ms-MY', countries: 'Malaysia, Singapore' },
+  { id: 'Indonesian', code: 'id', label: 'Indonesian', nativeLabel: 'Bahasa Indonesia', flag: '🇮🇩', bcp47: 'id-ID', countries: 'Indonesia' },
+  { id: 'Thai', code: 'th', label: 'Thai', nativeLabel: 'ไทย (Thai)', flag: '🇹🇭', bcp47: 'th-TH', countries: 'Thailand' },
+  { id: 'Vietnamese', code: 'vi', label: 'Vietnamese', nativeLabel: 'Tiếng Việt (Vietnamese)', flag: '🇻🇳', bcp47: 'vi-VN', countries: 'Vietnam' },
+  { id: 'Turkish', code: 'tr', label: 'Turkish', nativeLabel: 'Türkçe (Turkish)', flag: '🇹🇷', bcp47: 'tr-TR', countries: 'Turkey' },
+  { id: 'Hebrew', code: 'he', label: 'Hebrew', nativeLabel: 'עברית (Hebrew)', flag: '🇮🇱', bcp47: 'he-IL', countries: 'Israel' },
+  { id: 'Swahili', code: 'sw', label: 'Swahili', nativeLabel: 'Kiswahili (Swahili)', flag: '🇰🇪', bcp47: 'sw-KE', countries: 'Kenya' },
+  { id: 'Czech', code: 'cs', label: 'Czech', nativeLabel: 'Čeština (Czech)', flag: '🇨🇿', bcp47: 'cs-CZ', countries: 'Czechia' },
+  { id: 'Hungarian', code: 'hu', label: 'Hungarian', nativeLabel: 'Magyar (Hungarian)', flag: '🇭🇺', bcp47: 'hu-HU', countries: 'Hungary' },
+  { id: 'Romanian', code: 'ro', label: 'Romanian', nativeLabel: 'Română (Romanian)', flag: '🇷🇴', bcp47: 'ro-RO', countries: 'Romania' },
+  { id: 'Greek', code: 'el', label: 'Greek', nativeLabel: 'Ελληνικά (Greek)', flag: '🇬🇷', bcp47: 'el-GR', countries: 'Greece' },
+  { id: 'Afrikaans', code: 'af', label: 'Afrikaans', nativeLabel: 'Afrikaans', flag: '🇿🇦', bcp47: 'af-ZA', countries: 'South Africa' },
+];
+
+export type StudyLanguage = string;
 export type StudyExplainLanguage = StudyLanguage;
 
 export type ExamPlanDay = FirestoreExamPlanDay;
@@ -1607,12 +1659,10 @@ export async function startBackgroundAudioRecap(options: {
   if (!audioUrl) {
     try {
       const headers = await getAuthHeaders();
-      const ttsLang =
-        options.language === 'Telugu'
-          ? 'telugu'
-          : options.language === 'Hindi'
-          ? 'hindi'
-          : 'english';
+      const matchedLang = SUPPORTED_STUDY_LANGUAGES.find(
+        (l) => l.id.toLowerCase() === String(options.language || 'English').toLowerCase()
+      );
+      const ttsLang = matchedLang ? matchedLang.id.toLowerCase() : 'english';
       const res = await fetch('/api/tts', {
         method: 'POST',
         headers,
@@ -1706,12 +1756,10 @@ export async function startBackgroundAudioRecap(options: {
   if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
     window.speechSynthesis.cancel();
     const utter = new SpeechSynthesisUtterance(options.script);
-    utter.lang =
-      options.language === 'Telugu'
-        ? 'te-IN'
-        : options.language === 'Hindi'
-        ? 'hi-IN'
-        : 'en-IN';
+    const matchedSpeechLang = SUPPORTED_STUDY_LANGUAGES.find(
+      (l) => l.id.toLowerCase() === String(options.language || 'English').toLowerCase()
+    );
+    utter.lang = matchedSpeechLang?.bcp47 || 'en-IN';
     utter.onstart = () => options.onStateChange?.('playing');
     utter.onend = () => options.onStateChange?.('ended');
     utter.onerror = () => options.onStateChange?.('ended');

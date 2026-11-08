@@ -762,14 +762,15 @@ export const UserAccountStore = {
     saveToStorage(STORAGE_KEYS.PERSONALIZATION, p);
     this.emitChange();
   },
-  getPreferredStudyLanguage(): 'English' | 'Telugu' | 'Hindi' {
+  getPreferredStudyLanguage(): string {
     const p = this.getPersonalization();
-    const lang = String(p.preferredLanguage || 'English');
+    const lang = String(p.preferredLanguage || 'English').trim();
+    if (!lang) return 'English';
     if (lang === 'Telugu' || lang === 'తెలుగు') return 'Telugu';
     if (lang === 'Hindi' || lang === 'हिन्दी') return 'Hindi';
-    return 'English';
+    return lang;
   },
-  setPreferredStudyLanguage(lang: 'English' | 'Telugu' | 'Hindi'): void {
+  setPreferredStudyLanguage(lang: string): void {
     const p = this.getPersonalization();
     this.savePersonalization({
       ...p,

@@ -3055,6 +3055,8 @@ Return ONLY valid JSON:
           ? 'Explain the steps and concept in Telugu (తెలుగు), keeping all technical and scientific terms in English.'
           : language === 'Hindi'
           ? 'Explain the steps and concept in Hindi (हिन्दी), keeping all technical and scientific terms in English.'
+          : language && language !== 'English'
+          ? `Explain the steps and concept in ${language}, keeping technical and scientific terms clear.`
           : 'Explain clearly in English.';
 
       const solvePrompt = `You are Kinich's Snap & Solve academic tutor.
@@ -3237,6 +3239,8 @@ Return ONLY valid JSON:
           ? 'Write the spoken script in conversational Telugu (తెలుగు) while keeping technical terms in English.'
           : language === 'Hindi'
           ? 'Write the spoken script in conversational Hindi (हिन्दी) while keeping technical terms in English.'
+          : language && language !== 'English'
+          ? `Write the spoken script in conversational ${language}.`
           : 'Write the spoken script in clear, engaging spoken English.';
 
       const scriptPrompt = `You are Kinich's Audio Revision Coach.
@@ -3311,17 +3315,17 @@ ${summaryText.slice(0, 2800)}`;
     try {
       const text = String(req.body?.text || '').trim().slice(0, 4500);
       const rawLang = String(req.body?.targetLanguage || req.body?.language || '').trim();
-      const targetLanguage: 'English' | 'Telugu' | 'Hindi' =
+      const targetLanguage: string =
         rawLang === 'Telugu' || rawLang === 'తెలుగు'
           ? 'Telugu'
           : rawLang === 'Hindi' || rawLang === 'हिन्दी'
           ? 'Hindi'
-          : 'English';
+          : rawLang || 'English';
 
       if (!text) {
         return res.status(400).json({ ok: false, error: 'Missing text to explain.' });
       }
-      if (targetLanguage === 'English') {
+      if (targetLanguage === 'English' || targetLanguage.toLowerCase() === 'en') {
         return res.json({ ok: true, language: 'English', explainedText: text });
       }
 
@@ -3336,11 +3340,15 @@ ${summaryText.slice(0, 2800)}`;
       }
 
       const langLabel =
-        targetLanguage === 'Telugu' ? 'Telugu (తెలుగు script)' : 'Hindi (हिन्दी Devanagari script)';
+        targetLanguage === 'Telugu'
+          ? 'Telugu (తెలుగు script)'
+          : targetLanguage === 'Hindi'
+          ? 'Hindi (हिन्दी Devanagari script)'
+          : targetLanguage;
 
-      const prompt = `You are a bilingual Indian academic tutor on Kinich.
-Rewrite and explain the following study content in ${langLabel} for an Indian student.
-CRITICAL RULE: Keep all technical, scientific, mathematical, and programming terms in English (or English alongside the local script), while writing the explanation and connecting sentences in natural ${langLabel}. Stay strictly educational and SFW.
+      const prompt = `You are a multilingual academic tutor on Kinich.
+Rewrite and explain the following study content in ${langLabel}.
+CRITICAL RULE: Keep technical, scientific, mathematical, and programming terms accurate (including English terms alongside the ${langLabel} explanation where helpful), while writing the explanation and connecting sentences in natural ${langLabel}. Stay strictly educational and SFW.
 
 Content to explain:
 """
@@ -3372,7 +3380,7 @@ ${text}
                   `• **Point ${i + 1}:** ${s}\n  *(ఈ కాన్సెప్ట్ యొక్క ముఖ్య ఉద్దేశ్యం: పై technical terms మరియు సూత్రాలను పరీక్షలో నేరుగా అప్లై చేయడానికి గుర్తుంచుకోండి.)*`
               )
               .join('\n\n');
-        } else {
+        } else if (targetLanguage === 'Hindi') {
           explainedText =
             `🇮🇳 **हिन्दी व्याख्या (Technical Terms in English):**\n\n` +
             sentences
@@ -3381,6 +3389,10 @@ ${text}
                   `• **Point ${i + 1}:** ${s}\n  *(इस concept का मुख्य सार: परीक्षा में इन technical terms और सूत्रों का सीधा उपयोग किया जाता है।)*`
               )
               .join('\n\n');
+        } else {
+          explainedText =
+            `**${targetLanguage} Summary:**\n\n` +
+            sentences.map((s, i) => `• **Point ${i + 1}:** ${s}`).join('\n\n');
         }
       }
 

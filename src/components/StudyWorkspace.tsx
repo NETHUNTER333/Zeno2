@@ -70,8 +70,10 @@ import { KnowledgeVaultStore } from '../lib/growthStore';
 import { MathMarkdown } from './MathMarkdown';
 import { StudyLoopPanel } from './StudyLoopPanel';
 import { StudyArsenalPanel } from './StudyArsenalPanel';
+import { StudyLanguageDropdown } from './CustomSearchSelect';
 import {
   StudyLoopStore,
+  SUPPORTED_STUDY_LANGUAGES,
   startBackgroundAudioRecap,
   stopBackgroundAudioRecap,
   type StudyLanguage,
@@ -151,20 +153,12 @@ export interface DetailedStatementItem {
   elaboration: string;
 }
 
-const LANGUAGES = [
-  { code: 'en', label: 'English', flag: '🇺🇸' },
-  { code: 'hi', label: 'Hindi', flag: '🇮🇳' },
-  { code: 'gu', label: 'Gujarati', flag: '🇮🇳' },
-  { code: 'AF', label: 'Afrikaans', flag: '🇿🇦' },
-  { code: 'ar', label: 'Arabic', flag: '🇦🇪' },
-  { code: 'bn', label: 'Bengali', flag: '🇧🇩' },
-  { code: 'es', label: 'Spanish', flag: '🇪🇸' },
-  { code: 'fr', label: 'French', flag: '🇫🇷' },
-  { code: 'de', label: 'German', flag: '🇩🇪' },
-  { code: 'ja', label: 'Japanese', flag: '🇯🇵' },
-  { code: 'ko', label: 'Korean', flag: '🇰🇷' },
-  { code: 'zh', label: 'Chinese', flag: '🇨🇳' },
-];
+const LANGUAGES = SUPPORTED_STUDY_LANGUAGES.map((l) => ({
+  code: l.code,
+  id: l.id,
+  label: l.nativeLabel,
+  flag: l.flag,
+}));
 
 export function extractYouTubeIdFromInput(input?: string | null): string | null {
   const trimmed = (input || '').trim();
@@ -379,12 +373,6 @@ export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
   const [isEditingSummary, setIsEditingSummary] = useState<boolean>(false);
   const [editableSummaryText, setEditableSummaryText] = useState<string>('');
   const [copiedSummary, setCopiedSummary] = useState<boolean>(false);
-
-  // Reading Mode State for Summary
-  const [isReadingMode, setIsReadingMode] = useState<boolean>(false);
-  const [readingFontSize, setReadingFontSize] = useState<'sm' | 'base' | 'lg' | 'xl' | '2xl'>('base');
-  const [readingLineHeight, setReadingLineHeight] = useState<'compact' | 'normal' | 'relaxed' | 'spacious'>('relaxed');
-  const [readingFontFamily, setReadingFontFamily] = useState<'sans' | 'serif' | 'mono'>('sans');
 
   // Summary Follow-Up Assistant State
   const [summaryFollowUpQuery, setSummaryFollowUpQuery] = useState<string>('');
@@ -2036,66 +2024,6 @@ ${fullTranscriptText}`;
     ? 'bg-white/[0.05] border border-white/[0.08] text-neutral-200'
     : 'bg-black/[0.035] border border-black/[0.07] text-neutral-800';
 
-  // Summary reading stats and typography computed classes
-  const summaryWordCount = useMemo(() => {
-    if (!studyBundle) return 0;
-    const allText = [
-      studyBundle.summary.overview,
-      aiExhaustiveSummary,
-      ...statementBreakdown.map((s) => `${s.heading} ${s.elaboration}`),
-      ...studyBundle.explanation.concepts.map((c) => `${c.term} ${c.definition}`),
-    ]
-      .filter(Boolean)
-      .join(' ');
-    return allText.trim().split(/\s+/).filter(Boolean).length;
-  }, [studyBundle, aiExhaustiveSummary, statementBreakdown]);
-
-  const summaryEstimatedReadingMinutes = useMemo(() => {
-    return Math.max(1, Math.ceil(summaryWordCount / 200));
-  }, [summaryWordCount]);
-
-  const readingFontFamilyClass = useMemo(() => {
-    switch (readingFontFamily) {
-      case 'serif':
-        return 'font-serif';
-      case 'mono':
-        return 'font-mono';
-      case 'sans':
-      default:
-        return 'font-sans';
-    }
-  }, [readingFontFamily]);
-
-  const readingSizeClass = useMemo(() => {
-    switch (readingFontSize) {
-      case 'sm':
-        return 'text-sm';
-      case 'lg':
-        return 'text-lg';
-      case 'xl':
-        return 'text-xl';
-      case '2xl':
-        return 'text-2xl';
-      case 'base':
-      default:
-        return 'text-base';
-    }
-  }, [readingFontSize]);
-
-  const readingLhClass = useMemo(() => {
-    switch (readingLineHeight) {
-      case 'compact':
-        return 'leading-normal';
-      case 'normal':
-        return 'leading-relaxed';
-      case 'spacious':
-        return 'leading-[2.25]';
-      case 'relaxed':
-      default:
-        return 'leading-loose';
-    }
-  }, [readingLineHeight]);
-
   const handleSendSummaryFollowUp = async (overridePrompt?: string) => {
     const rawPrompt = overridePrompt || summaryFollowUpQuery;
     const cleanPrompt = rawPrompt.trim();
@@ -2171,22 +2099,15 @@ ${fullTranscriptText}`;
 
   const renderSummaryFollowUpSection = () => (
     <div
-      className={`p-5 sm:p-7 rounded-3xl border transition-all space-y-5 ${borderSubtle} ${bgCard} shadow-sm`}
+      className={`p-5 sm:p-6 rounded-2xl border transition-all space-y-4 ${borderSubtle} ${bgCard}`}
     >
       {/* Header */}
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-amber-500/10 border border-amber-500/25 flex items-center justify-center text-amber-500 shrink-0 shadow-xs">
-            <Sparkles className="w-5 h-5" />
-          </div>
-          <div>
-            <h3 className="text-sm sm:text-base font-semibold tracking-tight">
-              Summary Follow-Up Assistant
-            </h3>
-            <p className={`text-xs ${textMuted}`}>
-              Ask anything about this summary, explore analogies, or clarify tough points.
-            </p>
-          </div>
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold tracking-tight">Follow-Up Questions</h3>
+          <p className={`text-xs ${textMuted}`}>
+            Ask about any concept or section in this summary.
+          </p>
         </div>
 
         {summaryFollowUpTurns.length > 0 && (
@@ -2204,32 +2125,27 @@ ${fullTranscriptText}`;
 
       {/* Suggested prompt chips */}
       {summaryFollowUpTurns.length === 0 && (
-        <div className="space-y-2 pt-1">
-          <div className={`text-[11px] font-medium tracking-wide uppercase ${textMuted}`}>
-            Suggested follow-up questions:
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {[
-              'Explain the core mechanism in simple words',
-              'Give 2 real-world examples of this',
-              'What could be tested on an exam from this?',
-              'Summarize the 3 biggest takeaways',
-            ].map((chip, idx) => (
-              <button
-                key={idx}
-                type="button"
-                disabled={summaryFollowUpLoading}
-                onClick={() => handleSendSummaryFollowUp(chip)}
-                className={`text-xs px-3 py-1.5 rounded-xl border text-left cursor-pointer transition-all hover:scale-[1.01] active:scale-[0.99] ${
-                  isDark
-                    ? 'bg-white/[0.03] hover:bg-white/[0.08] border-white/[0.08]'
-                    : 'bg-black/[0.02] hover:bg-black/[0.05] border-black/[0.08]'
-                }`}
-              >
-                💡 {chip}
-              </button>
-            ))}
-          </div>
+        <div className="flex flex-wrap gap-2">
+          {[
+            'Explain the core mechanism in simple words',
+            'Give 2 real-world examples of this',
+            'What could be tested on an exam from this?',
+            'Summarize the 3 biggest takeaways',
+          ].map((chip, idx) => (
+            <button
+              key={idx}
+              type="button"
+              disabled={summaryFollowUpLoading}
+              onClick={() => handleSendSummaryFollowUp(chip)}
+              className={`text-xs px-3 py-1.5 rounded-xl border text-left cursor-pointer transition-colors ${
+                isDark
+                  ? 'bg-white/[0.03] hover:bg-white/[0.08] border-white/[0.08]'
+                  : 'bg-black/[0.02] hover:bg-black/[0.05] border-black/[0.08]'
+              }`}
+            >
+              {chip}
+            </button>
+          ))}
         </div>
       )}
 
@@ -3969,254 +3885,7 @@ ${fullTranscriptText}`;
                 {/* =========================================================== */}
                 {/* TAB 2: SUMMARY (Clean, Simple, Usable + Fetched Videos)     */}
                 {/* =========================================================== */}
-                {activeTabObj?.type === 'summary' && studyBundle && isReadingMode && (
-                  <div className="w-full pb-20">
-                    {/* Floating / Sticky Reading Mode Controls Bar */}
-                    <div
-                      className={`sticky top-0 z-20 backdrop-blur-md border-b ${borderSubtle} py-3 px-4 sm:px-6 mb-8 ${
-                        isDark ? 'bg-[#09090b]/90 shadow-lg shadow-black/20' : 'bg-[#fafafa]/90 shadow-sm'
-                      }`}
-                    >
-                      <div className="max-w-3xl mx-auto flex flex-wrap items-center justify-between gap-3">
-                        {/* Badge and Reading Stats */}
-                        <div className="flex items-center gap-2.5">
-                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-500/15 text-amber-500 border border-amber-500/30">
-                            <BookOpen className="w-3.5 h-3.5" />
-                            <span>Reading Mode</span>
-                          </span>
-                          <span className={`text-xs ${textMuted} hidden sm:inline`}>
-                            {summaryEstimatedReadingMinutes} min read • {summaryWordCount} words
-                          </span>
-                        </div>
-
-                        {/* Typography Tooling */}
-                        <div className="flex flex-wrap items-center gap-2 text-xs">
-                          {/* Font Family Selector */}
-                          <div
-                            className={`flex items-center p-0.5 rounded-full border ${borderSubtle} ${bgCard}`}
-                            title="Font Family"
-                          >
-                            {(['sans', 'serif', 'mono'] as const).map((ff) => (
-                              <button
-                                key={ff}
-                                type="button"
-                                onClick={() => setReadingFontFamily(ff)}
-                                className={`px-2.5 py-0.5 rounded-full capitalize font-medium text-xs cursor-pointer transition-all ${
-                                  readingFontFamily === ff
-                                    ? isDark
-                                      ? 'bg-neutral-800 text-white shadow-xs'
-                                      : 'bg-neutral-200 text-black shadow-xs'
-                                    : textMuted
-                                }`}
-                              >
-                                {ff}
-                              </button>
-                            ))}
-                          </div>
-
-                          {/* Font Size Selector */}
-                          <div
-                            className={`flex items-center p-0.5 rounded-full border ${borderSubtle} ${bgCard}`}
-                            title="Font Size"
-                          >
-                            <span className={`px-2 text-[11px] font-semibold ${textMuted}`}>Size</span>
-                            {(['sm', 'base', 'lg', 'xl'] as const).map((sz) => (
-                              <button
-                                key={sz}
-                                type="button"
-                                onClick={() => setReadingFontSize(sz)}
-                                className={`px-2 py-0.5 rounded-full text-xs font-medium cursor-pointer transition-all ${
-                                  readingFontSize === sz
-                                    ? isDark
-                                      ? 'bg-neutral-800 text-white shadow-xs'
-                                      : 'bg-neutral-200 text-black shadow-xs'
-                                    : textMuted
-                                }`}
-                              >
-                                {sz === 'sm' ? 'S' : sz === 'base' ? 'M' : sz === 'lg' ? 'L' : 'XL'}
-                              </button>
-                            ))}
-                          </div>
-
-                          {/* Line Height Selector */}
-                          <div
-                            className={`flex items-center p-0.5 rounded-full border ${borderSubtle} ${bgCard}`}
-                            title="Line Spacing"
-                          >
-                            <span className={`px-2 text-[11px] font-semibold ${textMuted}`}>Line</span>
-                            {(['compact', 'normal', 'relaxed', 'spacious'] as const).map((lh) => (
-                              <button
-                                key={lh}
-                                type="button"
-                                onClick={() => setReadingLineHeight(lh)}
-                                className={`px-2 py-0.5 rounded-full text-xs font-medium cursor-pointer transition-all ${
-                                  readingLineHeight === lh
-                                    ? isDark
-                                      ? 'bg-neutral-800 text-white shadow-xs'
-                                      : 'bg-neutral-200 text-black shadow-xs'
-                                    : textMuted
-                                }`}
-                              >
-                                {lh === 'compact' ? '1.5' : lh === 'normal' ? '1.75' : lh === 'relaxed' ? '2.0' : '2.3'}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* Exit Button */}
-                        <button
-                          type="button"
-                          onClick={() => setIsReadingMode(false)}
-                          className={`h-8 px-3.5 rounded-full border text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer hover:opacity-80 transition-colors ${borderSubtle}`}
-                        >
-                          <X className="w-3.5 h-3.5" />
-                          <span>Exit Reading</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Distraction-Free Typography Layout */}
-                    <div
-                      className={`max-w-2xl sm:max-w-3xl mx-auto px-5 sm:px-8 space-y-10 transition-all ${readingFontFamilyClass}`}
-                    >
-                      {/* Document Header */}
-                      <header className="space-y-3 pb-8 border-b border-dashed border-neutral-300 dark:border-neutral-800">
-                        <div className="flex items-center gap-2 text-xs">
-                          <span className="uppercase tracking-wider font-semibold text-amber-500">
-                            Study Guide & Synopsis
-                          </span>
-                          <span className={textMuted}>•</span>
-                          <span className={textMuted}>{summaryEstimatedReadingMinutes} min read</span>
-                          <span className={textMuted}>•</span>
-                          <span className={textMuted}>{summaryWordCount} words</span>
-                        </div>
-                        <h1 className="text-2xl sm:text-4xl font-bold tracking-tight leading-tight">
-                          {resolvedTitle}
-                        </h1>
-                      </header>
-
-                      {/* Lead Overview */}
-                      <section className="space-y-3">
-                        <div className="text-xs font-bold uppercase tracking-widest text-neutral-400">
-                          Overview
-                        </div>
-                        <p
-                          className={`${readingSizeClass} ${readingLhClass} first-letter:text-4xl first-letter:font-extrabold first-letter:mr-2 first-letter:float-left first-letter:leading-none text-neutral-900 dark:text-neutral-100`}
-                        >
-                          {studyBundle.summary.overview}
-                        </p>
-                      </section>
-
-                      {/* In-Depth Guide if present */}
-                      {aiExhaustiveSummary && (
-                        <section className="space-y-4 pt-6 border-t border-neutral-200 dark:border-neutral-800/80">
-                          <div className="text-xs font-bold uppercase tracking-widest text-neutral-400">
-                            Comprehensive Synthesis
-                          </div>
-                          <div className={`${readingSizeClass} ${readingLhClass} space-y-4`}>
-                            <MathMarkdown content={aiExhaustiveSummary} isDark={isDark} />
-                          </div>
-                        </section>
-                      )}
-
-                      {/* Statement Breakdown / Sections */}
-                      {statementBreakdown.length > 0 && (
-                        <section className="space-y-6 pt-6 border-t border-neutral-200 dark:border-neutral-800/80">
-                          <div className="text-xs font-bold uppercase tracking-widest text-neutral-400">
-                            Detailed Key Points
-                          </div>
-                          <div className="space-y-6">
-                            {statementBreakdown.map((st, sIdx) => (
-                              <article
-                                key={st.index ?? sIdx}
-                                className="space-y-2.5 pb-6 border-b border-neutral-200/60 dark:border-neutral-800/50 last:border-0"
-                              >
-                                <h3 className="text-lg sm:text-xl font-bold tracking-tight text-neutral-900 dark:text-neutral-100">
-                                  {st.heading}
-                                </h3>
-                                {st.claim && st.claim !== st.elaboration && (
-                                  <div
-                                    className={`font-semibold ${readingSizeClass} text-neutral-800 dark:text-neutral-200`}
-                                  >
-                                    {st.claim}
-                                  </div>
-                                )}
-                                <p className={`${readingSizeClass} ${readingLhClass} ${textMuted}`}>
-                                  {st.elaboration}
-                                </p>
-                              </article>
-                            ))}
-                          </div>
-                        </section>
-                      )}
-
-                      {/* Key Concepts / Terms */}
-                      {studyBundle.explanation.concepts.length > 0 && (
-                        <section className="space-y-4 pt-6 border-t border-neutral-200 dark:border-neutral-800/80">
-                          <div className="text-xs font-bold uppercase tracking-widest text-neutral-400">
-                            Core Terminology & Concepts
-                          </div>
-                          <dl className="space-y-4">
-                            {studyBundle.explanation.concepts.map((concept, cIdx) => (
-                              <div
-                                key={cIdx}
-                                className="p-4 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-900/30 space-y-1.5"
-                              >
-                                <dt className="font-bold text-sm sm:text-base text-neutral-900 dark:text-neutral-100">
-                                  {concept.term}
-                                </dt>
-                                <dd className={`${readingSizeClass} ${readingLhClass} text-neutral-700 dark:text-neutral-300`}>
-                                  {concept.definition}
-                                </dd>
-                                {concept.mechanism && concept.mechanism !== concept.definition && (
-                                  <dd className={`text-xs italic ${textMuted} pt-1`}>
-                                    Mechanism: {concept.mechanism}
-                                  </dd>
-                                )}
-                              </div>
-                            ))}
-                          </dl>
-                        </section>
-                      )}
-
-                      {/* Elite Follow-Up Assistant inside Reading Mode */}
-                      <section className="pt-8 border-t border-neutral-300 dark:border-neutral-800">
-                        {renderSummaryFollowUpSection()}
-                      </section>
-
-                      {/* Reading Mode Footer */}
-                      <div className="flex flex-wrap items-center justify-between gap-3 pt-6 border-t border-dashed border-neutral-300 dark:border-neutral-800">
-                        <span className={`text-xs ${textMuted}`}>
-                          Finished reading "{resolvedTitle}"
-                        </span>
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setIsReadingMode(false)}
-                            className={`px-3 py-1.5 rounded-xl border text-xs font-medium cursor-pointer ${borderSubtle}`}
-                          >
-                            Exit Reading Mode
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setIsReadingMode(false);
-                              openOrFocusTab('quiz', 'Quiz');
-                            }}
-                            className={`px-3.5 py-1.5 rounded-xl border text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer ${
-                              isDark ? 'bg-white text-black' : 'bg-black text-white'
-                            }`}
-                          >
-                            <span>Take Quiz</span>
-                            <ChevronRight className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {activeTabObj?.type === 'summary' && studyBundle && !isReadingMode && (
+                {activeTabObj?.type === 'summary' && studyBundle && (
                   <div className="max-w-3xl mx-auto px-4 sm:px-6 pt-5 pb-4 space-y-5">
                     {/* Header & Actions */}
                     <div
@@ -4263,44 +3932,14 @@ ${fullTranscriptText}`;
                           </span>
                         </button>
 
-                        <div
-                          className="inline-flex items-center rounded-full border border-white/15 bg-black/40 p-0.5 text-xs"
-                          data-testid="study-summary-lang-toggle"
-                        >
-                          {(['English', 'Telugu', 'Hindi'] as StudyLanguage[]).map((lang) => (
-                            <button
-                              key={lang}
-                              type="button"
-                              onClick={() => handleExplainSummaryInLocalLang(lang)}
-                              disabled={summaryTranslating}
-                              className={`px-2.5 py-1 rounded-full font-semibold transition cursor-pointer ${
-                                summaryLocalLang === lang
-                                  ? 'bg-[#FC4C01] text-white'
-                                  : 'text-neutral-400 hover:text-white'
-                              }`}
-                            >
-                              {lang === 'English'
-                                ? 'EN'
-                                : lang === 'Telugu'
-                                ? 'తెలుగు'
-                                : 'हिन्दी'}
-                            </button>
-                          ))}
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => setIsReadingMode(true)}
-                          className={`h-8 inline-flex items-center gap-1.5 px-3.5 rounded-full border text-xs font-medium cursor-pointer transition-colors ${
-                            isDark
-                              ? 'bg-amber-500/10 text-amber-300 border-amber-500/30 hover:bg-amber-500/20'
-                              : 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100'
-                          }`}
-                          title="Transform summary into clean, distraction-free reading typography"
-                        >
-                          <BookOpen className="w-3.5 h-3.5" />
-                          <span>Reading Mode</span>
-                        </button>
+                        <StudyLanguageDropdown
+                          testId="study-summary-lang-toggle"
+                          value={summaryLocalLang}
+                          disabled={summaryTranslating}
+                          isDark={isDark}
+                          compact={true}
+                          onChange={(lang) => handleExplainSummaryInLocalLang(lang)}
+                        />
 
                         <button
                           type="button"
@@ -4573,27 +4212,44 @@ ${fullTranscriptText}`;
                         </section>
 
                         {/* Key Terms & Concepts */}
-                        {studyBundle.explanation.concepts.length > 0 && (
-                          <section className="space-y-3">
-                            <h3 className="text-sm font-semibold">Key Terms</h3>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                              {studyBundle.explanation.concepts.map((concept, cIdx) => (
-                                <div
-                                  key={cIdx}
-                                  className={`p-4 rounded-2xl border space-y-1.5 ${bgCard}`}
-                                >
-                                  <div className="text-sm font-semibold">{concept.term}</div>
-                                  <p className="text-xs leading-relaxed">{concept.definition}</p>
-                                  {concept.mechanism && concept.mechanism !== concept.definition && (
-                                    <p className={`text-xs leading-relaxed ${textMuted}`}>
-                                      {concept.mechanism}
-                                    </p>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                          </section>
-                        )}
+                        {(() => {
+                          const uniqueConcepts = studyBundle.explanation.concepts.filter(
+                            (concept) =>
+                              !statementBreakdown.some(
+                                (s) => s.heading.trim().toLowerCase() === concept.term.trim().toLowerCase()
+                              )
+                          );
+                          if (uniqueConcepts.length === 0) return null;
+                          return (
+                            <section className="space-y-3">
+                              <h3 className="text-sm font-semibold">Key Terms</h3>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                {uniqueConcepts.map((concept, cIdx) => {
+                                  const cleanMech = (concept.mechanism || '').trim();
+                                  const showMech =
+                                    cleanMech &&
+                                    cleanMech !== concept.definition.trim() &&
+                                    !/^how\s+does\s+the\s+lecture\s+explain/i.test(cleanMech) &&
+                                    !cleanMech.includes('>>');
+                                  return (
+                                    <div
+                                      key={cIdx}
+                                      className={`p-4 rounded-2xl border space-y-1.5 ${bgCard}`}
+                                    >
+                                      <div className="text-sm font-semibold">{concept.term}</div>
+                                      <p className="text-xs leading-relaxed">{concept.definition}</p>
+                                      {showMech && (
+                                        <p className={`text-xs leading-relaxed ${textMuted}`}>
+                                          {cleanMech}
+                                        </p>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </section>
+                          );
+                        })()}
 
                         {/* Elite Follow-Up Assistant inside Summary */}
                         {renderSummaryFollowUpSection()}

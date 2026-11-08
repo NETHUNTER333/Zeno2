@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import {
   StudyLoopStore,
+  SUPPORTED_STUDY_LANGUAGES,
   computeSha256FileHash,
   startBackgroundAudioRecap,
   stopBackgroundAudioRecap,
@@ -20,6 +21,7 @@ import {
 import { UserAccountStore, toIstDateKey } from '../lib/userAccountStore';
 import { KnowledgeVaultStore, VaultThreadStore } from '../lib/growthStore';
 import { extractTextFromPdfFile } from '../lib/pdfStudyEngine';
+import { StudyLanguageDropdown } from './CustomSearchSelect';
 
 interface StudyLoopPanelProps {
   isOpen?: boolean;
@@ -1583,30 +1585,16 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                     </div>
                   )}
 
-                  {/* Explain in Telugu / Hindi Bar */}
+                  {/* Language Dropdown */}
                   <div className={`flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-xl border text-xs ${surfaceElevated}`}>
-                    <span className={textSecondary}>Explain in Language:</span>
-                    <div className="flex items-center gap-1.5">
-                      {(['English', 'Telugu', 'Hindi'] as StudyLanguage[]).map((lang) => (
-                        <button
-                          key={lang}
-                          type="button"
-                          onClick={() => handleExplainPackSummary(lang)}
-                          disabled={packTranslating}
-                          className={`px-2.5 py-1 rounded-lg font-semibold transition cursor-pointer ${
-                            language === lang
-                              ? 'bg-[#FC4C01] text-white'
-                              : btnGhost
-                          }`}
-                        >
-                          {lang === 'English'
-                            ? 'English'
-                            : lang === 'Telugu'
-                            ? 'తెలుగు'
-                            : 'हिन्दी'}
-                        </button>
-                      ))}
-                    </div>
+                    <span className={textSecondary}>Language:</span>
+                    <StudyLanguageDropdown
+                      value={language}
+                      disabled={packTranslating}
+                      isDark={isDark}
+                      compact={true}
+                      onChange={(lang) => handleExplainPackSummary(lang)}
+                    />
                   </div>
 
                   {packTranslateError && (

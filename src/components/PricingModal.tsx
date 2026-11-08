@@ -9,6 +9,7 @@ import { UsageQuota } from '../types';
 import { auth, getAuthHeaders } from '../lib/firebase';
 import { DodoStatusModal } from './DodoStatusModal';
 import { cancelUserSubscription, requestSubscriptionRefund } from '../lib/billing';
+import { CustomSearchSelect } from './CustomSearchSelect';
 
 export interface PricingModalProps {
   isOpen: boolean;
@@ -27,8 +28,48 @@ const FALLBACK_COUNTRIES = [
   { code: 'AU', name: 'Australia', flag: '🇦🇺', currency: 'AUD', symbol: 'A$' },
   { code: 'DE', name: 'Germany', flag: '🇩🇪', currency: 'EUR', symbol: '€' },
   { code: 'FR', name: 'France', flag: '🇫🇷', currency: 'EUR', symbol: '€' },
-  { code: 'JP', name: 'Japan', flag: '🇯🇵', currency: 'JPY', symbol: '¥' },
+  { code: 'NL', name: 'Netherlands', flag: '🇳🇱', currency: 'EUR', symbol: '€' },
+  { code: 'BE', name: 'Belgium', flag: '🇧🇪', currency: 'EUR', symbol: '€' },
+  { code: 'AT', name: 'Austria', flag: '🇦🇹', currency: 'EUR', symbol: '€' },
+  { code: 'IT', name: 'Italy', flag: '🇮🇹', currency: 'EUR', symbol: '€' },
+  { code: 'ES', name: 'Spain', flag: '🇪🇸', currency: 'EUR', symbol: '€' },
+  { code: 'PT', name: 'Portugal', flag: '🇵🇹', currency: 'EUR', symbol: '€' },
+  { code: 'IE', name: 'Ireland', flag: '🇮🇪', currency: 'EUR', symbol: '€' },
+  { code: 'FI', name: 'Finland', flag: '🇫🇮', currency: 'EUR', symbol: '€' },
+  { code: 'PL', name: 'Poland', flag: '🇵🇱', currency: 'PLN', symbol: 'zł' },
+  { code: 'SE', name: 'Sweden', flag: '🇸🇪', currency: 'SEK', symbol: 'kr' },
+  { code: 'NO', name: 'Norway', flag: '🇳🇴', currency: 'NOK', symbol: 'kr' },
+  { code: 'DK', name: 'Denmark', flag: '🇩🇰', currency: 'DKK', symbol: 'kr' },
+  { code: 'CH', name: 'Switzerland', flag: '🇨🇭', currency: 'CHF', symbol: 'CHF' },
   { code: 'SG', name: 'Singapore', flag: '🇸🇬', currency: 'SGD', symbol: 'S$' },
+  { code: 'JP', name: 'Japan', flag: '🇯🇵', currency: 'JPY', symbol: '¥' },
+  { code: 'KR', name: 'South Korea', flag: '🇰🇷', currency: 'KRW', symbol: '₩' },
+  { code: 'BR', name: 'Brazil', flag: '🇧🇷', currency: 'BRL', symbol: 'R$' },
+  { code: 'MX', name: 'Mexico', flag: '🇲🇽', currency: 'MXN', symbol: 'MX$' },
+  { code: 'PH', name: 'Philippines', flag: '🇵🇭', currency: 'PHP', symbol: '₱' },
+  { code: 'MY', name: 'Malaysia', flag: '🇲🇾', currency: 'MYR', symbol: 'RM' },
+  { code: 'HK', name: 'Hong Kong', flag: '🇭🇰', currency: 'HKD', symbol: 'HK$' },
+  { code: 'AE', name: 'United Arab Emirates', flag: '🇦🇪', currency: 'AED', symbol: 'AED ' },
+  { code: 'SA', name: 'Saudi Arabia', flag: '🇸🇦', currency: 'SAR', symbol: 'SAR ' },
+  { code: 'ZA', name: 'South Africa', flag: '🇿🇦', currency: 'ZAR', symbol: 'R' },
+  { code: 'NZ', name: 'New Zealand', flag: '🇳🇿', currency: 'NZD', symbol: 'NZ$' },
+  { code: 'ID', name: 'Indonesia', flag: '🇮🇩', currency: 'IDR', symbol: 'Rp' },
+  { code: 'TH', name: 'Thailand', flag: '🇹🇭', currency: 'THB', symbol: '฿' },
+  { code: 'VN', name: 'Vietnam', flag: '🇻🇳', currency: 'VND', symbol: '₫' },
+  { code: 'TW', name: 'Taiwan', flag: '🇹🇼', currency: 'TWD', symbol: 'NT$' },
+  { code: 'IL', name: 'Israel', flag: '🇮🇱', currency: 'ILS', symbol: '₪' },
+  { code: 'TR', name: 'Turkey', flag: '🇹🇷', currency: 'TRY', symbol: '₺' },
+  { code: 'NG', name: 'Nigeria', flag: '🇳🇬', currency: 'NGN', symbol: '₦' },
+  { code: 'KE', name: 'Kenya', flag: '🇰🇪', currency: 'KES', symbol: 'KSh' },
+  { code: 'EG', name: 'Egypt', flag: '🇪🇬', currency: 'EGP', symbol: 'E£' },
+  { code: 'AR', name: 'Argentina', flag: '🇦🇷', currency: 'ARS', symbol: 'ARS ' },
+  { code: 'CL', name: 'Chile', flag: '🇨🇱', currency: 'CLP', symbol: 'CLP$' },
+  { code: 'CO', name: 'Colombia', flag: '🇨🇴', currency: 'COP', symbol: 'COP$' },
+  { code: 'PE', name: 'Peru', flag: '🇵🇪', currency: 'PEN', symbol: 'S/' },
+  { code: 'CZ', name: 'Czechia', flag: '🇨🇿', currency: 'CZK', symbol: 'Kč' },
+  { code: 'HU', name: 'Hungary', flag: '🇭🇺', currency: 'HUF', symbol: 'Ft' },
+  { code: 'RO', name: 'Romania', flag: '🇷🇴', currency: 'RON', symbol: 'lei' },
+  { code: 'GR', name: 'Greece', flag: '🇬🇷', currency: 'EUR', symbol: '€' },
 ];
 
 const PRICE_TABLE: Record<
@@ -431,22 +472,20 @@ export const PricingModal: React.FC<PricingModalProps> = ({
 
         <div className="flex flex-wrap items-center gap-2">
           {/* Compact Country Selector */}
-          <select
-            aria-label="Select billing country"
+          <CustomSearchSelect
             value={selectedCountry}
-            onChange={(e) => handleSelectCountry(e.target.value)}
-            className={`px-2.5 py-1.5 rounded-xl border text-xs font-semibold outline-none cursor-pointer transition-colors ${
-              isDark
-                ? 'bg-zinc-900 border-zinc-800 text-white hover:border-zinc-700'
-                : 'bg-white border-zinc-200 text-zinc-900 hover:border-zinc-300'
-            }`}
-          >
-            {countries.map((c) => (
-              <option key={c.code} value={c.code}>
-                {c.flag} {c.name} ({c.currency})
-              </option>
-            ))}
-          </select>
+            onChange={(val) => handleSelectCountry(val)}
+            isDark={isDark}
+            ariaLabel="Select billing country"
+            searchPlaceholder="Search country or currency..."
+            options={countries.map((c) => ({
+              value: c.code,
+              label: c.name,
+              flag: c.flag,
+              badge: c.currency,
+              searchKeywords: `${c.name} ${c.code} ${c.currency} ${c.symbol}`,
+            }))}
+          />
 
           {/* Compact Annual / Monthly Toggle */}
           <div
@@ -957,41 +996,34 @@ export const PricingModal: React.FC<PricingModalProps> = ({
             >
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 {Array.isArray(billingMe?.payments) && billingMe.payments.length > 0 && (
-                  <select
-                    aria-label="Select payment to refund"
+                  <CustomSearchSelect
                     value={refundPaymentId}
-                    onChange={(e) => setRefundPaymentId(e.target.value)}
-                    className={`px-3 py-1.5 rounded-lg border text-xs outline-none ${
-                      isDark
-                        ? 'bg-zinc-900 border-zinc-700 text-white'
-                        : 'bg-white border-zinc-300 text-zinc-900'
-                    }`}
-                  >
-                    {billingMe.payments
+                    onChange={(val) => setRefundPaymentId(val)}
+                    isDark={isDark}
+                    ariaLabel="Select payment to refund"
+                    align="left"
+                    options={billingMe.payments
                       .filter((p: any) => p.status !== 'refunded')
-                      .map((p: any) => (
-                        <option key={p.dodo_payment_id} value={p.dodo_payment_id}>
-                          {p.dodo_payment_id} ({((Number(p.amount) || 0) / 100).toFixed(2)}{' '}
-                          {p.currency || 'INR'})
-                        </option>
-                      ))}
-                  </select>
+                      .map((p: any) => ({
+                        value: p.dodo_payment_id,
+                        label: p.dodo_payment_id,
+                        badge: `${((Number(p.amount) || 0) / 100).toFixed(2)} ${p.currency || 'INR'}`,
+                      }))}
+                  />
                 )}
 
-                <select
-                  aria-label="Select refund reason"
+                <CustomSearchSelect
                   value={refundReason}
-                  onChange={(e) => setRefundReason(e.target.value)}
-                  className={`px-3 py-1.5 rounded-lg border text-xs outline-none ${
-                    isDark
-                      ? 'bg-zinc-900 border-zinc-700 text-white'
-                      : 'bg-white border-zinc-300 text-zinc-900'
-                  }`}
-                >
-                  <option value="requested_by_customer">7-day money-back guarantee</option>
-                  <option value="cancelled_want_refund">Cancelled subscription — refund payment</option>
-                  <option value="duplicate">Accidental or duplicate charge</option>
-                </select>
+                  onChange={(val) => setRefundReason(val)}
+                  isDark={isDark}
+                  ariaLabel="Select refund reason"
+                  align="left"
+                  options={[
+                    { value: 'requested_by_customer', label: '7-day money-back guarantee' },
+                    { value: 'cancelled_want_refund', label: 'Cancelled subscription — refund payment' },
+                    { value: 'duplicate', label: 'Accidental or duplicate charge' },
+                  ]}
+                />
               </div>
 
               <div className="flex items-center gap-2">

@@ -45,6 +45,8 @@ import {
   DailyStreakData,
   EvaluatedBadge,
 } from '../lib/userAccountStore';
+import { SUPPORTED_STUDY_LANGUAGES } from '../lib/studyLoopStore';
+import { StudyLanguageDropdown } from './CustomSearchSelect';
 import { UserProfile } from '../types';
 import { ModelOption } from './GrokModelPicker';
 import { ChatThread } from './Sidebar';
@@ -837,17 +839,16 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
 
   const isDark = theme === 'dark';
   const [locPref, setLocPref] = useState(() => getStoredLocationPref());
-  const [studyLanguage, setStudyLanguage] = useState<'English' | 'Telugu' | 'Hindi'>(() =>
+  const [studyLanguage, setStudyLanguage] = useState<string>(() =>
     UserAccountStore.getPreferredStudyLanguage()
   );
 
-  const handleSelectStudyLanguage = (lang: 'English' | 'Telugu' | 'Hindi') => {
+  const handleSelectStudyLanguage = (lang: string) => {
     UserAccountStore.setPreferredStudyLanguage(lang);
     setStudyLanguage(lang);
+    const matched = SUPPORTED_STUDY_LANGUAGES.find((l) => l.id === lang);
     triggerSuccessAlert(
-      `Study & explanation language set to ${
-        lang === 'Telugu' ? 'తెలుగు (Telugu)' : lang === 'Hindi' ? 'हिन्दी (Hindi)' : 'English'
-      }`
+      `Study & explanation language set to ${matched ? matched.nativeLabel : lang}`
     );
   };
 
@@ -1490,69 +1491,26 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
                   </div>
                 </div>
 
-                {/* Phase D: Study & Explanation Language Setting (English / తెలుగు / हिन्दी) */}
+                {/* Study & Explanation Language Dropdown */}
                 <div
-                  className={`p-5 rounded-2xl border space-y-4 ${
+                  className={`p-5 rounded-2xl border space-y-3 ${
                     isDark ? 'bg-white/[0.02] border-white/10' : 'bg-white border-black/10 shadow-xs'
                   }`}
                   data-testid="settings-language-card"
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-9 h-9 rounded-xl bg-[#FC4C01]/15 border border-[#FC4C01]/40 flex items-center justify-center shrink-0">
-                        <Globe className="w-4 h-4 text-[#FC4C01]" />
-                      </div>
-                      <div>
-                        <div className="text-sm font-bold flex items-center gap-2">
-                          <span>Explanation &amp; Study Language</span>
-                          <span className="px-2 py-0.5 rounded text-[11px] font-mono bg-[#FC4C01]/15 text-[#FC4C01] border border-[#FC4C01]/30">
-                            {studyLanguage === 'Telugu'
-                              ? 'తెలుగు'
-                              : studyLanguage === 'Hindi'
-                              ? 'हिन्दी'
-                              : 'English'}
-                          </span>
-                        </div>
-                        <div className="text-xs text-neutral-400 mt-0.5">
-                          Choose your preferred language for Study summaries, chat explanations, and Snap &amp; Solve. Technical terms stay in English.
-                        </div>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold">Explanation &amp; Study Language</div>
+                      <div className="text-xs text-neutral-400 mt-0.5">
+                        Preferred language for Study summaries, explanations, and Snap &amp; Solve.
                       </div>
                     </div>
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-2.5 pt-1">
-                    {(
-                      [
-                        { id: 'English', label: 'English', sub: 'Default English' },
-                        { id: 'Telugu', label: 'తెలుగు', sub: 'Telugu + English terms' },
-                        { id: 'Hindi', label: 'हिन्दी', sub: 'Hindi + English terms' },
-                      ] as const
-                    ).map((opt) => {
-                      const active = studyLanguage === opt.id;
-                      return (
-                        <button
-                          key={opt.id}
-                          type="button"
-                          onClick={() => handleSelectStudyLanguage(opt.id)}
-                          data-testid={`settings-lang-${opt.id.toLowerCase()}`}
-                          className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
-                            active
-                              ? 'border-[#FC4C01] bg-[#FC4C01]/15 text-white'
-                              : isDark
-                              ? 'border-white/10 hover:border-white/25 bg-white/[0.02] text-neutral-300'
-                              : 'border-black/10 hover:border-black/25 bg-neutral-50 text-neutral-800'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between gap-1">
-                            <span className={`text-xs font-bold ${active ? 'text-[#FC4C01]' : ''}`}>
-                              {opt.label}
-                            </span>
-                            {active && <Check className="w-3.5 h-3.5 text-[#FC4C01]" />}
-                          </div>
-                          <div className="text-[10px] text-neutral-400 mt-0.5">{opt.sub}</div>
-                        </button>
-                      );
-                    })}
+                    <StudyLanguageDropdown
+                      value={studyLanguage}
+                      isDark={isDark}
+                      compact={false}
+                      onChange={(lang) => handleSelectStudyLanguage(lang)}
+                    />
                   </div>
                 </div>
 
@@ -2113,49 +2071,27 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
                   </div>
                 </div>
 
-                {/* Phase D: Language Selector in App Preferences (English / తెలుగు / हिन्दी) */}
+                {/* Language Selector in App Preferences */}
                 <div
-                  className={`p-5 rounded-2xl border space-y-4 ${
+                  className={`p-5 rounded-2xl border space-y-3 ${
                     isDark ? 'bg-white/[0.02] border-white/10' : 'bg-white border-black/10 shadow-xs'
                   }`}
                 >
-                  <div className="flex items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <div className="text-xs font-bold uppercase tracking-wider text-neutral-400">
-                        Language (English / తెలుగు / हिन्दी)
+                        Language
                       </div>
                       <p className="text-[11px] text-neutral-400 mt-0.5">
-                        Default language for explanations, Study summaries, and Snap &amp; Solve (keeps technical terms in English).
+                        Default language for explanations, Study summaries, and Snap &amp; Solve.
                       </p>
                     </div>
-                  </div>
-                  <div className="grid grid-cols-3 gap-3">
-                    {(
-                      [
-                        { id: 'English', label: 'English' },
-                        { id: 'Telugu', label: 'తెలుగు' },
-                        { id: 'Hindi', label: 'हिन्दी' },
-                      ] as const
-                    ).map((opt) => {
-                      const active = studyLanguage === opt.id;
-                      return (
-                        <button
-                          key={opt.id}
-                          type="button"
-                          onClick={() => handleSelectStudyLanguage(opt.id)}
-                          className={`p-3.5 rounded-xl border flex items-center justify-between text-xs font-semibold transition-all cursor-pointer ${
-                            active
-                              ? 'border-[#FC4C01] bg-[#FC4C01]/15 text-[#FC4C01] font-bold'
-                              : isDark
-                              ? 'border-white/10 text-neutral-300 hover:bg-white/5'
-                              : 'border-black/10 text-neutral-700 hover:bg-black/5'
-                          }`}
-                        >
-                          <span>{opt.label}</span>
-                          {active && <Check className="w-4 h-4 text-[#FC4C01]" />}
-                        </button>
-                      );
-                    })}
+                    <StudyLanguageDropdown
+                      value={studyLanguage}
+                      isDark={isDark}
+                      compact={false}
+                      onChange={(lang) => handleSelectStudyLanguage(lang)}
+                    />
                   </div>
                 </div>
 
