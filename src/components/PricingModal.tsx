@@ -477,6 +477,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
             onChange={(val) => handleSelectCountry(val)}
             isDark={isDark}
             ariaLabel="Select billing country"
+            align="left"
             searchPlaceholder="Search country or currency..."
             options={countries.map((c) => ({
               value: c.code,

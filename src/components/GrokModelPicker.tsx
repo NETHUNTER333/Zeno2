@@ -909,12 +909,12 @@ export const GrokModelPicker: React.FC<GrokModelPickerProps> = ({
 
   const triggerClasses =
     variant === 'header'
-      ? `flex items-center gap-1 h-5.5 sm:h-6 px-2 rounded-full border backdrop-blur-xl transition-all cursor-pointer font-medium text-[10px] select-none ${
+      ? `flex items-center gap-1.5 h-7.5 sm:h-8 px-2.5 sm:px-3 rounded-full border backdrop-blur-xl transition-all cursor-pointer font-medium text-xs sm:text-[13px] select-none ${
           isDark
-            ? 'bg-neutral-900/45 hover:bg-neutral-800/60 border-white/[0.08] text-white/90'
-            : 'bg-white/70 hover:bg-white/90 border-black/[0.06] text-zinc-900'
+            ? 'bg-neutral-900/60 hover:bg-neutral-800/75 border-white/[0.12] text-white shadow-xs'
+            : 'bg-white/80 hover:bg-white border-black/[0.1] text-zinc-900 shadow-xs'
         }`
-      : `flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10.5px] transition-colors cursor-pointer ${
+      : `flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs transition-colors cursor-pointer ${
           isDark ? 'text-white/80 hover:text-white' : 'text-black/75 hover:text-black'
         }`;
 
@@ -928,14 +928,14 @@ export const GrokModelPicker: React.FC<GrokModelPickerProps> = ({
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className={`${triggerClasses} max-w-[110px] sm:max-w-[145px]`}
+        className={`${triggerClasses} max-w-[150px] sm:max-w-[200px]`}
         title={current.name}
       >
-        <span className="font-medium text-[10px] tracking-tight truncate">{current.name}</span>
+        <span className="font-medium text-xs sm:text-[13px] tracking-tight truncate">{current.name}</span>
         <ChevronDown
-          className={`w-2 h-2 shrink-0 transition-transform duration-150 ${
+          className={`w-3 h-3 shrink-0 transition-transform duration-150 ${
             isOpen ? 'rotate-180' : ''
-          } opacity-60`}
+          } opacity-70`}
         />
       </button>
 

@@ -35,11 +35,12 @@ export const CustomSearchSelect: React.FC<CustomSearchSelectProps> = ({
   searchPlaceholder = 'Search...',
   testId,
   ariaLabel,
-  align = 'right',
+  align = 'left',
   compact = false,
 }) => {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [effectiveAlign, setEffectiveAlign] = useState<'left' | 'right'>(align);
   const containerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -68,6 +69,22 @@ export const CustomSearchSelect: React.FC<CustomSearchSelectProps> = ({
       setQuery('');
       return;
     }
+
+    // Smart screen edge collision detection so dropdown never clips off phone screens
+    if (containerRef.current && typeof window !== 'undefined') {
+      const rect = containerRef.current.getBoundingClientRect();
+      const vw = window.innerWidth;
+      const menuWidth = Math.min(280, vw - 24);
+
+      if (align === 'right' && rect.right - menuWidth < 12) {
+        setEffectiveAlign('left');
+      } else if (align === 'left' && rect.left + menuWidth > vw - 12) {
+        setEffectiveAlign('right');
+      } else {
+        setEffectiveAlign(align);
+      }
+    }
+
     const handlePointerDown = (e: MouseEvent | TouchEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setOpen(false);
@@ -84,7 +101,7 @@ export const CustomSearchSelect: React.FC<CustomSearchSelectProps> = ({
       document.removeEventListener('touchstart', handlePointerDown);
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [open]);
+  }, [open, align]);
 
   return (
     <div ref={containerRef} className="relative inline-block text-left">
@@ -128,8 +145,8 @@ export const CustomSearchSelect: React.FC<CustomSearchSelectProps> = ({
         <div
           role="listbox"
           className={`absolute ${
-            align === 'left' ? 'left-0' : 'right-0'
-          } top-full mt-1.5 w-64 sm:w-72 rounded-2xl border p-1.5 z-[90] shadow-2xl ${
+            effectiveAlign === 'left' ? 'left-0' : 'right-0'
+          } top-full mt-1.5 w-[calc(100vw-2rem)] max-w-[272px] sm:max-w-[290px] rounded-2xl border p-1.5 z-[100] shadow-2xl ${
             isDark
               ? 'bg-[#141418] border-white/15 text-white shadow-black/80'
               : 'bg-white border-zinc-200 text-zinc-900 shadow-zinc-950/15'
