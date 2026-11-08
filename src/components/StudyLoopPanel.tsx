@@ -706,33 +706,6 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
             </div>
 
             <div className="flex items-center gap-1.5 flex-wrap">
-              <div
-                className={`inline-flex items-center rounded-lg border p-0.5 text-[11px] ${
-                  isDark ? 'bg-black/40 border-white/10' : 'bg-white border-black/10'
-                }`}
-                data-testid="study-language-toggle"
-              >
-                {(['English', 'Telugu', 'Hindi'] as StudyLanguage[]).map((lang) => (
-                  <button
-                    key={lang}
-                    type="button"
-                    onClick={() => {
-                      setLanguage(lang);
-                      UserAccountStore.setPreferredStudyLanguage(lang);
-                    }}
-                    className={`px-2 py-0.5 rounded-md font-medium transition cursor-pointer ${
-                      language === lang
-                        ? 'bg-[#FC4C01] text-white'
-                        : isDark
-                        ? 'text-neutral-400 hover:text-white'
-                        : 'text-neutral-600 hover:text-black'
-                    }`}
-                  >
-                    {lang === 'English' ? 'EN' : lang === 'Telugu' ? 'తెలుగు' : 'हिन्दी'}
-                  </button>
-                ))}
-              </div>
-
               <button
                 type="button"
                 data-testid="add-exam-btn"
@@ -1914,24 +1887,6 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                           Check with your textbook
                         </span>
                       )}
-
-                      <div className={`inline-flex items-center gap-1 p-0.5 rounded-lg border text-xs ${surfaceElevated}`}>
-                        {(['English', 'Telugu', 'Hindi'] as StudyLanguage[]).map((lang) => (
-                          <button
-                            key={lang}
-                            type="button"
-                            onClick={() => handleExplainSnapSolve(lang)}
-                            disabled={snapTranslating}
-                            className={`px-2 py-0.5 rounded-md font-medium transition cursor-pointer ${
-                              language === lang
-                                ? 'bg-[#FC4C01] text-white'
-                                : textSecondary
-                            }`}
-                          >
-                            {lang === 'English' ? 'EN' : lang === 'Telugu' ? 'తెలుగు' : 'हिन्दी'}
-                          </button>
-                        ))}
-                      </div>
                     </div>
                   </div>
 
