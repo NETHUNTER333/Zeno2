@@ -1091,35 +1091,8 @@ ${fullTranscriptText}`;
       });
     }
 
-    const step = Math.max(1, Math.floor(safeSegs.length / 8));
-    const sampled = safeSegs.filter((_, idx) => idx % step === 0).slice(0, 8);
-
-    const flashcards = sampled.map((seg, idx) => ({
-      id: `fc-local-${idx + 1}`,
-      front: `What key point is explained at ${Math.floor(seg.start_s / 60)}:${String(Math.floor(seg.start_s % 60)).padStart(2, '0')}?`,
-      back: seg.text.trim().slice(0, 200),
-      category: chapters[idx % Math.max(1, chapters.length)]?.title || 'Core Concept',
-      timestamp_s: Math.floor(seg.start_s),
-      timestamp: Math.floor(seg.start_s),
-      sourceQuote: seg.text.trim().slice(0, 120),
-    }));
-
-    const quiz = sampled.map((seg, idx) => {
-      const correct = seg.text.trim().slice(0, 150);
-      const d1 = sampled[(idx + 1) % sampled.length]?.text.trim().slice(0, 150) || 'It relies on static lookup parameters only.';
-      const d2 = sampled[(idx + 2) % sampled.length]?.text.trim().slice(0, 150) || 'It bypasses intermediate sequence verification.';
-      const d3 = 'It discards prior context steps before evaluation.';
-      return {
-        id: `q-local-${idx + 1}`,
-        question: `Which statement accurately reflects the explanation at ${Math.floor(seg.start_s / 60)}:${String(Math.floor(seg.start_s % 60)).padStart(2, '0')}?`,
-        options: [correct, d1 === correct ? d3 : d1, d2 === correct ? d1 : d2, d3],
-        correctIndex: 0,
-        explanation: seg.text.trim().slice(0, 200),
-        timestamp_s: Math.floor(seg.start_s),
-        timestamp: Math.floor(seg.start_s),
-        sourceQuote: seg.text.trim().slice(0, 120),
-      };
-    });
+    const flashcards: any[] = [];
+    const quiz: any[] = [];
 
     const overview = chapters.map((c) => c.summary).slice(0, 2).join(' ');
     return {
@@ -1227,16 +1200,13 @@ ${fullTranscriptText}`;
           }
         }
       } else {
-        applyStudyBundleToState(
-          buildClientTranscriptFallbackBundle(activeVideoId, resolvedTitle, resolvedAuthor, effectiveSegs)
-        );
+        setStudyError("Couldn't generate study materials right now. Please retry.");
+        setStudyBundle(null);
       }
       setPasteTranscriptVal('');
     } catch {
-      applyStudyBundleToState(
-        buildClientTranscriptFallbackBundle(activeVideoId, resolvedTitle, resolvedAuthor, effectiveSegs)
-      );
-      startStudyJobPolling(activeVideoId, activeVideoId);
+      setStudyError("Couldn't generate study materials right now. Please retry.");
+      setStudyBundle(null);
       setPasteTranscriptVal('');
     }
     setLoadingContent(false);
