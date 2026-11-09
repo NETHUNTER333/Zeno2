@@ -9404,6 +9404,88 @@ Requirements:
   }
 });
 
+// POST /api/study/snap-solve — Solve a question from text or image
+app.post('/api/study/snap-solve', async (req, res) => {
+  try {
+    const text = String(req.body?.text || req.body?.questionText || '').trim();
+    const image = req.body?.image || req.body?.imageDataUrl || '';
+
+    // At least one is required
+    if (!text && !image) {
+      return res.status(400).json({ success: false, error: 'Text or image is required' });
+    }
+
+    // Check image size (5 MB limit)
+    if (image) {
+      const base64Data = image.includes(',') ? image.split(',')[1] : image;
+      const sizeBytes = Math.ceil((base64Data.length * 3) / 4);
+      if (sizeBytes > 5 * 1024 * 1024) {
+        return res.status(413).json({ success: false, error: 'Image exceeds 5 MB limit' });
+      }
+    }
+
+    let questionText = text;
+    if (!questionText && image) {
+      try {
+        const dataUrl = image.startsWith('data:') ? image : `data:image/jpeg;base64,${image}`;
+        questionText = (await analyzeImageWithVisionModel(dataUrl, 'image/jpeg', 'Extract the question text from this image. Return only the question text, nothing else.')).trim();
+      } catch (e: any) {
+        return res.status(500).json({ success: false, error: e?.message || 'Failed to analyze the image' });
+      }
+    }
+
+    if (!questionText) {
+      return res.status(400).json({ success: false, error: 'Could not extract question from input' });
+    }
+
+    const prompt = `Solve this question step by step. Return ONLY valid JSON with "steps" (array of step strings) and "answer" (string).
+
+Question: ${questionText}`;
+
+    // Call LLM
+    let rawText = '';
+    try {
+      const completion = await generateChatCompletion(
+        [
+          { role: 'system', content: 'You are an expert tutor. Solve questions step by step. Return ONLY valid JSON with "steps" (array of strings) and "answer" (string). No markdown fences.' },
+          { role: 'user', content: prompt },
+        ],
+        'zro/deepseek-v4.1-flash'
+      );
+      rawText = (completion?.text || '').trim();
+    } catch (e: any) {
+      return res.status(500).json({ success: false, error: e?.message || 'Failed to analyze the question' });
+    }
+
+    // Parse JSON
+    let steps: string[] = [];
+    let answer = '';
+    try {
+      const cleaned = rawText.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
+      const firstBrace = cleaned.indexOf('{');
+      const lastBrace = cleaned.lastIndexOf('}');
+      if (firstBrace !== -1 && lastBrace > firstBrace) {
+        const parsed = JSON.parse(cleaned.slice(firstBrace, lastBrace + 1));
+        steps = Array.isArray(parsed.steps) ? parsed.steps.map(String) : [];
+        answer = String(parsed.answer || '');
+      }
+    } catch {
+      // Fallback: treat raw text as answer
+      answer = rawText;
+      steps = [rawText];
+    }
+
+    if (!answer && steps.length === 0) {
+      return res.status(500).json({ success: false, error: 'Failed to analyze the question' });
+    }
+
+    return res.json({ success: true, ok: true, steps, answer, finalAnswer: answer });
+  } catch (err: any) {
+    console.error('Snap-solve error:', err);
+    return res.status(500).json({ success: false, error: err?.message || 'Failed to analyze the question' });
+  }
+});
+
 // POST /api/youtube/transcript — Extract timed transcript & video metadata via InstaCloud Subclip + Innertube
 app.post('/api/youtube/transcript', async (req, res) => {
   console.log('[API /api/youtube/transcript] Request body:', JSON.stringify(req.body));
@@ -10145,73 +10227,8 @@ function buildTranscriptGroundedStudyBundle(
     else break;
   }
 
-  const flashcards = sampledSegs.map((seg, idx) => {
-    const words = seg.text.trim().split(/\s+/);
-    const quote = words.slice(0, Math.min(16, words.length)).join(' ');
-    const matchingChapter =
-      chapters.find((ch) => seg.start_s >= ch.start_s && seg.start_s <= ch.end_s) ||
-      chapters[idx % chapters.length];
-    const conceptPhrase = extractCleanConceptPhrase(seg.text, idx, resolvedTitle);
-    const cleanConcept = (conceptPhrase || 'this core concept').trim().replace(/^[a-z]/, (c) => c.toUpperCase());
-    const backWords = seg.text.trim().split(/\s+/);
-    const backText = backWords.slice(0, 26).join(' ');
-
-    return {
-      id: `fc-${idx + 1}`,
-      front: `What is the core principle or definition of ${cleanConcept}?`,
-      back: backText.endsWith('.') ? backText : `${backText}.`,
-      category: matchingChapter?.title || 'Core Concept',
-      timestamp_s: Math.floor(seg.start_s),
-      timestamp: Math.floor(seg.start_s),
-      sourceQuote: quote,
-    };
-  });
-
-  const distractorFallbacks = [
-    'The observed phenomenon occurs independently of external forces or energy transfer.',
-    'The rate of change remains constant regardless of the governing boundary conditions.',
-    'It acts as an opposite reaction dissipating energy uniformly across the system.',
-    'It is governed exclusively by static equilibrium without dynamic acceleration.',
-  ];
-
-  const quiz = sampledSegs.map((seg, idx) => {
-    const words = seg.text.trim().split(/\s+/);
-    const quote = words.slice(0, Math.min(16, words.length)).join(' ');
-    const conceptPhrase = extractCleanConceptPhrase(seg.text, idx, resolvedTitle);
-    const cleanConcept = (conceptPhrase || 'this core concept').trim().replace(/^[a-z]/, (c) => c.toUpperCase());
-    const correctOption = seg.text.trim().slice(0, 160);
-
-    const otherOptions: string[] = [];
-    for (let offset = 1; offset < sampledSegs.length && otherOptions.length < 3; offset++) {
-      const otherText = sampledSegs[(idx + offset) % sampledSegs.length].text.trim().slice(0, 160);
-      if (otherText && otherText !== correctOption && !otherOptions.includes(otherText)) {
-        otherOptions.push(otherText);
-      }
-    }
-    while (otherOptions.length < 3) {
-      otherOptions.push(distractorFallbacks[otherOptions.length % distractorFallbacks.length]);
-    }
-
-    const shuffled = shuffleQuizOptions(
-      [correctOption, otherOptions[0], otherOptions[1], otherOptions[2]],
-      0
-    );
-
-    const questionStem = cleanConcept.length >= 4 && !cleanConcept.toLowerCase().includes('section')
-      ? `Regarding ${cleanConcept}, which statement accurately reflects the principles presented in the lecture?`
-      : `Based on this section of the lecture, which statement accurately describes the underlying concept?`;
-
-    return {
-      id: `q-${idx + 1}`,
-      question: questionStem,
-      options: shuffled.options,
-      correctIndex: shuffled.correctIndex,
-      explanation: `According to the lecture: "${quote}".`,
-      timestamp_s: Math.floor(seg.start_s),
-      timestamp: Math.floor(seg.start_s),
-      sourceQuote: quote,
-    };
-  });
+  const flashcards: any[] = [];
+  const quiz: any[] = [];
 
   const overview = chapters
     .slice(0, 3)
