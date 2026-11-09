@@ -569,15 +569,8 @@ const Signup1 = ({
                   setError(null);
                   UserAccountStore.loginAsGuest();
                   if (onSuccess) onSuccess();
-                  void (async () => {
-                    try {
-                      const anonUser = await signInGuestAnonymously();
-                      await recordUserLegalConsent(
-                        anonUser?.uid || auth.currentUser?.uid,
-                        "guest_signin_card"
-                      );
-                    } catch {}
-                  })();
+                  void recordUserLegalConsent("guest", "guest_signin_card").catch(() => {});
+                  setGuestLoading(false);
                 }}
                 disabled={loading || resetLoading || guestLoading || !consentAccepted}
               >

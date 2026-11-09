@@ -14,8 +14,16 @@ import { PeleDiagram } from './PeleDiagram';
 export function normalizeMathDelimiters(raw: string): string {
   if (!raw || typeof raw !== 'string') return '';
 
+  // Clean escaped Unicode entity artifacts and normalize Unicode mathematical symbols
+  const cleanRaw = raw
+    .replace(/\\u0027/g, "'")
+    .replace(/\\u0026/g, '&')
+    .replace(/\\u0022/g, '"')
+    .replace(/\\u2019/g, "’")
+    .normalize('NFKD');
+
   // Split by fenced code blocks (```...```) and inline code (`...`) so code is never touched
-  const segments = raw.split(/(```[\s\S]*?```|`[^`\n]+`)/g);
+  const segments = cleanRaw.split(/(```[\s\S]*?```|`[^`\n]+`)/g);
 
   return segments
     .map((segment) => {
@@ -28,8 +36,8 @@ export function normalizeMathDelimiters(raw: string): string {
       // 1. Convert \[ ... \] display math to $$ ... $$
       s = s.replace(/\\\[([\s\S]*?)\\\]/g, (_, inner) => `\n$$\n${inner.trim()}\n$$\n`);
 
-      // 2. Convert \( ... \) inline math to $$ ... $$ (since singleDollarTextMath is disabled)
-      s = s.replace(/\\\(([\s\S]*?)\\\)/g, (_, inner) => `$$${inner.trim()}$$`);
+      // 2. Convert \( ... \) inline math to $ ... $
+      s = s.replace(/\\\(([\s\S]*?)\\\)/g, (_, inner) => `$${inner.trim()}$`);
 
       // 3. Wrap standalone \begin{equation|align|aligned|gather|pmatrix|bmatrix|matrix|cases}...\end{...}
       // blocks that are not already inside $$...$$
@@ -37,23 +45,6 @@ export function normalizeMathDelimiters(raw: string): string {
         /(^|[^$])\\begin\{(equation\*?|align\*?|aligned|gather\*?|cases|pmatrix|bmatrix|vmatrix|matrix)\}([\s\S]*?)\\end\{\2\}(?!\$)/gm,
         (_, prefix, env, body) => `${prefix}\n$$\n\\begin{${env}}${body}\\end{${env}}\n$$\n`
       );
-
-      // 4. Upgrade unambiguous single-$ LaTeX expressions (containing \command, ^, or _) to $$...$$
-      // while NEVER matching currency amounts like "$20 per month. Claude Pro costs $20"
-      s = s.replace(/(?<!\$)\$(?!\$)([^\$\n]{1,120}?)\$(?!\$)/g, (full, inner) => {
-        const trimmed = inner.trim();
-        // Never treat currency/price spans starting with a digit followed by space/words or ending with a digit as math
-        if (/^\d+(?:[.,]\d+)?(?:\s|$|[a-zA-Z]{2,})/.test(trimmed)) {
-          return full;
-        }
-        // Only upgrade if it contains explicit LaTeX commands (\frac, \alpha, etc.) or math scripts (^, _) without prose sentences
-        const hasLatexCommand = /\\[a-zA-Z]{2,}/.test(trimmed);
-        const hasMathScript = /[\^_]/.test(trimmed) && !/\s{1}[a-zA-Z]{4,}\s+[a-zA-Z]{4,}/.test(trimmed);
-        if (hasLatexCommand || hasMathScript) {
-          return `$$${trimmed}$$`;
-        }
-        return full;
-      });
 
       return s;
     })
@@ -85,7 +76,7 @@ export const MathMarkdown: React.FC<MathMarkdownProps> = ({
     return (
       <span className={`katex-markdown-body inline [&>p]:inline [&>p]:m-0 ${className}`}>
         <ReactMarkdown
-          remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
+          remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: true }]]}
           rehypePlugins={[[rehypeKatex, { throwOnError: false, strict: false, output: 'htmlAndMathml' }]]}
           components={{
             p: ({ children }) => <span className="leading-relaxed">{children}</span>,
@@ -132,7 +123,7 @@ export const MathMarkdown: React.FC<MathMarkdownProps> = ({
       className={`katex-markdown-body space-y-2.5 ${className}`}
     >
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
+        remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: true }]]}
         rehypePlugins={[[rehypeKatex, { throwOnError: false, strict: false, output: 'htmlAndMathml' }]]}
         components={{
           p: ({ children }) => <p className="leading-[1.68] last:mb-0">{children}</p>,

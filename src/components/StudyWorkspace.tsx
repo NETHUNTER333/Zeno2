@@ -325,11 +325,16 @@ export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
   const [ytWebSearchQuery, setYtWebSearchQuery] = useState<string>('');
   const [ytWebSearching, setYtWebSearching] = useState<boolean>(false);
 
-  // Collapsible Video / Source Drawer
-  const [showSourceViewer, setShowSourceViewer] = useState<boolean>(false);
-  const [showHomeStudyLoop, setShowHomeStudyLoop] = useState<boolean>(false);
+  const [showHomeStudyLoop, setShowHomeStudyLoop] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const p = window.location.pathname.toLowerCase();
+      if (p === '/snap-solve' || p.startsWith('/snap-solve')) return true;
+    }
+    return false;
+  });
   const [seekSeconds, setSeekSeconds] = useState<number>(0);
   const [autoPlayVideo, setAutoPlayVideo] = useState<boolean>(false);
+  const [showSourceViewer, setShowSourceViewer] = useState<boolean>(true);
 
   // Open Workspace Tabs
   const [openTabs, setOpenTabs] = useState<OpenWorkspaceTab[]>([
@@ -1408,7 +1413,7 @@ ${fullTranscriptText}`;
         ];
       });
     } catch (err: any) {
-      setStudyError(err?.message || 'Failed to generate study materials from video transcript. Please retry.');
+      setStudyError(err?.message || 'Could not fetch YouTube captions right now due to a network or proxy timeout. Please tap Retry or paste the transcript below.');
       setStudyBundle(null);
     } finally {
       setLoadingContent(false);

@@ -104,7 +104,7 @@ import {
 } from './server/legalAndSafetyEngine';
 import { initBackendSentry, sentryBackendMiddleware, sentryErrorHandler, reportUpstreamProviderFailure, Sentry } from './server/sentry';
 import { registerDodoBillingRoutes } from './server/billingEngine';
-import { registerAgentFrameworkRoutes } from './server/agentFramework';
+import { registerAgentFrameworkRoutes, setAgentLlmBridge } from './server/agentFramework';
 
 dotenv.config();
 initBackendSentry();
@@ -1745,6 +1745,9 @@ async function generateChatCompletion(
     return await tryCallWithTextFallback((m) => raceFastestLiveModels(m, requestedModel));
   }
 }
+
+// Bridge main server LLM inference engine to agent framework (Snap & Solve, Agents)
+setAgentLlmBridge(generateChatCompletion);
 
 // Treg credentials (read strictly from environment variables via server/config.ts)
 const TREG_TOKEN = getTregToken();
@@ -8396,47 +8399,62 @@ async function extractYouTubeTranscriptSubclip(
 
     for (const curUrl of candidateUrls) {
       if (segments.length > 0) break;
-      try {
-        const cRes = await fetch(curUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-InstaCloud-Project': INSTACLOUD_PROJECT_ID,
-          },
-          body: JSON.stringify({
-            url: `https://www.youtube.com/watch?v=${videoId}`,
-            videoId,
-            lang: preferredLang,
-          }),
-          signal: AbortSignal.timeout(8000),
-        });
-        if (cRes.ok) {
-          const data: any = await cRes.json();
-          if (Array.isArray(data?.segments) && data.segments.length > 0) {
-            segments = data.segments
-              .map((s: any) => ({
-                start_s: Number(s.start_s ?? s.start ?? 0),
-                duration_s: Number(s.duration_s ?? s.duration ?? 2.5),
-                text: String(s.text || '').trim(),
-              }))
-              .filter((s: any) => Boolean(s.text));
-            if (data.title && !title) title = data.title;
-            if (data.author && !author) author = data.author;
-            if (data.thumbnail) thumbnail = data.thumbnail;
-            if (data.lengthSeconds || data.durationSec) {
-              durationSec = Number(data.lengthSeconds || data.durationSec);
-            }
-            provider =
-              data.provider ||
-              (curUrl.includes('transcript-api')
-                ? 'instacloud-transcript-api'
-                : 'instacloud-subclip-api');
-            break;
-          }
+      for (let attempt = 0; attempt <= 2; attempt++) {
+        if (attempt > 0) {
+          const backoffMs = attempt === 1 ? 800 : 1600;
+          await new Promise((resolve) => setTimeout(resolve, backoffMs));
         }
-      } catch {}
+        try {
+          const cRes = await fetch(curUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-InstaCloud-Project': INSTACLOUD_PROJECT_ID,
+            },
+            body: JSON.stringify({
+              url: `https://www.youtube.com/watch?v=${videoId}`,
+              videoId,
+              lang: preferredLang,
+            }),
+            signal: AbortSignal.timeout(8000),
+          });
+          if (cRes.ok) {
+            const data: any = await cRes.json();
+            if (Array.isArray(data?.segments) && data.segments.length > 0) {
+              segments = data.segments
+                .map((s: any) => ({
+                  start_s: Number(s.start_s ?? s.start ?? 0),
+                  duration_s: Number(s.duration_s ?? s.duration ?? 2.5),
+                  text: String(s.text || '').trim(),
+                }))
+                .filter((s: any) => Boolean(s.text));
+              if (data.title && !title) title = data.title;
+              if (data.author && !author) author = data.author;
+              if (data.thumbnail) thumbnail = data.thumbnail;
+              if (data.lengthSeconds || data.durationSec) {
+                durationSec = Number(data.lengthSeconds || data.durationSec);
+              }
+              provider =
+                data.provider ||
+                (curUrl.includes('transcript-api')
+                  ? 'instacloud-transcript-api'
+                  : 'instacloud-subclip-api');
+              break;
+            } else {
+              console.warn(`[YouTubeTranscript] Attempt ${attempt + 1} for ${videoId} returned empty segments from ${curUrl}`);
+            }
+          } else {
+            console.warn(`[YouTubeTranscript] Attempt ${attempt + 1} HTTP ${cRes.status} for ${videoId} from ${curUrl}`);
+          }
+        } catch (fetchErr: any) {
+          console.warn(`[YouTubeTranscript] Attempt ${attempt + 1} network error for ${videoId} from ${curUrl}:`, fetchErr?.message);
+        }
+        if (segments.length > 0) break;
+      }
     }
-  } catch {}
+  } catch (err: any) {
+    console.error(`[YouTubeTranscript] Tier 1 fetch error for ${videoId}:`, err?.message);
+  }
 
   // Tier 2: Direct youtube-transcript-plus (handles visitorData, session cookies & multi-language tracks)
   if (segments.length === 0) {
@@ -9786,6 +9804,31 @@ async function callStudyJsonLLM(
     completionTokens: number;
   }>[] = [];
 
+  // Primary: Live server completion engine with resilient multi-provider hedging
+  tasks.push(
+    (async () => {
+      const res = await generateChatCompletion(
+        [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        'auto',
+        false,
+        'English'
+      );
+      const text = (res.text || '').replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '').trim();
+      if (!text || (!text.includes('{') && !text.includes('['))) {
+        throw new Error('generateChatCompletion returned non-JSON text');
+      }
+      return {
+        text,
+        modelUsed: res.modelUsed || 'auto',
+        promptTokens: countExactSubwordTokens(systemPrompt + '\n' + userPrompt),
+        completionTokens: countExactSubwordTokens(text),
+      };
+    })()
+  );
+
   if (client) {
     for (const modelName of GEMINI_FALLBACK_MODELS) {
       tasks.push(
@@ -10109,12 +10152,13 @@ function buildTranscriptGroundedStudyBundle(
       chapters.find((ch) => seg.start_s >= ch.start_s && seg.start_s <= ch.end_s) ||
       chapters[idx % chapters.length];
     const conceptPhrase = extractCleanConceptPhrase(seg.text, idx, resolvedTitle);
+    const cleanConcept = (conceptPhrase || 'this core concept').trim().replace(/^[a-z]/, (c) => c.toUpperCase());
     const backWords = seg.text.trim().split(/\s+/);
     const backText = backWords.slice(0, 26).join(' ');
 
     return {
       id: `fc-${idx + 1}`,
-      front: `How does the lecture explain ${conceptPhrase.toLowerCase()} at [${formatMmSs(seg.start_s)}]?`,
+      front: `What is the core principle or definition of ${cleanConcept}?`,
       back: backText.endsWith('.') ? backText : `${backText}.`,
       category: matchingChapter?.title || 'Core Concept',
       timestamp_s: Math.floor(seg.start_s),
@@ -10124,16 +10168,17 @@ function buildTranscriptGroundedStudyBundle(
   });
 
   const distractorFallbacks = [
-    'It operates strictly through static pre-allocated lookup tables without dynamic updates.',
-    'It bypasses intermediate transformations and relies solely on manual threshold calibration.',
-    'It eliminates sequential dependencies by discarding earlier contextual inputs entirely.',
-    'It restricts execution to isolated single-variable checks rather than continuous synthesis.',
+    'The observed phenomenon occurs independently of external forces or energy transfer.',
+    'The rate of change remains constant regardless of the governing boundary conditions.',
+    'It acts as an opposite reaction dissipating energy uniformly across the system.',
+    'It is governed exclusively by static equilibrium without dynamic acceleration.',
   ];
 
   const quiz = sampledSegs.map((seg, idx) => {
     const words = seg.text.trim().split(/\s+/);
     const quote = words.slice(0, Math.min(16, words.length)).join(' ');
     const conceptPhrase = extractCleanConceptPhrase(seg.text, idx, resolvedTitle);
+    const cleanConcept = (conceptPhrase || 'this core concept').trim().replace(/^[a-z]/, (c) => c.toUpperCase());
     const correctOption = seg.text.trim().slice(0, 160);
 
     const otherOptions: string[] = [];
@@ -10152,12 +10197,16 @@ function buildTranscriptGroundedStudyBundle(
       0
     );
 
+    const questionStem = cleanConcept.length >= 4 && !cleanConcept.toLowerCase().includes('section')
+      ? `Regarding ${cleanConcept}, which statement accurately reflects the principles presented in the lecture?`
+      : `Based on this section of the lecture, which statement accurately describes the underlying concept?`;
+
     return {
       id: `q-${idx + 1}`,
-      question: `Which mechanism or claim is established regarding ${conceptPhrase.toLowerCase()} at [${formatMmSs(seg.start_s)}]?`,
+      question: questionStem,
       options: shuffled.options,
       correctIndex: shuffled.correctIndex,
-      explanation: `At [${formatMmSs(seg.start_s)}], the speaker directly states: "${quote}".`,
+      explanation: `According to the lecture: "${quote}".`,
       timestamp_s: Math.floor(seg.start_s),
       timestamp: Math.floor(seg.start_s),
       sourceQuote: quote,
@@ -10300,8 +10349,9 @@ function startBackgroundStudyEnrichment(
 
   job.promise = (async () => {
     // Stage 1: Chapters & Overview
-    try {
-      const chaptersPrompt = `Analyze this timestamped video transcript and segment it into 4 to 6 chronological chapters.
+    const runStage1 = async () => {
+      try {
+        const chaptersPrompt = `Analyze this timestamped video transcript and segment it into 4 to 6 chronological chapters.
 Return ONLY valid JSON:
 {
   "overview": "2-3 sentence summary of what this video teaches.",
@@ -10366,29 +10416,26 @@ ${compactTranscript}`;
             ? rawObj.coreThesis.trim()
             : newOverview;
 
-        job.study = {
-          ...job.study,
+        job.study.chapters = snappedChapters;
+        job.study.summary = {
+          overview: newOverview,
+          keyPoints: snappedChapters.map((c) => `${c.title}: ${c.summary}`),
           chapters: snappedChapters,
-          summary: {
-            overview: newOverview,
-            keyPoints: snappedChapters.map((c) => `${c.title}: ${c.summary}`),
-            chapters: snappedChapters,
-          },
-          explanation: {
-            coreThesis: newThesis,
-            concepts: snappedChapters.map((ch) => {
-              const matchingCard = (job.study.flashcards || []).find(
-                (fc: any) => fc.timestamp_s >= ch.start_s && fc.timestamp_s <= ch.end_s
-              );
-              return {
-                term: ch.title,
-                definition: ch.summary,
-                mechanism: '',
-                timestamp: ch.start_s,
-                proofQuote: matchingCard?.sourceQuote || ch.summary,
-              };
-            }),
-          },
+        };
+        job.study.explanation = {
+          coreThesis: newThesis,
+          concepts: snappedChapters.map((ch) => {
+            const matchingCard = (job.study.flashcards || []).find(
+              (fc: any) => fc.timestamp_s >= ch.start_s && fc.timestamp_s <= ch.end_s
+            );
+            return {
+              term: ch.title,
+              definition: ch.summary,
+              mechanism: '',
+              timestamp: ch.start_s,
+              proofQuote: matchingCard?.sourceQuote || ch.summary,
+            };
+          }),
         };
         job.completedStages.push('chapters');
         updateJobMetrics(chRes);
@@ -10396,18 +10443,25 @@ ${compactTranscript}`;
     } catch (err: any) {
       console.warn('[YouTubeStudy] Stage 1 (chapters) kept transcript baseline:', err?.message || err);
     }
+  };
 
-    // Stage 2: Flashcards
+  // Stage 2: High-Yield Active-Recall Flashcards
+  const runStage2 = async () => {
     try {
-      const fcPrompt = `Create 8 high-yield active-recall flashcards strictly grounded in this timestamped video transcript.
-Return ONLY valid JSON:
+      const fcPrompt = `Create 8 to 10 fluent, self-contained active-recall flashcards for Indian exam students (JEE, NEET, CBSE Class 11-12) strictly grounded in this transcript.
+Requirements:
+- Front: A fluent, clear conceptual question or term (e.g. "What does Newton's first law state about an object with zero net force?"). Never include timestamp brackets like [00:00] in the front text, and never use keyword-stuffed template stems.
+- Back: A concise, fluent answer explaining the core mechanism or definition in 15-28 words.
+- timestamp_s: Integer seconds from the transcript where this concept is discussed.
+
+Return ONLY valid JSON matching this schema:
 {
   "flashcards": [
     {
-      "front": "Specific conceptual question or mechanism prompt",
-      "back": "Concise 15-25 word answer explaining the exact mechanism or claim",
-      "timestamp_s": 0,
-      "sourceQuote": "exact 6-16 words copied from the transcript"
+      "front": "What does Newton's first law say about an object with zero net force?",
+      "back": "An object will remain at rest or continue moving at a constant velocity unless acted upon by a non-zero net external force.",
+      "timestamp_s": 45,
+      "sourceQuote": "an object at rest stays at rest unless acted upon"
     }
   ]
 }
@@ -10415,21 +10469,28 @@ Return ONLY valid JSON:
 Transcript:
 ${compactTranscript}`;
 
-      const fcRes = await callStudyJsonLLM(
-        'You are a domain educator. Output strict valid JSON only.',
+      let fcRes = await callStudyJsonLLM(
+        'You are an expert exam educator. Output strict valid JSON only.',
         fcPrompt,
         0.25,
-        900,
-        9500
+        1100,
+        11000
       );
-      const rawFcObj = extractJsonObjectOrArray(fcRes.text);
-      const rawCards = Array.isArray(rawFcObj)
+      let rawFcObj = extractJsonObjectOrArray(fcRes.text);
+      let rawCards = Array.isArray(rawFcObj)
         ? rawFcObj
         : Array.isArray(rawFcObj?.flashcards)
         ? rawFcObj.flashcards
         : [];
-      const parsedCards = rawCards
-        .filter((c: any) => c && typeof c.front === 'string' && typeof c.back === 'string' && c.front.trim().length >= 6)
+
+      // Validate: Reject keyword-stuffed template stems and timestamp bracket fragments in front
+      const isTemplateCard = (c: any) =>
+        /\[\d{1,2}:\d{2}\]/.test(String(c?.front || '')) ||
+        /Which mechanism or claim is established/i.test(String(c?.front || '')) ||
+        /How does the lecture explain/i.test(String(c?.front || ''));
+
+      let parsedCards = rawCards
+        .filter((c: any) => c && typeof c.front === 'string' && typeof c.back === 'string' && c.front.trim().length >= 6 && !isTemplateCard(c))
         .map((c: any, idx: number) => {
           const ts = Math.max(0, Math.min(videoEndSec, Math.floor(Number(c.timestamp_s) || 0)));
           const matchingCh =
@@ -10445,31 +10506,79 @@ ${compactTranscript}`;
             sourceQuote: String(c.sourceQuote || c.back).trim(),
           };
         });
+
+      // Retry once if schema parsing failed or generated insufficient clean cards
+      if (parsedCards.length < 3) {
+        try {
+          fcRes = await callStudyJsonLLM(
+            'You are an expert exam educator. Output strict valid JSON only with clean fluent questions without [00:00] timestamps in front.',
+            fcPrompt,
+            0.15,
+            1200,
+            12000
+          );
+          rawFcObj = extractJsonObjectOrArray(fcRes.text);
+          rawCards = Array.isArray(rawFcObj)
+            ? rawFcObj
+            : Array.isArray(rawFcObj?.flashcards)
+            ? rawFcObj.flashcards
+            : [];
+          parsedCards = rawCards
+            .filter((c: any) => c && typeof c.front === 'string' && typeof c.back === 'string' && c.front.trim().length >= 6 && !isTemplateCard(c))
+            .map((c: any, idx: number) => {
+              const ts = Math.max(0, Math.min(videoEndSec, Math.floor(Number(c.timestamp_s) || 0)));
+              const matchingCh =
+                (job.study.chapters || []).find((ch: any) => ts >= ch.start_s && ts <= ch.end_s) ||
+                (job.study.chapters || [])[idx % Math.max(1, (job.study.chapters || []).length)];
+              return {
+                id: `fc-${idx + 1}`,
+                front: String(c.front).trim(),
+                back: String(c.back).trim(),
+                category: matchingCh?.title || 'Core Synthesis',
+                timestamp_s: ts,
+                timestamp: ts,
+                sourceQuote: String(c.sourceQuote || c.back).trim(),
+              };
+            });
+        } catch {}
+      }
+
       if (parsedCards.length >= 3) {
-        job.study = {
-          ...job.study,
-          flashcards: parsedCards,
-        };
+        job.study.flashcards = parsedCards;
         job.completedStages.push('flashcards');
         updateJobMetrics(fcRes);
       }
     } catch (err: any) {
       console.warn('[YouTubeStudy] Stage 2 (flashcards) kept transcript baseline:', err?.message || err);
     }
+  };
 
-    // Stage 3: Quiz Questions
+  // Stage 3: Fluent Exam-Style Multiple-Choice Quiz Questions
+  const runStage3 = async () => {
     try {
-      const quizPrompt = `Create 8 multiple-choice questions strictly grounded in this timestamped video transcript.
-Return ONLY valid JSON:
+      const quizPrompt = `Create 5 to 6 fluent, self-contained exam-style multiple-choice questions for Indian exam students (JEE, NEET, CBSE Class 11-12) strictly grounded in this transcript.
+Requirements:
+- Question: A fluent, self-contained exam question (e.g. "What does Newton's first law say about an object with zero net force?"). Never include timestamp brackets like [00:00] in the question stem, and never use keyword-stuffed template stems.
+- Options: Exactly 4 plausible options, with only 1 correct answer and 3 plausible distractors.
+- correctIndex: 0, 1, 2, or 3.
+- Explanation: A concise 1-line explanation of why the correct option is true.
+- timestamp_s: Integer seconds from the transcript where this concept is discussed.
+
+Return ONLY valid JSON matching this schema:
 {
   "questions": [
     {
-      "question": "Conceptual or mechanism question testing why, how, or practical application",
-      "options": ["Correct answer", "Plausible distractor 1", "Plausible distractor 2", "Plausible distractor 3"],
+      "question": "What does Newton's first law say about an object with zero net force?",
+      "options": [
+        "It maintains its state of rest or uniform motion in a straight line",
+        "It immediately accelerates in the direction of the largest component force",
+        "It comes to an abrupt halt due to inherent inertia",
+        "It experiences an increasing momentum proportional to elapsed time"
+      ],
       "correctIndex": 0,
-      "explanation": "1-2 sentence rationale explaining why the correct option is true.",
-      "timestamp_s": 0,
-      "sourceQuote": "exact 6-16 words copied from the transcript"
+      "explanation": "Newton's first law (law of inertia) establishes that zero net external force implies constant velocity or rest.",
+      "timestamp_s": 45,
+      "sourceQuote": "an object at rest stays at rest unless acted upon"
     }
   ]
 }
@@ -10477,27 +10586,35 @@ Return ONLY valid JSON:
 Transcript:
 ${compactTranscript}`;
 
-      const qRes = await callStudyJsonLLM(
+      let qRes = await callStudyJsonLLM(
         'You are an academic examiner. Output strict valid JSON only.',
         quizPrompt,
-        0.25,
-        1050,
-        10500
+        0.2,
+        2200,
+        14000
       );
-      const rawQObj = extractJsonObjectOrArray(qRes.text);
-      const rawQuestions = Array.isArray(rawQObj)
+      let rawQObj = extractJsonObjectOrArray(qRes.text);
+      let rawQuestions = Array.isArray(rawQObj)
         ? rawQObj
         : Array.isArray(rawQObj?.questions)
         ? rawQObj.questions
         : [];
-      const parsedQuestions = rawQuestions
+      console.log('[YouTubeStudy Stage 3] rawQuestions count:', rawQuestions.length, 'firstQuestion:', rawQuestions[0]?.question);
+
+      const isTemplateQuestion = (q: any) =>
+        /\[\d{1,2}:\d{2}\]/.test(String(q?.question || '')) ||
+        /Which mechanism or claim is established/i.test(String(q?.question || '')) ||
+        /regarding .+ at \[\d{1,2}:\d{2}\]/i.test(String(q?.question || ''));
+
+      let parsedQuestions = rawQuestions
         .filter(
           (q: any) =>
             q &&
             typeof q.question === 'string' &&
             Array.isArray(q.options) &&
             q.options.length === 4 &&
-            q.question.trim().length >= 8
+            q.question.trim().length >= 8 &&
+            !isTemplateQuestion(q)
         )
         .map((q: any, idx: number) => {
           const ts = Math.max(0, Math.min(videoEndSec, Math.floor(Number(q.timestamp_s) || 0)));
@@ -10517,20 +10634,69 @@ ${compactTranscript}`;
             sourceQuote: String(q.sourceQuote || q.explanation || '').trim(),
           };
         });
+
+      // Retry once if schema parsing failed or produced template stems
+      if (parsedQuestions.length < 3) {
+        try {
+          qRes = await callStudyJsonLLM(
+            'You are an academic examiner. Output strict valid JSON only with self-contained conceptual questions without [00:00] in stems.',
+            quizPrompt,
+            0.15,
+            2200,
+            14000
+          );
+          rawQObj = extractJsonObjectOrArray(qRes.text);
+          rawQuestions = Array.isArray(rawQObj)
+            ? rawQObj
+            : Array.isArray(rawQObj?.questions)
+            ? rawQObj.questions
+            : [];
+          parsedQuestions = rawQuestions
+            .filter(
+              (q: any) =>
+                q &&
+                typeof q.question === 'string' &&
+                Array.isArray(q.options) &&
+                q.options.length === 4 &&
+                q.question.trim().length >= 8 &&
+                !isTemplateQuestion(q)
+            )
+            .map((q: any, idx: number) => {
+              const ts = Math.max(0, Math.min(videoEndSec, Math.floor(Number(q.timestamp_s) || 0)));
+              const origCorrect = Math.max(0, Math.min(3, Number(q.correctIndex) || 0));
+              const shuffled = shuffleQuizOptions(
+                q.options.map((o: any) => String(o || '').trim()),
+                origCorrect
+              );
+              return {
+                id: `q-${idx + 1}`,
+                question: String(q.question).trim(),
+                options: shuffled.options,
+                correctIndex: shuffled.correctIndex,
+                explanation: String(q.explanation || 'Grounded in the spoken lecture transcript.').trim(),
+                timestamp_s: ts,
+                timestamp: ts,
+                sourceQuote: String(q.sourceQuote || q.explanation || '').trim(),
+              };
+            });
+        } catch {}
+      }
+
       if (parsedQuestions.length >= 3) {
-        job.study = {
-          ...job.study,
-          quiz: parsedQuestions,
-        };
+        job.study.quiz = parsedQuestions;
         job.completedStages.push('quiz');
         updateJobMetrics(qRes);
       }
     } catch (err: any) {
       console.warn('[YouTubeStudy] Stage 3 (quiz) kept transcript baseline:', err?.message || err);
     }
+  };
 
-    job.status = 'completed';
-    job.partial = false;
+  // Run all 3 enrichment stages in parallel so flashcards and exam quiz finish together (<5s)
+  await Promise.allSettled([runStage1(), runStage2(), runStage3()]);
+
+  job.status = 'completed';
+  job.partial = false;
     job.updatedAt = Date.now();
     if (cleanVideoId) {
       videoStudyCache.set(cleanVideoId, job.study);
@@ -10720,7 +10886,7 @@ app.post('/api/youtube/study', async (req, res) => {
     if (job.promise) {
       await Promise.race([
         job.promise,
-        new Promise((resolve) => setTimeout(resolve, 7500)),
+        new Promise((resolve) => setTimeout(resolve, 12000)),
       ]);
     }
 
@@ -10739,7 +10905,7 @@ app.post('/api/youtube/study', async (req, res) => {
     console.error('YouTube study synthesis error:', err);
     return res.status(502).json({
       success: false,
-      error: err.message || 'Failed to synthesize study materials from transcript. Please retry.',
+      error: err.message || 'Could not fetch YouTube captions right now due to a network timeout. Please tap Retry or paste the transcript below.',
     });
   }
 });
@@ -12303,7 +12469,7 @@ ${transcriptSnippet
 Rules:
 1. Date/Time Accuracy: Today's verified date is ${liveClock.localDateOnly} (${liveClock.localTimeOnly}). Never guess fake dates or agree with false dates if tested.
 2. Directness & Speed: Give clear, well-structured, high-signal answers directly addressing the user's prompt. Keep standard explanations concise (around 65-110 words) unless the user asks for deep code or long-form analysis.
-3. Citations & Strict Source Grounding: When numbered web search excerpts [1]..[N] are provided below, use ONLY those sources to answer the query. Cite EVERY factual sentence and EVERY bullet point inline as [1], [2], [3], etc. Every [n] marker must point to the exact source [n] that mentions that story or fact. If the excerpts cannot answer the query, say so in one line and answer only what they support—never fill gaps from model memory without saying it. Never fabricate sources or claim unverified search counts (e.g., never say "I checked 6 sites" or "I am standing firm"). Never output \`\`\`html:generative-ui blocks unless explicitly asked for a simulator.
+3. Context & Source Grounding: When numbered web search excerpts [1]..[N] or reference sources are provided, treat them as background context and factual reference. Always answer the user's specific prompt directly in your own words, adhering strictly to any requested length, tone, or format (such as 'in 3 lines', 'in 1 sentence', bullet points, table, or step-by-step derivation). Never discard the user's formatting request or dump raw search abstracts. For science, math, or coding queries, provide clear pedagogical explanations and math formatting ($...$ and $$...$$). Cite sources with [1], [2] when referencing external facts from the sources. Never fabricate sources or claim unverified search counts. Never output \`\`\`html:generative-ui blocks unless explicitly asked for a simulator.
 4. Real Media Gallery Rule: Real web images and YouTube videos fetched for this query are automatically rendered in the interactive UI gallery above/below your response. NEVER write fake placeholder text lists like "[FETCHED LIVE IMAGES]: 1. Promotional Portrait: [Image of...]" or pretend to describe imaginary image placeholders in brackets. Instead, provide a concise, helpful overview of the person or concept that complements the live visual gallery.
 5. Factual Humility: If the user questions or corrects a factual detail (such as a person's height, age, filmography, or statistics), do NOT argue stubbornly or defend an inaccurate snippet. Acknowledge the correction respectfully and provide the verified facts.${
       hasXContext
@@ -12900,8 +13066,8 @@ Rules:
 
       replyText = normalizeCitationMarkers(replyText);
 
-      // Only use deterministic synthesis if the LLM output is empty or completely ungrounded in retrieved sources
-      if (!replyText.trim() || !isTextGroundedInSources(replyText)) {
+      // Only use deterministic synthesis if the LLM output is completely empty
+      if (!replyText.trim()) {
         const isDeveloperFollowUp = /\b(developers?|coding|code|engineers?|programmers?|api)\b/i.test(userQuery);
         const isFollowUpComparison =
           /\b(which\s+one|matters\s+most|developers?|students?|best|compare|recommend)\b/i.test(userQuery);

@@ -1264,20 +1264,29 @@ export const Sidebar: React.FC<SidebarProps> = ({
               >
                 {userProfile.displayName || 'User'}
               </div>
-              <div
-                onClick={(e) => {
-                  e.stopPropagation();
-                  openStreakCenter('badges');
-                }}
-                className="flex items-center gap-1 text-[10px] font-mono tabular-nums opacity-85 hover:opacity-100 hover:text-[#FC4C01] transition-colors"
-                title="Open Streak Calendar, Achievement Badges & Reminder Settings"
-              >
-                <Flame className="w-2.5 h-2.5 text-[#FC4C01] fill-[#FC4C01]/20 shrink-0" />
-                <span>
-                  {dailyStreak.currentStreak}d · {unlockedBadgesCount} badges
-                  {featuredBadge ? ` · ${featuredBadge.title}` : ''}
-                </span>
-              </div>
+              {UserAccountStore.isGuestUser() ? (
+                <div
+                  className="text-[10px] text-[#FC4C01] font-medium truncate hover:underline"
+                  title="Sign in to save your history & keep your research"
+                >
+                  Sign in to keep this →
+                </div>
+              ) : (
+                <div
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openStreakCenter('badges');
+                  }}
+                  className="flex items-center gap-1 text-[10px] font-mono tabular-nums opacity-85 hover:opacity-100 hover:text-[#FC4C01] transition-colors"
+                  title="Open Streak Calendar, Achievement Badges & Reminder Settings"
+                >
+                  <Flame className="w-2.5 h-2.5 text-[#FC4C01] fill-[#FC4C01]/20 shrink-0" />
+                  <span>
+                    {dailyStreak.currentStreak}d · {unlockedBadgesCount} badges
+                    {featuredBadge ? ` · ${featuredBadge.title}` : ''}
+                  </span>
+                </div>
+              )}
             </div>
           </button>
 

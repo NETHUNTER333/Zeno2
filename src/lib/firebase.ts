@@ -53,13 +53,10 @@ export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
 export async function signInGuestAnonymously(): Promise<FirebaseUser | null> {
-  try {
-    const cred = await signInAnonymously(auth);
-    return cred.user;
-  } catch (err) {
-    console.warn('[Auth] Anonymous sign in failed, fallback to local guest:', err);
-    return null;
-  }
+  // Guest mode on Kinich is self-contained with server-authoritative IP/client rate limits.
+  // We do not fire Firebase anonymous auth to avoid failing 400 calls in the Network tab
+  // when anonymous sign-in is not enabled on the Firebase project.
+  return null;
 }
 
 export enum OperationType {

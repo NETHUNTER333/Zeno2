@@ -337,47 +337,7 @@ interface ExternalProviderCandidate {
 export function getExternalLlmProviders(): ExternalProviderCandidate[] {
   const candidates: ExternalProviderCandidate[] = [];
 
-  // 1. Generic FALLBACK_API_KEY (highest priority when set by user)
-  const fallbackKey = process.env.FALLBACK_API_KEY || '';
-  if (fallbackKey && !fallbackKey.includes('YOUR_')) {
-    candidates.push({
-      name: 'fallback',
-      baseUrl: (process.env.FALLBACK_BASE_URL || 'https://tokenharbor.ai/v1').replace(/\/+$/, ''),
-      apiKey: fallbackKey,
-      model: process.env.FALLBACK_MODEL || 'deepseek-v4.1-flash:free',
-    });
-  }
-
-  // 2. Token Harbor (https://tokenharbor.ai/v1)
-  const tokenHarborKey =
-    process.env.TOKENHARBOR_API_KEY ||
-    (keysConfig?.tokens as any)?.tokenHarbour ||
-    '';
-  if (tokenHarborKey && !tokenHarborKey.includes('YOUR_')) {
-    candidates.push({
-      name: 'tokenharbor',
-      baseUrl: 'https://tokenharbor.ai/v1',
-      apiKey: tokenHarborKey,
-      model: 'deepseek-v4.1-flash:free',
-    });
-  }
-
-  // 3. IteraCompute (https://api.iteracompute.com/v1)
-  const iteraKey =
-    process.env.ITERA_COMPUTE_API_KEY ||
-    process.env.ITERACOMPUTE_API_KEY ||
-    (keysConfig?.tokens as any)?.iteraCompute ||
-    '';
-  if (iteraKey && !iteraKey.includes('YOUR_')) {
-    candidates.push({
-      name: 'iteracompute',
-      baseUrl: 'https://api.iteracompute.com/v1',
-      apiKey: iteraKey,
-      model: 'qwen/qwen3.8-27b',
-    });
-  }
-
-  // 4. Zero MoonMath (https://zro.moonmath.ai/v1)
+  // 1. Zero MoonMath (https://zro.moonmath.ai/v1) — High performance deepseek-v4.1-flash
   const zroKey =
     process.env.ZRO_MOONMATH_API_KEY ||
     (keysConfig?.tokens as any)?.zroMoonMath ||
@@ -392,44 +352,107 @@ export function getExternalLlmProviders(): ExternalProviderCandidate[] {
     });
   }
 
-  // 5. Intern InkStone / InternAI (https://discovery-api.intern-ai.org.cn/v1)
-  const internKey =
-    process.env.INTERN_AI_API_KEY ||
-    (keysConfig?.tokens as any)?.internAi ||
+  // 2. IteraCompute (https://api.iteracompute.com/v1) — High reliability qwen/qwen3.8-27b
+  const iteraKey =
+    process.env.ITERA_COMPUTE_API_KEY ||
+    process.env.ITERACOMPUTE_API_KEY ||
+    (keysConfig?.tokens as any)?.iteraCompute ||
     '';
-  if (internKey && !internKey.includes('YOUR_')) {
+  if (iteraKey && !iteraKey.includes('YOUR_')) {
     candidates.push({
-      name: 'internai',
-      baseUrl: 'https://discovery-api.intern-ai.org.cn/v1',
-      apiKey: internKey,
-      model: 'Agents-A1',
+      name: 'iteracompute',
+      baseUrl: 'https://api.iteracompute.com/v1',
+      apiKey: iteraKey,
+      model: 'qwen/qwen3.8-27b',
     });
   }
 
-  // 6. Apinex (https://api.apinex.bond/v1)
-  const apinexKey = process.env.APINEX_API_KEY || '';
-  if (apinexKey && !apinexKey.includes('YOUR_')) {
+  // 3. Generic FALLBACK_API_KEY (if set by user)
+  const fallbackKey = process.env.FALLBACK_API_KEY || '';
+  if (fallbackKey && !fallbackKey.includes('YOUR_')) {
     candidates.push({
-      name: 'apinex',
-      baseUrl: 'https://api.apinex.bond/v1',
-      apiKey: apinexKey,
-      model: 'free/glm-5.3',
+      name: 'fallback',
+      baseUrl: (process.env.FALLBACK_BASE_URL || 'https://tokenharbor.ai/v1').replace(/\/+$/, ''),
+      apiKey: fallbackKey,
+      model: process.env.FALLBACK_MODEL || 'deepseek-v4.1-flash:free',
+    });
+  }
+
+  // 4. Token Harbor (https://tokenharbor.ai/v1)
+  const tokenHarborKey =
+    process.env.TOKENHARBOR_API_KEY ||
+    (keysConfig?.tokens as any)?.tokenHarbour ||
+    '';
+  if (tokenHarborKey && !tokenHarborKey.includes('YOUR_')) {
+    candidates.push({
+      name: 'tokenharbor',
+      baseUrl: 'https://tokenharbor.ai/v1',
+      apiKey: tokenHarborKey,
+      model: 'deepseek-v4.1-flash:free',
     });
   }
 
   return candidates;
 }
 
+export type ChatCompletionBridge = (
+  messages: Array<{ role: string; content: any }>,
+  model: string,
+  isResearch?: boolean,
+  lang?: string | null
+) => Promise<{ text: string; modelUsed: string; totalTokens?: number }>;
+
+let agentLlmBridge: ChatCompletionBridge | null = null;
+
+export function setAgentLlmBridge(bridge: ChatCompletionBridge) {
+  agentLlmBridge = bridge;
+}
+
 export async function callAgentLlm(options: AgentLlmCallOptions): Promise<AgentLlmCallResult | null> {
-  const timeoutMs = options.timeoutMs || 5500;
+  const timeoutMs = options.timeoutMs || 14000;
+
+  // 1. Primary: Use main server inference engine if bridged
+  if (agentLlmBridge) {
+    try {
+      const bridgeRes = await agentLlmBridge(
+        [
+          {
+            role: 'system',
+            content:
+              options.systemPrompt ||
+              (options.responseMimeType === 'application/json'
+                ? 'You are a master STEM educator. Output strict valid JSON only.'
+                : 'You are a helpful assistant.'),
+          },
+          { role: 'user', content: options.prompt },
+        ],
+        'zro/deepseek-v4.1-flash'
+      );
+      if (bridgeRes && bridgeRes.text) {
+        const text = bridgeRes.text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+        return {
+          text,
+          provider: bridgeRes.modelUsed || 'kinich-engine',
+          model: bridgeRes.modelUsed || 'zro/deepseek-v4.1-flash',
+          tokensUsed: bridgeRes.totalTokens || Math.ceil(text.length / 4),
+        };
+      }
+    } catch (err: any) {
+      console.warn('[callAgentLlm] Bridge call error, trying external providers:', err?.message);
+    }
+  }
+
   const externalProviders = getExternalLlmProviders();
+
+  // Try external non-Gemini providers if available
 
   // Try external non-Gemini providers first if available
   for (const provider of externalProviders) {
     try {
       const messages: Array<{ role: string; content: string }> = [];
-      if (options.systemPrompt) {
-        messages.push({ role: 'system', content: options.systemPrompt });
+      const sysPrompt = options.systemPrompt || (options.responseMimeType === 'application/json' ? 'You are a master STEM tutor. Output strict valid JSON only.' : undefined);
+      if (sysPrompt) {
+        messages.push({ role: 'system', content: sysPrompt });
       }
       messages.push({ role: 'user', content: options.prompt });
 
@@ -446,11 +469,7 @@ export async function callAgentLlm(options: AgentLlmCallOptions): Promise<AgentL
           model: provider.model,
           messages,
           temperature: 0.2,
-          max_tokens: 1400,
-          response_format:
-            options.responseMimeType === 'application/json' || options.jsonSchema
-              ? { type: 'json_object' }
-              : undefined,
+          max_tokens: 2048,
         }),
         signal: controller.signal,
       });
@@ -459,21 +478,25 @@ export async function callAgentLlm(options: AgentLlmCallOptions): Promise<AgentL
 
       if (res.ok) {
         const data = (await res.json()) as any;
-        const text = data?.choices?.[0]?.message?.content;
+        let text = data?.choices?.[0]?.message?.content;
         if (text && typeof text === 'string' && text.trim()) {
+          text = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
           const tokensUsed =
             Number(data?.usage?.total_tokens) ||
             Math.ceil((options.prompt.length + text.length) / 4);
           return {
-            text: text.trim(),
+            text,
             provider: provider.name,
             model: provider.model,
             tokensUsed,
           };
         }
+      } else {
+        const errBody = await res.text().catch(() => '');
+        console.warn(`[callAgentLlm] Provider ${provider.name} failed with HTTP ${res.status}:`, errBody.slice(0, 200));
       }
-    } catch {
-      // Cascade to next provider
+    } catch (err: any) {
+      console.warn(`[callAgentLlm] Provider ${provider.name} error:`, err?.message);
     }
   }
 
@@ -2991,10 +3014,26 @@ Return ONLY valid JSON:
         });
       }
 
-      const imageDataUrl = String(req.body?.imageDataUrl || '').trim();
-      let questionText = String(req.body?.questionText || '').trim().slice(0, 2000);
+      const imageDataUrl = String(req.body?.imageDataUrl || req.body?.image || '').trim();
+      let questionText = String(req.body?.questionText || req.body?.question || '').trim().slice(0, 2000);
       const language = String(req.body?.language || 'English');
       let ocrConfidence: 'high' | 'medium' | 'low' = questionText.length > 15 ? 'high' : 'medium';
+
+      // 1. Validation: 400 Bad Input
+      if (!imageDataUrl && !questionText) {
+        return res.status(400).json({
+          ok: false,
+          error: 'Please enter question text or upload a photo of the problem.',
+        });
+      }
+
+      // 2. Validation: 413 Payload Too Large
+      if (imageDataUrl.length > 14 * 1024 * 1024) {
+        return res.status(413).json({
+          ok: false,
+          error: 'Image is too large (max 14MB). Please choose a smaller photo.',
+        });
+      }
 
       // Extract question from image if imageDataUrl is provided
       if (imageDataUrl.startsWith('data:image/')) {
@@ -3059,34 +3098,38 @@ Return ONLY valid JSON:
           ? `Explain the steps and concept in ${language}, keeping technical and scientific terms clear.`
           : 'Explain clearly in English.';
 
-      const solvePrompt = `You are Kinich's Snap & Solve academic tutor.
-A student snapped/submitted this question:
+      const solvePrompt = `You are Kinich's Snap & Solve master STEM tutor for Indian exams (JEE Main/Advanced, NEET, CBSE Class 10-12, EAMCET).
+A student asked/submitted this question:
 "${questionText}"
 
 ${langInstruction}
-Stay strictly educational and SFW.
-If the question is ambiguous, missing values, or you are less than 90% certain of the numerical/factual answer, set "checkWithTextbook": true and "confidence": "medium" or "low".
+Requirements:
+1. Provide a rigorous, step-by-step mathematical/conceptual solution in "steps" (list each formula statement, derivation, and numerical calculation clearly).
+2. State the exact concise final answer in "finalAnswer" (e.g. "50%" or "v = 15 m/s").
+3. Explain the underlying concept in "conceptBehindIt" with title, subject, chapter, and a 2-3 sentence explanation.
+4. Provide 1 similar multiple-choice practice question in "similarPracticeQuestion" with 4 options, 0-based correctIndex, and a clear explanation.
+5. If certain of the result, set "confidence": "high" and "checkWithTextbook": false.
 
-Return ONLY valid JSON:
+Return ONLY valid JSON matching this schema:
 {
-  "questionExtracted": "Clean restatement of the question",
+  "questionExtracted": "${questionText.replace(/"/g, '\\"')}",
   "steps": [
-    "Step 1: Identify given values and what is asked...",
-    "Step 2: Apply the governing formula or principle...",
-    "Step 3: Substitute and compute the final result..."
+    "Step 1: State the governing formula or law",
+    "Step 2: Substitute the known values with correct units",
+    "Step 3: Simplify and compute the final numerical result"
   ],
-  "finalAnswer": "Concise final answer",
+  "finalAnswer": "50%",
   "conceptBehindIt": {
-    "title": "Name of the core concept/law",
-    "subject": "Academic Subject",
-    "chapter": "Chapter name",
-    "explanation": "2-3 sentence explanation of the underlying concept."
+    "title": "Carnot Engine & Thermal Efficiency",
+    "subject": "Physics",
+    "chapter": "Thermodynamics",
+    "explanation": "The maximum theoretical efficiency of any heat engine operating between temperatures T_H and T_C is η = 1 - (T_C / T_H), with absolute temperatures in Kelvin."
   },
   "similarPracticeQuestion": {
-    "question": "A new, similar practice question testing the exact same concept with different values/context",
-    "options": ["Option A", "Option B", "Option C", "Option D"],
+    "question": "A Carnot engine has an efficiency of 40% with a sink at 300 K. What is the temperature of the hot reservoir?",
+    "options": ["500 K", "450 K", "600 K", "400 K"],
     "correctIndex": 0,
-    "explanation": "Step-by-step explanation for the practice question"
+    "explanation": "η = 1 - T_C / T_H => 0.40 = 1 - 300 / T_H => T_H = 500 K."
   },
   "confidence": "high",
   "checkWithTextbook": false
@@ -3095,7 +3138,7 @@ Return ONLY valid JSON:
       const llmRes = await callAgentLlm({
         prompt: solvePrompt,
         responseMimeType: 'application/json',
-        timeoutMs: 9500,
+        timeoutMs: 16000,
       });
 
       let resultPayload: any = null;

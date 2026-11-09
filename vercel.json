@@ -67,6 +67,14 @@
       "destination": "/study.html"
     },
     {
+      "source": "/snap-solve",
+      "destination": "/snap-solve.html"
+    },
+    {
+      "source": "/snap-solve/:path*",
+      "destination": "/snap-solve.html"
+    },
+    {
       "source": "/discover",
       "destination": "/discover.html"
     },

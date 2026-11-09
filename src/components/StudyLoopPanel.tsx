@@ -59,7 +59,24 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
 
   const [activeTab, setActiveTab] = useState<
     'revision' | 'plan' | 'weak_spots' | 'upload' | 'snap_solve'
-  >(initialTab);
+  >(() => {
+    if (typeof window !== 'undefined') {
+      const p = window.location.pathname.toLowerCase();
+      if (p === '/snap-solve' || p.startsWith('/snap-solve')) return 'snap_solve';
+    }
+    return initialTab;
+  });
+
+  useEffect(() => {
+    const handleLocationChange = () => {
+      const p = window.location.pathname.toLowerCase();
+      if (p === '/snap-solve' || p.startsWith('/snap-solve')) {
+        setActiveTab('snap_solve');
+      }
+    };
+    window.addEventListener('popstate', handleLocationChange);
+    return () => window.removeEventListener('popstate', handleLocationChange);
+  }, []);
   const [exams, setExams] = useState<StudyExam[]>(() => StudyLoopStore.getExams());
   const [cards, setCards] = useState<RecallCard[]>(() => StudyLoopStore.getCards());
   const [streak, setStreak] = useState(() => UserAccountStore.getDailyStreak());

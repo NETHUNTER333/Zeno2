@@ -179,6 +179,14 @@ export function resolveSpaClientRouteMeta(pathname: string): SpaRouteMeta | null
       canonicalPath: '/study',
     };
   }
+  if (clean === '/snap-solve' || clean.startsWith('/snap-solve/')) {
+    return {
+      title: 'Snap & Solve · Step-by-Step Problem Solver · Kinich',
+      description:
+        'Upload a photo or enter any academic problem to get step-by-step solutions, key concepts, and similar practice questions on Kinich.',
+      canonicalPath: '/snap-solve',
+    };
+  }
   if (clean === '/discover' || clean.startsWith('/discover/')) {
     return {
       title: 'Discover Research & Open-Source Code · Kinich',
@@ -645,6 +653,7 @@ export function writeStaticSeoAndLegalAssets(rootDir: string): void {
         // Also prerender all known SPA routes into dist/ so Vercel static hosting serves HTTP 200 with route-specific <title> and meta description
         const spaStaticRoutes = [
           'study',
+          'snap-solve',
           'discover',
           'research',
           'pricing',

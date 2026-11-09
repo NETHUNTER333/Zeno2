@@ -551,7 +551,16 @@ export default function App() {
   const [currentView, setCurrentView] = useState<'chat' | 'account' | 'study'>(() => {
     if (typeof window !== 'undefined') {
       const p = window.location.pathname.toLowerCase();
-      if (p === '/study' || p.startsWith('/study/') || p === '/battle' || p.startsWith('/battle/')) return 'study';
+      if (
+        p === '/study' ||
+        p.startsWith('/study/') ||
+        p === '/battle' ||
+        p.startsWith('/battle/') ||
+        p === '/snap-solve' ||
+        p.startsWith('/snap-solve')
+      ) {
+        return 'study';
+      }
       if (p === '/account' || p.startsWith('/account/') || p === '/settings' || p.startsWith('/settings/')) {
         return 'account';
       }
@@ -770,11 +779,20 @@ export default function App() {
 
   const syncViewFromPathname = (pathname: string) => {
     const clean = (pathname || '/').toLowerCase();
-    if (clean === '/study' || clean.startsWith('/study/') || clean === '/battle' || clean.startsWith('/battle/')) {
+    if (
+      clean === '/study' ||
+      clean.startsWith('/study/') ||
+      clean === '/battle' ||
+      clean.startsWith('/battle/') ||
+      clean === '/snap-solve' ||
+      clean.startsWith('/snap-solve')
+    ) {
       setIsSignedIn(true);
       setCurrentView('study');
       document.title = clean.startsWith('/battle')
         ? 'Quiz Battle Arena · Kinich'
+        : clean.startsWith('/snap-solve')
+        ? 'Snap & Solve · Kinich'
         : 'YouTube Study Workspace · Kinich';
     } else if (clean.startsWith('/settings/billing')) {
       setAccountPageTab('pricing');
@@ -824,8 +842,16 @@ export default function App() {
   useEffect(() => {
     if (legalOr404Route) return;
     const clean = typeof window !== 'undefined' ? window.location.pathname.toLowerCase() : '/';
-    if (currentView === 'study' || clean === '/study' || clean.startsWith('/study/')) {
-      document.title = 'YouTube Study Workspace · Kinich';
+    if (
+      currentView === 'study' ||
+      clean === '/study' ||
+      clean.startsWith('/study/') ||
+      clean === '/snap-solve' ||
+      clean.startsWith('/snap-solve')
+    ) {
+      document.title = clean.startsWith('/snap-solve')
+        ? 'Snap & Solve · Kinich'
+        : 'YouTube Study Workspace · Kinich';
     } else if (currentView === 'account' || clean === '/account' || clean === '/settings') {
       document.title = 'Account & Settings · Kinich';
     } else if (clean === '/pricing' || clean.startsWith('/pricing/')) {

@@ -1559,7 +1559,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                 isDark={isDark}
               >
                 <ReactMarkdown
-                  remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
+                  remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: true }]]}
                   rehypePlugins={[rehypeRaw, rehypeKatex]}
                 components={{
                   a: ({ node, href, children, ...props }) => {
