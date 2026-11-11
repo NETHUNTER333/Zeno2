@@ -9863,7 +9863,7 @@ async function callStudyJsonLLM(
   userPrompt: string,
   temperature = 0.25,
   maxTokens = 900,
-  timeoutMs = 9500
+  timeoutMs = 30000
 ): Promise<{
   text: string;
   modelUsed: string;
