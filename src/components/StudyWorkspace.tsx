@@ -215,11 +215,32 @@ export function consolidateTranscriptSegments(
 ): YouTubeTranscriptSegment[] {
   if (!Array.isArray(rawSegments) || rawSegments.length === 0) return [];
 
+  const isMs = rawSegments.some((s: any) => {
+    const d = Number(s.duration_s ?? s.duration ?? s.dur ?? (s as any).durationMs ?? 0);
+    const st = Number(s.start_s ?? (s as any).offset ?? (s as any).start ?? (s as any).startMs ?? 0);
+    return d > 80 || st > 36000 || (s as any).startMs !== undefined;
+  });
+
+  const cleanedRaw = rawSegments.map((s: any) => {
+    let rawStart = Number(s.start_s ?? s.offset ?? s.start ?? s.startMs ?? 0);
+    let rawDur = Number(s.duration_s ?? s.duration ?? s.dur ?? s.durationMs ?? 2.5);
+    if (isMs || rawDur > 80 || rawStart > 36000) {
+      if (rawStart > 100) rawStart = rawStart / 1000;
+      if (rawDur > 50) rawDur = rawDur / 1000;
+    }
+    return {
+      ...s,
+      start_s: Math.max(0, Math.floor(rawStart)),
+      duration_s: Math.max(0.4, Number(rawDur.toFixed(2))),
+      text: cleanCaptionText(s.text),
+    };
+  }).filter((s) => Boolean(s.text));
+
   const avgLen =
-    rawSegments.reduce((acc, s) => acc + (s.text || '').length, 0) /
-    Math.max(1, rawSegments.length);
+    cleanedRaw.reduce((acc, s) => acc + (s.text || '').length, 0) /
+    Math.max(1, cleanedRaw.length);
   if (avgLen > 140) {
-    return rawSegments.map((s, idx) => ({
+    return cleanedRaw.map((s, idx) => ({
       ...s,
       start_s: idx === 0 && (s.start_s || 0) <= 25 ? 0 : s.start_s,
       text: cleanCaptionText(s.text),
@@ -227,13 +248,13 @@ export function consolidateTranscriptSegments(
   }
 
   const consolidated: YouTubeTranscriptSegment[] = [];
-  let currentStart = rawSegments[0]?.start_s || 0;
+  let currentStart = cleanedRaw[0]?.start_s || 0;
   let currentDuration = 0;
   let buffer: string[] = [];
   let charCount = 0;
 
-  for (let i = 0; i < rawSegments.length; i++) {
-    const seg = rawSegments[i];
+  for (let i = 0; i < cleanedRaw.length; i++) {
+    const seg = cleanedRaw[i];
     const text = cleanCaptionText(seg.text);
     if (!text) continue;
 
