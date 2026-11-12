@@ -171,51 +171,77 @@ html.light ::-webkit-scrollbar-thumb:hover {
   height: 0;
 }
 
-/* Markdown typography styling */
+/* Markdown typography styling (ChatGPT-style clean reading layout) */
 .prose-grok {
-  line-height: 1.65;
-  font-size: 0.9375rem;
-  letter-spacing: -0.008em;
+  font-family: 'Geist Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  line-height: 1.72;
+  font-size: 0.95rem;
+  letter-spacing: -0.003em;
+  word-spacing: 0.012em;
+  font-weight: 400;
   word-break: break-word;
+  -webkit-font-smoothing: antialiased;
 }
 
 @media (min-width: 640px) {
   .prose-grok {
-    font-size: 0.96875rem;
-    line-height: 1.68;
+    font-size: 0.985rem;
+    line-height: 1.75;
   }
 }
 
-.prose-grok > *:first-child {
+.prose-grok > *:first-child,
+.prose-grok > div > *:first-child {
   margin-top: 0 !important;
 }
 
-.prose-grok > *:last-child {
+.prose-grok > *:last-child,
+.prose-grok > div > *:last-child {
   margin-bottom: 0 !important;
 }
 
 html.dark .prose-grok {
-  color: #ededed;
+  color: #e4e4e7;
 }
 
 html.light .prose-grok {
-  color: #111111;
+  color: #1f2937;
+}
+
+.prose-grok strong,
+.prose-grok b {
+  font-weight: 600;
+}
+
+html.dark .prose-grok strong,
+html.dark .prose-grok b {
+  color: #ffffff;
+}
+
+html.light .prose-grok strong,
+html.light .prose-grok b {
+  color: #09090b;
 }
 
 .prose-grok p {
-  margin-bottom: 0.7rem;
+  margin-top: 0;
+  margin-bottom: 1.05rem;
+  line-height: 1.72;
 }
 
 .prose-grok p:last-child {
   margin-bottom: 0;
 }
 
-.prose-grok h1, .prose-grok h2, .prose-grok h3, .prose-grok h4 {
+.prose-grok h1,
+.prose-grok h2,
+.prose-grok h3,
+.prose-grok h4 {
   font-weight: 600;
-  margin-top: 1.15rem;
-  margin-bottom: 0.45rem;
-  line-height: 1.32;
-  letter-spacing: -0.015em;
+  margin-top: 1.6rem;
+  margin-bottom: 0.65rem;
+  line-height: 1.35;
+  letter-spacing: -0.016em;
 }
 
 .prose-grok h1:first-child,
@@ -225,22 +251,29 @@ html.light .prose-grok {
   margin-top: 0;
 }
 
-html.dark .prose-grok h1, html.dark .prose-grok h2, html.dark .prose-grok h3, html.dark .prose-grok h4 {
+html.dark .prose-grok h1,
+html.dark .prose-grok h2,
+html.dark .prose-grok h3,
+html.dark .prose-grok h4 {
   color: #ffffff;
 }
 
-html.light .prose-grok h1, html.light .prose-grok h2, html.light .prose-grok h3, html.light .prose-grok h4 {
-  color: #000000;
+html.light .prose-grok h1,
+html.light .prose-grok h2,
+html.light .prose-grok h3,
+html.light .prose-grok h4 {
+  color: #09090b;
 }
 
-.prose-grok h1 { font-size: 1.3rem; }
-.prose-grok h2 { font-size: 1.125rem; }
-.prose-grok h3 { font-size: 1rem; }
+.prose-grok h1 { font-size: 1.325rem; }
+.prose-grok h2 { font-size: 1.15rem; }
+.prose-grok h3 { font-size: 1.035rem; }
 
-.prose-grok ul, .prose-grok ol {
-  margin-top: 0.35rem;
-  margin-bottom: 0.75rem;
-  padding-left: 1.3rem;
+.prose-grok ul,
+.prose-grok ol {
+  margin-top: 0.65rem;
+  margin-bottom: 1.2rem;
+  padding-left: 1.35rem;
 }
 
 .prose-grok ul {
@@ -252,11 +285,24 @@ html.light .prose-grok h1, html.light .prose-grok h2, html.light .prose-grok h3,
 }
 
 .prose-grok li {
-  margin-bottom: 0.25rem;
-  line-height: 1.6;
+  margin-bottom: 0.75rem;
+  padding-left: 0.2rem;
+  line-height: 1.7;
+}
+
+.prose-grok li::marker {
+  color: #71717a;
 }
 
 .prose-grok li:last-child {
+  margin-bottom: 0;
+}
+
+.prose-grok li > p {
+  margin-bottom: 0.45rem;
+}
+
+.prose-grok li > p:last-child {
   margin-bottom: 0;
 }
 

@@ -20,7 +20,7 @@ export const StreamingText: React.FC<StreamingTextProps> = ({
   children,
 }) => {
   return (
-    <div className={`relative font-sans text-[15px] leading-relaxed ${className}`}>
+    <div className={`relative ${className}`}>
       {children ? children : <span className="whitespace-pre-wrap break-words">{text}</span>}
     </div>
   );

@@ -8,6 +8,8 @@ import {
 } from './config';
 import { isAdultUrlOrDomain, isAdultQueryOrText } from './legalAndSafetyEngine';
 import { reportUpstreamProviderFailure } from './sentry';
+import { searchKeenable } from './keenableSearch';
+export { searchKeenable };
 
 export interface SearchResultItem {
   position: number;
@@ -1048,7 +1050,15 @@ export async function fallbackPublicWebSearchWithStatus(
         if (publisherName && cleanTitle.endsWith(` - ${publisherName}`)) {
           cleanTitle = cleanTitle.slice(0, -(` - ${publisherName}`).length).trim();
         }
-        const cleanBody = decodeXmlEntities(contentEncodedRaw || descRaw);
+        let cleanBody = decodeXmlEntities(contentEncodedRaw || descRaw)
+          .replace(/\s+/g, ' ')
+          .trim();
+        if (publisherName) {
+          const escapedPub = publisherName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          cleanBody = cleanBody
+            .replace(new RegExp(`\\s*(?:[-—–]\\s*)?${escapedPub}\\s*$`, 'i'), '')
+            .trim();
+        }
         const dateStr = pubDateRaw
           ? new Date(pubDateRaw).toLocaleDateString('en-US', {
               month: 'short',
@@ -1056,22 +1066,16 @@ export async function fallbackPublicWebSearchWithStatus(
               year: 'numeric',
             })
           : '';
-        const snippetParts: string[] = [];
-        if (publisherName) snippetParts.push(`${publisherName}${dateStr ? ` (${dateStr})` : ''}`);
-        if (cleanBody && cleanBody.toLowerCase() !== cleanTitle.toLowerCase()) {
-          snippetParts.push(cleanBody);
-        } else {
-          snippetParts.push(cleanTitle);
-        }
+        const isDistinctBody =
+          Boolean(cleanBody) &&
+          cleanBody.toLowerCase().replace(/[^a-z0-9]/g, '') !==
+            cleanTitle.toLowerCase().replace(/[^a-z0-9]/g, '');
 
         const candidate: SearchResultItem = {
           position: parsed.length + 1,
-          title:
-            publisherName && !cleanTitle.toLowerCase().includes(publisherName.toLowerCase())
-              ? `${cleanTitle} — ${publisherName}`
-              : cleanTitle,
+          title: cleanTitle,
           url: link,
-          snippet: snippetParts.join(' — ').slice(0, 680),
+          snippet: (isDistinctBody ? cleanBody : cleanTitle).slice(0, 420),
           displayed_url: sourceUrl || link,
           domain,
           source: publisherName || domain,
@@ -1842,6 +1846,47 @@ export async function searchWebReliable(
       tinyfishError = 'TINYFISH_API_KEY not configured';
     }
 
+    let keenableResults: SearchResultItem[] = [];
+    if (!isTestEnv && process.env.KEENABLE_API_KEY) {
+      tasks.push(
+        (async () => {
+          try {
+            const kRes = await searchKeenable(upstreamQuery);
+            keenableResults = kRes
+              .map((item, idx) => {
+                const rawUrl = item.url || '';
+                let domain = '';
+                if (rawUrl) {
+                  try {
+                    domain = new URL(rawUrl).hostname.replace(/^www\./, '');
+                  } catch {}
+                }
+                return {
+                  position: idx + 1,
+                  title: item.title || domain || 'Web Result',
+                  url: rawUrl,
+                  snippet: item.snippet || '',
+                  displayed_url: rawUrl,
+                  domain,
+                  source: domain || 'Keenable',
+                  date: item.publishedAt || undefined,
+                  provider: 'multi_source' as const,
+                };
+              })
+              .filter(
+                (item) =>
+                  item.url &&
+                  item.url.startsWith('http') &&
+                  !isUnsolicitedNonEnglishResult(item, trimmed) &&
+                  !isBoilerplateOrJunkSearchResult(item, trimmed) &&
+                  (isStockQuery || !isFinanceOrStockPage(item)) &&
+                  scoreSourceRelevanceToQuery(item, trimmed) >= 1.0
+              );
+          } catch {}
+        })()
+      );
+    }
+
     // For news or weather queries in non-test runtime, also fetch public regional sources with enrichedQuery
     let preferredNewsResults: SearchResultItem[] = [];
     if (!isTestEnv && (isNewsModeOrQuery || isWeatherQuery) && !isStockQuery) {
@@ -1867,8 +1912,13 @@ export async function searchWebReliable(
       if (earlyTimer) clearTimeout(earlyTimer);
     }
 
-  // If we got results from Treg, Tinyfish, or preferred news outlets:
-  if (tregResults.length > 0 || tinyfishResults.length > 0 || preferredNewsResults.length > 0) {
+  // If we got results from Treg, Tinyfish, Keenable, or preferred news outlets:
+  if (
+    tregResults.length > 0 ||
+    tinyfishResults.length > 0 ||
+    keenableResults.length > 0 ||
+    preferredNewsResults.length > 0
+  ) {
     const merged: SearchResultItem[] = [];
     const seenUrls = new Set<string>();
 
@@ -1893,10 +1943,16 @@ export async function searchWebReliable(
       }
     };
 
-    // Interleave preferred news outlets (when news query), Treg Google SERP, and TinyFish Agent-Native results
-    const maxLen = Math.max(tregResults.length, tinyfishResults.length, preferredNewsResults.length);
+    // Interleave preferred news outlets (when news query), Keenable, Treg Google SERP, and TinyFish Agent-Native results
+    const maxLen = Math.max(
+      tregResults.length,
+      tinyfishResults.length,
+      keenableResults.length,
+      preferredNewsResults.length
+    );
     for (let i = 0; i < maxLen; i++) {
       if (i < preferredNewsResults.length) addResult(preferredNewsResults[i]);
+      if (i < keenableResults.length) addResult(keenableResults[i]);
       if (i < tregResults.length) addResult(tregResults[i]);
       if (i < tinyfishResults.length) addResult(tinyfishResults[i]);
     }

@@ -1545,7 +1545,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
             onMouseUp={handleCaptureTextSelection}
             onTouchEnd={() => setTimeout(handleCaptureTextSelection, 60)}
             onClick={() => setShowActionsOnTap((prev) => !prev)}
-            className="prose-grok max-w-none text-[15px] leading-relaxed my-0"
+            className="prose-grok max-w-none my-0"
           >
               <StreamingText
                 isStreaming={message.isStreaming}

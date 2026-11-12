@@ -144,9 +144,11 @@ export const preprocessMessageContent = (content: string): string => {
       // Normalize whitespace or commas between adjacent citations [1], [2] or [1] [2] -> [1][2]
       processed = processed.replace(/\[(\d{1,2})\](?:,\s*|\s+)(?=\[\d{1,2}\](?!\())/g, '[$1]');
 
-      // Use non-breaking space before inline citation markers so a chip doesn't wrap onto its own line,
-      // without wrapping in raw HTML <span> tags that prevent CommonMark from parsing [n](#cite-n) links
-      processed = processed.replace(/([^\s\n])[ \t]+(?=\[\d{1,2}\](?!\())/g, '$1\u00A0');
+      // Move trailing sentence punctuation (. , ;) BEFORE inline citation markers so there is never an orphaned " ." after a citation pill
+      processed = processed.replace(/[ \t]*((?:\[\d{1,2}\])+)[ \t]*([.,;])(?=\s|$)/g, '$2 $1');
+
+      // Ensure a single normal space before citation markers so long words + wide badges wrap naturally without stretching word spacing
+      processed = processed.replace(/([^\s\n])[ \t]*(?=\[\d{1,2}\](?!\())/g, '$1 ');
 
       // Convert all [1] markers into markdown citation links [1](#cite-1)
       processed = processed.replace(/\[(\d{1,2})\](?!\()/g, '[$1](#cite-$1)');

@@ -215,26 +215,42 @@ export function consolidateTranscriptSegments(
 ): YouTubeTranscriptSegment[] {
   if (!Array.isArray(rawSegments) || rawSegments.length === 0) return [];
 
-  const isMs = rawSegments.some((s: any) => {
-    const d = Number(s.duration_s ?? s.duration ?? s.dur ?? (s as any).durationMs ?? 0);
-    const st = Number(s.start_s ?? (s as any).offset ?? (s as any).start ?? (s as any).startMs ?? 0);
-    return d > 80 || st > 36000 || (s as any).startMs !== undefined;
-  });
+  const allDurationsHugeMs =
+    rawSegments.length >= 3 &&
+    rawSegments.every(
+      (s: any) => Number(s.duration_s ?? s.duration ?? s.dur ?? (s as any).durationMs ?? 0) >= 600
+    );
 
-  const cleanedRaw = rawSegments.map((s: any) => {
-    let rawStart = Number(s.start_s ?? s.offset ?? s.start ?? s.startMs ?? 0);
-    let rawDur = Number(s.duration_s ?? s.duration ?? s.dur ?? s.durationMs ?? 2.5);
-    if (isMs || rawDur > 80 || rawStart > 36000) {
-      if (rawStart > 100) rawStart = rawStart / 1000;
-      if (rawDur > 50) rawDur = rawDur / 1000;
-    }
-    return {
-      ...s,
-      start_s: Math.max(0, Math.floor(rawStart)),
-      duration_s: Math.max(0.4, Number(rawDur.toFixed(2))),
-      text: cleanCaptionText(s.text),
-    };
-  }).filter((s) => Boolean(s.text));
+  const isMs =
+    allDurationsHugeMs ||
+    rawSegments.some((s: any) => {
+      if (s.start_s !== undefined || s.duration_s !== undefined) return false;
+      const d = Number(s.duration ?? s.dur ?? (s as any).durationMs ?? 0);
+      const st = Number((s as any).offset ?? (s as any).start ?? (s as any).startMs ?? 0);
+      return d > 80 || st > 36000 || (s as any).startMs !== undefined;
+    });
+
+  const cleanedRaw = rawSegments
+    .map((s: any) => {
+      const hasExplicitSeconds =
+        (s.start_s !== undefined || s.duration_s !== undefined) && !allDurationsHugeMs;
+      let rawStart = Number(s.start_s ?? s.offset ?? s.start ?? s.startMs ?? 0);
+      let rawDur = Number(s.duration_s ?? s.duration ?? s.dur ?? s.durationMs ?? 2.5);
+      if (!hasExplicitSeconds && (isMs || rawDur > 80 || rawStart > 36000)) {
+        if (rawStart > 100) rawStart = rawStart / 1000;
+        if (rawDur > 50) rawDur = rawDur / 1000;
+      } else if (hasExplicitSeconds && rawStart > 86400) {
+        rawStart = rawStart / 1000;
+        if (rawDur > 600) rawDur = rawDur / 1000;
+      }
+      return {
+        ...s,
+        start_s: Math.max(0, Math.floor(rawStart)),
+        duration_s: Math.max(0.4, Number(rawDur.toFixed(2))),
+        text: cleanCaptionText(s.text),
+      };
+    })
+    .filter((s) => Boolean(s.text));
 
   const avgLen =
     cleanedRaw.reduce((acc, s) => acc + (s.text || '').length, 0) /
@@ -271,14 +287,16 @@ export function consolidateTranscriptSegments(
     buffer.push(text);
     charCount += text.length;
 
-    const endsWithPunctuation = /[.!?]["']?$/.test(text);
-    const isLast = i === rawSegments.length - 1;
+    const endsWithPunctuation = /[.!?।॥]["']?$/.test(text);
+    const isLast = i === cleanedRaw.length - 1;
 
     if ((charCount >= 220 && endsWithPunctuation) || charCount >= 380 || isLast) {
       let combined = buffer.join(' ').replace(/\s+/g, ' ').trim();
       if (combined.length > 0) {
-        combined = combined.charAt(0).toUpperCase() + combined.slice(1);
-        if (!/[.!?]$/.test(combined)) combined += '.';
+        if (/^[a-z]/.test(combined)) {
+          combined = combined.charAt(0).toUpperCase() + combined.slice(1);
+        }
+        if (!/[.!?।॥]$/.test(combined)) combined += '.';
         const effectiveStart =
           consolidated.length === 0 && currentStart <= 25 ? 0 : currentStart;
         consolidated.push({
@@ -293,7 +311,83 @@ export function consolidateTranscriptSegments(
     }
   }
 
-  return consolidated.length > 0 ? consolidated : rawSegments;
+  if (buffer.length > 0) {
+    let combined = buffer.join(' ').replace(/\s+/g, ' ').trim();
+    if (combined.length > 0) {
+      if (!/[.!?।॥]$/.test(combined)) combined += '.';
+      consolidated.push({
+        start_s: consolidated.length === 0 && currentStart <= 25 ? 0 : currentStart,
+        duration_s: Math.max(10, Math.round(currentDuration)),
+        text: combined,
+      });
+    }
+  }
+
+  return consolidated.length > 0 ? consolidated : cleanedRaw;
+}
+
+async function extractYouTubeTranscriptViaCapacitorClient(
+  videoId: string
+): Promise<YouTubeTranscriptSegment[]> {
+  try {
+    const capHttp =
+      typeof window !== 'undefined' ? (window as any)?.Capacitor?.Plugins?.CapacitorHttp : null;
+    if (!capHttp || typeof capHttp.get !== 'function') return [];
+
+    const watchRes = await capHttp.get({
+      url: `https://www.youtube.com/watch?v=${videoId}`,
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36',
+        'Accept-Language': 'te-IN,te;q=0.9,hi-IN,hi;q=0.8,ta-IN,ta;q=0.7,en-IN,en;q=0.6',
+      },
+    });
+    const html = typeof watchRes?.data === 'string' ? watchRes.data : '';
+    const capMatch = html.match(/"captionTracks":\s*(\[.*?\])/);
+    if (!capMatch?.[1]) return [];
+
+    const tracks: any[] = JSON.parse(capMatch[1]);
+    if (!Array.isArray(tracks) || tracks.length === 0) return [];
+
+    const indianPriority = ['te', 'hi', 'ta', 'kn', 'ml', 'bn', 'mr', 'gu', 'en'];
+    let chosen = tracks[0];
+    for (const code of indianPriority) {
+      const found =
+        tracks.find((t) => t.languageCode === code && t.kind !== 'asr') ||
+        tracks.find((t) => t.languageCode?.startsWith(code));
+      if (found) {
+        chosen = found;
+        break;
+      }
+    }
+
+    if (!chosen?.baseUrl) return [];
+    const trackRes = await capHttp.get({
+      url: `${chosen.baseUrl}&fmt=json3`,
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36',
+      },
+    });
+    const trackData =
+      typeof trackRes?.data === 'string' ? JSON.parse(trackRes.data) : trackRes?.data;
+    if (!Array.isArray(trackData?.events)) return [];
+
+    const segs: YouTubeTranscriptSegment[] = [];
+    for (const ev of trackData.events) {
+      if (!Array.isArray(ev?.segs)) continue;
+      const text = cleanCaptionText(ev.segs.map((s: any) => s?.utf8 || '').join(''));
+      if (!text) continue;
+      segs.push({
+        start_s: Math.max(0, Number(((ev.tStartMs || 0) / 1000).toFixed(2))),
+        duration_s: Math.max(0.5, Number(((ev.dDurationMs || 2500) / 1000).toFixed(2))),
+        text,
+      });
+    }
+    return segs;
+  } catch {
+    return [];
+  }
 }
 
 export function buildDetailedStatementBreakdown(
@@ -1246,6 +1340,14 @@ ${fullTranscriptText}`;
             }
           }
         } catch {}
+      }
+
+      if (rawLoadedSegments.length === 0) {
+        const capSegs = await extractYouTubeTranscriptViaCapacitorClient(normVidId);
+        if (capSegs.length > 0) {
+          rawLoadedSegments = capSegs;
+          setTranscriptProvider('capacitor-youtube-captions');
+        }
       }
 
       if (rawLoadedSegments.length === 0) {

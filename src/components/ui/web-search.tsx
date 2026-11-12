@@ -13,6 +13,7 @@ import React, {
   type ReactElement,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 import {
   AnimatePresence,
   animate,
@@ -164,13 +165,75 @@ const siteName = (url: string, explicitDomain?: string) => {
 };
 
 export function getCleanDomain(url: string, explicitDomain?: string): string {
-  if (explicitDomain && !explicitDomain.includes(".")) return explicitDomain;
+  if (explicitDomain) {
+    const cleanExplicit = explicitDomain.replace(/^https?:\/\//i, "").replace(/^www\./i, "").split("/")[0].trim();
+    if (cleanExplicit && !/^(news\.google\.com|bing\.com|web)$/i.test(cleanExplicit)) {
+      return cleanExplicit;
+    }
+  }
   try {
-    const raw = explicitDomain || new URL(url).hostname;
-    return raw.replace(/^www\./, "");
+    const raw = new URL(url).hostname.replace(/^www\./i, "");
+    if (raw === "news.google.com" && explicitDomain) {
+      return explicitDomain.replace(/^www\./i, "");
+    }
+    return raw || explicitDomain || "web";
   } catch {
     return explicitDomain || "web";
   }
+}
+
+export function cleanCitationDisplay(source: WebSource): {
+  domainLabel: string;
+  cleanTitle: string;
+  cleanSnippet: string;
+  dateLabel?: string;
+} {
+  const domainLabel = getCleanDomain(source.url, source.domain);
+  const brand = siteName(source.url, source.domain);
+
+  let cleanTitle = String(source.title || "").replace(/\s+/g, " ").trim();
+  // Strip redundant trailing " — publisher" or " - publisher" from title if it matches domain/brand
+  const trailingPubRe = new RegExp(`\\s*[—–-]\\s*(?:${brand.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}|${domainLabel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})\\s*$`, "i");
+  cleanTitle = cleanTitle.replace(trailingPubRe, "").trim() || String(source.title || "").trim();
+
+  let rawSnippet = String(source.snippet || "").replace(/\s+/g, " ").trim();
+  let extractedDate = source.date || "";
+
+  // Extract date if embedded as "publisher (Nov 12, 2026)"
+  const dateMatch = rawSnippet.match(/^[^(\n]{1,40}\(([A-Z][a-z]{2}\s+\d{1,2},\s+\d{4})\)/);
+  if (!extractedDate && dateMatch) {
+    extractedDate = dateMatch[1];
+  }
+
+  // Strip synthetic "publisher (Date) reports on "Title": " wrapper
+  rawSnippet = rawSnippet
+    .replace(/^[^:]{1,90}\s+reports\s+on\s+"[^"]*":\s*/i, "")
+    .replace(/\bThis\s+[^\s]+\s+coverage\s+examines\s+the\s+technical\s+details,\s+industry\s+implications,\s+and\s+verified\s+developments\s+surrounding[\s\S]*$/i, "")
+    .replace(/\bAdditional\s+reporting\s+and\s+analysis\s+published\s+by[\s\S]*$/i, "")
+    .replace(/^[A-Za-z0-9\s.&'-]{1,45}(?:\([A-Za-z0-9\s,]+\))?\s*[—–-]\s*/i, "")
+    .replace(/\b(Light\s+Dark|Font\s+Family\s+Default[\s\S]*?(?=$|\.)|Font\s+Size\s+Default[\s\S]*?(?=$|\.)|Bible\s+Version\s+ESV[\s\S]*?(?=$|\.))/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  rawSnippet = rawSnippet.replace(trailingPubRe, "").trim();
+
+  // If the cleaned snippet is just repeating the title verbatim, suppress it so the popup stays compact and non-repetitive
+  const normTitle = cleanTitle.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const normSnippet = rawSnippet.toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (
+    !normSnippet ||
+    normSnippet === normTitle ||
+    (normTitle.length > 20 && normSnippet.startsWith(normTitle) && normSnippet.length - normTitle.length < 18)
+  ) {
+    rawSnippet = "";
+  }
+
+  return {
+    domainLabel,
+    cleanTitle,
+    cleanSnippet: rawSnippet,
+    dateLabel: extractedDate || undefined,
+  };
 }
 
 export function getDomainIcon(domainName: string, _isDark?: boolean) {
@@ -799,20 +862,98 @@ function WebSearchCitation({
   linked = true,
   isDark: _isDark,
   onOpenModal,
-  messageId,
+  messageId: _messageId,
   className,
   ...props
 }: WebSearchCitationProps) {
   const reduced = !!useReducedMotion();
   const { active: open, set, hover } = useHoverIntent(PREVIEW_DELAY);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const instanceId = useMemo(() => `cit-${Math.random().toString(36).slice(2, 9)}`, []);
+  const [coords, setCoords] = useState<{
+    left: number;
+    top?: number;
+    bottom?: number;
+    width: number;
+    placeBelow: boolean;
+  } | null>(null);
+
   const ghUser = extractGitHubUsername(source.url);
+  const { domainLabel, cleanTitle, cleanSnippet, dateLabel } = useMemo(
+    () => cleanCitationDisplay(source),
+    [source],
+  );
+
+  const updatePosition = () => {
+    const btn = buttonRef.current;
+    if (!btn || typeof window === "undefined") return;
+    const rect = btn.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const maxWidth = ghUser ? 300 : 276;
+    const width = Math.min(maxWidth, vw - 24);
+    const idealLeft = rect.left + rect.width / 2 - width / 2;
+    const clampedLeft = Math.max(12, Math.min(idealLeft, vw - width - 12));
+    const placeBelow = rect.top < 170;
+
+    setCoords({
+      left: Math.round(clampedLeft),
+      top: placeBelow ? Math.round(rect.bottom + 8) : undefined,
+      bottom: !placeBelow ? Math.round(vh - rect.top + 8) : undefined,
+      width: Math.round(width),
+      placeBelow,
+    });
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    updatePosition();
+    window.dispatchEvent(new CustomEvent("kinich-citation-open", { detail: instanceId }));
+
+    const handleOtherOpen = (e: Event) => {
+      const custom = e as CustomEvent<string>;
+      if (custom.detail && custom.detail !== instanceId) {
+        set(false, 0);
+      }
+    };
+    const handlePointerDownOutside = (e: MouseEvent | TouchEvent) => {
+      const target = e.target as Node | null;
+      if (
+        target &&
+        !buttonRef.current?.contains(target) &&
+        !popoverRef.current?.contains(target)
+      ) {
+        set(false, 0);
+      }
+    };
+    const handleScrollOrResize = () => {
+      set(false, 0);
+    };
+
+    window.addEventListener("kinich-citation-open", handleOtherOpen);
+    document.addEventListener("mousedown", handlePointerDownOutside);
+    document.addEventListener("touchstart", handlePointerDownOutside, { passive: true });
+    window.addEventListener("scroll", handleScrollOrResize, true);
+    window.addEventListener("resize", handleScrollOrResize);
+    return () => {
+      window.removeEventListener("kinich-citation-open", handleOtherOpen);
+      document.removeEventListener("mousedown", handlePointerDownOutside);
+      document.removeEventListener("touchstart", handlePointerDownOutside);
+      window.removeEventListener("scroll", handleScrollOrResize, true);
+      window.removeEventListener("resize", handleScrollOrResize);
+    };
+  }, [open, instanceId]);
 
   const handleChipClick = (e: React.MouseEvent | React.KeyboardEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    // Keep hover preview popover open
-    set(true, 0);
-    if (ghUser && onOpenModal) {
+    const nextOpen = !open;
+    if (nextOpen) {
+      updatePosition();
+    }
+    set(nextOpen, 0);
+    if (ghUser && onOpenModal && nextOpen) {
       onOpenModal(source);
     }
   };
@@ -822,7 +963,10 @@ function WebSearchCitation({
       data-slot="web-search-citation"
       className={cn("relative inline-flex align-baseline mx-0.5 whitespace-nowrap", className)}
       onPointerEnter={(event) => {
-        hover.onPointerEnter(event);
+        if (event.pointerType === "mouse") {
+          updatePosition();
+          hover.onPointerEnter(event);
+        }
       }}
       onPointerLeave={() => {
         hover.onPointerLeave();
@@ -830,6 +974,7 @@ function WebSearchCitation({
       {...props}
     >
       <button
+        ref={buttonRef}
         type="button"
         onClick={handleChipClick}
         onKeyDown={(e) => {
@@ -839,18 +984,12 @@ function WebSearchCitation({
             set(false, 0);
           }
         }}
-        onFocus={() => {
-          set(true, 0);
-        }}
-        onBlur={() => {
-          set(false, 0);
-        }}
-        aria-label={index !== undefined ? `Source ${index}: ${source.title}` : `Source: ${source.title}`}
+        aria-label={index !== undefined ? `Source ${index}: ${cleanTitle}` : `Source: ${cleanTitle}`}
         className={cn(
           !linked ? "cursor-default" : "cursor-pointer",
-          "citation-badge whitespace-nowrap inline-flex h-[19px] -translate-y-px items-center gap-1 rounded-full bg-[#F4F4F9] pl-[3px] pr-1.5 font-sans text-[11px] font-semibold leading-none text-[#868593] !no-underline outline-none transition-colors hover:bg-[#FC4C01]/10 hover:text-[#FC4C01] hover:ring-1 hover:ring-[#FC4C01]/40 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#FC4C01] dark:bg-[#1C1C1C] dark:hover:bg-[#FC4C01]/15 dark:hover:text-[#FC4C01]",
+          "citation-badge whitespace-nowrap inline-flex h-[19px] -translate-y-px items-center gap-1 rounded-full bg-[#F4F4F9] pl-[3px] pr-1.5 font-sans text-[11px] font-semibold leading-none text-[#868593] !no-underline outline-none transition-colors hover:bg-black/[0.08] hover:text-black dark:bg-[#1C1C1C] dark:hover:bg-white/[0.14] dark:hover:text-white",
           open &&
-            "bg-[#FC4C01]/10 text-[#FC4C01] ring-1 ring-[#FC4C01]/40 dark:bg-[#FC4C01]/15 dark:text-[#FC4C01]",
+            "bg-black/[0.09] text-black ring-1 ring-black/20 dark:bg-white/[0.15] dark:text-white dark:ring-white/25",
         )}
       >
         <Favicon source={source} size={14} />
@@ -860,47 +999,91 @@ function WebSearchCitation({
         )}
       </button>
 
-      <AnimatePresence>
-        {open && (
-          <motion.span
-            role="tooltip"
-            className={cn(
-              "absolute bottom-full left-1/2 z-50 block whitespace-normal pb-2",
-              ghUser ? "w-[min(320px,calc(100vw-2rem))]" : "w-[min(288px,calc(100vw-2rem))]",
+      {typeof document !== "undefined" &&
+        createPortal(
+          <AnimatePresence>
+            {open && coords && (
+              <motion.div
+                ref={popoverRef}
+                role="tooltip"
+                onPointerEnter={(event) => {
+                  if (event.pointerType === "mouse") set(true, 0);
+                }}
+                onPointerLeave={() => {
+                  hover.onPointerLeave();
+                }}
+                style={{
+                  position: "fixed",
+                  left: coords.left,
+                  top: coords.top,
+                  bottom: coords.bottom,
+                  width: coords.width,
+                  originY: coords.placeBelow ? 0 : 1,
+                }}
+                className="z-[9999] block whitespace-normal"
+                initial={{ opacity: 0, y: coords.placeBelow ? -4 : 4, scale: 0.97 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: coords.placeBelow ? -4 : 4, scale: 0.98 }}
+                transition={
+                  reduced
+                    ? INSTANT
+                    : { type: "spring", duration: 0.22, bounce: 0.08 }
+                }
+              >
+                <a
+                  {...linkTo(source.url, linked)}
+                  onClick={() => set(false, 0)}
+                  tabIndex={-1}
+                  className="citation-badge block rounded-xl border border-black/[0.08] bg-white p-3 text-left font-sans !no-underline shadow-[0_10px_28px_rgba(0,0,0,0.16)] dark:border-white/[0.12] dark:bg-[#16161a] dark:shadow-[0_12px_32px_rgba(0,0,0,0.75)]"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      <Favicon source={source} size={15} />
+                      <span className="truncate text-[11.5px] font-medium text-[#71717a] dark:text-[#a1a1aa]">
+                        {ghUser ? `github.com/${ghUser}` : domainLabel}
+                      </span>
+                      {dateLabel && (
+                        <span className="shrink-0 text-[10.5px] text-[#a1a1aa] dark:text-[#71717a]">
+                          · {dateLabel}
+                        </span>
+                      )}
+                    </div>
+                    {index !== undefined && (
+                      <span className="shrink-0 rounded-full bg-black/[0.06] px-1.5 py-0.5 font-mono text-[10px] font-semibold tabular-nums text-[#52525b] dark:bg-white/[0.08] dark:text-white/75">
+                        {index}
+                      </span>
+                    )}
+                  </div>
+                  <div
+                    className="mt-1.5 text-[13px] font-semibold leading-[17.5px] text-[#18181b] dark:text-white"
+                    style={{
+                      display: "-webkit-box",
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: "vertical",
+                      overflow: "hidden",
+                    }}
+                  >
+                    {cleanTitle}
+                  </div>
+                  {cleanSnippet && (
+                    <div
+                      className="mt-1 text-[11.5px] font-normal leading-[16px] text-[#71717a] dark:text-[#a1a1aa]"
+                      style={{
+                        display: "-webkit-box",
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: "vertical",
+                        overflow: "hidden",
+                      }}
+                    >
+                      {cleanSnippet}
+                    </div>
+                  )}
+                </a>
+              </motion.div>
             )}
-            style={{ x: "-50%", originY: 1 }}
-            initial={{ opacity: 0, y: 4, scale: 0.96, filter: "blur(4px)" }}
-            animate={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
-            exit={{ opacity: 0, y: 4, scale: 0.98, filter: "blur(2px)" }}
-            transition={
-              reduced
-                ? INSTANT
-                : { type: "spring", duration: 0.35, bounce: 0.15 }
-            }
-          >
-            <a
-              {...linkTo(source.url, linked)}
-              tabIndex={-1}
-              className="citation-badge block rounded-[16px] bg-white p-3 text-left font-sans !no-underline shadow-[0_12px_32px_-8px_rgba(0,0,0,0.18),0_0_0_1px_rgba(0,0,0,0.05)] dark:bg-[#1C1C1C] dark:shadow-[0_12px_32px_-8px_rgba(0,0,0,0.7),0_0_0_1px_rgba(255,255,255,0.07)]"
-            >
-              <span className="flex items-center gap-1.5">
-                <Favicon source={source} size={18} />
-                <span className="truncate text-[12px] font-medium text-[#868593]">
-                  {ghUser ? `github.com/${ghUser}` : hostOf(source.url)}
-                </span>
-              </span>
-              <span className="mt-1.5 line-clamp-2 block text-[13.5px] font-semibold leading-[18px] text-black dark:text-white">
-                {source.title}
-              </span>
-              {source.snippet && (
-                <span className="mt-1 line-clamp-3 block text-[12.5px] font-medium leading-[17px] text-[#868593]">
-                  {source.snippet}
-                </span>
-              )}
-            </a>
-          </motion.span>
+          </AnimatePresence>,
+          document.body,
         )}
-      </AnimatePresence>
     </span>
   );
 }
@@ -1071,7 +1254,6 @@ export const CompactCitationCard: React.FC<{
   const [showThread, setShowThread] = useState(false);
   const [liveSocial, setLiveSocial] = useState<SocialMeta | undefined>(source.socialMeta);
   const [loadingSocial, setLoadingSocial] = useState(false);
-  const dom = getCleanDomain(source.url, source.domain);
   const pos = source.position;
 
   useEffect(() => {
@@ -1098,33 +1280,44 @@ export const CompactCitationCard: React.FC<{
 
   const social = liveSocial;
   const ghUser = extractGitHubUsername(source.url);
+  const { domainLabel, cleanTitle, cleanSnippet, dateLabel } = useMemo(
+    () => cleanCitationDisplay(source),
+    [source],
+  );
 
   return (
     <div
-      className={`w-[min(350px,calc(100vw-2rem))] max-w-full p-3.5 rounded-2xl border shadow-xl select-none z-50 overflow-hidden box-border ${
+      className={`w-[min(300px,calc(100vw-1.5rem))] max-w-full p-3 rounded-xl border shadow-xl select-none z-50 overflow-hidden box-border ${
         isDark
-          ? "bg-[#1C1C1C] border-white/10 text-white shadow-[0_12px_32px_-8px_rgba(0,0,0,0.7)]"
-          : "bg-white border-neutral-200/90 text-neutral-900 shadow-[0_12px_32px_-8px_rgba(0,0,0,0.18)]"
+          ? "bg-[#16161a] border-white/12 text-white shadow-[0_12px_32px_rgba(0,0,0,0.75)]"
+          : "bg-white border-neutral-200/90 text-neutral-900 shadow-[0_10px_28px_rgba(0,0,0,0.16)]"
       }`}
       onClick={(e) => e.stopPropagation()}
     >
-      <div className="flex items-center justify-between gap-2 mb-2">
+      <div className="flex items-center justify-between gap-2 mb-1.5">
         <div className="flex items-center gap-1.5 truncate">
           {loadingSocial ? (
             <Loader2 className="w-3.5 h-3.5 text-sky-500 animate-spin shrink-0" />
           ) : (
-            <Favicon source={source} size={16} />
+            <Favicon source={source} size={15} />
           )}
-          <span className={`font-medium text-xs truncate ${isDark ? "text-[#868593]" : "text-[#868593]"}`}>
+          <span className="font-medium text-[11.5px] truncate text-[#71717a] dark:text-[#a1a1aa]">
             {social
               ? `${social.platform.toUpperCase()} · @${social.authorUsername}`
               : ghUser
                 ? `github.com · @${ghUser}`
-                : dom}
+                : domainLabel}
           </span>
+          {dateLabel && !social && (
+            <span className="shrink-0 text-[10.5px] text-[#a1a1aa] dark:text-[#71717a]">
+              · {dateLabel}
+            </span>
+          )}
         </div>
         {pos !== undefined && (
-          <span className="font-mono text-xs shrink-0 text-[#868593]">[{pos}]</span>
+          <span className="shrink-0 rounded-full bg-black/[0.06] px-1.5 py-0.5 font-mono text-[10px] font-semibold tabular-nums text-[#52525b] dark:bg-white/[0.08] dark:text-white/75">
+            {pos}
+          </span>
         )}
       </div>
 
@@ -1162,18 +1355,34 @@ export const CompactCitationCard: React.FC<{
 
       {!social ? (
         <>
-          <div className={`font-semibold text-[13.5px] leading-[18px] line-clamp-2 mb-1.5 ${isDark ? "text-white" : "text-black"}`}>
-            {source.title}
+          <div
+            className={`font-semibold text-[13px] leading-[17.5px] mb-1 ${isDark ? "text-white" : "text-black"}`}
+            style={{
+              display: "-webkit-box",
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: "vertical",
+              overflow: "hidden",
+            }}
+          >
+            {cleanTitle}
           </div>
-          {source.snippet && (
-            <p className="text-[12.5px] leading-[17px] line-clamp-3 mb-2.5 text-[#868593]">
-              {source.snippet}
+          {cleanSnippet && (
+            <p
+              className="text-[11.5px] leading-[16px] mb-2 text-[#71717a] dark:text-[#a1a1aa]"
+              style={{
+                display: "-webkit-box",
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: "vertical",
+                overflow: "hidden",
+              }}
+            >
+              {cleanSnippet}
             </p>
           )}
         </>
       ) : (
-        <p className={`text-[12px] leading-relaxed line-clamp-4 mb-2.5 whitespace-pre-wrap ${isDark ? "text-neutral-100" : "text-neutral-900"}`}>
-          {social.text || source.snippet || source.title}
+        <p className={`text-[12px] leading-relaxed line-clamp-3 mb-2 whitespace-pre-wrap ${isDark ? "text-neutral-100" : "text-neutral-900"}`}>
+          {social.text || cleanSnippet || cleanTitle}
         </p>
       )}
 

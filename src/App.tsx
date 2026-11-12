@@ -1367,13 +1367,13 @@ export default function App() {
                         if (hasBullets) {
                           if (/^([-*•]|\d+\.)\s+/.test(trimmed) && !/\[\d{1,2}\]/.test(trimmed)) {
                             const num = (citeCounter++ % baseSources.length) + 1;
-                            return `${line.replace(/([.!?])?\s*$/, '')} [${num}]${RegExp.$1 || '.'}`;
+                            return `${line.replace(/([.!?])?\s*$/, (_m, p) => p || '.')} [${num}]`;
                           }
                           return line;
                         }
                         if (trimmed.length > 45 && !trimmed.endsWith(':') && !/\[\d{1,2}\]/.test(trimmed)) {
                           const num = (citeCounter++ % baseSources.length) + 1;
-                          return `${line.replace(/([.!?])?\s*$/, '')} [${num}]${RegExp.$1 || '.'}`;
+                          return `${line.replace(/([.!?])?\s*$/, (_m, p) => p || '.')} [${num}]`;
                         }
                         return line;
                       })
@@ -1837,8 +1837,6 @@ export default function App() {
               content:
                 isLastUserMsg && isClockQuery
                   ? `${cleanContent}\n\n[VERIFIED REAL-TIME DEVICE CLOCK: Today is ${clientClock.localDateOnly} and the current local time is ${clientClock.localTimeOnly} / UTC: ${clientClock.utcFull}. State BOTH this exact real-time date and time, and do NOT agree if the user claims today is a different date.]`
-                  : isLastUserMsg && standaloneSearchQuery !== query
-                  ? `${cleanContent} (regarding: ${standaloneSearchQuery})`
                   : cleanContent,
               attachments: m.attachments,
               sources: m.role === 'assistant' && Array.isArray(m.sources) ? m.sources.slice(0, 6) : undefined,
