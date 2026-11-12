@@ -176,6 +176,13 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
   const snapInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const p = window.location.pathname.toLowerCase();
+      if (p === '/snap-solve' || p.startsWith('/snap-solve')) {
+        setActiveTab('snap_solve');
+        return;
+      }
+    }
     setActiveTab(initialTab);
   }, [initialTab]);
 

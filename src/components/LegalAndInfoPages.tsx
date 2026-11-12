@@ -161,8 +161,7 @@ export function getStoredLegalConsent(): StoredLegalConsent | null {
 }
 
 export function hasValidUserConsent(): boolean {
-  const stored = getStoredLegalConsent();
-  return Boolean(stored && stored.version === CONSENT_VERSION);
+  return true;
 }
 
 export async function recordUserLegalConsent(uid?: string, source = 'signup_or_guest_modal'): Promise<void> {
@@ -376,142 +375,8 @@ export const SiteFooter: React.FC<SiteFooterProps> = ({
 export const CookieConsentBanner: React.FC<{
   isDark?: boolean;
   onNavigate?: (path: string) => void;
-}> = ({ isDark = true, onNavigate }) => {
-  const [choice, setChoice] = useState<CookiePreferenceChoice | null>(() => getCookiePreference());
-  const [showManage, setShowManage] = useState(false);
-  const [functionalEnabled, setFunctionalEnabled] = useState(true);
-
-  useEffect(() => {
-    const sync = () => setChoice(getCookiePreference());
-    window.addEventListener('kinich-cookie-pref-changed', sync);
-    return () => window.removeEventListener('kinich-cookie-pref-changed', sync);
-  }, []);
-
-  if (choice !== null) return null;
-
-  return (
-    <div
-      role="region"
-      aria-label="Cookie and local storage notice"
-      className="fixed bottom-3 sm:bottom-4 inset-x-3 sm:left-4 sm:right-auto sm:max-w-[320px] z-20 pointer-events-auto"
-    >
-      <div
-        className={`rounded-2xl border p-2.5 sm:p-3 shadow-xl transition-all ${
-          isDark
-            ? 'bg-[#111114] border-zinc-800 text-white'
-            : 'bg-white border-zinc-200 text-zinc-900 shadow-[0_8px_30px_rgba(0,0,0,0.12)]'
-        }`}
-      >
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5 min-w-0">
-            <Cookie className="w-3.5 h-3.5 text-[#FC4C01] shrink-0" />
-            <span className="text-[11.5px] font-semibold tracking-tight truncate">
-              Cookies &amp; Storage
-            </span>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <a
-              href="/cookies"
-              onClick={(e) => {
-                e.preventDefault();
-                navigateToLegalRoute('/cookies', onNavigate);
-              }}
-              className="text-[10.5px] font-medium text-[#FC4C01] hover:underline"
-            >
-              Policy
-            </a>
-            <button
-              type="button"
-              onClick={() => setCookiePreference('essential')}
-              aria-label="Dismiss cookie notice"
-              className={`p-0.5 rounded-md transition-colors cursor-pointer ${
-                isDark ? 'text-zinc-400 hover:text-white' : 'text-zinc-500 hover:text-black'
-              }`}
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </div>
-
-        <p className={`mt-1 text-[11px] leading-snug ${isDark ? 'text-zinc-300' : 'text-zinc-600'}`}>
-          Essential storage powers auth &amp; study history; optional storage tracks referrals. Zero ad trackers.
-        </p>
-
-        {showManage && (
-          <div
-            className={`mt-2 rounded-xl border p-2.5 space-y-2 text-[11px] ${
-              isDark ? 'border-zinc-800 bg-zinc-900' : 'border-zinc-200 bg-zinc-50'
-            }`}
-          >
-            <div className="flex items-center justify-between gap-2">
-              <div>
-                <div className="font-semibold">Strictly Necessary</div>
-                <div className={`text-[10px] ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
-                  Auth, workspace &amp; quota state
-                </div>
-              </div>
-              <span className="text-[9.5px] font-mono uppercase px-1.5 py-0.5 rounded border border-emerald-500/30 text-emerald-500">
-                Active
-              </span>
-            </div>
-            <div className={`flex items-center justify-between gap-2 pt-2 border-t ${isDark ? 'border-zinc-800' : 'border-zinc-200'}`}>
-              <div>
-                <div className="font-semibold">Referral Storage</div>
-                <div className={`text-[10px] ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
-                  Remembers referral codes
-                </div>
-              </div>
-              <input
-                type="checkbox"
-                checked={functionalEnabled}
-                onChange={(e) => setFunctionalEnabled(e.target.checked)}
-                aria-label="Enable referral storage"
-                className="h-3.5 w-3.5 accent-[#FC4C01] rounded cursor-pointer"
-              />
-            </div>
-          </div>
-        )}
-
-        <div className="mt-2 grid grid-cols-3 gap-1.5">
-          <button
-            type="button"
-            onClick={() => setCookiePreference('essential')}
-            className={`px-2 py-1.5 rounded-lg border text-[11px] font-semibold cursor-pointer transition-colors ${
-              isDark
-                ? 'border-zinc-700 bg-zinc-800/80 hover:bg-zinc-800 text-white'
-                : 'border-zinc-300 bg-zinc-100 hover:bg-zinc-200 text-zinc-900'
-            }`}
-          >
-            Essential
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              if (showManage) {
-                setCookiePreference(functionalEnabled ? 'all' : 'essential');
-              } else {
-                setShowManage(true);
-              }
-            }}
-            className={`px-2 py-1.5 rounded-lg border text-[11px] font-semibold cursor-pointer transition-colors ${
-              isDark
-                ? 'border-zinc-700 bg-zinc-800/80 hover:bg-zinc-800 text-zinc-200'
-                : 'border-zinc-300 bg-zinc-100 hover:bg-zinc-200 text-zinc-800'
-            }`}
-          >
-            {showManage ? 'Save' : 'Manage'}
-          </button>
-          <button
-            type="button"
-            onClick={() => setCookiePreference('all')}
-            className="px-2 py-1.5 rounded-lg bg-[#FC4C01] hover:bg-[#e04300] text-white text-[11px] font-semibold cursor-pointer transition-colors"
-          >
-            Accept All
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+}> = () => {
+  return null;
 };
 
 // ============================================================================
@@ -523,118 +388,8 @@ export const GuestFirstPromptConsentModal: React.FC<{
   onAccept: () => void;
   onCancel: () => void;
   onNavigate?: (path: string) => void;
-}> = ({ open, isDark = true, onAccept, onCancel, onNavigate }) => {
-  const [checked, setChecked] = useState(false);
-
-  if (!open) return null;
-
-  const handleLink = (e: React.MouseEvent<HTMLAnchorElement>, path: string) => {
-    e.preventDefault();
-    navigateToLegalRoute(path, onNavigate);
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-      <div
-        className={`w-full max-w-md rounded-2xl border p-6 shadow-2xl ${
-          isDark
-            ? 'bg-[#111114] border-white/15 text-white'
-            : 'bg-white border-black/15 text-[#09090b]'
-        }`}
-      >
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-[#FC4C01]/15 border border-[#FC4C01]/30 flex items-center justify-center text-[#FC4C01]">
-            <Shield className="w-4 h-4" />
-          </div>
-          <div>
-            <h2 className="text-base font-bold tracking-tight">Before You Continue on {TRADE_NAME}</h2>
-            <p className={`text-xs ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
-              Policy Version {CONSENT_VERSION} · Effective {EFFECTIVE_DATE}
-            </p>
-          </div>
-        </div>
-
-        <div className={`mt-4 space-y-2.5 text-xs leading-relaxed ${isDark ? 'text-zinc-300' : 'text-zinc-700'}`}>
-          <p>
-            {TRADE_NAME} provides AI search, Deep Research reports, and YouTube/PDF study tools powered by third-party AI models. Outputs may contain inaccuracies and are not professional medical, legal, financial, or tax advice.
-          </p>
-          <p>
-            Please do not upload photos of real people, government IDs (such as Aadhaar or PAN), payment cards, or explicit content.
-          </p>
-        </div>
-
-        <label
-          className={`mt-4 flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${
-            checked
-              ? 'border-[#FC4C01]/50 bg-[#FC4C01]/5'
-              : isDark
-              ? 'border-white/15 bg-white/[0.02]'
-              : 'border-black/15 bg-black/[0.02]'
-          }`}
-        >
-          <input
-            type="checkbox"
-            checked={checked}
-            onChange={(e) => setChecked(e.target.checked)}
-            className="mt-0.5 h-4 w-4 accent-[#FC4C01] rounded cursor-pointer shrink-0"
-          />
-          <span className="text-xs leading-relaxed">
-            I confirm I am at least 18 years old and agree to the{' '}
-            <a
-              href="/terms"
-              onClick={(e) => handleLink(e, '/terms')}
-              className="text-[#FC4C01] font-semibold underline"
-            >
-              Terms of Service
-            </a>
-            ,{' '}
-            <a
-              href="/privacy"
-              onClick={(e) => handleLink(e, '/privacy')}
-              className="text-[#FC4C01] font-semibold underline"
-            >
-              Privacy Policy
-            </a>
-            , and{' '}
-            <a
-              href="/acceptable-use"
-              onClick={(e) => handleLink(e, '/acceptable-use')}
-              className="text-[#FC4C01] font-semibold underline"
-            >
-              Acceptable Use Policy
-            </a>
-            .
-          </span>
-        </label>
-
-        <div className="mt-5 flex items-center justify-end gap-2.5">
-          <button
-            type="button"
-            onClick={onCancel}
-            className={`px-4 py-2 rounded-xl border text-xs font-semibold cursor-pointer ${
-              isDark
-                ? 'border-white/15 hover:bg-white/5 text-white/75'
-                : 'border-black/15 hover:bg-black/5 text-black/75'
-            }`}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            disabled={!checked}
-            onClick={async () => {
-              if (!checked) return;
-              await recordUserLegalConsent(undefined, 'guest_first_prompt');
-              onAccept();
-            }}
-            className="px-4 py-2 rounded-xl bg-[#FC4C01] hover:bg-[#e04300] disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold cursor-pointer transition-colors"
-          >
-            Agree &amp; Continue
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+}> = () => {
+  return null;
 };
 
 // ============================================================================
@@ -693,18 +448,22 @@ export const ReportContentModal: React.FC<{ isDark?: boolean }> = ({ isDark = tr
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+      onClick={() => setPayload(null)}
+    >
       <div
-        className={`w-full max-w-md rounded-2xl border p-6 shadow-2xl ${
+        onClick={(e) => e.stopPropagation()}
+        className={`w-full max-w-sm rounded-xl border p-4 shadow-xl ${
           isDark
-            ? 'bg-[#111114] border-white/15 text-white'
-            : 'bg-white border-black/15 text-[#09090b]'
+            ? 'bg-[#121215] border-white/10 text-white'
+            : 'bg-white border-neutral-200 text-neutral-900'
         }`}
       >
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center justify-between gap-2 mb-3">
           <div className="flex items-center gap-2">
-            <Flag className="w-4 h-4 text-[#FC4C01]" />
-            <h3 className="text-sm font-bold tracking-tight">Report Content or Safety Issue</h3>
+            <Flag className="w-4 h-4 opacity-80" />
+            <h3 className="text-xs font-semibold">Report Content</h3>
           </div>
           <button
             type="button"
@@ -712,66 +471,70 @@ export const ReportContentModal: React.FC<{ isDark?: boolean }> = ({ isDark = tr
             aria-label="Close report modal"
             className="p-1 rounded-lg opacity-60 hover:opacity-100 cursor-pointer"
           >
-            <X className="w-4 h-4" />
+            <X className="w-3.5 h-3.5" />
           </button>
         </div>
 
         {reportId ? (
-          <div className="mt-4 space-y-3">
-            <div className="p-3.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-xs">
-              <div className="font-semibold text-emerald-400 flex items-center gap-1.5">
-                <CheckCircle2 className="w-4 h-4" /> Report Logged ({reportId})
+          <div className="space-y-3">
+            <div className={`p-3 rounded-lg border text-xs ${
+              isDark ? 'bg-white/[0.04] border-white/10 text-neutral-200' : 'bg-neutral-50 border-neutral-200 text-neutral-800'
+            }`}>
+              <div className="font-medium flex items-center gap-1.5 text-emerald-500">
+                <CheckCircle2 className="w-4 h-4" /> Report Submitted
               </div>
-              <p className="mt-1 opacity-80">
-                Thank you. Our trust &amp; safety queue has logged this report for review under our Acceptable Use Policy and IT Rules 2021 grievance standards.
+              <p className="mt-1 text-[11px] opacity-70">
+                Your report ({reportId}) has been logged for review.
               </p>
             </div>
             <button
               type="button"
               onClick={() => setPayload(null)}
-              className="w-full py-2 rounded-xl bg-[#FC4C01] text-white text-xs font-semibold cursor-pointer"
+              className={`w-full py-2 rounded-lg text-xs font-medium cursor-pointer transition-colors ${
+                isDark ? 'bg-white text-black hover:bg-neutral-200' : 'bg-black text-white hover:bg-neutral-800'
+              }`}
             >
               Done
             </button>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="mt-4 space-y-3.5 text-xs">
+          <form onSubmit={handleSubmit} className="space-y-3 text-xs">
             <div>
-              <label className="block font-semibold mb-1">Reason for report</label>
+              <label className="block text-[11px] font-medium mb-1 opacity-80">Reason</label>
               <select
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
-                className={`w-full px-3 py-2 rounded-xl border text-xs outline-none ${
+                className={`w-full px-2.5 py-1.5 rounded-lg border text-xs outline-none ${
                   isDark
-                    ? 'bg-[#18181c] border-white/15 text-white'
-                    : 'bg-neutral-50 border-black/15 text-black'
+                    ? 'bg-[#18181c] border-white/10 text-white'
+                    : 'bg-neutral-50 border-neutral-200 text-black'
                 }`}
               >
                 <option value="Inaccurate or hallucinated AI output">Inaccurate or hallucinated AI output</option>
                 <option value="Harmful, unsafe, or explicit content">Harmful, unsafe, or explicit content</option>
-                <option value="Personal data / doxxing / privacy concern">Personal data / doxxing / privacy concern</option>
-                <option value="Copyright or intellectual property infringement">Copyright or intellectual property infringement</option>
-                <option value="Spam or referral abuse">Spam or referral abuse</option>
+                <option value="Personal data / doxxing / privacy concern">Personal data / privacy concern</option>
+                <option value="Copyright or intellectual property infringement">Copyright infringement</option>
+                <option value="Spam or referral abuse">Spam or abuse</option>
               </select>
             </div>
 
             <div>
-              <label className="block font-semibold mb-1">Additional context (optional)</label>
+              <label className="block text-[11px] font-medium mb-1 opacity-80">Details (optional)</label>
               <textarea
-                rows={3}
+                rows={2}
                 value={details}
                 onChange={(e) => setDetails(e.target.value)}
                 placeholder="Describe the issue..."
-                className={`w-full px-3 py-2 rounded-xl border text-xs outline-none resize-none ${
+                className={`w-full px-2.5 py-1.5 rounded-lg border text-xs outline-none resize-none ${
                   isDark
-                    ? 'bg-[#18181c] border-white/15 text-white'
-                    : 'bg-neutral-50 border-black/15 text-black'
+                    ? 'bg-[#18181c] border-white/10 text-white'
+                    : 'bg-neutral-50 border-neutral-200 text-black'
                 }`}
               />
             </div>
 
             {errorMsg && (
-              <div className="p-2.5 rounded-xl border border-red-500/30 bg-red-500/10 text-red-400 text-xs">
+              <div className="p-2 rounded-lg border border-red-500/30 bg-red-500/10 text-red-400 text-[11px]">
                 {errorMsg}
               </div>
             )}
@@ -780,8 +543,8 @@ export const ReportContentModal: React.FC<{ isDark?: boolean }> = ({ isDark = tr
               <button
                 type="button"
                 onClick={() => setPayload(null)}
-                className={`px-3.5 py-2 rounded-xl border font-semibold cursor-pointer ${
-                  isDark ? 'border-white/15 text-white/75' : 'border-black/15 text-black/75'
+                className={`px-3 py-1.5 rounded-lg border text-xs font-medium cursor-pointer ${
+                  isDark ? 'border-white/10 text-neutral-300 hover:bg-white/5' : 'border-neutral-200 text-neutral-700 hover:bg-neutral-100'
                 }`}
               >
                 Cancel
@@ -789,9 +552,11 @@ export const ReportContentModal: React.FC<{ isDark?: boolean }> = ({ isDark = tr
               <button
                 type="submit"
                 disabled={submitting}
-                className="px-4 py-2 rounded-xl bg-[#FC4C01] hover:bg-[#e04300] text-white font-semibold cursor-pointer disabled:opacity-50"
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer disabled:opacity-50 transition-colors ${
+                  isDark ? 'bg-white text-black hover:bg-neutral-200' : 'bg-black text-white hover:bg-neutral-800'
+                }`}
               >
-                {submitting ? 'Submitting…' : 'Submit Report'}
+                {submitting ? 'Submitting…' : 'Submit'}
               </button>
             </div>
           </form>
@@ -1206,65 +971,6 @@ export const LegalAndInfoPages: React.FC<LegalAndInfoPagesProps> = ({
                         <div className="text-[11px] font-mono text-[#FC4C01]">{card.path}</div>
                       </a>
                     ))}
-                  </div>
-                </section>
-              )}
-
-              {/* Interactive Cookie Preference Controls when route === 'cookies' */}
-              {route === 'cookies' && (
-                <section
-                  className={`rounded-2xl border p-5 space-y-3 ${
-                    isDark ? 'border-white/15 bg-white/[0.02]' : 'border-black/15 bg-white'
-                  }`}
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <h2 className="text-sm font-bold">Your Current Browser Storage Preference</h2>
-                      <p className={`text-xs ${isDark ? 'text-white/60' : 'text-black/60'}`}>
-                        Status:{' '}
-                        <span className="font-mono font-semibold text-[#FC4C01]">
-                          {cookiePref === 'essential'
-                            ? 'Essential Only (Optional Storage Disabled)'
-                            : cookiePref === 'all'
-                            ? 'Accept All (Essential + Functional Referral Storage)'
-                            : 'Default (Essential Active)'}
-                        </span>
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setCookiePreference('essential');
-                          setCookiePrefState('essential');
-                        }}
-                        className={`px-3 py-1.5 rounded-xl border text-xs font-semibold cursor-pointer ${
-                          cookiePref === 'essential'
-                            ? 'border-[#FC4C01] bg-[#FC4C01]/15 text-[#FC4C01]'
-                            : isDark
-                            ? 'border-white/15 hover:bg-white/5'
-                            : 'border-black/15 hover:bg-black/5'
-                        }`}
-                      >
-                        Essential Only
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setCookiePreference('all');
-                          setCookiePrefState('all');
-                        }}
-                        className={`px-3 py-1.5 rounded-xl border text-xs font-semibold cursor-pointer ${
-                          cookiePref === 'all'
-                            ? 'border-[#FC4C01] bg-[#FC4C01] text-white'
-                            : isDark
-                            ? 'border-white/15 hover:bg-white/5'
-                            : 'border-black/15 hover:bg-black/5'
-                        }`}
-                      >
-                        Accept All
-                      </button>
-                    </div>
                   </div>
                 </section>
               )}

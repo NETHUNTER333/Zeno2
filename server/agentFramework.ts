@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { GoogleGenAI, Type } from '@google/genai';
 import { getEffectiveServerUserPlan } from './billingEngine';
+import { verifyChatQuotaBeforeExecution, recordServerQuotaConsumption } from './rateLimiter';
 
 export type VaultThreadType = 'youtube' | 'web_link' | 'pdf' | 'image' | 'text';
 
@@ -2997,12 +2998,146 @@ Return ONLY valid JSON:
     }
   });
 
-  // POST /api/study/snap-solve — Photo of one question → step-by-step solution, concept behind it, 1 similar practice question, "Check with your textbook" badge when unsure
-  app.post('/api/study/snap-solve', async (req: Request, res: Response) => {
+  // Helper to parse multipart/form-data requests without external dependencies
+  async function parseMultipartSnapSolve(req: Request, maxBytes = 5 * 1024 * 1024): Promise<{
+    fields: Record<string, string>;
+    imageDataUrl?: string;
+    tooLarge?: boolean;
+  }> {
+    const contentType = String(req.headers['content-type'] || '');
+    const boundaryMatch = contentType.match(/boundary=(?:"([^"]+)"|([^;]+))/i);
+    if (!boundaryMatch) return { fields: {} };
+    const boundary = `--${(boundaryMatch[1] || boundaryMatch[2]).trim()}`;
+
+    const chunks: Buffer[] = [];
+    let totalBytes = 0;
+    let tooLarge = false;
+
+    await new Promise<void>((resolve, reject) => {
+      req.on('data', (chunk: Buffer) => {
+        totalBytes += chunk.length;
+        if (totalBytes > maxBytes + 64 * 1024) {
+          tooLarge = true;
+        } else {
+          chunks.push(chunk);
+        }
+      });
+      req.on('end', () => resolve());
+      req.on('error', (err) => reject(err));
+    });
+
+    if (tooLarge) return { fields: {}, tooLarge: true };
+    const rawBuf = Buffer.concat(chunks);
+    const rawStr = rawBuf.toString('latin1');
+    const parts = rawStr.split(boundary);
+    const fields: Record<string, string> = {};
+    let imageDataUrl: string | undefined;
+
+    for (const part of parts) {
+      if (!part || part === '--\r\n' || part === '--') continue;
+      const headerEndIdx = part.indexOf('\r\n\r\n');
+      if (headerEndIdx === -1) continue;
+      const headerStr = part.slice(0, headerEndIdx);
+      let bodyLatin1 = part.slice(headerEndIdx + 4);
+      if (bodyLatin1.endsWith('\r\n')) {
+        bodyLatin1 = bodyLatin1.slice(0, -2);
+      }
+      const nameMatch = headerStr.match(/name="([^"]+)"/i);
+      const filenameMatch = headerStr.match(/filename="([^"]*)"/i);
+      const ctMatch = headerStr.match(/Content-Type:\s*([^\r\n;]+)/i);
+      const fieldName = nameMatch ? nameMatch[1] : '';
+
+      if (filenameMatch || (ctMatch && ctMatch[1].toLowerCase().startsWith('image/'))) {
+        const fileBuf = Buffer.from(bodyLatin1, 'latin1');
+        if (fileBuf.length > maxBytes) {
+          return { fields, tooLarge: true };
+        }
+        if (fileBuf.length > 0) {
+          const mime = ctMatch ? ctMatch[1].trim() : 'image/jpeg';
+          imageDataUrl = `data:${mime};base64,${fileBuf.toString('base64')}`;
+        }
+      } else if (fieldName) {
+        fields[fieldName] = Buffer.from(bodyLatin1, 'latin1').toString('utf8').trim();
+      }
+    }
+    return { fields, imageDataUrl };
+  }
+
+  // POST /api/study/snap-solve — Photo or text of one question → step-by-step solution + final answer
+  const handleSnapSolve = async (req: Request, res: Response) => {
     try {
+      const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB limit
+      let bodyObj: Record<string, any> = req.body && typeof req.body === 'object' ? { ...req.body } : {};
+      let multipartImage: string | undefined;
+
+      const contentType = String(req.headers['content-type'] || '').toLowerCase();
+      if (contentType.includes('multipart/form-data')) {
+        const parsedMp = await parseMultipartSnapSolve(req, MAX_IMAGE_BYTES);
+        if (parsedMp.tooLarge) {
+          return res.status(413).json({
+            ok: false,
+            error: 'Image exceeds the 5 MB size limit. Please upload an image under 5 MB.',
+          });
+        }
+        bodyObj = { ...bodyObj, ...parsedMp.fields };
+        if (parsedMp.imageDataUrl) {
+          multipartImage = parsedMp.imageDataUrl;
+        }
+      }
+
+      let rawImage = String(
+        multipartImage || bodyObj.imageDataUrl || bodyObj.image || ''
+      ).trim();
+      let questionText = String(
+        bodyObj.text || bodyObj.questionText || bodyObj.question || ''
+      )
+        .trim()
+        .slice(0, 2000);
+      const language = String(bodyObj.language || 'English');
+
+      // 1. Validation: 400 Empty Input (before quota deduction)
+      if (!rawImage && !questionText) {
+        return res.status(400).json({
+          ok: false,
+          error: 'Please enter question text or upload a photo of the problem.',
+        });
+      }
+
+      // Normalize raw base64 image into data URL if needed and check 5 MB size limit
+      let imageDataUrl = '';
+      if (rawImage) {
+        const base64Part = rawImage.includes(',')
+          ? rawImage.slice(rawImage.indexOf(',') + 1)
+          : rawImage;
+        const decodedByteSize = Math.floor((base64Part.length * 3) / 4);
+        if (decodedByteSize > MAX_IMAGE_BYTES) {
+          return res.status(413).json({
+            ok: false,
+            error: 'Image exceeds the 5 MB size limit. Please upload an image under 5 MB.',
+          });
+        }
+        imageDataUrl = rawImage.startsWith('data:image/')
+          ? rawImage
+          : `data:image/jpeg;base64,${base64Part}`;
+      }
+
+      // 2. Validation: 429 Guest & Tier Quota Check (counted like chat)
       const { rateKey, tier } = getStudyLoopRateKey(req);
       const usage = getOrInitStudyLoopUsage(rateKey);
       const limits = STUDY_LOOP_TIER_LIMITS[tier];
+
+      const chatQuotaCheck = verifyChatQuotaBeforeExecution(req, {
+        attachmentsCount: imageDataUrl ? 1 : 0,
+      });
+      if (!chatQuotaCheck.allowed && chatQuotaCheck.statusCode === 429) {
+        return res.status(429).json({
+          ok: false,
+          code: chatQuotaCheck.code || 'SNAP_SOLVE_LIMIT_REACHED',
+          error: chatQuotaCheck.message || 'Daily guest quota reached.',
+          usage,
+          limits,
+        });
+      }
 
       if (usage.snapSolvesUsed >= limits.dailySnapSolves) {
         return res.status(429).json({
@@ -3014,29 +3149,11 @@ Return ONLY valid JSON:
         });
       }
 
-      const imageDataUrl = String(req.body?.imageDataUrl || req.body?.image || '').trim();
-      let questionText = String(req.body?.questionText || req.body?.question || '').trim().slice(0, 2000);
-      const language = String(req.body?.language || 'English');
       let ocrConfidence: 'high' | 'medium' | 'low' = questionText.length > 15 ? 'high' : 'medium';
 
-      // 1. Validation: 400 Bad Input
-      if (!imageDataUrl && !questionText) {
-        return res.status(400).json({
-          ok: false,
-          error: 'Please enter question text or upload a photo of the problem.',
-        });
-      }
-
-      // 2. Validation: 413 Payload Too Large
-      if (imageDataUrl.length > 14 * 1024 * 1024) {
-        return res.status(413).json({
-          ok: false,
-          error: 'Image is too large (max 14MB). Please choose a smaller photo.',
-        });
-      }
-
-      // Extract question from image if imageDataUrl is provided
+      // Extract question from image using vision model if imageDataUrl is provided
       if (imageDataUrl.startsWith('data:image/')) {
+        let visionExtracted = '';
         const gemini = getGeminiClient();
         if (gemini) {
           try {
@@ -3065,19 +3182,42 @@ Return ONLY valid JSON:
             );
             const visionResp = await Promise.race([visionPromise, timeoutPromise]);
             if (visionResp && visionResp.text) {
-              const extracted = visionResp.text.trim();
-              if (extracted.includes('[UNCLEAR]')) {
-                ocrConfidence = 'low';
-              } else {
-                ocrConfidence = 'high';
-              }
-              questionText = extracted.replace('[UNCLEAR]', '').trim() || questionText;
-            } else {
-              ocrConfidence = 'low';
+              visionExtracted = visionResp.text.trim();
             }
-          } catch {
-            ocrConfidence = 'low';
-          }
+          } catch {}
+        }
+
+        // Vision model fallback via main server multimodal bridge (glm-5v-turbo / auto)
+        if (!visionExtracted && agentLlmBridge) {
+          try {
+            const visionBridgeRes = await agentLlmBridge(
+              [
+                {
+                  role: 'user',
+                  content: [
+                    {
+                      type: 'text',
+                      text: 'Extract the exact academic question or math/science problem shown in this image (including all numbers, equations, and units). Output the problem statement clearly.',
+                    },
+                    {
+                      type: 'image_url',
+                      image_url: { url: imageDataUrl },
+                    },
+                  ],
+                },
+              ],
+              'zro/glm-5v-turbo'
+            );
+            if (visionBridgeRes && visionBridgeRes.text) {
+              visionExtracted = visionBridgeRes.text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+            }
+          } catch {}
+        }
+
+        if (visionExtracted) {
+          ocrConfidence = visionExtracted.includes('[UNCLEAR]') ? 'low' : 'high';
+          const cleanVision = visionExtracted.replace('[UNCLEAR]', '').trim();
+          questionText = questionText ? `${questionText}\n${cleanVision}` : cleanVision;
         } else {
           ocrConfidence = questionText ? 'medium' : 'low';
         }
@@ -3085,7 +3225,7 @@ Return ONLY valid JSON:
 
       if (!questionText) {
         questionText =
-          'Solve the uploaded problem step-by-step, state the governing formula/concept, and provide a similar practice problem.';
+          'Solve the uploaded problem step-by-step, state the governing formula/concept, and provide the final answer.';
         ocrConfidence = 'low';
       }
 
@@ -3099,16 +3239,16 @@ Return ONLY valid JSON:
           : 'Explain clearly in English.';
 
       const solvePrompt = `You are Kinich's Snap & Solve master STEM tutor for Indian exams (JEE Main/Advanced, NEET, CBSE Class 10-12, EAMCET).
-A student asked/submitted this question:
+A student submitted this question:
 "${questionText}"
 
 ${langInstruction}
 Requirements:
-1. Provide a rigorous, step-by-step mathematical/conceptual solution in "steps" (list each formula statement, derivation, and numerical calculation clearly).
-2. State the exact concise final answer in "finalAnswer" (e.g. "50%" or "v = 15 m/s").
+1. Provide a rigorous, step-by-step mathematical/conceptual solution in "steps" (list each formula statement, substitution, and numerical calculation clearly).
+2. State the exact concise final answer in "answer" and "finalAnswer" (e.g. "50%" or "v = 15 m/s").
 3. Explain the underlying concept in "conceptBehindIt" with title, subject, chapter, and a 2-3 sentence explanation.
 4. Provide 1 similar multiple-choice practice question in "similarPracticeQuestion" with 4 options, 0-based correctIndex, and a clear explanation.
-5. If certain of the result, set "confidence": "high" and "checkWithTextbook": false.
+5. Set "confidence": "high" and "checkWithTextbook": false.
 
 Return ONLY valid JSON matching this schema:
 {
@@ -3118,6 +3258,7 @@ Return ONLY valid JSON matching this schema:
     "Step 2: Substitute the known values with correct units",
     "Step 3: Simplify and compute the final numerical result"
   ],
+  "answer": "50%",
   "finalAnswer": "50%",
   "conceptBehindIt": {
     "title": "Carnot Engine & Thermal Efficiency",
@@ -3135,109 +3276,86 @@ Return ONLY valid JSON matching this schema:
   "checkWithTextbook": false
 }`;
 
-      const llmRes = await callAgentLlm({
-        prompt: solvePrompt,
-        responseMimeType: 'application/json',
-        timeoutMs: 16000,
-      });
+      const parseSolveResponse = (rawText: string) => {
+        const match = rawText.match(/\{[\s\S]*\}/);
+        if (!match) return null;
+        const parsed = JSON.parse(match[0]);
+        if (!Array.isArray(parsed.steps) || parsed.steps.length === 0) return null;
+        const finalAns = String(parsed.finalAnswer || parsed.answer || '').trim();
+        if (!finalAns) return null;
+        const conf: 'high' | 'medium' | 'low' =
+          ocrConfidence === 'low'
+            ? 'low'
+            : parsed.confidence === 'low' || parsed.confidence === 'medium'
+            ? parsed.confidence
+            : 'high';
+        return {
+          questionExtracted: String(parsed.questionExtracted || questionText).slice(0, 600),
+          steps: parsed.steps.slice(0, 7).map((s: any) => String(s).slice(0, 450)),
+          answer: finalAns.slice(0, 300),
+          finalAnswer: finalAns.slice(0, 300),
+          conceptBehindIt: {
+            title: String(parsed.conceptBehindIt?.title || 'Core Governing Principle').slice(0, 120),
+            subject: String(parsed.conceptBehindIt?.subject || 'Physics').slice(0, 80),
+            chapter: String(parsed.conceptBehindIt?.chapter || 'Problem Solving').slice(0, 120),
+            explanation: String(
+              parsed.conceptBehindIt?.explanation ||
+                'This problem tests the direct application of foundational physical and mathematical principles.'
+            ).slice(0, 500),
+          },
+          similarPracticeQuestion: {
+            question: String(
+              parsed.similarPracticeQuestion?.question ||
+                `Practice variation: Apply ${parsed.conceptBehindIt?.title || 'this concept'} with modified boundary values.`
+            ).slice(0, 400),
+            options:
+              Array.isArray(parsed.similarPracticeQuestion?.options) &&
+              parsed.similarPracticeQuestion.options.length === 4
+                ? parsed.similarPracticeQuestion.options.map((o: any) => String(o).slice(0, 180))
+                : ['25%', '50%', '75%', '80%'],
+            correctIndex:
+              typeof parsed.similarPracticeQuestion?.correctIndex === 'number' &&
+              parsed.similarPracticeQuestion.correctIndex >= 0 &&
+              parsed.similarPracticeQuestion.correctIndex <= 3
+                ? parsed.similarPracticeQuestion.correctIndex
+                : 0,
+            explanation: String(
+              parsed.similarPracticeQuestion?.explanation ||
+                'Substitute the given parameters into the governing formula.'
+            ).slice(0, 400),
+          },
+          confidence: conf,
+          checkWithTextbook: Boolean(parsed.checkWithTextbook) || conf !== 'high',
+        };
+      };
 
       let resultPayload: any = null;
-      if (llmRes && llmRes.text) {
-        try {
-          const match = llmRes.text.match(/\{[\s\S]*\}/);
-          if (match) {
-            const parsed = JSON.parse(match[0]);
-            if (Array.isArray(parsed.steps) && parsed.steps.length > 0) {
-              const conf: 'high' | 'medium' | 'low' =
-                ocrConfidence === 'low'
-                  ? 'low'
-                  : parsed.confidence === 'low' || parsed.confidence === 'medium'
-                  ? parsed.confidence
-                  : 'high';
-              resultPayload = {
-                questionExtracted: String(parsed.questionExtracted || questionText).slice(0, 600),
-                steps: parsed.steps.slice(0, 7).map((s: any) => String(s).slice(0, 450)),
-                finalAnswer: String(parsed.finalAnswer || 'See final step above.').slice(0, 300),
-                conceptBehindIt: {
-                  title: String(parsed.conceptBehindIt?.title || 'Core Governing Principle').slice(0, 120),
-                  subject: String(parsed.conceptBehindIt?.subject || 'General Studies').slice(0, 80),
-                  chapter: String(parsed.conceptBehindIt?.chapter || 'Problem Solving').slice(0, 120),
-                  explanation: String(
-                    parsed.conceptBehindIt?.explanation ||
-                      'This problem tests the direct application of foundational conservation and equilibrium rules.'
-                  ).slice(0, 500),
-                },
-                similarPracticeQuestion: {
-                  question: String(
-                    parsed.similarPracticeQuestion?.question ||
-                      `Practice variation: Apply ${parsed.conceptBehindIt?.title || 'this concept'} when the primary input parameter is doubled.`
-                  ).slice(0, 400),
-                  options:
-                    Array.isArray(parsed.similarPracticeQuestion?.options) &&
-                    parsed.similarPracticeQuestion.options.length === 4
-                      ? parsed.similarPracticeQuestion.options.map((o: any) => String(o).slice(0, 180))
-                      : [
-                          'It scales proportionally according to the governing relation',
-                          'It remains strictly zero',
-                          'It becomes undefined',
-                          'It decreases exponentially to negative infinity',
-                        ],
-                  correctIndex:
-                    typeof parsed.similarPracticeQuestion?.correctIndex === 'number' &&
-                    parsed.similarPracticeQuestion.correctIndex >= 0 &&
-                    parsed.similarPracticeQuestion.correctIndex <= 3
-                      ? parsed.similarPracticeQuestion.correctIndex
-                      : 0,
-                  explanation: String(
-                    parsed.similarPracticeQuestion?.explanation ||
-                      'Follow the same 3-step substitution method used in the worked solution.'
-                  ).slice(0, 400),
-                },
-                confidence: conf,
-                checkWithTextbook: Boolean(parsed.checkWithTextbook) || conf !== 'high',
-              };
-            }
-          }
-        } catch {}
+      for (let attempt = 0; attempt < 2 && !resultPayload; attempt++) {
+        const llmRes = await callAgentLlm({
+          prompt: solvePrompt,
+          responseMimeType: 'application/json',
+          timeoutMs: 16000,
+        });
+        if (llmRes && llmRes.text) {
+          try {
+            resultPayload = parseSolveResponse(llmRes.text);
+          } catch {}
+        }
       }
 
       if (!resultPayload) {
-        const heuristic = classifyAndLinkVaultItemHeuristic(
-          { id: 'snap', type: 'note', title: questionText.slice(0, 80), content: questionText },
-          []
-        );
-        resultPayload = {
-          questionExtracted: questionText,
-          steps: [
-            `Step 1 (Identify Given & Target): Parse the key variables and constraints in the question under ${heuristic.subject} (${heuristic.chapter}).`,
-            `Step 2 (Governing Principle): Write the standard formula/relationship connecting the known parameters to the unknown quantity.`,
-            `Step 3 (Verify Units & Boundary Conditions): Substitute the values in standard SI units and verify the result against boundary conditions.`,
-          ],
-          finalAnswer: `Review the 3-step derivation above and verify numerical constants with your textbook.`,
-          conceptBehindIt: {
-            title: `${heuristic.chapter} — Core Mechanism`,
-            subject: heuristic.subject,
-            chapter: heuristic.chapter,
-            explanation: `This question is rooted in ${heuristic.chapter} (${heuristic.subject}), which links system inputs to measurable state outcomes.`,
-          },
-          similarPracticeQuestion: {
-            question: `Similar Practice (${heuristic.chapter}): Which step is essential before substituting numerical values into the governing equation?`,
-            options: [
-              'Convert all given quantities into consistent standard units and check sign conventions',
-              'Round all constants to a single digit before starting',
-              'Ignore boundary conditions',
-              'Assume all variables are equal to 1',
-            ],
-            correctIndex: 0,
-            explanation: 'Consistent units and sign conventions prevent the most common exam calculation errors.',
-          },
-          confidence: 'medium',
-          checkWithTextbook: true,
-        };
+        return res.status(500).json({
+          ok: false,
+          error: 'Snap & Solve could not generate a verified solution right now. Please try again.',
+        });
       }
 
       usage.snapSolvesUsed += 1;
       studyLoopUsageLedger.set(rateKey, usage);
+      recordServerQuotaConsumption(req, {
+        messages: 1,
+        files: imageDataUrl ? 1 : 0,
+      });
 
       return res.json({
         ok: true,
@@ -3251,7 +3369,10 @@ Return ONLY valid JSON matching this schema:
         error: err?.message || 'Snap & Solve encountered an error. Please try again.',
       });
     }
-  });
+  };
+
+  app.post('/api/study/snap-solve', handleSnapSolve);
+  app.post('/api/snap-solve', handleSnapSolve);
 
   // ==========================================================================
   // PHASE C: AUDIO RECAP ("Listen" button on any Summary, 2-5 min Spark/Fire, 30s preview Free)

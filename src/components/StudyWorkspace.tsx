@@ -1045,80 +1045,6 @@ ${fullTranscriptText}`;
     };
   }, []);
 
-  const buildClientTranscriptFallbackBundle = (
-    vidId: string,
-    title: string,
-    author: string,
-    segs: YouTubeTranscriptSegment[]
-  ): YouTubeStudyBundle => {
-    const safeSegs = segs.length > 0 ? segs : [{ start_s: 0, duration_s: 10, text: title }];
-    const lastSeg = safeSegs[safeSegs.length - 1];
-    const videoEndSec = Math.max(10, Math.ceil((lastSeg?.start_s || 0) + (lastSeg?.duration_s || 5)));
-    const numChapters = Math.min(5, Math.max(3, safeSegs.length));
-    const perCh = Math.max(1, Math.ceil(safeSegs.length / numChapters));
-
-    const chapters: Array<{
-      start_s: number;
-      end_s: number;
-      timestamp: number;
-      title: string;
-      summary: string;
-    }> = [];
-    for (let i = 0; i < numChapters; i++) {
-      const slice = safeSegs.slice(i * perCh, Math.min(safeSegs.length, (i + 1) * perCh));
-      if (slice.length === 0) continue;
-      const start_s = Math.floor(slice[0].start_s);
-      const nextStart =
-        i < numChapters - 1 && (i + 1) * perCh < safeSegs.length
-          ? Math.floor(safeSegs[(i + 1) * perCh].start_s)
-          : videoEndSec;
-      const combined = slice.map((s) => s.text.trim()).join(' ');
-      const words = combined
-        .replace(/[^a-zA-Z0-9\s]/g, ' ')
-        .split(/\s+/)
-        .filter((w) => w.length >= 4);
-      const headingWords = Array.from(new Set(words)).slice(0, 4);
-      const chTitle =
-        headingWords.length >= 2
-          ? headingWords.map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ')
-          : `Section ${i + 1} Core Concepts`;
-      chapters.push({
-        start_s,
-        end_s: Math.max(start_s + 5, nextStart),
-        timestamp: start_s,
-        title: chTitle,
-        summary: combined.slice(0, 260),
-      });
-    }
-
-    const flashcards: any[] = [];
-    const quiz: any[] = [];
-
-    const overview = chapters.map((c) => c.summary).slice(0, 2).join(' ');
-    return {
-      videoId: vidId,
-      title,
-      author,
-      summary: {
-        overview,
-        keyPoints: chapters.map((c) => `${c.title}: ${c.summary}`),
-        chapters,
-      },
-      explanation: {
-        coreThesis: overview,
-        concepts: chapters.map((ch) => ({
-          term: ch.title,
-          definition: ch.summary,
-          mechanism: ch.summary,
-          timestamp: ch.start_s,
-          proofQuote: ch.summary,
-        })),
-      },
-      flashcards,
-      quiz,
-    };
-  };
-
   const applyStudyBundleToState = (bundle: YouTubeStudyBundle) => {
     setStudyBundle(bundle);
     if (Array.isArray(bundle?.summary?.chapters)) {
@@ -1198,16 +1124,16 @@ ${fullTranscriptText}`;
           if (aiData.partial || aiData.status === 'enriching') {
             startStudyJobPolling(activeVideoId, aiData.jobId);
           }
+          setPasteTranscriptVal('');
+        } else {
+          setStudyError('Could not synthesize quiz and flashcards from the transcript. Please tap Retry.');
         }
       } else {
-        setStudyError("Couldn't generate study materials right now. Please retry.");
-        setStudyBundle(null);
+        const errData = await aiRes.json().catch(() => ({}));
+        setStudyError(errData?.error || 'Could not synthesize quiz and flashcards right now. Please tap Retry.');
       }
-      setPasteTranscriptVal('');
     } catch {
-      setStudyError("Couldn't generate study materials right now. Please retry.");
-      setStudyBundle(null);
-      setPasteTranscriptVal('');
+      setStudyError('Study synthesis timed out. Please tap Retry Generation.');
     }
     setLoadingContent(false);
   };
@@ -1354,8 +1280,7 @@ ${fullTranscriptText}`;
       }
 
       if (!finalStudy) {
-        finalStudy = buildClientTranscriptFallbackBundle(normVidId, title, author, consolidated);
-        shouldPoll = true;
+        throw new Error('Could not synthesize exam-style quiz and flashcards right now. Please tap Retry Generation.');
       }
 
       applyStudyBundleToState(finalStudy);
@@ -2489,7 +2414,16 @@ ${fullTranscriptText}`;
               </button>
               {showHomeStudyLoop && (
                 <div className="pt-2">
-                  <StudyLoopPanel embedded={true} isDark={isDark} />
+                  <StudyLoopPanel
+                    embedded={true}
+                    isDark={isDark}
+                    initialTab={
+                      typeof window !== 'undefined' &&
+                      window.location.pathname.toLowerCase().startsWith('/snap-solve')
+                        ? 'snap_solve'
+                        : 'revision'
+                    }
+                  />
                 </div>
               )}
             </div>
@@ -6073,7 +6007,16 @@ ${fullTranscriptText}`;
                 {/* Dedicated Full-Page Tab for Daily Recall & Study Loop */}
                 {activeTabObj?.type === 'study_loop' && (
                   <div className="max-w-3xl mx-auto px-4 sm:px-6 py-5 pb-24">
-                    <StudyLoopPanel embedded={true} isDark={isDark} />
+                    <StudyLoopPanel
+                      embedded={true}
+                      isDark={isDark}
+                      initialTab={
+                        typeof window !== 'undefined' &&
+                        window.location.pathname.toLowerCase().startsWith('/snap-solve')
+                          ? 'snap_solve'
+                          : 'revision'
+                      }
+                    />
                   </div>
                 )}
               </>

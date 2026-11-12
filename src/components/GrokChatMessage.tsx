@@ -525,7 +525,6 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
   };
 
   const [isGuestUser, setIsGuestUser] = useState(() => UserAccountStore.isGuestUser());
-  const [sageOrganizing, setSageOrganizing] = useState(false);
   const [liveAgentCards, setLiveAgentCards] = useState<AgentReplyCard[]>(() => {
     const list: AgentReplyCard[] = [];
     if (message.agentReply) list.push(message.agentReply);
@@ -550,7 +549,6 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
       if (!detail?.item) return;
       if (detail.item.sourceMessageId === message.id) {
         clearTimeout(sageTimeout);
-        setSageOrganizing(false);
         if (detail.agentReply) {
           setLiveAgentCards((prev) => {
             const filtered = prev.filter((c) => c.agentId !== 'sage');
@@ -588,10 +586,6 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
       .replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '')
       .trim();
     if (!cleanBody) return;
-    setSageOrganizing(true);
-    setTimeout(() => {
-      setSageOrganizing(false);
-    }, 20000);
     KnowledgeVaultStore.saveItem({
       title: threadTitle || cleanBody.replace(/[#*`~>\n]+/g, ' ').trim().slice(0, 72) || 'Kinich Study Answer',
       summary: cleanBody.replace(/[#*`~>\n]+/g, ' ').trim().slice(0, 220),
@@ -2644,7 +2638,9 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                   onClick={handleTogglePin}
                   className={`p-1 rounded transition-colors cursor-pointer ${
                     isPinned
-                      ? 'text-[#FC4C01]'
+                      ? isDark
+                        ? 'text-white'
+                        : 'text-neutral-900'
                       : isDark
                       ? 'hover:text-white'
                       : 'hover:text-[#0d0d0d]'
@@ -2670,13 +2666,15 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                   }}
                   className={`p-1 rounded transition-colors cursor-pointer ${
                     showSegmentPicker || savedMessageHighlights.length > 0
-                      ? 'text-amber-400'
+                      ? isDark
+                        ? 'text-white'
+                        : 'text-neutral-900'
                       : isDark
                       ? 'hover:text-white'
                       : 'hover:text-[#0d0d0d]'
                   }`}
-                  title="Highlight & save specific segments to Knowledge Vault"
-                  aria-label="Highlight & save specific segments to Knowledge Vault"
+                  title="Highlight segments"
+                  aria-label="Highlight segments"
                 >
                   <Highlighter className="w-3.5 h-3.5" />
                 </button>
@@ -2685,36 +2683,23 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                   type="button"
                   onClick={handleSaveToKnowledgeVault}
                   data-testid="chat-save-to-vault-btn"
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-medium transition-all cursor-pointer ${
+                  className={`p-1 rounded transition-colors cursor-pointer ${
                     savedToVault
-                      ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
-                      : isGuestUser
-                      ? isDark
-                        ? 'border-white/10 bg-white/[0.03] text-neutral-400 hover:text-white hover:border-[#FC4C01]/50'
-                        : 'border-black/10 bg-black/[0.03] text-neutral-600 hover:text-black hover:border-[#FC4C01]/50'
+                      ? 'text-emerald-500'
                       : isDark
-                      ? 'border-white/10 bg-white/[0.04] text-neutral-300 hover:text-white hover:border-[#FC4C01]/60 hover:bg-[#FC4C01]/10'
-                      : 'border-black/10 bg-black/[0.03] text-neutral-700 hover:text-black hover:border-[#FC4C01]/60 hover:bg-[#FC4C01]/10'
+                      ? 'hover:text-white'
+                      : 'hover:text-[#0d0d0d]'
                   }`}
                   title={
                     isGuestUser
-                      ? 'Sign in to keep this in your Vault'
+                      ? 'Sign in to save'
                       : savedToVault
-                      ? 'Saved to Vault — Sage organized'
-                      : 'Save answer to your Vault'
+                      ? 'Saved to Vault'
+                      : 'Save to Vault'
                   }
-                  aria-label={isGuestUser ? 'Sign in to save' : 'Save to Vault'}
+                  aria-label={savedToVault ? 'Saved to Vault' : 'Save to Vault'}
                 >
-                  <Bookmark className={`w-3.5 h-3.5 ${savedToVault ? 'fill-current' : 'text-[#FC4C01]'}`} />
-                  <span>
-                    {isGuestUser
-                      ? 'Save to Vault'
-                      : savedToVault
-                      ? sageOrganizing
-                        ? 'Sage organizing…'
-                        : 'Saved ✓'
-                      : 'Save to Vault'}
-                  </span>
+                  <Bookmark className={`w-3.5 h-3.5 ${savedToVault ? 'fill-current' : ''}`} />
                 </button>
 
                 {onOpenShareStudio && (
@@ -2759,7 +2744,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
 
           {/* Personal Study Agent Reply Cards in Thread (Sage, Doubt Buddy, Planner, Recall) */}
           {(liveAgentCards.length > 0 || (Array.isArray(message.agentReplies) && message.agentReplies.length > 0) || message.agentReply) && (
-            <div className="mt-3 space-y-2.5">
+            <div className="mt-2.5 space-y-2">
               {(liveAgentCards.length > 0
                 ? liveAgentCards
                 : message.agentReplies || (message.agentReply ? [message.agentReply] : [])
@@ -2767,26 +2752,28 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                 <div
                   key={card.id}
                   data-testid={`agent-reply-card-${card.agentId}`}
-                  className={`rounded-xl border p-3.5 transition-all ${
+                  className={`rounded-lg border p-3 transition-colors ${
                     isDark
-                      ? 'bg-[#121215] border-[#FC4C01]/35 text-neutral-100 shadow-[0_6px_24px_rgba(252,76,1,0.08)]'
-                      : 'bg-[#fffaf7] border-[#FC4C01]/35 text-neutral-900 shadow-sm'
+                      ? 'bg-white/[0.02] border-white/10 text-neutral-200'
+                      : 'bg-black/[0.02] border-black/10 text-neutral-800'
                   }`}
                 >
-                  <div className="flex items-center justify-between gap-2 mb-1.5">
-                    <div className="flex items-center gap-2">
-                      <span className="inline-flex items-center justify-center w-6 h-6 rounded-lg bg-[#FC4C01]/15 text-[#FC4C01] border border-[#FC4C01]/30">
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className={`inline-flex items-center justify-center w-5 h-5 rounded ${
+                        isDark ? 'bg-white/10 text-white' : 'bg-black/10 text-black'
+                      }`}>
                         {card.agentId === 'sage' ? (
-                          <Sparkles className="w-3.5 h-3.5" />
+                          <Sparkles className="w-3 h-3" />
                         ) : (
-                          <Bot className="w-3.5 h-3.5" />
+                          <Bot className="w-3 h-3" />
                         )}
                       </span>
-                      <span className="text-xs font-bold tracking-tight text-[#FC4C01]">
+                      <span className="text-xs font-medium">
                         {card.agentName}
                       </span>
                       <span
-                        className={`text-[10px] px-2 py-0.5 rounded-md font-medium border ${
+                        className={`text-[10px] px-1.5 py-0.5 rounded font-normal border ${
                           isDark
                             ? 'bg-white/[0.04] border-white/10 text-neutral-400'
                             : 'bg-black/[0.04] border-black/10 text-neutral-600'
@@ -2796,7 +2783,9 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                       </span>
                     </div>
                     {card.subject && (
-                      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[#FC4C01]">
+                      <span className={`inline-flex items-center gap-1 text-[11px] font-normal ${
+                        isDark ? 'text-neutral-400' : 'text-neutral-500'
+                      }`}>
                         <FolderOpen className="w-3 h-3" />
                         {card.subject}
                         {card.chapter ? ` → ${card.chapter}` : ''}
@@ -2804,19 +2793,21 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                     )}
                   </div>
 
-                  <p className={`text-xs leading-relaxed ${isDark ? 'text-neutral-200' : 'text-neutral-800'}`}>
+                  <p className={`text-xs leading-relaxed ${isDark ? 'text-neutral-300' : 'text-neutral-700'}`}>
                     {card.content}
                   </p>
 
                   {Array.isArray(card.linkedItems) && card.linkedItems.length > 0 && (
-                    <div className="mt-2 pt-2 border-t border-current/10 flex flex-wrap items-center gap-1.5">
-                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-[#FC4C01]">
+                    <div className="mt-2 pt-1.5 border-t border-current/10 flex flex-wrap items-center gap-1.5">
+                      <span className={`inline-flex items-center gap-1 text-[10px] font-medium ${
+                        isDark ? 'text-neutral-400' : 'text-neutral-500'
+                      }`}>
                         <Link2 className="w-3 h-3" /> Linked in Vault:
                       </span>
                       {card.linkedItems.map((li) => (
                         <span
                           key={li.id}
-                          className={`text-[10px] px-2 py-0.5 rounded-md border ${
+                          className={`text-[10px] px-1.5 py-0.5 rounded border ${
                             isDark
                               ? 'bg-white/[0.04] border-white/10 text-neutral-300'
                               : 'bg-black/[0.04] border-black/10 text-neutral-700'
@@ -2829,14 +2820,16 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                   )}
 
                   {Array.isArray(card.citations) && card.citations.length > 0 && (
-                    <div className="mt-2 pt-2 border-t border-current/10 flex flex-wrap items-center gap-1.5">
-                      <span className="text-[10px] font-semibold text-[#FC4C01]">
+                    <div className="mt-2 pt-1.5 border-t border-current/10 flex flex-wrap items-center gap-1.5">
+                      <span className={`text-[10px] font-medium ${
+                        isDark ? 'text-neutral-400' : 'text-neutral-500'
+                      }`}>
                         Vault Citations:
                       </span>
                       {card.citations.map((cit, cIdx) => (
                         <span
                           key={`${cit.vaultItemId}_${cIdx}`}
-                          className={`text-[10px] px-2 py-0.5 rounded-md font-mono border ${
+                          className={`text-[10px] px-1.5 py-0.5 rounded font-mono border ${
                             isDark
                               ? 'bg-white/[0.04] border-white/10 text-neutral-300'
                               : 'bg-black/[0.04] border-black/10 text-neutral-700'

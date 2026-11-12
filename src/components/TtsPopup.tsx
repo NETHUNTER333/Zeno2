@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, Pause, X, Loader2, Volume2, ChevronDown, Check, Gauge } from 'lucide-react';
+import { Play, Pause, X, Loader2, Volume2, ChevronDown, Check } from 'lucide-react';
 import {
   speakTextWithSmallestAi,
   stopSmallestSpeech,
@@ -97,7 +97,6 @@ export const TtsPopup: React.FC<TtsPopupProps> = ({ text, onClose, isDark = true
     setTtsSpeed(newSpeed);
     setSavedTtsSpeed(newSpeed);
     setActiveTtsPlaybackSpeed(newSpeed);
-    // If browser speechSynthesis fallback is currently speaking, restart at the new speed
     if (
       isPlaying &&
       typeof window !== 'undefined' &&
@@ -125,25 +124,17 @@ export const TtsPopup: React.FC<TtsPopupProps> = ({ text, onClose, isDark = true
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className={`w-full max-w-sm p-5 rounded-2xl border shadow-2xl animate-in fade-in zoom-in-95 duration-150 ${
+        className={`w-full max-w-sm p-4 rounded-xl border shadow-xl space-y-3 animate-in fade-in zoom-in-95 duration-150 ${
           isDark
-            ? 'bg-[#121215] border-white/[0.12] text-white'
-            : 'bg-white border-black/[0.1] text-[#0d0d0d]'
+            ? 'bg-[#121215] border-white/10 text-white'
+            : 'bg-white border-neutral-200 text-neutral-900'
         }`}
       >
         {/* Header */}
-        <div className="flex justify-between items-center mb-4">
-          <div className="flex items-center gap-2.5">
-            <div
-              className={`size-7 rounded-lg flex items-center justify-center border ${
-                isDark
-                  ? 'bg-white/[0.04] border-white/[0.08] text-white'
-                  : 'bg-black/[0.04] border-black/[0.08] text-black'
-              }`}
-            >
-              <Volume2 className="w-3.5 h-3.5" />
-            </div>
-            <span className="font-semibold text-sm tracking-tight">Read Aloud</span>
+        <div className="flex justify-between items-center">
+          <div className="flex items-center gap-2">
+            <Volume2 className="w-4 h-4 opacity-80" />
+            <span className="font-semibold text-xs">Read Aloud</span>
           </div>
           <button
             type="button"
@@ -151,23 +142,19 @@ export const TtsPopup: React.FC<TtsPopupProps> = ({ text, onClose, isDark = true
               stopSmallestSpeech();
               onClose();
             }}
-            className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-              isDark
-                ? 'hover:bg-white/[0.08] text-neutral-400 hover:text-white'
-                : 'hover:bg-black/[0.06] text-neutral-500 hover:text-black'
-            }`}
-            aria-label="Close Read Aloud"
+            className="p-1 rounded-lg opacity-60 hover:opacity-100 cursor-pointer"
+            aria-label="Close"
           >
-            <X className="w-4 h-4" />
+            <X className="w-3.5 h-3.5" />
           </button>
         </div>
 
-        {/* Voice Gender & Padded Custom Language Selector */}
-        <div className="grid grid-cols-2 gap-2.5 mb-3.5">
+        {/* Gender & Language Selector */}
+        <div className="grid grid-cols-2 gap-2">
           {/* Segmented Gender Control */}
           <div
-            className={`grid grid-cols-2 gap-1 p-1 rounded-xl border ${
-              isDark ? 'bg-[#18181c] border-white/[0.08]' : 'bg-[#f4f4f5] border-black/[0.08]'
+            className={`grid grid-cols-2 gap-1 p-0.5 rounded-lg border ${
+              isDark ? 'bg-black/30 border-white/10' : 'bg-neutral-100 border-neutral-200'
             }`}
           >
             {(['female', 'male'] as TtsVoiceGender[]).map((g) => {
@@ -183,50 +170,45 @@ export const TtsPopup: React.FC<TtsPopupProps> = ({ text, onClose, isDark = true
                       startSpeech(ttsLang, g, ttsSpeed);
                     }
                   }}
-                  className={`py-1.5 px-2.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+                  className={`py-1 rounded text-xs font-medium transition-colors cursor-pointer capitalize ${
                     active
                       ? isDark
-                        ? 'bg-white text-black shadow-xs'
-                        : 'bg-[#0d0d0d] text-white shadow-xs'
+                        ? 'bg-white text-black'
+                        : 'bg-black text-white'
                       : isDark
                       ? 'text-neutral-400 hover:text-white'
                       : 'text-neutral-600 hover:text-black'
                   }`}
                 >
-                  {g === 'female' ? 'Female' : 'Male'}
+                  {g}
                 </button>
               );
             })}
           </div>
 
-          {/* Custom Padded Language Dropdown (Replaces Native Browser <select>) */}
+          {/* Language Dropdown */}
           <div className="relative" ref={langMenuRef}>
             <button
               type="button"
               onClick={() => setIsLangMenuOpen((prev) => !prev)}
               aria-expanded={isLangMenuOpen}
-              aria-haspopup="listbox"
-              className={`w-full h-full flex items-center justify-between gap-2 px-3.5 py-2 rounded-xl border text-xs font-medium transition-colors cursor-pointer ${
+              className={`w-full h-full flex items-center justify-between gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-medium transition-colors cursor-pointer ${
                 isDark
-                  ? 'bg-[#18181c] hover:bg-[#1f1f24] border-white/[0.08] text-white'
-                  : 'bg-[#f4f4f5] hover:bg-[#eaeaea] border-black/[0.08] text-[#0d0d0d]'
+                  ? 'bg-white/[0.04] border-white/10 text-white hover:bg-white/[0.08]'
+                  : 'bg-neutral-100 border-neutral-200 text-neutral-900 hover:bg-neutral-200'
               }`}
             >
               <span className="truncate">{selectedLanguageObj.label}</span>
-              <ChevronDown
-                className={`w-3.5 h-3.5 shrink-0 transition-transform duration-150 ${
-                  isLangMenuOpen ? 'rotate-180' : ''
-                } ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}
-              />
+              <ChevronDown className="w-3 h-3 opacity-60 shrink-0" />
             </button>
 
             {isLangMenuOpen && (
               <div
                 role="listbox"
-                className={`absolute right-0 top-full mt-2 w-56 max-h-64 overflow-y-auto p-1.5 rounded-xl border shadow-2xl z-50 scrollbar-thin animate-in fade-in zoom-in-95 duration-100 ${
+                className={`absolute right-0 top-full mt-1.5 w-48 max-h-56 overflow-y-auto p-1 rounded-lg border shadow-xl z-50 ${
                   isDark
-                    ? 'bg-[#16161a] border-white/[0.12] text-white shadow-[0_16px_40px_rgba(0,0,0,0.85)]'
-                    : 'bg-white border-black/[0.1] text-[#0d0d0d] shadow-[0_16px_40px_rgba(0,0,0,0.14)]'
+                    ? 'bg-[#18181c] border-white/10 text-white'
+                    : 'bg-white border-neutral-200 text-neutral-900'
                 }`}
               >
                 <div className="space-y-0.5">
@@ -246,33 +228,18 @@ export const TtsPopup: React.FC<TtsPopupProps> = ({ text, onClose, isDark = true
                             startSpeech(lang.code, ttsGender, ttsSpeed);
                           }
                         }}
-                        className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-xs transition-colors cursor-pointer ${
+                        className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded text-xs transition-colors cursor-pointer ${
                           isSelected
                             ? isDark
-                              ? 'bg-white/[0.1] text-white font-semibold'
-                              : 'bg-black/[0.07] text-black font-semibold'
+                              ? 'bg-white/10 font-semibold'
+                              : 'bg-neutral-200 font-semibold'
                             : isDark
-                            ? 'text-neutral-300 hover:bg-white/[0.05] hover:text-white'
-                            : 'text-neutral-700 hover:bg-black/[0.04] hover:text-black'
+                            ? 'hover:bg-white/5 text-neutral-300'
+                            : 'hover:bg-neutral-100 text-neutral-700'
                         }`}
                       >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="truncate">{lang.label}</span>
-                          <span
-                            className={`text-[10px] font-mono truncate ${
-                              isDark ? 'text-neutral-500' : 'text-neutral-400'
-                            }`}
-                          >
-                            {lang.nativeLabel}
-                          </span>
-                        </div>
-                        {isSelected && (
-                          <Check
-                            className={`w-3.5 h-3.5 shrink-0 ${
-                              isDark ? 'text-white' : 'text-black'
-                            }`}
-                          />
-                        )}
+                        <span className="truncate">{lang.label}</span>
+                        {isSelected && <Check className="w-3 h-3" />}
                       </button>
                     );
                   })}
@@ -282,45 +249,12 @@ export const TtsPopup: React.FC<TtsPopupProps> = ({ text, onClose, isDark = true
           </div>
         </div>
 
-        {/* Playback Speed Control Slider (0.5x, 1x, 1.5x, 2x) */}
-        <div
-          className={`p-3 rounded-xl border mb-3.5 ${
-            isDark ? 'bg-[#18181c] border-white/[0.08]' : 'bg-[#f8f8f9] border-black/[0.08]'
-          }`}
-        >
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-1.5">
-              <Gauge
-                className={`w-3.5 h-3.5 ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}
-              />
-              <span
-                className={`text-xs font-medium ${
-                  isDark ? 'text-neutral-300' : 'text-neutral-700'
-                }`}
-              >
-                Playback Speed
-              </span>
-            </div>
-            <span className="text-xs font-mono font-semibold text-[#FC4C01]">{ttsSpeed}x</span>
-          </div>
-
-          <input
-            type="range"
-            min={0.5}
-            max={2}
-            step={0.5}
-            value={ttsSpeed}
-            aria-label="Playback speed"
-            onChange={(e) => {
-              const val = Number(e.target.value);
-              const snapped: TtsPlaybackSpeed =
-                val <= 0.6 ? 0.5 : val <= 1.2 ? 1 : val <= 1.7 ? 1.5 : 2;
-              handleSpeedChange(snapped);
-            }}
-            className="w-full h-1.5 rounded-lg appearance-none cursor-pointer accent-[#FC4C01] bg-neutral-700/40 mb-2.5"
-          />
-
-          <div className="grid grid-cols-4 gap-1.5">
+        {/* Speed Controls */}
+        <div className="flex items-center justify-between gap-1">
+          <span className={`text-[11px] font-medium ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
+            Speed
+          </span>
+          <div className="flex items-center gap-1">
             {TTS_PLAYBACK_SPEEDS.map((spd) => {
               const active = ttsSpeed === spd;
               return (
@@ -328,14 +262,14 @@ export const TtsPopup: React.FC<TtsPopupProps> = ({ text, onClose, isDark = true
                   key={spd}
                   type="button"
                   onClick={() => handleSpeedChange(spd)}
-                  className={`py-1 rounded-lg text-[11px] font-mono font-medium transition-colors cursor-pointer ${
+                  className={`px-2 py-0.5 rounded text-[11px] font-mono transition-colors cursor-pointer ${
                     active
                       ? isDark
-                        ? 'bg-white text-black shadow-xs'
-                        : 'bg-[#0d0d0d] text-white shadow-xs'
+                        ? 'bg-white text-black font-semibold'
+                        : 'bg-black text-white font-semibold'
                       : isDark
-                      ? 'bg-white/[0.04] text-neutral-400 hover:text-white hover:bg-white/[0.08]'
-                      : 'bg-black/[0.04] text-neutral-600 hover:text-black hover:bg-black/[0.08]'
+                      ? 'text-neutral-400 hover:text-white hover:bg-white/10'
+                      : 'text-neutral-600 hover:text-black hover:bg-neutral-200'
                   }`}
                 >
                   {spd}x
@@ -345,59 +279,33 @@ export const TtsPopup: React.FC<TtsPopupProps> = ({ text, onClose, isDark = true
           </div>
         </div>
 
-        {/* Play / Load Action Row */}
-        <div
-          className={`flex items-center gap-3.5 p-3.5 rounded-xl border ${
-            isDark ? 'bg-[#18181c] border-white/[0.08]' : 'bg-[#f8f8f9] border-black/[0.08]'
+        {/* Play Action Button */}
+        <button
+          type="button"
+          onClick={handlePlayToggle}
+          className={`w-full h-9 rounded-lg text-xs font-medium flex items-center justify-center gap-2 transition-colors cursor-pointer ${
+            isDark
+              ? 'bg-white text-black hover:bg-neutral-200'
+              : 'bg-black text-white hover:bg-neutral-800'
           }`}
         >
-          <button
-            type="button"
-            onClick={handlePlayToggle}
-            className={`size-10 rounded-xl flex items-center justify-center transition-colors shrink-0 cursor-pointer ${
-              isDark
-                ? 'bg-white text-black hover:bg-neutral-200'
-                : 'bg-[#0d0d0d] text-white hover:bg-neutral-800'
-            }`}
-          >
-            {loading ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : isPlaying ? (
-              <Pause className="w-4 h-4 fill-current" />
-            ) : (
-              <Play className="w-4 h-4 fill-current ml-0.5" />
-            )}
-          </button>
-          <div className="flex flex-col min-w-0 flex-1">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-xs font-semibold truncate">
-                {loading
-                  ? 'Synthesizing speech...'
-                  : isPlaying
-                  ? 'Playing audio'
-                  : 'Ready to read aloud'}
-              </span>
-              <span
-                className={`text-[10px] font-mono uppercase ${
-                  isDark ? 'text-neutral-500' : 'text-neutral-400'
-                }`}
-              >
-                {selectedLanguageObj.label} · {ttsGender} · {ttsSpeed}x
-              </span>
-            </div>
-            <span
-              className={`text-[11px] truncate mt-0.5 ${
-                isDark ? 'text-neutral-400' : 'text-neutral-500'
-              }`}
-            >
-              {loading
-                ? `Preparing ${selectedLanguageObj.label} voice output`
-                : isPlaying
-                ? 'Click pause to stop playback'
-                : 'Click play to listen in selected voice'}
-            </span>
-          </div>
-        </div>
+          {loading ? (
+            <>
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              <span>Loading audio…</span>
+            </>
+          ) : isPlaying ? (
+            <>
+              <Pause className="w-3.5 h-3.5 fill-current" />
+              <span>Pause</span>
+            </>
+          ) : (
+            <>
+              <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
+              <span>Play</span>
+            </>
+          )}
+        </button>
       </div>
     </div>
   );

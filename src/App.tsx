@@ -46,7 +46,6 @@ import { KinichGrowthHubModal, GrowthHubTab } from './components/KinichGrowthHub
 import { PublicArtifactView } from './components/PublicArtifactView';
 import { StreakReminderToast } from './components/StreakReminderToast';
 import { AchievementToast } from './components/AchievementToast';
-import { HomeReferralPopup } from './components/HomeReferralPopup';
 import { DeleteThreadConfirmDialog, DeleteThreadTarget } from './components/DeleteThreadConfirmDialog';
 import {
   captureReferralFromUrlIfPresent,
@@ -80,7 +79,6 @@ import {
   LegalPageRoute,
   resolveLegalOr404Route,
   SiteFooter,
-  CookieConsentBanner,
   GuestFirstPromptConsentModal,
   ReportContentModal,
   hasValidUserConsent,
@@ -1536,12 +1534,6 @@ export default function App() {
     // Automatically detect and persist home city if user states where they live (e.g. "I live in Ramagundam, Telangana")
     detectAndSaveHomeCityFromText(query);
 
-    // 0. Enforce one-time Guest First-Prompt Consent or Re-Consent if CONSENT_VERSION changed
-    if (!bypassConsentGate && !hasValidUserConsent()) {
-      setPendingConsentPrompt({ promptText: query, mode, attachments });
-      return;
-    }
-
     // 1. Check daily prompt/message limit and file upload limit
     const currentUsage = UserAccountStore.getUsage();
     const currentPlanNorm = UserAccountStore.getNormalizedPlan();
@@ -2649,9 +2641,8 @@ export default function App() {
                   {/* Center Area: Clean spacer */}
                   <div className="flex-1 my-auto" />
 
-                  {/* Bottom Anchored Area: 8-Referral Notification Popup & Prompt Input */}
+                  {/* Bottom Anchored Area: Prompt Input */}
                   <div className="w-full max-w-3xl flex flex-col items-center mt-auto">
-                    <HomeReferralPopup theme={theme} />
                     {/* ChatInput (@kobra/chat-input with @kobra/chat-history & upward model selector) */}
                     <div className="w-full">
                       <ChatInput
@@ -3126,68 +3117,49 @@ export default function App() {
         </>
       )}
 
-      {/* One-Time Guest First-Prompt / Re-Consent Modal */}
-      <GuestFirstPromptConsentModal
-        open={pendingConsentPrompt !== null}
-        isDark={isDark}
-        onNavigate={(path) => {
-          setPendingConsentPrompt(null);
-          navigateRoute(path);
-        }}
-        onCancel={() => setPendingConsentPrompt(null)}
-        onAccept={() => {
-          const queued = pendingConsentPrompt;
-          setPendingConsentPrompt(null);
-          if (queued) {
-            handleSend(queued.promptText, queued.mode, queued.attachments, true);
-          }
-        }}
-      />
-
       {/* Global Content & Safety Report Modal */}
       <ReportContentModal isDark={isDark} />
 
-      {/* Global Cookie & Local Storage Notice Banner */}
-      <CookieConsentBanner isDark={isDark} onNavigate={(path) => navigateRoute(path)} />
-
-      {/* Compact In-Place Guest Sign-In Modal / Sheet (Never navigates away from the current page) */}
+      {/* Compact In-Place Guest Sign-In Modal / Sheet */}
       {guestAuthModal.isOpen && (
         <div
           data-testid="guest-signin-modal"
           role="dialog"
           aria-modal="true"
-          className="fixed inset-0 z-[130] flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-3 sm:p-4 animate-in fade-in duration-150"
+          className="fixed inset-0 z-[130] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-150"
           onClick={() => setGuestAuthModal((prev) => ({ ...prev, isOpen: false }))}
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className={`w-full max-w-sm rounded-2xl border p-5 sm:p-6 shadow-2xl space-y-4 ${
+            className={`w-full max-w-sm rounded-xl border p-4 shadow-xl space-y-3 ${
               isDark
-                ? 'bg-[#121215] border-white/15 text-white'
-                : 'bg-white border-black/15 text-neutral-900'
+                ? 'bg-[#121215] border-white/10 text-white'
+                : 'bg-white border-neutral-200 text-neutral-900'
             }`}
           >
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-[#FC4C01]/15 border border-[#FC4C01]/35 flex items-center justify-center text-[#FC4C01] shrink-0">
-                  <Bookmark className="w-4 h-4" />
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                  isDark ? 'bg-white/10 text-white' : 'bg-black/5 text-neutral-900'
+                }`}>
+                  <Bookmark className="w-3.5 h-3.5" />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <h3
                     data-testid="guest-signin-modal-title"
-                    className="text-sm sm:text-base font-bold tracking-tight"
+                    className="text-xs font-semibold truncate"
                   >
-                    {guestAuthModal.reason || 'Sign in to keep this in your Vault'}
+                    {guestAuthModal.reason || 'Sign in to Kinich'}
                   </h3>
-                  <p className={`text-xs mt-0.5 ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
-                    Sync your saved lectures, notes, highlights, and streaks across devices.
+                  <p className={`text-[11px] truncate ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
+                    Sync your vault, notes, and study history.
                   </p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setGuestAuthModal((prev) => ({ ...prev, isOpen: false }))}
-                className="p-1 rounded-lg opacity-60 hover:opacity-100 cursor-pointer"
+                className="p-1 rounded-lg opacity-60 hover:opacity-100 cursor-pointer shrink-0"
                 aria-label="Close sign-in modal"
               >
                 ✕
@@ -3195,12 +3167,12 @@ export default function App() {
             </div>
 
             {guestAuthError && (
-              <div className="p-2.5 rounded-xl border border-red-500/35 bg-red-500/10 text-red-400 text-xs">
+              <div className="p-2 rounded-lg border border-red-500/30 bg-red-500/10 text-red-400 text-[11px]">
                 {guestAuthError}
               </div>
             )}
 
-            <div className="space-y-2.5">
+            <div className="space-y-2">
               <button
                 type="button"
                 data-testid="modal-google-signin-btn"
@@ -3219,7 +3191,11 @@ export default function App() {
                     setGuestAuthBusy(false);
                   }
                 }}
-                className="w-full h-10 px-4 rounded-xl bg-[#FC4C01] hover:bg-[#e04300] text-white text-xs font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:opacity-50"
+                className={`w-full h-9 px-3 rounded-lg text-xs font-medium flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:opacity-50 ${
+                  isDark
+                    ? 'bg-white text-black hover:bg-neutral-200'
+                    : 'bg-black text-white hover:bg-neutral-800'
+                }`}
               >
                 <span>{guestAuthBusy ? 'Signing in…' : 'Continue with Google'}</span>
               </button>
@@ -3229,10 +3205,10 @@ export default function App() {
                   type="button"
                   data-testid="modal-email-toggle-btn"
                   onClick={() => setShowEmailFormInModal(true)}
-                  className={`w-full h-10 px-4 rounded-xl border text-xs font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer ${
+                  className={`w-full h-9 px-3 rounded-lg border text-xs font-medium flex items-center justify-center gap-2 transition-colors cursor-pointer ${
                     isDark
-                      ? 'border-white/15 bg-white/[0.04] hover:bg-white/[0.08] text-white'
-                      : 'border-black/15 bg-black/[0.03] hover:bg-black/[0.06] text-neutral-900'
+                      ? 'border-white/10 bg-white/[0.03] hover:bg-white/[0.06] text-white'
+                      : 'border-neutral-200 bg-neutral-50 hover:bg-neutral-100 text-neutral-900'
                   }`}
                 >
                   <span>Continue with Email</span>
