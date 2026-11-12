@@ -458,12 +458,12 @@ export const SERVER_PLAN_LIMITS: Record<SubscriptionPlanTier, ServerPlanLimits> 
   free: {
     name: 'Free',
     priceMonthly: 0,
-    fileUploadLimit: 3, // 3 daily free file uploads
-    maxFilesPerMessage: 2,
-    messageLimit: 5, // 5 daily free AI messages
-    searchLimit: 5, // 5 daily free web searches
-    deepResearchLimit: 3, // 3 daily free autonomous deep research runs
-    pdfStudyLimit: 5, // 5 daily free study sessions
+    fileUploadLimit: 10, // 10 daily free file uploads
+    maxFilesPerMessage: 10,
+    messageLimit: 10, // 10 daily free AI messages
+    searchLimit: 10, // 10 daily free web searches
+    deepResearchLimit: 10, // 10 daily free autonomous deep research runs
+    pdfStudyLimit: 10, // 10 daily free study sessions
     tokenLimit: 250_000,
   },
   spark: {

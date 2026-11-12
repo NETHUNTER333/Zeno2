@@ -512,10 +512,10 @@ export const StudyLoopStore = {
     }
     return {
       tier: 'free' as const,
-      maxExams: 1,
-      dailyRecallReviews: 15,
-      autoPlanEnabled: false,
-      weakTopicDrillsPerDay: 2,
+      maxExams: 10,
+      dailyRecallReviews: 30,
+      autoPlanEnabled: true,
+      weakTopicDrillsPerDay: 10,
       pdfMaxPages: 50,
       audioRecapFullAccess: false,
       audioRecapMaxSeconds: 30,
