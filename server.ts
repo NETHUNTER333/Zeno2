@@ -11051,7 +11051,7 @@ const StrictStudyQuizItemSchema = z.object({
     z.string().trim().min(1),
   ]),
   correctIndex: z.number().int().min(0).max(3),
-  explanation: z.string().trim().min(8),
+  explanation: z.string().trim().min(8).max(300),
 });
 
 const StrictStudyFlashcardItemSchema = z.object({
@@ -11078,7 +11078,12 @@ function hasDisallowedStudyOutputText(
     /^option [a-d]$/i.test(s) ||
     /Which mechanism or claim is established/i.test(s) ||
     /What is the key takeaway presented on Page/i.test(s) ||
-    /regarding .+ at \[\d{1,2}:\d{2}\]/i.test(s)
+    /regarding .+ at \[\d{1,2}:\d{2}\]/i.test(s) ||
+    /\bwait\b/i.test(s) ||
+    /let'?s\s+recalculate/i.test(s) ||
+    /\blet me\b/i.test(s) ||
+    /\bactually\b/i.test(s) ||
+    /change the question/i.test(s)
   ) {
     return true;
   }
@@ -11405,6 +11410,7 @@ STRICT CONTENT & STYLE RULES:
 1. NEVER include any timestamps (such as [00:00], 12:34, (t=45s), or "at 3 minutes") anywhere in quiz questions, options, explanations, or flashcards.
 2. NEVER write "according to the video", "according to the lecture", "in this video", "from the video", "the speaker", "the lecturer", or "the narrator".
 3. NEVER copy raw spoken transcript fragments, conversational filler, or sound tags ([music], >>). Write crisp, textbook/exam-grade English questions and answers.
+8. Output final JSON only with no working, reasoning, or scratchpad. Do not include words like "wait", "let's recalculate", "let me", "actually", or "change the question" in any explanation.
 4. "quiz": Exactly ${targetQuiz} self-contained exam-style multiple-choice questions matching:
    { "question": string, "options": [string, string, string, string], "correctIndex": 0|1|2|3, "explanation": string }
    - All 4 options must be distinct, plausible, and free of placeholder labels ("Option A", etc.).
@@ -11412,7 +11418,7 @@ STRICT CONTENT & STYLE RULES:
    { "front": string, "back": string }
 6. "chapters": 3 to 6 logical topic sections matching:
    { "title": string, "summary": string }
-7. Output ONLY valid JSON.`;
+7. Output ONLY valid JSON. Do NOT include any working, reasoning, scratchpad, or explanation outside the JSON. Final JSON only.`;
 
   const baseUserPrompt = `Topic/Lecture Title: "${resolvedTitle}"
 Instructor/Source: "${resolvedAuthor}"
