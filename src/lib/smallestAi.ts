@@ -15,12 +15,20 @@ function isPhononRuntimeSupported(): boolean {
 
 async function getPhononModule() {
   if (!phononModulePromise) {
-    phononModulePromise = import('./phononTTS').then((mod) => {
-      loadedPhononModule = mod;
-      return mod;
-    });
+    phononModulePromise = Promise.race([
+      import('./phononTTS').then((mod) => {
+        loadedPhononModule = mod;
+        return mod;
+      }),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 20000)),
+    ]) as Promise<typeof import('./phononTTS') | null>;
   }
-  return phononModulePromise;
+  const result = await phononModulePromise;
+  if (!result) {
+    phononModulePromise = null;
+    return null as any;
+  }
+  return result;
 }
 
 export type TtsVoiceGender = 'female' | 'male';
@@ -353,7 +361,7 @@ export async function speakTextWithSmallestAi(
   const isEnglish = language === 'english' || language === 'en' || bcp47.startsWith('en');
   if (gender === 'female' && isEnglish && isPhononRuntimeSupported()) {
     const phononMod = await getPhononModule();
-    if (phononMod.isPhononSupported()) {
+    if (phononMod && phononMod.isPhononSupported()) {
       const handled = await phononMod.speakWithPhonon(cleanText, { onStart, onEnd, onError });
       if (handled) return;
     }

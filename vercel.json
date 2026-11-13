@@ -3,6 +3,10 @@
   "trailingSlash": false,
   "rewrites": [
     {
+      "source": "/assets/(.*).wasm",
+      "destination": "/assets/$1.wasm"
+    },
+    {
       "source": "/api/:path*",
       "destination": "https://prod-main-zeno-api-c257d4-00gfx3c9932.compute.instacloud-edge.com/api/:path*"
     },
@@ -175,6 +179,19 @@
         {
           "key": "Referrer-Policy",
           "value": "strict-origin-when-cross-origin"
+        }
+      ]
+    },
+    {
+      "source": "/assets/(.*).wasm",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/wasm"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
         }
       ]
     }
