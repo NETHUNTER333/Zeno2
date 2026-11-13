@@ -6,12 +6,12 @@ import {
   LEGAL_CONFIG,
   THIRD_PARTY_SERVICES_AUDIT,
   STORAGE_KEYS_AUDIT,
-} from '../src/legal/config';
+} from '../src/legal/config.ts';
 import {
   LEGAL_DOCUMENTS,
   type LegalDocId,
   type PolicyDocument,
-} from '../src/legal/policiesData';
+} from '../src/legal/policiesData.ts';
 
 // ============================================================================
 // 1. REAL FAVICON ASSETS (SVG, ICO, PNG), SITEMAP.XML & ROBOTS.TXT

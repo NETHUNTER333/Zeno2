@@ -1,6 +1,7 @@
 import React from 'react';
 import { YouTubeTranscriptSegment } from '../types';
-import { StudyWorkspace, extractYouTubeIdFromInput } from './StudyWorkspace';
+import { StudyWorkspace } from './StudyWorkspace';
+import { extractYouTubeIdFromInput } from '../lib/youtube';
 
 export { extractYouTubeIdFromInput };
 

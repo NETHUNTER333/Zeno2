@@ -32,11 +32,11 @@ import {
   MIN_AGE,
   CONSENT_VERSION,
 } from '../legal/config';
-import {
-  LEGAL_DOCUMENTS,
-  type LegalDocumentId,
-  type LegalDocumentData,
+import type {
+  LegalDocumentId,
+  LegalDocumentData,
 } from '../legal/policiesData';
+import { RouteSkeleton } from './Skeleton';
 
 export type LegalPageRoute = LegalDocumentId | '404';
 
@@ -597,8 +597,25 @@ export const LegalAndInfoPages: React.FC<LegalAndInfoPagesProps> = ({
     getCookiePreference()
   );
 
+  const [legalDocs, setLegalDocs] = useState<Record<LegalDocumentId, LegalDocumentData> | null>(
+    null
+  );
+
+  useEffect(() => {
+    if (route === '404' || legalDocs) return;
+    let active = true;
+    import('../legal/policiesData')
+      .then((m) => {
+        if (active) setLegalDocs(m.LEGAL_DOCUMENTS);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [route, legalDocs]);
+
   const activeDoc: LegalDocumentData | null =
-    route !== '404' ? LEGAL_DOCUMENTS[route] || LEGAL_DOCUMENTS.legal : null;
+    route !== '404' && legalDocs ? legalDocs[route] || legalDocs.legal : null;
 
   // Sync document title and meta description per route
   useEffect(() => {
@@ -758,7 +775,9 @@ export const LegalAndInfoPages: React.FC<LegalAndInfoPagesProps> = ({
 
       {/* Main Content Area */}
       <main className="flex-1 w-full max-w-[1080px] mx-auto px-4 sm:px-8 py-8 sm:py-12">
-        {route === '404' || !activeDoc ? (
+        {route !== '404' && !legalDocs ? (
+          <RouteSkeleton isDark={isDark} />
+        ) : route === '404' || !activeDoc ? (
           <div
             className={`max-w-[560px] mx-auto rounded-2xl border p-8 sm:p-10 text-center space-y-5 ${
               isDark ? 'bg-white/[0.02] border-white/10' : 'bg-white border-black/10 shadow-sm'

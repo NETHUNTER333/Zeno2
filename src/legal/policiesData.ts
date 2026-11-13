@@ -2,7 +2,7 @@ import {
   LEGAL_CONFIG,
   THIRD_PARTY_SERVICES_AUDIT,
   STORAGE_KEYS_AUDIT,
-} from './config';
+} from './config.ts';
 
 export type LegalDocId =
   | 'docs'

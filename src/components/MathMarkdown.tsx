@@ -1,10 +1,16 @@
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
-import { PrismCodeBlock } from './PrismCodeBlock';
-import { PeleDiagram } from './PeleDiagram';
+import { CodeBlockSkeleton } from './Skeleton';
+
+const PeleDiagram = lazy(() =>
+  import('./PeleDiagram').then((m) => ({ default: m.PeleDiagram }))
+);
+const PrismCodeBlock = lazy(() =>
+  import('./PrismCodeBlock').then((m) => ({ default: m.PrismCodeBlock }))
+);
 
 const NAMED_OR_NUMERIC_ENTITY_RE =
   /&(?:amp|apos|quot|nbsp|rsquo|lsquo|ldquo|rdquo|ndash|mdash|#0*(?:34|38|39|160|8211|8212|8216|8217|8220|8221)|#x0*(?:22|26|27|a0|2013|2014|2018|2019|201c|201d)|#(\d+)|#x([0-9a-fA-F]+));/gi;
@@ -175,7 +181,11 @@ export const MathMarkdown: React.FC<MathMarkdownProps> = ({
               const langMatch = /language-([\w-]+)/.exec(rawClass);
               const lang = (langMatch ? langMatch[1] : '').toLowerCase();
               const codeText = String(codeChild?.props?.children || '').replace(/\n$/, '');
-              return <PrismCodeBlock code={codeText} language={lang || 'text'} isDark={isDark} />;
+              return (
+                <Suspense fallback={<CodeBlockSkeleton isDark={isDark} />}>
+                  <PrismCodeBlock code={codeText} language={lang || 'text'} isDark={isDark} />
+                </Suspense>
+              );
             },
             code: ({ className: codeClassName, children, ...props }) => {
               const isBlock = Boolean(codeClassName && /language-/.test(codeClassName));
@@ -229,10 +239,18 @@ export const MathMarkdown: React.FC<MathMarkdownProps> = ({
               lang === 'mermaid' ||
               lang === 'flowchart'
             ) {
-              return <PeleDiagram code={codeText} isDark={isDark} />;
+              return (
+                <Suspense fallback={<CodeBlockSkeleton isDark={isDark} />}>
+                  <PeleDiagram code={codeText} isDark={isDark} />
+                </Suspense>
+              );
             }
 
-            return <PrismCodeBlock code={codeText} language={lang || 'text'} isDark={isDark} />;
+            return (
+              <Suspense fallback={<CodeBlockSkeleton isDark={isDark} />}>
+                <PrismCodeBlock code={codeText} language={lang || 'text'} isDark={isDark} />
+              </Suspense>
+            );
           },
           code: ({ className: codeClassName, children, ...props }) => {
             const isBlock = Boolean(codeClassName && /language-/.test(codeClassName));

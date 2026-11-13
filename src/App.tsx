@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, Suspense, lazy } from 'react';
 import {
   Plus,
   PanelLeft,
@@ -22,7 +22,6 @@ import {
 } from './types';
 import { GrokLogo } from './components/GrokLogo';
 import { ChatInput, ChatHistoryItem, ChatHistoryMessageItem, MessageScroller } from './components/kobra';
-import { GrokChatMessage } from './components/GrokChatMessage';
 import {
   GROK_MODELS,
   ModelOption,
@@ -31,23 +30,48 @@ import {
   getModelRequiredTier,
 } from './components/GrokModelPicker';
 import { Sidebar, ChatThread } from './components/Sidebar';
-import { AccountWorkspacePage, AccountTab } from './components/AccountWorkspacePage';
-import { PricingModal } from './components/PricingModal';
-import { StudyWorkspace } from './components/StudyWorkspace';
+import type { AccountTab } from './components/AccountWorkspacePage';
 import { YouTubeVideoInfo } from './types';
-import { QuickOnboardingModal } from './components/QuickOnboardingModal';
-import { GoogleSignInButton } from './components/GoogleSignInButton';
 import { UserAccountStore } from './lib/userAccountStore';
 import { StudyLoopStore } from './lib/studyLoopStore';
-import { exportConversationAsMarkdown, exportConversationAsPdf } from './lib/exportChat';
-import { ShareExportStudioModal } from './components/ShareExportStudioModal';
-import { DeepResearchModal } from './components/DeepResearchModal';
-import { PageExtractModal } from './components/PageExtractModal';
-import { InbuiltPdfViewer, PdfStudioTab } from './components/InbuiltPdfViewer';
-import { KinichGrowthHubModal, GrowthHubTab } from './components/KinichGrowthHubModal';
-import { PublicArtifactView } from './components/PublicArtifactView';
+import type { PdfStudioTab } from './components/InbuiltPdfViewer';
+import type { GrowthHubTab } from './components/KinichGrowthHubModal';
 import { StreakReminderToast } from './components/StreakReminderToast';
 import { AchievementToast } from './components/AchievementToast';
+import { RouteSkeleton, ModalSkeleton } from './components/Skeleton';
+import { GrokChatMessage } from './components/GrokChatMessage';
+import { GoogleSignInButton } from './components/GoogleSignInButton';
+
+const AccountWorkspacePage = lazy(() =>
+  import('./components/AccountWorkspacePage').then((m) => ({ default: m.AccountWorkspacePage }))
+);
+const PricingModal = lazy(() =>
+  import('./components/PricingModal').then((m) => ({ default: m.PricingModal }))
+);
+const StudyWorkspace = lazy(() =>
+  import('./components/StudyWorkspace').then((m) => ({ default: m.StudyWorkspace }))
+);
+const QuickOnboardingModal = lazy(() =>
+  import('./components/QuickOnboardingModal').then((m) => ({ default: m.QuickOnboardingModal }))
+);
+const ShareExportStudioModal = lazy(() =>
+  import('./components/ShareExportStudioModal').then((m) => ({ default: m.ShareExportStudioModal }))
+);
+const DeepResearchModal = lazy(() =>
+  import('./components/DeepResearchModal').then((m) => ({ default: m.DeepResearchModal }))
+);
+const PageExtractModal = lazy(() =>
+  import('./components/PageExtractModal').then((m) => ({ default: m.PageExtractModal }))
+);
+const InbuiltPdfViewer = lazy(() =>
+  import('./components/InbuiltPdfViewer').then((m) => ({ default: m.InbuiltPdfViewer }))
+);
+const KinichGrowthHubModal = lazy(() =>
+  import('./components/KinichGrowthHubModal').then((m) => ({ default: m.KinichGrowthHubModal }))
+);
+const PublicArtifactView = lazy(() =>
+  import('./components/PublicArtifactView').then((m) => ({ default: m.PublicArtifactView }))
+);
 import { DeleteThreadConfirmDialog, DeleteThreadTarget } from './components/DeleteThreadConfirmDialog';
 import {
   captureReferralFromUrlIfPresent,
@@ -1379,9 +1403,10 @@ export default function App() {
     return () => document.removeEventListener('mousedown', handleOutside);
   }, []);
 
-  const handleExportThread = (threadId: string, format: 'markdown' | 'pdf') => {
+  const handleExportThread = async (threadId: string, format: 'markdown' | 'pdf') => {
     const target = threads.find((t) => t.id === threadId);
     if (!target || target.messages.length === 0) return;
+    const { exportConversationAsMarkdown, exportConversationAsPdf } = await import('./lib/exportChat');
     if (format === 'markdown') {
       exportConversationAsMarkdown(target);
     } else {
@@ -2548,61 +2573,65 @@ export default function App() {
           {/* Main View Area: Dedicated Account & Settings Page OR Study Workspace OR Main Chat Canvas */}
           {currentView === 'account' ? (
             <div className="flex-1 min-w-0 flex flex-col h-full overflow-hidden relative z-10">
-              <AccountWorkspacePage
-                onBackToChat={() => {
-                  if (typeof window !== 'undefined' && window.location.pathname !== '/') {
-                    window.history.pushState({}, '', '/');
-                  }
-                  setCurrentView('chat');
-                }}
-                initialTab={accountPageTab}
-                threads={threads}
-                theme={theme}
-                onThemeChange={(newTheme) => setTheme(newTheme)}
-                selectedModel={selectedModel}
-                onSelectModel={(newModel) => setSelectedModel(newModel)}
-                webSearchDefault={searchMode !== 'off'}
-                onToggleWebSearchDefault={(enabled) => setSearchMode(enabled ? 'organic' : 'off')}
-                nsfwMode={false}
-                onClearAllHistory={handleClearAllHistory}
-                onSelectThread={handleSelectThread}
-                onDeleteThread={handleDeleteThread}
-                bgGradientMode={bgGradientMode}
-                onSelectBgGradientMode={handleSelectBgGradientMode}
-              />
+              <Suspense fallback={<RouteSkeleton isDark={isDark} />}>
+                <AccountWorkspacePage
+                  onBackToChat={() => {
+                    if (typeof window !== 'undefined' && window.location.pathname !== '/') {
+                      window.history.pushState({}, '', '/');
+                    }
+                    setCurrentView('chat');
+                  }}
+                  initialTab={accountPageTab}
+                  threads={threads}
+                  theme={theme}
+                  onThemeChange={(newTheme) => setTheme(newTheme)}
+                  selectedModel={selectedModel}
+                  onSelectModel={(newModel) => setSelectedModel(newModel)}
+                  webSearchDefault={searchMode !== 'off'}
+                  onToggleWebSearchDefault={(enabled) => setSearchMode(enabled ? 'organic' : 'off')}
+                  nsfwMode={false}
+                  onClearAllHistory={handleClearAllHistory}
+                  onSelectThread={handleSelectThread}
+                  onDeleteThread={handleDeleteThread}
+                  bgGradientMode={bgGradientMode}
+                  onSelectBgGradientMode={handleSelectBgGradientMode}
+                />
+              </Suspense>
             </div>
           ) : currentView === 'study' ? (
             <div className="flex-1 min-w-0 flex flex-col h-full overflow-hidden relative z-10">
-              <StudyWorkspace
-                initialVideo={activeStudyVideo}
-                onBackToChat={() => {
-                  if (typeof window !== 'undefined') {
-                    const p = window.location.pathname.toLowerCase();
-                    if (p.startsWith('/study') || p.startsWith('/snap-solve') || p.startsWith('/battle')) {
-                      window.history.pushState({}, '', '/');
+              <Suspense fallback={<RouteSkeleton isDark={isDark} />}>
+                <StudyWorkspace
+                  initialVideo={activeStudyVideo}
+                  onBackToChat={() => {
+                    if (typeof window !== 'undefined') {
+                      const p = window.location.pathname.toLowerCase();
+                      if (p.startsWith('/study') || p.startsWith('/snap-solve') || p.startsWith('/battle')) {
+                        window.history.pushState({}, '', '/');
+                      }
                     }
-                  }
-                  setCurrentView('chat');
-                }}
-                isDark={isDark}
-                onAskKinich={(prompt) => {
-                  if (typeof window !== 'undefined') {
-                    const p = window.location.pathname.toLowerCase();
-                    if (p.startsWith('/study') || p.startsWith('/snap-solve') || p.startsWith('/battle')) {
-                      window.history.pushState({}, '', '/');
+                    setCurrentView('chat');
+                  }}
+                  isDark={isDark}
+                  onAskKinich={(prompt) => {
+                    if (typeof window !== 'undefined') {
+                      const p = window.location.pathname.toLowerCase();
+                      if (p.startsWith('/study') || p.startsWith('/snap-solve') || p.startsWith('/battle')) {
+                        window.history.pushState({}, '', '/');
+                      }
                     }
+                    setCurrentView('chat');
+                    handleSend(prompt);
+                  }}
+                  onOpenPricing={(highlightPlan, reason) =>
+                    setPricingModalState({
+                      isOpen: true,
+                      highlightPlan: highlightPlan || 'spark',
+                      limitReason: reason || null,
+                    })
                   }
-                  setCurrentView('chat');
-                  handleSend(prompt);
-                }}
-                onOpenPricing={(highlightPlan, reason) =>
-                  setPricingModalState({
-                    isOpen: true,
-                    highlightPlan: highlightPlan || 'spark',
-                    limitReason: reason || null,
-                  })
-                }
-              />
+                />
+              </Suspense>
             </div>
           ) : (
             /* Main Chat Canvas */
@@ -2920,169 +2949,199 @@ export default function App() {
 
           {/* Shareable Public Thread Links & Export Studio Modal */}
           {shareStudioState.isOpen && (
-            <ShareExportStudioModal
-              isOpen={shareStudioState.isOpen}
-              onClose={() => setShareStudioState({ isOpen: false })}
-              thread={fallbackShareThread}
-              initialQuoteMessage={shareStudioState.quoteMessage}
-              initialTab={shareStudioState.initialTab}
-              isDark={isDark}
-            />
+            <Suspense fallback={<ModalSkeleton isDark={isDark} />}>
+              <ShareExportStudioModal
+                isOpen={shareStudioState.isOpen}
+                onClose={() => setShareStudioState({ isOpen: false })}
+                thread={fallbackShareThread}
+                initialQuoteMessage={shareStudioState.quoteMessage}
+                initialTab={shareStudioState.initialTab}
+                isDark={isDark}
+              />
+            </Suspense>
           )}
 
           {/* Full-Page Research & AI Answer View */}
-          <DeepResearchModal
-            isOpen={deepResearchState.isOpen}
-            onClose={() => setDeepResearchState({ isOpen: false })}
-            initialTopic={deepResearchState.initialTopic}
-            selectedModelId={selectedModel.geminiModel}
-            selectedModel={selectedModel}
-            onSelectModel={(m) => setSelectedModel(m)}
-            searchMode={searchMode === 'news' ? 'news' : 'organic'}
-            onToggleSearchMode={(m) => setSearchMode(m === 'news' ? 'news' : 'organic')}
-            isDark={isDark}
-            onInsertReportToChat={(topic, reportMarkdown, sources, arxivPapers) => {
-              const userMsg: ChatMessageType = {
-                id: `user-${Date.now()}`,
-                role: 'user',
-                content: `Deep Research Report: ${topic}`,
-                timestamp: Date.now(),
-              };
-              const assistantMsg: ChatMessageType = {
-                id: `assistant-${Date.now() + 1}`,
-                role: 'assistant',
-                content: reportMarkdown,
-                timestamp: Date.now() + 1,
-                sources,
-                arxivPapers,
-                modelUsed: 'Kinich Deep Research Agent',
-              };
-              if (!activeThreadId) {
-                const newId = `thread-${Date.now()}`;
-                setThreads((prev) => [
-                  {
-                    id: newId,
-                    title: `Research: ${topic.slice(0, 32)}`,
-                    createdAt: Date.now(),
-                    messages: [userMsg, assistantMsg],
-                  },
-                  ...prev,
-                ]);
-                setActiveThreadId(newId);
-              } else {
-                setThreads((prev) =>
-                  prev.map((t) =>
-                    t.id === activeThreadId
-                      ? { ...t, messages: [...t.messages, userMsg, assistantMsg] }
-                      : t
-                  )
-                );
-              }
-            }}
-          />
+          {deepResearchState.isOpen && (
+            <Suspense fallback={<ModalSkeleton isDark={isDark} />}>
+              <DeepResearchModal
+                isOpen={deepResearchState.isOpen}
+                onClose={() => setDeepResearchState({ isOpen: false })}
+                initialTopic={deepResearchState.initialTopic}
+                selectedModelId={selectedModel.geminiModel}
+                selectedModel={selectedModel}
+                onSelectModel={(m) => setSelectedModel(m)}
+                searchMode={searchMode === 'news' ? 'news' : 'organic'}
+                onToggleSearchMode={(m) => setSearchMode(m === 'news' ? 'news' : 'organic')}
+                isDark={isDark}
+                onInsertReportToChat={(topic, reportMarkdown, sources, arxivPapers) => {
+                  const userMsg: ChatMessageType = {
+                    id: `user-${Date.now()}`,
+                    role: 'user',
+                    content: `Deep Research Report: ${topic}`,
+                    timestamp: Date.now(),
+                  };
+                  const assistantMsg: ChatMessageType = {
+                    id: `assistant-${Date.now() + 1}`,
+                    role: 'assistant',
+                    content: reportMarkdown,
+                    timestamp: Date.now() + 1,
+                    sources,
+                    arxivPapers,
+                    modelUsed: 'Kinich Deep Research Agent',
+                  };
+                  if (!activeThreadId) {
+                    const newId = `thread-${Date.now()}`;
+                    setThreads((prev) => [
+                      {
+                        id: newId,
+                        title: `Research: ${topic.slice(0, 32)}`,
+                        createdAt: Date.now(),
+                        messages: [userMsg, assistantMsg],
+                      },
+                      ...prev,
+                    ]);
+                    setActiveThreadId(newId);
+                  } else {
+                    setThreads((prev) =>
+                      prev.map((t) =>
+                        t.id === activeThreadId
+                          ? { ...t, messages: [...t.messages, userMsg, assistantMsg] }
+                          : t
+                      )
+                    );
+                  }
+                }}
+              />
+            </Suspense>
+          )}
 
           {/* URL / Website Reader & Page Summarizer Modal */}
-          <PageExtractModal
-            isOpen={urlReaderState.isOpen}
-            onClose={() => setUrlReaderState({ isOpen: false })}
-            url={urlReaderState.initialUrl || null}
-            isDark={isDark}
-            onChatWithPage={(_url, title, extractedMarkdown, userQuestion) => {
-              handleSend(
-                userQuestion
-                  ? `${userQuestion}\n\nContext from "${title}":\n${extractedMarkdown.slice(0, 4000)}`
-                  : `Summarize and analyze "${title}":\n${extractedMarkdown.slice(0, 4000)}`
-              );
-            }}
-          />
+          {urlReaderState.isOpen && (
+            <Suspense fallback={<ModalSkeleton isDark={isDark} />}>
+              <PageExtractModal
+                isOpen={urlReaderState.isOpen}
+                onClose={() => setUrlReaderState({ isOpen: false })}
+                url={urlReaderState.initialUrl || null}
+                isDark={isDark}
+                onChatWithPage={(_url, title, extractedMarkdown, userQuestion) => {
+                  handleSend(
+                    userQuestion
+                      ? `${userQuestion}\n\nContext from "${title}":\n${extractedMarkdown.slice(0, 4000)}`
+                      : `Summarize and analyze "${title}":\n${extractedMarkdown.slice(0, 4000)}`
+                  );
+                }}
+              />
+            </Suspense>
+          )}
 
           {/* Kinich Growth Hub Modal (Discover, Knowledge Vault, Weekly Brief, Kinich Passes) */}
-          <KinichGrowthHubModal
-            isOpen={growthHubState.isOpen}
-            onClose={() => {
-              setGrowthHubState((prev) => ({ ...prev, isOpen: false }));
-              if (
-                typeof window !== 'undefined' &&
-                window.location.pathname.toLowerCase().startsWith('/vault')
-              ) {
-                window.history.pushState({}, '', '/');
-              }
-            }}
-            initialTab={growthHubState.initialTab}
-            initialThreadId={growthHubState.initialThreadId}
-            threads={threads}
-            onOpenArtifactPage={(artifact) => {
-              setGrowthHubState((prev) => ({ ...prev, isOpen: false }));
-              setPublicArtifactModal({
-                isOpen: true,
-                artifactId: artifact.id,
-                initialArtifact: artifact,
-              });
-            }}
-            onForkArtifactIntoChat={handleForkArtifactIntoChat}
-            onContinueVaultItemInChat={handleContinueVaultItemInChat}
-            isDark={isDark}
-          />
+          {growthHubState.isOpen && (
+            <Suspense fallback={<ModalSkeleton isDark={isDark} />}>
+              <KinichGrowthHubModal
+                isOpen={growthHubState.isOpen}
+                onClose={() => {
+                  setGrowthHubState((prev) => ({ ...prev, isOpen: false }));
+                  if (
+                    typeof window !== 'undefined' &&
+                    window.location.pathname.toLowerCase().startsWith('/vault')
+                  ) {
+                    window.history.pushState({}, '', '/');
+                  }
+                }}
+                initialTab={growthHubState.initialTab}
+                initialThreadId={growthHubState.initialThreadId}
+                threads={threads}
+                onOpenArtifactPage={(artifact) => {
+                  setGrowthHubState((prev) => ({ ...prev, isOpen: false }));
+                  setPublicArtifactModal({
+                    isOpen: true,
+                    artifactId: artifact.id,
+                    initialArtifact: artifact,
+                  });
+                }}
+                onForkArtifactIntoChat={handleForkArtifactIntoChat}
+                onContinueVaultItemInChat={handleContinueVaultItemInChat}
+                isDark={isDark}
+              />
+            </Suspense>
+          )}
 
           {/* Public Kinich Page Reader & Fork Modal (?artifact=<id>) */}
-          <PublicArtifactView
-            isOpen={publicArtifactModal.isOpen}
-            artifactId={publicArtifactModal.artifactId}
-            initialArtifact={publicArtifactModal.initialArtifact}
-            onClose={() => {
-              setPublicArtifactModal({ isOpen: false, artifactId: null, initialArtifact: null });
-              try {
-                const u = new URL(window.location.href);
-                if (u.searchParams.has('artifact')) {
-                  u.searchParams.delete('artifact');
-                  window.history.replaceState({}, '', u.toString());
-                }
-              } catch {}
-            }}
-            onForkIntoChat={handleForkArtifactIntoChat}
-            isDark={isDark}
-          />
+          {publicArtifactModal.isOpen && (
+            <Suspense fallback={<ModalSkeleton isDark={isDark} />}>
+              <PublicArtifactView
+                isOpen={publicArtifactModal.isOpen}
+                artifactId={publicArtifactModal.artifactId}
+                initialArtifact={publicArtifactModal.initialArtifact}
+                onClose={() => {
+                  setPublicArtifactModal({ isOpen: false, artifactId: null, initialArtifact: null });
+                  try {
+                    const u = new URL(window.location.href);
+                    if (u.searchParams.has('artifact')) {
+                      u.searchParams.delete('artifact');
+                      window.history.replaceState({}, '', u.toString());
+                    }
+                  } catch {}
+                }}
+                onForkIntoChat={handleForkArtifactIntoChat}
+                isDark={isDark}
+              />
+            </Suspense>
+          )}
 
           {/* Full-Page PDF Upload, Quiz, Flashcards & ArXiv Study Studio */}
-          <InbuiltPdfViewer
-            isOpen={pdfStudioState.isOpen}
-            onClose={() => setPdfStudioState({ isOpen: false })}
-            pdfUrl={pdfStudioState.pdfUrl || 'https://arxiv.org/pdf/1706.03762.pdf'}
-            pdfName={pdfStudioState.pdfName}
-            title={pdfStudioState.pdfName || 'Attention Is All You Need'}
-            arxivId={pdfStudioState.pdfName ? undefined : '1706.03762'}
-            authors={
-              pdfStudioState.pdfName
-                ? undefined
-                : ['Ashish Vaswani', 'Noam Shazeer', 'Niki Parmar', 'Jakob Uszkoreit']
-            }
-            published={pdfStudioState.pdfName ? undefined : '2017-06-12'}
-            extractedText={pdfStudioState.extractedText}
-            initialTab={pdfStudioState.initialTab || 'quiz'}
-            summary="We propose a new simple network architecture, the Transformer, based solely on attention mechanisms, dispensing with recurrence and convolutions entirely. Scaled dot-product attention computes the dot products of the query with all keys, divides each by the square root of the key dimension d_k to prevent vanishing gradients in the softmax, and applies a softmax function to obtain weights on the values. Multi-head attention allows the model to jointly attend to information from different representation subspaces at different positions in parallel. Because the Transformer contains no recurrence and no convolution, positional encodings using sine and cosine functions of different frequencies are added to the input embeddings to inject sequence order. On both WMT 2014 English-to-German and English-to-French translation benchmarks, the Transformer achieves state-of-the-art BLEU scores while requiring significantly less training time and enabling full parallelization across sequence tokens."
-            isDark={isDark}
-            onAskKinich={(prompt) => handleSend(prompt)}
-          />
+          {pdfStudioState.isOpen && (
+            <Suspense fallback={<ModalSkeleton isDark={isDark} />}>
+              <InbuiltPdfViewer
+                isOpen={pdfStudioState.isOpen}
+                onClose={() => setPdfStudioState({ isOpen: false })}
+                pdfUrl={pdfStudioState.pdfUrl || 'https://arxiv.org/pdf/1706.03762.pdf'}
+                pdfName={pdfStudioState.pdfName}
+                title={pdfStudioState.pdfName || 'Attention Is All You Need'}
+                arxivId={pdfStudioState.pdfName ? undefined : '1706.03762'}
+                authors={
+                  pdfStudioState.pdfName
+                    ? undefined
+                    : ['Ashish Vaswani', 'Noam Shazeer', 'Niki Parmar', 'Jakob Uszkoreit']
+                }
+                published={pdfStudioState.pdfName ? undefined : '2017-06-12'}
+                extractedText={pdfStudioState.extractedText}
+                initialTab={pdfStudioState.initialTab || 'quiz'}
+                summary="We propose a new simple network architecture, the Transformer, based solely on attention mechanisms, dispensing with recurrence and convolutions entirely. Scaled dot-product attention computes the dot products of the query with all keys, divides each by the square root of the key dimension d_k to prevent vanishing gradients in the softmax, and applies a softmax function to obtain weights on the values. Multi-head attention allows the model to jointly attend to information from different representation subspaces at different positions in parallel. Because the Transformer contains no recurrence and no convolution, positional encodings using sine and cosine functions of different frequencies are added to the input embeddings to inject sequence order. On both WMT 2014 English-to-German and English-to-French translation benchmarks, the Transformer achieves state-of-the-art BLEU scores while requiring significantly less training time and enabling full parallelization across sequence tokens."
+                isDark={isDark}
+                onAskKinich={(prompt) => handleSend(prompt)}
+              />
+            </Suspense>
+          )}
 
           {/* Quick Frictionless 3-Step Onboarding Modal */}
-          <QuickOnboardingModal
-            isOpen={isOnboardingOpen}
-            onClose={() => setIsOnboardingOpen(false)}
-            isDark={isDark}
-            onComplete={() => {
-              setUserProfile(UserAccountStore.getProfile());
-              setUserSub(UserAccountStore.getSubscription());
-            }}
-          />
+          {isOnboardingOpen && (
+            <Suspense fallback={<ModalSkeleton isDark={isDark} />}>
+              <QuickOnboardingModal
+                isOpen={isOnboardingOpen}
+                onClose={() => setIsOnboardingOpen(false)}
+                isDark={isDark}
+                onComplete={() => {
+                  setUserProfile(UserAccountStore.getProfile());
+                  setUserSub(UserAccountStore.getSubscription());
+                }}
+              />
+            </Suspense>
+          )}
 
           {/* Full-Page Pricing & Plans Modal (Spark $3 · Fire $7) */}
-          <PricingModal
-            isOpen={pricingModalState.isOpen}
-            onClose={() => setPricingModalState((prev) => ({ ...prev, isOpen: false }))}
-            initialHighlightPlan={pricingModalState.highlightPlan}
-            limitReason={pricingModalState.limitReason}
-            isDark={isDark}
-          />
+          {pricingModalState.isOpen && (
+            <Suspense fallback={<ModalSkeleton isDark={isDark} />}>
+              <PricingModal
+                isOpen={pricingModalState.isOpen}
+                onClose={() => setPricingModalState((prev) => ({ ...prev, isOpen: false }))}
+                initialHighlightPlan={pricingModalState.highlightPlan}
+                limitReason={pricingModalState.limitReason}
+                isDark={isDark}
+              />
+            </Suspense>
+          )}
 
           {/* Dodo Payments Checkout Return Handler (/billing/return) — Polls /api/billing/me, NEVER grants access from URL */}
           {billingReturnState.isOpen && (

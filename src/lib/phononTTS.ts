@@ -1,8 +1,4 @@
-import { PhononTTS } from 'phonon-tts';
-import wasmUrl from 'phonon-tts/wasm/phonon_tts_bg.wasm?url';
-import simdWasmUrl from 'phonon-tts/wasm/phonon_tts_simd_bg.wasm?url';
-import threadsWasmUrl from 'phonon-tts/wasm-threads/phonon_tts_bg.wasm?url';
-import threadsSimdWasmUrl from 'phonon-tts/wasm-threads/phonon_tts_simd_bg.wasm?url';
+import type { PhononTTS } from 'phonon-tts';
 
 let ttsPromise: Promise<PhononTTS | null> | null = null;
 let phononUnavailable = false;
@@ -22,20 +18,37 @@ export function isPhononSupported(): boolean {
 export async function loadPhonon(): Promise<PhononTTS | null> {
   if (!isPhononSupported()) return null;
   if (!ttsPromise) {
-    ttsPromise = PhononTTS.load({
-      model: 'hf://gradium/phonon-31m-en',
-      lang: 'en',
-      quant: 'q8',
-      device: 'auto',
-      wasmUrl,
-      simdWasmUrl,
-      threadsWasmUrl,
-      threadsSimdWasmUrl,
-    }).catch(() => {
-      phononUnavailable = true;
-      ttsPromise = null;
-      return null;
-    });
+    ttsPromise = (async () => {
+      try {
+        const [
+          { PhononTTS: PhononCtor },
+          { default: wasmUrl },
+          { default: simdWasmUrl },
+          { default: threadsWasmUrl },
+          { default: threadsSimdWasmUrl },
+        ] = await Promise.all([
+          import('phonon-tts'),
+          import('phonon-tts/wasm/phonon_tts_bg.wasm?url'),
+          import('phonon-tts/wasm/phonon_tts_simd_bg.wasm?url'),
+          import('phonon-tts/wasm-threads/phonon_tts_bg.wasm?url'),
+          import('phonon-tts/wasm-threads/phonon_tts_simd_bg.wasm?url'),
+        ]);
+        return await PhononCtor.load({
+          model: 'hf://gradium/phonon-31m-en',
+          lang: 'en',
+          quant: 'q8',
+          device: 'auto',
+          wasmUrl,
+          simdWasmUrl,
+          threadsWasmUrl,
+          threadsSimdWasmUrl,
+        });
+      } catch {
+        phononUnavailable = true;
+        ttsPromise = null;
+        return null;
+      }
+    })();
   }
   return ttsPromise;
 }

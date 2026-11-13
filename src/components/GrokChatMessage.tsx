@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, Suspense, lazy } from 'react';
 import {
   Copy,
   Check,
@@ -45,15 +45,28 @@ import rehypeRaw from 'rehype-raw';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import { ChatMessage as ChatMessageType, YouTubeVideoInfo, FinanceQuote, KnowledgeVaultItem, AgentReplyCard } from '../types';
-import { PrismCodeBlock } from './PrismCodeBlock';
 import { normalizeMathDelimiters } from './MathMarkdown';
 import { GrokTimingTooltip } from './GrokTimingTooltip';
 import { GenerativeUiViewer } from './GenerativeUiViewer';
 import { ArxivPaperCard } from './ArxivPaperCard';
 import { GithubRepoCard } from './GithubRepoCard';
 import { PersonaWikiCard } from './PersonaWikiCard';
-import { InbuiltPdfViewer, PdfStudioTab } from './InbuiltPdfViewer';
+import type { PdfStudioTab } from './InbuiltPdfViewer';
 import { FinanceTerminalCard } from './FinanceTerminalCard';
+import { CodeBlockSkeleton, ModalSkeleton } from './Skeleton';
+
+const PrismCodeBlock = lazy(() =>
+  import('./PrismCodeBlock').then((m) => ({ default: m.PrismCodeBlock }))
+);
+const InbuiltPdfViewer = lazy(() =>
+  import('./InbuiltPdfViewer').then((m) => ({ default: m.InbuiltPdfViewer }))
+);
+const YouTubeTranscriptModal = lazy(() =>
+  import('./YouTubeTranscriptModal').then((m) => ({ default: m.YouTubeTranscriptModal }))
+);
+const TtsPopup = lazy(() =>
+  import('./TtsPopup').then((m) => ({ default: m.TtsPopup }))
+);
 import {
   detectFinanceSymbolsInText,
   buildFallbackFinanceQuote,
@@ -81,11 +94,12 @@ import {
   WeatherCard,
   detectWeatherLocationInQuery,
 } from './kobra';
-import { PeleDiagram } from './PeleDiagram';
-import { TtsPopup } from './TtsPopup';
+const PeleDiagram = lazy(() =>
+  import('./PeleDiagram').then((m) => ({ default: m.PeleDiagram }))
+);
 import { UserAccountStore } from '../lib/userAccountStore';
 import { KnowledgeVaultStore } from '../lib/growthStore';
-import { YouTubeTranscriptModal, extractYouTubeIdFromInput } from './YouTubeTranscriptModal';
+import { extractYouTubeIdFromInput } from '../lib/youtube';
 import { ModelOption } from './GrokModelPicker';
 
 interface GrokChatMessageProps {
@@ -188,7 +202,9 @@ const TerminalCodeBlock: React.FC<{
   code: string;
   isDark?: boolean;
 }> = ({ language = '', code, isDark = true }) => (
-  <PrismCodeBlock language={language} code={code} isDark={isDark} />
+  <Suspense fallback={<CodeBlockSkeleton isDark={isDark} />}>
+    <PrismCodeBlock language={language} code={code} isDark={isDark} />
+  </Suspense>
 );
 
 export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
@@ -1914,7 +1930,11 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                       childContent.startsWith('erDiagram') ||
                       childContent.startsWith('gantt')
                     ) {
-                      return <PeleDiagram code={childContent} isDark={isDark} />;
+                      return (
+                        <Suspense fallback={<CodeBlockSkeleton isDark={isDark} />}>
+                          <PeleDiagram code={childContent} isDark={isDark} />
+                        </Suspense>
+                      );
                     }
 
                     const isCustomBlock =
@@ -2737,11 +2757,22 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                 </button>
 
                 {showTtsPopup && (
-                  <TtsPopup
-                    text={message.content || ''}
-                    onClose={() => setShowTtsPopup(false)}
-                    isDark={isDark}
-                  />
+                  <Suspense
+                    fallback={
+                      <span
+                        className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] text-[#FC4C01]"
+                        aria-busy="true"
+                      >
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      </span>
+                    }
+                  >
+                    <TtsPopup
+                      text={message.content || ''}
+                      onClose={() => setShowTtsPopup(false)}
+                      isDark={isDark}
+                    />
+                  </Suspense>
                 )}
 
                 <button
@@ -3018,16 +3049,18 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
 
       {/* Inbuilt Padded PDF Quiz, Flashcards & Study Studio Popup */}
       {pdfViewerData && (
-        <InbuiltPdfViewer
-          isOpen={pdfViewerData.isOpen}
-          onClose={() => setPdfViewerData(null)}
-          pdfUrl={pdfViewerData.pdfUrl}
-          pdfName={pdfViewerData.pdfName}
-          extractedText={pdfViewerData.extractedText}
-          initialTab={pdfViewerData.initialTab}
-          isDark={isDark}
-          onAskKinich={onAskKinich}
-        />
+        <Suspense fallback={<ModalSkeleton isDark={isDark} />}>
+          <InbuiltPdfViewer
+            isOpen={pdfViewerData.isOpen}
+            onClose={() => setPdfViewerData(null)}
+            pdfUrl={pdfViewerData.pdfUrl}
+            pdfName={pdfViewerData.pdfName}
+            extractedText={pdfViewerData.extractedText}
+            initialTab={pdfViewerData.initialTab}
+            isDark={isDark}
+            onAskKinich={onAskKinich}
+          />
+        </Suspense>
       )}
 
       {/* Padded Rich Citation Pop-up Modal */}
@@ -3040,13 +3073,15 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
 
       {/* Full-Screen Dedicated YouTube Study & Transcript Workspace */}
       {activeStudyVideo && (
-        <YouTubeTranscriptModal
-          isOpen={Boolean(activeStudyVideo)}
-          onClose={() => setActiveStudyVideo(null)}
-          video={activeStudyVideo}
-          isDark={isDark}
-          onAskKinich={onAskKinich}
-        />
+        <Suspense fallback={<ModalSkeleton isDark={isDark} />}>
+          <YouTubeTranscriptModal
+            isOpen={Boolean(activeStudyVideo)}
+            onClose={() => setActiveStudyVideo(null)}
+            video={activeStudyVideo}
+            isDark={isDark}
+            onAskKinich={onAskKinich}
+          />
+        </Suspense>
       )}
     </div>
   );

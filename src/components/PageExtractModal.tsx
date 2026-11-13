@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import {
   ArrowLeft,
   Copy,
@@ -12,9 +12,15 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import { getAuthHeaders } from '../lib/firebase';
-import { extractYouTubeIdFromInput } from './YouTubeTranscriptModal';
-import { PrismCodeBlock } from './PrismCodeBlock';
-import { PeleDiagram } from './PeleDiagram';
+import { extractYouTubeIdFromInput } from '../lib/youtube';
+import { CodeBlockSkeleton } from './Skeleton';
+
+const PeleDiagram = lazy(() =>
+  import('./PeleDiagram').then((m) => ({ default: m.PeleDiagram }))
+);
+const PrismCodeBlock = lazy(() =>
+  import('./PrismCodeBlock').then((m) => ({ default: m.PrismCodeBlock }))
+);
 
 export interface PageExtractModalProps {
   url: string | null;
@@ -343,11 +349,19 @@ export const PageExtractModal: React.FC<PageExtractModalProps> = ({
         childContent.startsWith('flowchart ') ||
         childContent.startsWith('sequenceDiagram')
       ) {
-        return <PeleDiagram code={childContent} isDark={isDark} />;
+        return (
+          <Suspense fallback={<CodeBlockSkeleton isDark={isDark} />}>
+            <PeleDiagram code={childContent} isDark={isDark} />
+          </Suspense>
+        );
       }
       const matchLang = /language-([\w+-]+)/.exec(childClassName || '');
       const lang = matchLang ? matchLang[1] : 'text';
-      return <PrismCodeBlock language={lang} code={childContent} isDark={isDark} />;
+      return (
+        <Suspense fallback={<CodeBlockSkeleton isDark={isDark} />}>
+          <PrismCodeBlock language={lang} code={childContent} isDark={isDark} />
+        </Suspense>
+      );
     },
     code: ({ node, className, children, ...props }: any) => {
       const text = String(children ?? '');

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, Suspense, lazy } from 'react';
 import {
   Plus,
   Trash2,
@@ -43,8 +43,12 @@ import {
   EvaluatedBadge,
 } from '../lib/userAccountStore';
 import { KnowledgeVaultStore } from '../lib/growthStore';
-import { StreakModal } from './StreakModal';
 import { auth } from '../lib/firebase';
+import { ModalSkeleton } from './Skeleton';
+
+const StreakModal = lazy(() =>
+  import('./StreakModal').then((m) => ({ default: m.StreakModal }))
+);
 
 
 export interface ChatThread {
@@ -1325,13 +1329,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
       </aside>
 
-      <StreakModal
-        isOpen={showStreakModal}
-        onClose={() => setShowStreakModal(false)}
-        streak={dailyStreak}
-        isDark={isDark}
-        initialTab={streakModalTab}
-      />
+      {showStreakModal && (
+        <Suspense fallback={<ModalSkeleton isDark={isDark} />}>
+          <StreakModal
+            isOpen={showStreakModal}
+            onClose={() => setShowStreakModal(false)}
+            streak={dailyStreak}
+            isDark={isDark}
+            initialTab={streakModalTab}
+          />
+        </Suspense>
+      )}
     </>
   );
 };

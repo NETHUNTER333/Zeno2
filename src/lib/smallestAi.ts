@@ -1,6 +1,27 @@
 // Rumik AI Silk Read Out Loud Engine with Language & Male/Female Audio Preferences
 import { getAuthHeaders } from './firebase';
-import { isPhononSupported, speakWithPhonon, stopPhononSpeech } from './phononTTS';
+
+let phononModulePromise: Promise<typeof import('./phononTTS')> | null = null;
+let loadedPhononModule: typeof import('./phononTTS') | null = null;
+
+function isPhononRuntimeSupported(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof Worker !== 'undefined' &&
+    typeof WebAssembly === 'object' &&
+    !!(window.AudioContext || (window as any).webkitAudioContext)
+  );
+}
+
+async function getPhononModule() {
+  if (!phononModulePromise) {
+    phononModulePromise = import('./phononTTS').then((mod) => {
+      loadedPhononModule = mod;
+      return mod;
+    });
+  }
+  return phononModulePromise;
+}
 
 export type TtsVoiceGender = 'female' | 'male';
 export type TtsPlaybackSpeed = 0.5 | 1 | 1.5 | 2;
@@ -123,7 +144,7 @@ export function setActiveTtsPlaybackSpeed(speed: TtsPlaybackSpeed) {
 }
 
 export function stopSmallestSpeech() {
-  stopPhononSpeech();
+  loadedPhononModule?.stopPhononSpeech();
   if (activeAbortController) {
     try {
       activeAbortController.abort();
@@ -330,9 +351,12 @@ export async function speakTextWithSmallestAi(
 
   // Only use Phonon on-device fallback for Female English (Phonon 31M is a female-only model)
   const isEnglish = language === 'english' || language === 'en' || bcp47.startsWith('en');
-  if (gender === 'female' && isEnglish && isPhononSupported()) {
-    const handled = await speakWithPhonon(cleanText, { onStart, onEnd, onError });
-    if (handled) return;
+  if (gender === 'female' && isEnglish && isPhononRuntimeSupported()) {
+    const phononMod = await getPhononModule();
+    if (phononMod.isPhononSupported()) {
+      const handled = await phononMod.speakWithPhonon(cleanText, { onStart, onEnd, onError });
+      if (handled) return;
+    }
   }
 
   fallbackWebSpeech(cleanText, bcp47, gender, onStart, onEnd, onError, speed);

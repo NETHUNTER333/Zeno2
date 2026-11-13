@@ -40,7 +40,7 @@ import {
   deletePublicArtifactFromFirestore,
 } from './firebase';
 import { UserAccountStore } from './userAccountStore';
-import { ShareCardTheme } from './exportChat';
+import type { ShareCardTheme } from './exportChat';
 import { apiFetch } from './apiBase';
 import {
   captureInboundReferral,

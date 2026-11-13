@@ -1,8 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, Suspense, lazy } from 'react';
 import { ChevronDown, Code2, ExternalLink, Star, GitFork } from 'lucide-react';
 import { ArxivPaper } from '../types';
-import { InbuiltPdfViewer } from './InbuiltPdfViewer';
+import { ModalSkeleton } from './Skeleton';
 import GitHubActivity, { extractGitHubUsername } from './ui/github-activity';
+
+const InbuiltPdfViewer = lazy(() =>
+  import('./InbuiltPdfViewer').then((m) => ({ default: m.InbuiltPdfViewer }))
+);
 
 interface ArxivPaperCardProps {
   paper: ArxivPaper;
@@ -306,15 +310,17 @@ export const ArxivPaperCard: React.FC<ArxivPaperCardProps> = ({
 
       {/* Inbuilt Online PDF & Readability Reader Modal */}
       {isPdfViewerOpen && (
-        <InbuiltPdfViewer
-          isOpen={isPdfViewerOpen}
-          onClose={() => setIsPdfViewerOpen(false)}
-          pdfUrl={paper.pdfUrl}
-          pdfName={paper.title}
-          extractedText={`Paper Title: ${paper.title}\n\nAuthors: ${paper.authors.join(', ')}\nPublished: ${formatDate(paper.published)}\nCategories: ${paper.categories.join(', ')}\n\nABSTRACT:\n${paper.summary}`}
-          isDark={isDark}
-          onAskKinich={onAskKinich}
-        />
+        <Suspense fallback={<ModalSkeleton isDark={isDark} />}>
+          <InbuiltPdfViewer
+            isOpen={isPdfViewerOpen}
+            onClose={() => setIsPdfViewerOpen(false)}
+            pdfUrl={paper.pdfUrl}
+            pdfName={paper.title}
+            extractedText={`Paper Title: ${paper.title}\n\nAuthors: ${paper.authors.join(', ')}\nPublished: ${formatDate(paper.published)}\nCategories: ${paper.categories.join(', ')}\n\nABSTRACT:\n${paper.summary}`}
+            isDark={isDark}
+            onAskKinich={onAskKinich}
+          />
+        </Suspense>
       )}
     </div>
   );

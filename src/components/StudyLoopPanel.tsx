@@ -23,6 +23,7 @@ import { KnowledgeVaultStore, VaultThreadStore } from '../lib/growthStore';
 import { extractTextFromPdfFile } from '../lib/pdfStudyEngine';
 import { StudyLanguageDropdown } from './CustomSearchSelect';
 import ErrorState from './ErrorState';
+import { MathMarkdown } from './MathMarkdown';
 
 interface StudyLoopPanelProps {
   isOpen?: boolean;
@@ -1920,7 +1921,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                         Step-by-Step Worked Solution
                       </span>
                       <h4 className={`text-sm sm:text-base font-bold mt-0.5 ${textPrimary}`}>
-                        {snapResult.questionExtracted}
+                        <MathMarkdown content={snapResult.questionExtracted} isDark={isDark} inline />
                       </h4>
                     </div>
 
@@ -1950,8 +1951,8 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                   )}
 
                   {snapTranslatedText && (
-                    <div className={`p-3.5 rounded-xl border border-[#FC4C01]/30 text-xs whitespace-pre-wrap leading-relaxed ${surfaceElevated}`}>
-                      {snapTranslatedText}
+                    <div className={`p-3.5 rounded-xl border border-[#FC4C01]/30 text-xs leading-relaxed ${surfaceElevated}`}>
+                      <MathMarkdown content={snapTranslatedText} isDark={isDark} />
                     </div>
                   )}
 
@@ -1961,11 +1962,16 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                         key={idx}
                         className={`p-3 rounded-xl border text-xs sm:text-sm leading-relaxed ${surfaceElevated} ${textPrimary}`}
                       >
-                        {step}
+                        <MathMarkdown content={step} isDark={isDark} />
                       </div>
                     ))}
                     <div className="p-3 rounded-xl bg-[#FC4C01]/12 border border-[#FC4C01]/35 text-xs sm:text-sm font-bold text-[#FC4C01]">
-                      Final Answer: {snapResult.answer || snapResult.finalAnswer}
+                      <span>Final Answer: </span>
+                      <MathMarkdown
+                        content={snapResult.answer || snapResult.finalAnswer || ''}
+                        isDark={isDark}
+                        inline
+                      />
                     </div>
                   </div>
 
@@ -1977,9 +1983,9 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                       <div className={`text-sm font-bold ${textPrimary}`}>
                         {snapResult.conceptBehindIt.title}
                       </div>
-                      <p className={`text-xs leading-relaxed ${textSecondary}`}>
-                        {snapResult.conceptBehindIt.explanation}
-                      </p>
+                      <div className={`text-xs leading-relaxed ${textSecondary}`}>
+                        <MathMarkdown content={snapResult.conceptBehindIt.explanation} isDark={isDark} />
+                      </div>
                     </div>
                   )}
 
@@ -2013,9 +2019,9 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                           + Add to Recall
                         </button>
                       </div>
-                      <p className={`text-xs sm:text-sm font-semibold ${textPrimary}`}>
-                        {snapResult.similarPracticeQuestion.question}
-                      </p>
+                      <div className={`text-xs sm:text-sm font-semibold ${textPrimary}`}>
+                        <MathMarkdown content={snapResult.similarPracticeQuestion.question} isDark={isDark} inline />
+                      </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         {snapResult.similarPracticeQuestion.options.map((opt, idx) => {
                           const isPicked = snapPracticeAnswer === idx;
@@ -2041,7 +2047,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                             <span className="font-mono font-bold mr-1.5">
                               {String.fromCharCode(65 + idx)}.
                             </span>
-                            {opt}
+                            <MathMarkdown content={opt} isDark={isDark} inline />
                           </button>
                         );
                       })}
@@ -2050,7 +2056,11 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                         <div className={`text-xs p-2.5 rounded-lg border ${surfaceInner}`}>
                           <strong className="text-[#FC4C01]">Explanation:</strong>{' '}
                           <span className={textPrimary}>
-                            {snapResult.similarPracticeQuestion.explanation}
+                            <MathMarkdown
+                              content={snapResult.similarPracticeQuestion.explanation}
+                              isDark={isDark}
+                              inline
+                            />
                           </span>
                         </div>
                       )}

@@ -3341,7 +3341,7 @@ Requirements:
 1. Provide a rigorous, step-by-step mathematical/conceptual solution in "steps" (non-empty array of clear step strings covering formula, substitution, and calculation).
 2. State the exact concise final answer in "answer" and "finalAnswer" (e.g. "50%" or "v = 15 m/s").
 3. Explain the underlying concept in "conceptBehindIt" with title, subject, chapter, and a 2-3 sentence explanation.
-4. Provide 1 similar multiple-choice practice question in "similarPracticeQuestion" with 4 distinct options, 0-based correctIndex, and a clear explanation.
+4. Provide 1 similar multiple-choice practice question in "similarPracticeQuestion" with 4 distinct options, 0-based correctIndex, and a clear explanation. Numeric options must be rounded properly (for example, 66.7% or 67%, NEVER truncated to 66% for 66.67%), and options[correctIndex] must exactly match the computed answer in explanation.
 5. Set "confidence": "high" and "checkWithTextbook": false.
 
 Return ONLY valid JSON matching this schema:

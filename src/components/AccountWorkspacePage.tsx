@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import {
   ArrowLeft,
   User,
@@ -58,8 +58,14 @@ import { UserProfile } from '../types';
 import { ModelOption } from './GrokModelPicker';
 import { ChatThread } from './Sidebar';
 import { DeleteAccountButton } from './DeleteAccountButton';
-import { PricingModal } from './PricingModal';
-import { BillingHistorySection } from './BillingHistorySection';
+import { Skeleton, ModalSkeleton } from './Skeleton';
+
+const PricingModal = lazy(() =>
+  import('./PricingModal').then((m) => ({ default: m.PricingModal }))
+);
+const BillingHistorySection = lazy(() =>
+  import('./BillingHistorySection').then((m) => ({ default: m.BillingHistorySection }))
+);
 import { cancelUserSubscription, requestSubscriptionRefund } from '../lib/billing';
 import { auth, getAuthHeaders } from '../lib/firebase';
 import { SiteFooter } from './LegalAndInfoPages';
@@ -1208,12 +1214,14 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
           <div className={`${activeTab === 'pricing' ? 'max-w-6xl' : 'max-w-3xl'} mx-auto space-y-6 pb-16`}>
             {/* Tab: Plans & Pricing ($1 Spark / $5 Fire) */}
             {activeTab === 'pricing' && (
-              <PricingModal
-                isOpen={true}
-                onClose={onBackToChat}
-                isDark={isDark}
-                embedded={true}
-              />
+              <Suspense fallback={<ModalSkeleton isDark={isDark} />}>
+                <PricingModal
+                  isOpen={true}
+                  onClose={onBackToChat}
+                  isDark={isDark}
+                  embedded={true}
+                />
+              </Suspense>
             )}
 
             {/* Tab: Dedicated Billing, Cancellation & Refunds */}
@@ -1232,7 +1240,16 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
                   <>
                     <RefundPolicySection isDark={isDark} />
                     <CancelSubscriptionSection isDark={isDark} />
-                    <BillingHistorySection isDark={isDark} />
+                    <Suspense
+                      fallback={
+                        <div className="space-y-3">
+                          <Skeleton isDark={isDark} className="h-12 w-full rounded-2xl" />
+                          <Skeleton isDark={isDark} className="h-32 w-full rounded-2xl" />
+                        </div>
+                      }
+                    >
+                      <BillingHistorySection isDark={isDark} />
+                    </Suspense>
                   </>
                 ) : (
                   <div

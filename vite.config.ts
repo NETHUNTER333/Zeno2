@@ -7,8 +7,8 @@ import {
   writeStaticSeoAndLegalAssets,
   renderPrerenderedLegalHtml,
   renderPrerendered404Html,
-} from './server/legalAndSafetyEngine';
-import type { LegalDocumentId } from './src/legal/policiesData';
+} from './server/legalAndSafetyEngine.ts';
+import type { LegalDocumentId } from './src/legal/policiesData.ts';
 
 function zenoStaticPrerenderPlugin() {
   const rootDir = import.meta.dirname;
@@ -62,6 +62,31 @@ export default defineConfig(() => {
     },
     build: {
       sourcemap: 'hidden' as const,
+      rolldownOptions: {
+        output: {
+          manualChunks(id: string) {
+            if (!id.includes('node_modules')) return undefined;
+            if (/[\\/]node_modules[\\/](firebase|@firebase)[\\/]/.test(id)) {
+              return 'firebase';
+            }
+            if (
+              /[\\/]node_modules[\\/](react-markdown|remark-|rehype-|katex|unified|micromark|mdast-|hast-|unist-|vfile|property-information|space-separated-tokens|comma-separated-tokens|decode-named-character-reference|character-entities|ccount|escape-string-regexp|markdown-table|zwitch|longest-streak|bail|trough|is-plain-obj|devlop|html-void-elements|stringify-entities|trim-lines|parse-entities)/.test(
+                id
+              )
+            ) {
+              return 'markdown-katex';
+            }
+            if (
+              /[\\/]node_modules[\\/](react|react-dom|scheduler|@base-ui|lucide-react|@sentry|@vercel|zod|motion|motion-dom|motion-utils|framer-motion)[\\/]/.test(
+                id
+              )
+            ) {
+              return 'react-vendor';
+            }
+            return undefined;
+          },
+        },
+      },
     },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
