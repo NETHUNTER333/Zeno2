@@ -20,29 +20,41 @@ export async function loadPhonon(): Promise<PhononTTS | null> {
   if (!ttsPromise) {
     ttsPromise = (async () => {
       try {
-        const [
-          { PhononTTS: PhononCtor },
-          { default: wasmUrl },
-          { default: simdWasmUrl },
-          { default: threadsWasmUrl },
-          { default: threadsSimdWasmUrl },
-        ] = await Promise.all([
-          import('phonon-tts'),
-          import('phonon-tts/wasm/phonon_tts_bg.wasm?url'),
-          import('phonon-tts/wasm/phonon_tts_simd_bg.wasm?url'),
-          import('phonon-tts/wasm-threads/phonon_tts_bg.wasm?url'),
-          import('phonon-tts/wasm-threads/phonon_tts_simd_bg.wasm?url'),
-        ]);
-        return await PhononCtor.load({
-          model: 'hf://gradium/phonon-31m-en',
-          lang: 'en',
-          quant: 'q8',
-          device: 'auto',
-          wasmUrl,
-          simdWasmUrl,
-          threadsWasmUrl,
-          threadsSimdWasmUrl,
+        const timeoutPromise = new Promise<null>((resolve) => {
+          setTimeout(() => resolve(null), 20000);
         });
+        const loadPromise = (async () => {
+          const [
+            { PhononTTS: PhononCtor },
+            { default: wasmUrl },
+            { default: simdWasmUrl },
+            { default: threadsWasmUrl },
+            { default: threadsSimdWasmUrl },
+          ] = await Promise.all([
+            import('phonon-tts'),
+            import('phonon-tts/wasm/phonon_tts_bg.wasm?url'),
+            import('phonon-tts/wasm/phonon_tts_simd_bg.wasm?url'),
+            import('phonon-tts/wasm-threads/phonon_tts_bg.wasm?url'),
+            import('phonon-tts/wasm-threads/phonon_tts_simd_bg.wasm?url'),
+          ]);
+          return await PhononCtor.load({
+            model: 'hf://gradium/phonon-31m-en',
+            lang: 'en',
+            quant: 'q8',
+            device: 'auto',
+            wasmUrl,
+            simdWasmUrl,
+            threadsWasmUrl,
+            threadsSimdWasmUrl,
+          });
+        })();
+        const result = await Promise.race([loadPromise, timeoutPromise]);
+        if (result === null) {
+          phononUnavailable = true;
+          ttsPromise = null;
+          return null;
+        }
+        return result;
       } catch {
         phononUnavailable = true;
         ttsPromise = null;

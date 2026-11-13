@@ -80,19 +80,26 @@ export const TtsPopup: React.FC<TtsPopupProps> = ({ text, onClose, isDark = true
     setIsPlaying(false);
     setLoading(true);
     setActiveWordIndex(startWordIdx);
+    const loadingTimer = setTimeout(() => {
+      setLoading(false);
+      setIsPlaying(false);
+    }, 20000);
     speakTextWithSmallestAi(
       text,
       langOverride ?? ttsLang,
       () => {
+        clearTimeout(loadingTimer);
         setLoading(false);
         setIsPlaying(true);
       },
       () => {
+        clearTimeout(loadingTimer);
         setLoading(false);
         setIsPlaying(false);
         setActiveWordIndex(-1);
       },
       () => {
+        clearTimeout(loadingTimer);
         setLoading(false);
         setIsPlaying(false);
       },
