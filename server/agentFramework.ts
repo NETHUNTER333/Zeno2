@@ -431,6 +431,25 @@ export function getExternalLlmProviders(): ExternalProviderCandidate[] {
     });
   }
 
+  // 5. Open Free Unified Gateway
+  const openFreeGwKey =
+    process.env.OPEN_FREE_GATEWAY_API_KEY ||
+    (keysConfig?.tokens as any)?.openFreeGateway ||
+    '7SstRSwxluwB20Us1TZ2deDJsjmxXixlkVhjqdqwrIHEcgvB';
+  const openFreeGwBaseUrl = (
+    process.env.OPEN_FREE_GATEWAY_BASE_URL ||
+    (keysConfig?.baseUrls as any)?.openFreeGateway ||
+    'https://crowllm.com/v1'
+  ).replace(/\/+$/, '');
+  if (openFreeGwKey && !openFreeGwKey.includes('YOUR_')) {
+    candidates.push({
+      name: 'open-free-gateway',
+      baseUrl: openFreeGwBaseUrl,
+      apiKey: openFreeGwKey,
+      model: 'gpt-4.1-mini:free',
+    });
+  }
+
   return candidates;
 }
 

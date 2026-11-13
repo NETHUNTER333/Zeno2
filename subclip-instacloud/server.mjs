@@ -1,8 +1,43 @@
 import http from 'node:http';
+import fs from 'node:fs';
+import path from 'node:path';
 import { URL } from 'node:url';
 
 const PORT = Number(process.env.PORT || 8080);
 const PROJECT_ID = process.env.INSTACLOUD_PROJECT_ID || '0d8d285e-6ac2-4b38-b313-449dc5694cc2';
+const PHONE_TUNNEL_FILE = path.resolve(process.cwd(), '.insta', 'phone_tunnel.json');
+
+let registeredPhoneTunnel = {
+  url: process.env.PHONE_TUNNEL_URL || '',
+  updatedAt: 0,
+};
+
+try {
+  if (fs.existsSync(PHONE_TUNNEL_FILE)) {
+    const saved = JSON.parse(fs.readFileSync(PHONE_TUNNEL_FILE, 'utf8'));
+    if (saved?.url) {
+      registeredPhoneTunnel = {
+        url: String(saved.url).replace(/\/+$/, ''),
+        updatedAt: Number(saved.updatedAt || Date.now()),
+      };
+    }
+  }
+} catch {}
+
+function savePhoneTunnelUrl(rawUrl) {
+  const clean = String(rawUrl || '').trim().replace(/\/+$/, '');
+  if (!clean) return registeredPhoneTunnel;
+  registeredPhoneTunnel = { url: clean, updatedAt: Date.now() };
+  try {
+    fs.mkdirSync(path.dirname(PHONE_TUNNEL_FILE), { recursive: true });
+    fs.writeFileSync(PHONE_TUNNEL_FILE, JSON.stringify(registeredPhoneTunnel, null, 2), 'utf8');
+  } catch {}
+  return registeredPhoneTunnel;
+}
+
+function getActivePhoneTunnelUrl() {
+  return (registeredPhoneTunnel.url || process.env.PHONE_TUNNEL_URL || '').replace(/\/+$/, '');
+}
 
 function extractYouTubeId(input = '') {
   const trimmed = String(input).trim();
@@ -292,7 +327,41 @@ const server = http.createServer(async (req, res) => {
         status: 'ok',
         service: 'subclip-instacloud-backend',
         projectId: PROJECT_ID,
-        endpoints: ['/api/transcript', '/api/chat', '/health'],
+        phoneTunnelUrl: getActivePhoneTunnelUrl() || null,
+        phoneUpdatedAt: registeredPhoneTunnel.updatedAt || null,
+        endpoints: ['/api/transcript', '/api/phone/register', '/api/phone/status', '/api/chat', '/health'],
+      })
+    );
+  }
+
+  if (pathname === '/api/phone/register' && req.method === 'POST') {
+    try {
+      let body = '';
+      for await (const chunk of req) body += chunk;
+      const payload = JSON.parse(body || '{}');
+      const incomingUrl = String(payload.url || payload.tunnelUrl || '').trim();
+      if (!incomingUrl || !/^https?:\/\//i.test(incomingUrl)) {
+        res.writeHead(400);
+        return res.end(JSON.stringify({ success: false, error: 'Valid https tunnel url is required' }));
+      }
+      const saved = savePhoneTunnelUrl(incomingUrl);
+      res.writeHead(200);
+      return res.end(JSON.stringify({ success: true, ...saved }));
+    } catch (err) {
+      res.writeHead(500);
+      return res.end(JSON.stringify({ success: false, error: err.message }));
+    }
+  }
+
+  if (pathname === '/api/phone/status' && req.method === 'GET') {
+    const activeUrl = getActivePhoneTunnelUrl();
+    res.writeHead(200);
+    return res.end(
+      JSON.stringify({
+        success: true,
+        online: Boolean(activeUrl),
+        url: activeUrl || null,
+        updatedAt: registeredPhoneTunnel.updatedAt || null,
       })
     );
   }

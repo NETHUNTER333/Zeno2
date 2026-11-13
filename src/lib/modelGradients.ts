@@ -247,19 +247,44 @@ export function getModelGradientTheme(modelIdOrName?: string): ModelGradientThem
   if (raw.includes('claude') || raw.includes('sonnet') || raw.includes('opus')) {
     return MODEL_GRADIENT_THEMES.claude;
   }
-  if (raw.includes('gpt') || raw.includes('luna') || raw.includes('sol') || raw.includes('astra')) {
+  if (
+    raw.includes('gpt') ||
+    raw.includes('luna') ||
+    raw.includes('sol') ||
+    raw.includes('astra') ||
+    raw.includes('o3') ||
+    raw.includes('o4')
+  ) {
     return MODEL_GRADIENT_THEMES.gpt;
   }
-  if (raw.includes('grok')) {
+  if (raw.includes('grok') || raw.includes('uncensored') || raw.includes('limitless')) {
     return MODEL_GRADIENT_THEMES.grok;
   }
-  if (raw.includes('gemini') || raw.includes('argon')) {
+  if (raw.includes('gemini') || raw.includes('argon') || raw.includes('gemma')) {
     return MODEL_GRADIENT_THEMES.gemini;
   }
-  if (raw.includes('kimi') || raw.includes('mimo')) {
+  if (
+    raw.includes('kimi') ||
+    raw.includes('mimo') ||
+    raw.includes('minimax') ||
+    raw.includes('muse') ||
+    raw.includes('agnes') ||
+    raw.includes('ernie') ||
+    raw.includes('minicpm') ||
+    raw.includes('hy3') ||
+    raw.includes('hy4')
+  ) {
     return MODEL_GRADIENT_THEMES.kimi;
   }
-  if (raw.includes('atria') || raw.includes('agents')) {
+  if (
+    raw.includes('atria') ||
+    raw.includes('agents') ||
+    raw.includes('llama') ||
+    raw.includes('mistral') ||
+    raw.includes('nemotron') ||
+    raw.includes('laguna') ||
+    raw.includes('flint')
+  ) {
     return MODEL_GRADIENT_THEMES.atria;
   }
   if (raw.includes('auto') || raw.includes('flm')) {

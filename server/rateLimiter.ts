@@ -624,7 +624,11 @@ export function classifyServerModelTier(rawModel: string | undefined): Subscript
   if (SERVER_FIRE_MODELS.has(model)) {
     return 'fire';
   }
-  if (SERVER_FREE_MODELS.has(model)) {
+  if (
+    SERVER_FREE_MODELS.has(model) ||
+    model.startsWith('fgw/') ||
+    model.endsWith(':free')
+  ) {
     return 'free';
   }
   return 'spark';

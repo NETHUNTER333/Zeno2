@@ -497,6 +497,12 @@ async function generateGeminiContentWithFallback(contents: any, isResearchMode =
         model: 'Sage-A1.5',
         extra: { chat_template_kwargs: { enable_thinking: isResearch } },
       },
+      {
+        url: `${OPEN_FREE_GATEWAY_BASE_URL}/chat/completions`,
+        key: OPEN_FREE_GATEWAY_API_KEY,
+        model: 'gpt-4.1-mini:free',
+        extra: {},
+      },
     ].filter((gw) => Boolean(gw.key));
 
     for (const gw of fastGateways) {
@@ -831,6 +837,104 @@ const ZRO_MOONMATH_SUPPORTED_MODELS = [
   'deepseek-v4-flash-0731',
   'glm-5.3-flash',
 ];
+
+// Open Free Models Unified Gateway
+const OPEN_FREE_GATEWAY_BASE_URL = (
+  process.env.OPEN_FREE_GATEWAY_BASE_URL ||
+  (keysAndRouters?.baseUrls as any)?.openFreeGateway ||
+  'https://crowllm.com/v1'
+).replace(/\/+$/, '');
+const OPEN_FREE_GATEWAY_API_KEY =
+  process.env.OPEN_FREE_GATEWAY_API_KEY ||
+  (keysAndRouters?.tokens as any)?.openFreeGateway ||
+  '7SstRSwxluwB20Us1TZ2deDJsjmxXixlkVhjqdqwrIHEcgvB';
+
+const OPEN_FREE_GATEWAY_MODELS = [
+  'agnes-2.5-flash:free',
+  'agnes-3.0-flash:free',
+  'caw/glm-5.3-flash-thinking:free',
+  'caw/glm-5.3-flash:free',
+  'crouton-alpha:free',
+  'crow-code-limitless:free',
+  'crow-limitless:free',
+  'crow-uncensored:free',
+  'deepseek-v4-flash-0731-thinking:free',
+  'deepseek-v4-flash-0731:free',
+  'deepseek-v4-flash-uncensored:free',
+  'deepseek-v4-flash:free',
+  'deepseek-v4.1-flash-uncensored:free',
+  'deepseek-v4.1-flash:free',
+  'dots-3-note-preview:free',
+  'ernie-5.5-flash-preview:free',
+  'flint-v1.0:free',
+  'gemini-2.0-flash:free',
+  'gemini-2.5-pro:free',
+  'gemini-3-flash:free',
+  'gemini-3-pro:free',
+  'gemini-3.1-pro:free',
+  'gemini-3.5-flash:free',
+  'gemini-3.7-flash:free',
+  'gemini-3.8-flash:free',
+  'gemma-4-31b-it:free',
+  'glm-4.6v-flash:free',
+  'glm-4.7-flash:free',
+  'glm-5.3-flash:free',
+  'gpt-4.1-mini:free',
+  'gpt-4o-mini:free',
+  'gpt-4o:free',
+  'gpt-5.6-sol:free',
+  'grok-4.7-fast:free',
+  'grok-4.7:free',
+  'hy3:free',
+  'hy4:free',
+  'jais-3-mova-36b-a4b:free',
+  'k2-horizon-375b-a23b:free',
+  'laguna-s-2.1:free',
+  'laguna-xs-2.1:free',
+  'liquid/lfm-2.5-2.6b-thinking:free',
+  'liquid/lfm-2.5-2.6b:free',
+  'llama-3.3-70b-instruct:free',
+  'llama-3.3-70b:free',
+  'longcat-2.5:free',
+  'mimo-v2.6-flash:free',
+  'minimax-m2.5:free',
+  'minimax-m3.1-flash:free',
+  'MiniCPM-V-4.7-1B:free',
+  'MiniCPM5-2B:free',
+  'mistral-medium-3.5:free',
+  'muse-spark-1.1:free',
+  'nemotron-3-ultra-550b-a55b:free',
+  'nemotron-3.5-super-vl:free',
+  'nvidia/laguna-xs-2.1:free',
+  'nvidia/minimax-m3.1-flash:free',
+  'nvidia/mistral-large-4-1t-a52b:free',
+  'nvidia/nemotron-3-ultra-550b-a55b:free',
+  'nvidia/nemotron-3.5-bolt-e4b:free',
+  'nvidia/nemotron-3.5-super-vl-120b-a12b:free',
+  'o3:free',
+  'o4-mini:free',
+  'openai/gpt-oss-20b:free',
+  'openai/gpt-oss-safeguard-20b:free',
+  'openbmb/MiniCPM-V-4.7-35B-A3B-thinking:free',
+  'openbmb/MiniCPM-V-4.7-35B-A3B:free',
+  'qwen-3.5-397b-a17b:free',
+  'qwen-3.6-27b:free',
+  'qwen-3.6-plus:free',
+  'qwen-3.8-27b:free',
+  'qwen-3.8-max:free',
+  'qwen3-8-omni-flash:free',
+  'qwen3.8-27b-uncensored:free',
+  'solar-mini4:free',
+  'xing4.0-29b-a4b:free',
+];
+
+function resolveOpenFreeUpstreamModel(rawModel: string): string {
+  const stripped = rawModel.startsWith('fgw/') ? rawModel.slice(4) : rawModel;
+  if (stripped === 'uncensored:free') return 'crow-uncensored:free';
+  if (stripped === 'limitless:free') return 'crow-limitless:free';
+  if (stripped === 'code-limitless:free') return 'crow-code-limitless:free';
+  return stripped;
+}
 
 async function callInternAiGlobal(targetModel: string, msgs: any[]): Promise<string> {
   if (!INTERN_AI_API_KEY) throw new Error('INTERN_AI_API_KEY not configured');
@@ -1671,6 +1775,72 @@ async function generateChatCompletion(
     );
   };
 
+  const callOpenFreeGatewaySingle = async (
+    targetModel: string,
+    msgs = openAiMessages,
+    allowFallback = true,
+    timeoutMs = 12000
+  ): Promise<RealCompletionMetrics> => {
+    if (!OPEN_FREE_GATEWAY_API_KEY) throw new Error('Free gateway key not configured');
+    const upstreamModel = resolveOpenFreeUpstreamModel(targetModel);
+    const t0 = Date.now();
+    const resp = await fetch(`${OPEN_FREE_GATEWAY_BASE_URL}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${OPEN_FREE_GATEWAY_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      signal: AbortSignal.timeout(isResearchPaper ? 45000 : timeoutMs),
+      body: JSON.stringify({
+        model: upstreamModel,
+        messages: toTextOnlyMessages(msgs),
+        max_tokens: fastMaxTokens,
+        temperature: 0.5,
+      }),
+    });
+    const tHeaders = Date.now();
+    const data: any = await resp.json();
+    const tDone = Date.now();
+
+    if (!resp.ok || data?.error) {
+      if (allowFallback && resp.status !== 429) {
+        const isUncensoredTarget =
+          upstreamModel.includes('uncensored') || upstreamModel.includes('limitless');
+        const fallbackModel =
+          isUncensoredTarget && upstreamModel !== 'crow-uncensored:free'
+            ? 'crow-uncensored:free'
+            : upstreamModel !== 'gpt-4.1-mini:free'
+            ? 'gpt-4.1-mini:free'
+            : 'qwen-3.6-plus:free';
+        if (fallbackModel !== upstreamModel) {
+          return await callOpenFreeGatewaySingle(fallbackModel, msgs, false, 9000);
+        }
+      }
+      const rawErr = String(data?.error?.message || `Gateway HTTP ${resp.status}`).replace(
+        /crowllm/gi,
+        'gateway'
+      );
+      throw new Error(rawErr);
+    }
+
+    const content = extractDirectMessageText(data?.choices?.[0]?.message);
+    if (!content) throw new Error('Empty gateway response');
+
+    const safeLabel = requestedModel.startsWith('fgw/')
+      ? requestedModel
+      : String(data?.model || upstreamModel).replace(/^crow-/i, '');
+
+    return buildMetricsFromOpenAiResponse(
+      data,
+      content,
+      safeLabel,
+      msgs,
+      t0,
+      tHeaders,
+      tDone
+    );
+  };
+
   const hasMultimodalArray = openAiMessages.some((m) => Array.isArray(m.content));
 
   const tryCallWithTextFallback = async (
@@ -1690,11 +1860,12 @@ async function generateChatCompletion(
   const raceFastestLiveModels = async (
     msgs = openAiMessages,
     preferredModelLabel?: string,
-    skipAnyRouter = false
+    skipAnyRouter = false,
+    skipOpenFreeGateway = false
   ): Promise<RealCompletionMetrics> => {
     const textOnlyMsgs = toTextOnlyMessages(msgs);
     const fastCandidates: Promise<RealCompletionMetrics>[] = [];
-    const fastTimeout = isResearchPaper ? 28000 : 6500;
+    const fastTimeout = isResearchPaper ? 28000 : 8500;
     if (RADOX_AI_API_KEY) {
       fastCandidates.push(callRadoxAiSingle('gemini-3.7-flash', textOnlyMsgs, fastTimeout));
     }
@@ -1713,6 +1884,9 @@ async function generateChatCompletion(
     }
     if (ANYROUTER_API_KEY && !skipAnyRouter) {
       fastCandidates.push(callAnyRouterSingle('nvidia/nemotron-3.5-bolt-e4b', textOnlyMsgs, false, isResearchPaper ? 22000 : 5500));
+    }
+    if (OPEN_FREE_GATEWAY_API_KEY && !skipOpenFreeGateway) {
+      fastCandidates.push(callOpenFreeGatewaySingle('gpt-4.1-mini:free', textOnlyMsgs, true, fastTimeout));
     }
     if (geminiClient || process.env.GEMINI_API_KEY) {
       fastCandidates.push(callGeminiDirect(msgs));
@@ -1736,6 +1910,11 @@ async function generateChatCompletion(
     ]);
   };
 
+  const cleanOpenFreeModel = resolveOpenFreeUpstreamModel(requestedModel);
+  const isOpenFreeGatewayModel =
+    requestedModel.startsWith('fgw/') ||
+    OPEN_FREE_GATEWAY_MODELS.includes(cleanOpenFreeModel);
+
   const cleanZroModel = requestedModel.startsWith('zro/')
     ? requestedModel
     : requestedModel === 'deepseek-v4.1-flash-free' || requestedModel === 'thk/deepseek-v4.1-flash:free'
@@ -1749,9 +1928,10 @@ async function generateChatCompletion(
     : requestedModel;
 
   const isZroMoonMathModel =
-    requestedModel.startsWith('zro/') ||
-    ZRO_MOONMATH_SUPPORTED_MODELS.includes(requestedModel) ||
-    ZRO_MOONMATH_SUPPORTED_MODELS.includes(cleanZroModel);
+    !isOpenFreeGatewayModel &&
+    (requestedModel.startsWith('zro/') ||
+      ZRO_MOONMATH_SUPPORTED_MODELS.includes(requestedModel) ||
+      ZRO_MOONMATH_SUPPORTED_MODELS.includes(cleanZroModel));
 
   const cleanThkModel = requestedModel.startsWith('thk/')
     ? requestedModel.slice(4)
@@ -1766,10 +1946,11 @@ async function generateChatCompletion(
     : requestedModel;
 
   const isTokenHarborModel =
-    requestedModel.startsWith('thk/') ||
-    TOKENHARBOR_FREE_MODELS.includes(cleanThkModel) ||
-    requestedModel === 'deepseek-v4.1-flash-free' ||
-    requestedModel === 'deepseek-v4-flash-0731-free';
+    !isOpenFreeGatewayModel &&
+    (requestedModel.startsWith('thk/') ||
+      TOKENHARBOR_FREE_MODELS.includes(cleanThkModel) ||
+      requestedModel === 'deepseek-v4.1-flash-free' ||
+      requestedModel === 'deepseek-v4-flash-0731-free');
 
   const cleanInternModel = requestedModel.startsWith('intern/')
     ? requestedModel.slice(7)
@@ -1800,7 +1981,17 @@ async function generateChatCompletion(
   const isFlmSelected =
     requestedModel === 'flm/auto' || requestedModel === 'auto' || requestedModel.startsWith('flm');
 
-  if (isZroMoonMathModel && ZRO_MOONMATH_API_KEY) {
+  if (isOpenFreeGatewayModel && OPEN_FREE_GATEWAY_API_KEY) {
+    try {
+      return await tryCallWithTextFallback((m) =>
+        callOpenFreeGatewaySingle(cleanOpenFreeModel, m, true, 12000)
+      );
+    } catch {
+      return await tryCallWithTextFallback((m) =>
+        raceFastestLiveModels(m, requestedModel, false, true)
+      );
+    }
+  } else if (isZroMoonMathModel && ZRO_MOONMATH_API_KEY) {
     return await runHedgedModel(
       (m) => callZroMoonMathSingle(cleanZroModel, m, true, 8500),
       cleanZroModel
@@ -8249,6 +8440,39 @@ const INSTACLOUD_WHISPER_URL = (
   'https://prod-main-whisper-api-057a4f-00jcyrqgrcm.compute.instacloud-edge.com'
 ).replace(/\/+$/, '');
 
+const PHONE_TUNNEL_STATE_FILE = path.resolve(process.cwd(), '.insta', 'phone_tunnel.json');
+let registeredPhoneTunnelState: { url: string; updatedAt: number } = {
+  url: (process.env.PHONE_TUNNEL_URL || '').replace(/\/+$/, ''),
+  updatedAt: 0,
+};
+
+try {
+  if (fs.existsSync(PHONE_TUNNEL_STATE_FILE)) {
+    const parsed = JSON.parse(fs.readFileSync(PHONE_TUNNEL_STATE_FILE, 'utf8'));
+    if (parsed?.url && typeof parsed.url === 'string') {
+      registeredPhoneTunnelState = {
+        url: parsed.url.trim().replace(/\/+$/, ''),
+        updatedAt: Number(parsed.updatedAt || Date.now()),
+      };
+    }
+  }
+} catch {}
+
+function getRegisteredPhoneTunnelUrl(): string {
+  return (registeredPhoneTunnelState.url || process.env.PHONE_TUNNEL_URL || '').trim().replace(/\/+$/, '');
+}
+
+function saveRegisteredPhoneTunnelUrl(rawUrl: string): { url: string; updatedAt: number } {
+  const clean = String(rawUrl || '').trim().replace(/\/+$/, '');
+  if (!clean) return registeredPhoneTunnelState;
+  registeredPhoneTunnelState = { url: clean, updatedAt: Date.now() };
+  try {
+    fs.mkdirSync(path.dirname(PHONE_TUNNEL_STATE_FILE), { recursive: true });
+    fs.writeFileSync(PHONE_TUNNEL_STATE_FILE, JSON.stringify(registeredPhoneTunnelState, null, 2), 'utf8');
+  } catch {}
+  return registeredPhoneTunnelState;
+}
+
 function decodeTranscriptEntities(raw: string): string {
   if (!raw) return '';
   return String(raw)
@@ -8776,10 +9000,12 @@ async function extractYouTubeTranscriptSubclip(
     } catch {}
   }
 
-  // Tier 1: Fast InstaCloud Transcript Backends (with detected Indian language support)
+  // Tier 1: Fast Registered Phone Tunnel & InstaCloud Transcript Backends (with detected Indian language support)
   if (segments.length === 0) {
     try {
+      const activePhoneUrl = getRegisteredPhoneTunnelUrl();
       const candidateUrls = [
+        ...(activePhoneUrl ? [`${activePhoneUrl}/api/transcript`, `${activePhoneUrl}/transcript`] : []),
         (keysAndRouters?.baseUrls as any)?.transcriptFallback ||
           'https://prod-main-transcript-api-6588e7-006jmayjabt.compute.instacloud-edge.com/api/transcript',
         (keysAndRouters?.baseUrls as any)?.transcriptPrimary ||
@@ -10429,6 +10655,16 @@ async function callStudyJsonLLM(
           },
         ]
       : []),
+    ...(OPEN_FREE_GATEWAY_API_KEY
+      ? [
+          {
+            url: `${OPEN_FREE_GATEWAY_BASE_URL}/chat/completions`,
+            key: OPEN_FREE_GATEWAY_API_KEY,
+            model: 'gpt-4.1-mini:free',
+            extra: {},
+          },
+        ]
+      : []),
   ].filter((g) => Boolean(g.key));
 
   for (const gw of gateways) {
@@ -11224,6 +11460,33 @@ interface StudySynthesisJob {
 }
 
 const studyJobs = new Map<string, StudySynthesisJob>();
+
+// POST /api/phone/register & GET /api/phone/status — Auto-connect phone-agent cloudflared tunnel registration
+app.post('/api/phone/register', (req, res) => {
+  const incomingUrl = String(req.body?.url || req.body?.tunnelUrl || '').trim();
+  if (!incomingUrl || !/^https?:\/\//i.test(incomingUrl)) {
+    return res.status(400).json({
+      success: false,
+      error: 'Valid https tunnel URL is required',
+    });
+  }
+  const saved = saveRegisteredPhoneTunnelUrl(incomingUrl);
+  return res.status(200).json({
+    success: true,
+    url: saved.url,
+    updatedAt: saved.updatedAt,
+  });
+});
+
+app.get('/api/phone/status', (_req, res) => {
+  const activeUrl = getRegisteredPhoneTunnelUrl();
+  return res.status(200).json({
+    success: true,
+    online: Boolean(activeUrl),
+    url: activeUrl || null,
+    updatedAt: registeredPhoneTunnelState.updatedAt || null,
+  });
+});
 
 // GET /api/youtube/study/status & GET /api/youtube/study/job/:jobId — Poll background study synthesis job
 app.get('/api/youtube/study/status', (req, res) => {
@@ -13279,8 +13542,11 @@ ${defaultFormattingRule}
     } | null = null;
 
     const userAttachments = lastUserMessage?.attachments || [];
+    const isExplicitOpenFreeModel =
+      typeof model === 'string' &&
+      (model.startsWith('fgw/') || model.endsWith(':free'));
     // Fast contextual path for casual greetings/emojis and real-time clock queries
-    if (!hasAttachments && (isCasualOrGreeting || isClockQuery) && !requestedLanguage) {
+    if (!hasAttachments && (isCasualOrGreeting || isClockQuery) && !requestedLanguage && (!isExplicitOpenFreeModel || isClockQuery)) {
       const nameGreeting = personalization?.preferredName ? ` ${personalization.preferredName}` : '';
       const priorAssistantReplies = messages
         .slice(0, -1)
