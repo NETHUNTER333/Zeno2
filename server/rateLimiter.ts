@@ -497,65 +497,18 @@ const TIER_RANK: Record<SubscriptionPlanTier, number> = {
 };
 
 const SERVER_FREE_MODELS = new Set<string>([
-  // Default Chat Model (Free for all users)
+  // Default Chat Model (Free for all users — zro provider)
   'zro/deepseek-v4.1-flash',
   'zro-deepseek-v4.1-flash',
   'deepseek-v4.1-flash',
-  'deepseek-v4.1-flash-free',
-  'thk/deepseek-v4.1-flash:free',
-  'deepseek-v4.1-flash:free',
-  // Multimodal Vision Model (Free for all users)
+  // Default Multimodal Vision Model (Free for all users — zro provider)
   'zro/glm-5.3-flash',
   'zro-glm-5.3-flash',
   'glm-5.3-flash',
-  'glm-5.3-flash-free',
-  'itera-qwen3.8-27b-free',
-  'itera/qwen/qwen3.8-27b',
-  'qwen/qwen3.8-27b',
-  'deepseek-v4-flash-0731-free',
-  'thk/deepseek-v4-flash:free',
-  'deepseek-v4-flash:free',
-  'glm-5.3-flash-free',
-  'mimo-v2.6-flash-free',
-  'thk/mimo-v2.6-flash:free',
-  'mimo-v2.6-flash:free',
-  'mimo-v2.5-free',
-  'thk/mimo-v2.5:free',
-  'mimo-v2.5:free',
-  'agents-a1',
-  'intern/Agents-A1',
-  'Agents-A1',
-  'atria-dawn',
-  'intern/Atria-Dawn',
-  'Atria-Dawn',
-  'glm-5.3-free',
-  'free/glm-5.3',
-  'flm-auto',
-  'flm/auto',
-  'auto',
-  'gemini-3.8-flash-free',
-  'free/gemini-3.8-flash',
-  'intern-decision-4b',
-  'intern/intern-decision-4b',
-  'ar-anyrouter-free',
-  'ar/anyrouter/free',
-  'anyrouter/free',
-  'ar-nemotron-3.5-bolt-e4b',
-  'ar/nvidia/nemotron-3.5-bolt-e4b',
-  'nvidia/nemotron-3.5-bolt-e4b',
-  'ar-riva-translate-4b-v2',
-  'ar/nvidia/riva-translate-4b-instruct-v2',
-  'ar-liquid-lfm-2.5-2.6b',
-  'ar/liquid/lfm-2.5-2.6b',
-  'ar-liquid-d1',
-  'ar/liquid/d1',
-  'ar-openai-gpt-oss-20b',
-  'ar/openai/gpt-oss-20b',
-  'ar-apple-foundation-model',
-  'ar/apple/foundation-model',
-  'ar-glm-4.5-flash',
-  'ar/z-ai/glm-4.5-flash',
-  'itera/moonshotai/kimi-k3-free',
+  // Uncensored Pro (Free for all users)
+  'fgw-uncensored-free',
+  'fgw/uncensored:free',
+  'crow-uncensored:free',
 ]);
 
 const SERVER_FIRE_MODELS = new Set<string>([
@@ -617,6 +570,56 @@ const SERVER_FIRE_MODELS = new Set<string>([
   'ar/reflection/beam-1.0',
   'ar-pareto-code-router',
   'ar/openrouter/pareto-code',
+  'fgw-limitless-free',
+  'fgw/limitless:free',
+  'crow-limitless:free',
+  'fgw-code-limitless-free',
+  'fgw/code-limitless:free',
+  'crow-code-limitless:free',
+  'fgw-deepseek-v4.1-flash-uncensored-free',
+  'fgw/deepseek-v4.1-flash-uncensored:free',
+  'fgw-deepseek-v4-flash-uncensored-free',
+  'fgw/deepseek-v4-flash-uncensored:free',
+  'fgw-qwen3.8-27b-uncensored-free',
+  'fgw/qwen3.8-27b-uncensored:free',
+  'fgw-deepseek-v4-flash-0731-thinking-free',
+  'fgw/deepseek-v4-flash-0731-thinking:free',
+  'fgw-gemini-3.1-pro-free',
+  'fgw/gemini-3.1-pro:free',
+  'fgw-gemini-3-pro-free',
+  'fgw/gemini-3-pro:free',
+  'fgw-gemini-2.5-pro-free',
+  'fgw/gemini-2.5-pro:free',
+  'fgw-grok-4.7-free',
+  'fgw/grok-4.7:free',
+  'fgw-gpt-5.6-sol-free',
+  'fgw/gpt-5.6-sol:free',
+  'fgw-o3-free',
+  'fgw/o3:free',
+  'fgw-gpt-4o-free',
+  'fgw/gpt-4o:free',
+  'fgw-qwen-3.8-max-free',
+  'fgw/qwen-3.8-max:free',
+  'fgw-qwen-3.5-397b-a17b-free',
+  'fgw/qwen-3.5-397b-a17b:free',
+  'fgw-caw-glm-5.3-flash-thinking-free',
+  'fgw/caw/glm-5.3-flash-thinking:free',
+  'fgw-nvidia-mistral-large-4-1t-free',
+  'fgw/nvidia/mistral-large-4-1t-a52b:free',
+  'fgw-nemotron-3-ultra-550b-free',
+  'fgw/nemotron-3-ultra-550b-a55b:free',
+  'fgw-nvidia-nemotron-3-ultra-550b-free',
+  'fgw/nvidia/nemotron-3-ultra-550b-a55b:free',
+  'fgw-nemotron-3.5-super-vl-free',
+  'fgw/nemotron-3.5-super-vl:free',
+  'fgw-nvidia-nemotron-3.5-super-vl-120b-free',
+  'fgw/nvidia/nemotron-3.5-super-vl-120b-a12b:free',
+  'fgw-laguna-s-2.1-free',
+  'fgw/laguna-s-2.1:free',
+  'fgw-k2-horizon-375b-free',
+  'fgw/k2-horizon-375b-a23b:free',
+  'fgw-hy4-free',
+  'fgw/hy4:free',
 ]);
 
 export function classifyServerModelTier(rawModel: string | undefined): SubscriptionPlanTier {
@@ -624,11 +627,7 @@ export function classifyServerModelTier(rawModel: string | undefined): Subscript
   if (SERVER_FIRE_MODELS.has(model)) {
     return 'fire';
   }
-  if (
-    SERVER_FREE_MODELS.has(model) ||
-    model.startsWith('fgw/') ||
-    model.endsWith(':free')
-  ) {
+  if (SERVER_FREE_MODELS.has(model)) {
     return 'free';
   }
   return 'spark';

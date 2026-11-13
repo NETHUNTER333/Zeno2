@@ -2584,17 +2584,17 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
                   <div className="flex items-center justify-between py-2.5">
                     <div>
                       <div className="text-xs font-semibold flex items-center gap-2">
-                        <span>SafeSearch & Adult Content Filter</span>
+                        <span>Media SafeSearch & Upload Guard</span>
                         <span className="text-[10px] px-1.5 py-0.5 rounded font-mono font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                          Strictly Enforced
+                          Active
                         </span>
                       </div>
                       <div className="text-[11px] text-neutral-400 mt-0.5">
-                        Adult/NSFW questions, explicit image pulls, and adult video sites are permanently blocked.
+                        Explicit image/video pulls and prohibited uploads are blocked; 18+ unfiltered text chat is supported on Uncensored models.
                       </div>
                     </div>
                     <div className="text-[10px] font-mono text-neutral-400 px-2.5 py-1 rounded-md bg-neutral-800/60 border border-neutral-700/60">
-                      Locked
+                      18+ Verified
                     </div>
                   </div>
                 </div>

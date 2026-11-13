@@ -248,8 +248,8 @@ export const LEGAL_DOCUMENTS: Record<LegalDocId, PolicyDocument> = {
         ],
         bullets: [
           `Upload or generate Child Sexual Abuse Material (CSAM), child sexual exploitation and abuse (CSAE), or any content sexualizing minors;`,
-          `Upload or generate 18+/NSFW sexually explicit content, nudity, or non-consensual intimate imagery ("deepfakes");`,
-          `Upload photographs, selfies, portraits, or videos of real identifiable people (${LEGAL_CONFIG.TRADE_NAME} is strictly for documents, notes, diagrams, and educational media);`,
+          `Upload sexually explicit imagery or generate non-consensual intimate imagery ("deepfakes") of real people;`,
+          `Upload photographs, selfies, portraits, or videos of real identifiable people (${LEGAL_CONFIG.TRADE_NAME} file uploads are strictly for documents, notes, diagrams, and educational media);`,
           `Upload government identification documents (such as Indian Aadhaar numbers, PAN cards, passports, driver's licences) or payment card numbers, bank statements, UPI PINs, or API keys;`,
           `Use the Service to cheat on live, proctored, or closed-book academic examinations, or to conduct automated scraping, rate-limit evasion, or referral farming.`,
         ],
@@ -790,8 +790,8 @@ export const LEGAL_DOCUMENTS: Record<LegalDocId, PolicyDocument> = {
     lastUpdated: LEGAL_CONFIG.EFFECTIVE_DATE,
     version: LEGAL_CONFIG.CONSENT_VERSION,
     shortVersionBullets: [
-      `Do NOT upload photos of real people, selfies, or portraits. ${LEGAL_CONFIG.TRADE_NAME} is strictly for documents, notes, diagrams, and educational media.`,
-      `Zero tolerance for CSAM/CSAE, 18+/NSFW sexually explicit material, or non-consensual intimate imagery — violations result in an immediate permanent ban and reporting to authorities.`,
+      `Do NOT upload photos of real people, selfies, or portraits. ${LEGAL_CONFIG.TRADE_NAME} file uploads are strictly for documents, notes, diagrams, and educational media.`,
+      `Zero tolerance for CSAM/CSAE, visual NSFW file uploads, or non-consensual intimate imagery — violations result in an immediate permanent ban and reporting to authorities. (Consenting 18+ users may use Uncensored/Limitless text models for mature creative writing and unfiltered chat.)`,
       `Do NOT upload sensitive personal IDs (Aadhaar, PAN, passport, driver's licence) or financial credentials (card numbers, UPI PINs, API keys). Such uploads are strictly prohibited and subject to removal.`,
       `Do NOT use ${LEGAL_CONFIG.TRADE_NAME} for self-harm, illegal weapons/drugs, malware, harassment, or live proctored exam cheating.`,
       `Anyone can report unsafe outputs or shared pages using the in-app Report button or by emailing ${LEGAL_CONFIG.ABUSE_EMAIL}.`,
@@ -803,12 +803,12 @@ export const LEGAL_DOCUMENTS: Record<LegalDocId, PolicyDocument> = {
         title: 'Category A — Zero-Tolerance Prohibited Uploads & Visual Content',
         callout: {
           title: 'STUDY MATERIAL ONLY — DO NOT UPLOAD PHOTOS OF PEOPLE',
-          body: `Do not upload images of people. ${LEGAL_CONFIG.TRADE_NAME} is for documents, notes, study material, diagrams, code screenshots, and educational media. Uploads containing human faces, selfies, or explicit content are prohibited.`,
+          body: `Do not upload images of people. ${LEGAL_CONFIG.TRADE_NAME} file uploads are for documents, notes, study material, diagrams, code screenshots, and educational media. Uploads containing human faces, selfies, or explicit imagery are prohibited.`,
         },
         bullets: [
           `Child Sexual Abuse Material (CSAM) & Child Sexual Exploitation and Abuse (CSAE): Absolute zero tolerance. We will report apparent CSAM to NCMEC and/or Indian cybercrime authorities (cybercrime.gov.in) as required by applicable law and terminate the offending account.`,
-          `18+ / NSFW / Sexually Explicit Content & Nudity: You may not upload, prompt for, or generate pornography, sexually explicit text or imagery, nudity, or erotic roleplay.`,
-          `Non-Consensual Intimate Imagery (NCII) & Deepfakes: You may not upload intimate images of any person or attempt to generate synthetic, undressed, or manipulated likenesses of any person.`,
+          `Visual NSFW File Uploads & SafeSearch Media: Uploading sexually explicit imagery or nudity is prohibited, and web image/video search enforces SafeSearch. Mature (18+) text-only creative writing, roleplay, and unfiltered chat are permitted on designated Uncensored/Limitless models for consenting adults.`,
+          `Non-Consensual Intimate Imagery (NCII) & Deepfakes: You may not upload intimate images of any person or attempt to generate synthetic, undressed, or manipulated likenesses of any real person.`,
           `Photos, Selfies & Videos of Real Identifiable People: You may not upload photographs, portraits, selfies, or videos depicting real identifiable living individuals (whether yourself, classmates, teachers, or public figures). Allowed uploads are limited to textbook pages, lecture slides, handwritten notes, scientific diagrams, charts, equations, and software UI screenshots.`,
           `Facial Recognition & Biometric Identification: You may not use ${LEGAL_CONFIG.TRADE_NAME} to identify, profile, track, or infer biometric attributes of any individual from an image or video.`,
         ],

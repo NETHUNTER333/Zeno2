@@ -1151,16 +1151,7 @@ If you are feeling overwhelmed, hopeless, or having thoughts of self-harm or sui
     };
   }
 
-  // 4. Explicit Adult / Pornography / Erotica / NSFW Requests & SafeSearch Bypass Attempts
-  if (isAdultQueryOrText(q)) {
-    return {
-      allowed: false,
-      category: 'nsfw',
-      refusalMessage: `**Request Refused:** Kinich strictly prohibits adult, pornographic, and sexually explicit content in accordance with our [Acceptable Use Policy](/acceptable-use). All SafeSearch and adult content filters are permanently active and cannot be bypassed. Please feel free to ask any educational, technical, or research question instead.`,
-    };
-  }
-
-  // 5. Weapons of Mass Destruction / Bomb Making / Illicit Drug Synthesis
+  // 4. Weapons of Mass Destruction / Bomb Making / Illicit Drug Synthesis
   if (
     /\b((?:how\s+to|instructions?|recipe|guide)\s+(?:to\s+)?(?:make|build|synthesize|manufacture)\s+(?:a\s+)?(?:pipe\s+bomb|improvised\s+explosive|ied|sarin\s+gas|ricin|anthrax|fentanyl|methamphetamine))\b/i.test(
       q
@@ -1488,8 +1479,17 @@ export function registerLegalAndSafetyRoutes(
 
   // 5. POST /api/moderation/check — Prompt safety moderation endpoint
   app.post('/api/moderation/check', (req: Request, res: Response) => {
-    const { prompt = '' } = req.body || {};
+    const { prompt = '', model = '' } = req.body || {};
+    const isUncensored = /(?:uncensored|limitless)/i.test(String(model || ''));
     const result = moderateUserPromptSafety(String(prompt || ''));
+    if (!result.allowed && isUncensored && result.category === 'nsfw') {
+      return res.status(200).json({
+        success: true,
+        allowed: true,
+        category: null,
+        refusalMessage: null,
+      });
+    }
     return res.status(200).json({
       success: true,
       allowed: result.allowed,

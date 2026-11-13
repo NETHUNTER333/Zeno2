@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, Suspense, lazy } from 'react';
+import { motion } from 'motion/react';
 import {
   Copy,
   Check,
@@ -118,6 +119,11 @@ interface GrokChatMessageProps {
   nsfwMode?: boolean;
 }
 
+const MESSAGE_HEIGHT_TRANSITION = {
+  duration: 0.28,
+  ease: [0.22, 1, 0.36, 1] as const,
+};
+
 const isAdultUrl = (url?: string): boolean => {
   if (!url) return false;
   return (
@@ -227,6 +233,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
   const [isEditing, setIsEditing] = useState(false);
   const [editDraft, setEditDraft] = useState(message.content);
   const [isUserMsgExpanded, setIsUserMsgExpanded] = useState(false);
+  const [isAssistantMsgExpanded, setIsAssistantMsgExpanded] = useState(true);
   const [activeVideoIndex, setActiveVideoIndex] = useState<number | null>(null);
   const [videoPlayerMode, setVideoPlayerMode] = useState<'embed' | 'mp4'>('embed');
   const [resolvedVideos, setResolvedVideos] = useState<
@@ -636,6 +643,19 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
       .trim();
   }, [message.content]);
 
+  const assistantLineCount = useMemo(
+    () => (cleanedContent ? cleanedContent.split('\n').length : 0),
+    [cleanedContent]
+  );
+  const assistantWordCount = useMemo(
+    () => (cleanedContent ? cleanedContent.split(/\s+/).filter(Boolean).length : 0),
+    [cleanedContent]
+  );
+  const isLongAssistantMessage = useMemo(
+    () => !message.isStreaming && (cleanedContent.length > 680 || assistantLineCount > 12),
+    [message.isStreaming, cleanedContent.length, assistantLineCount]
+  );
+
   // Split cleanedContent into selectable paragraphs/segments for one-tap highlighting
   const highlightableSegments = useMemo(() => {
     if (!cleanedContent) return [];
@@ -804,7 +824,11 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
   };
 
   return (
-    <div id={`msg-${message.id}`} data-message-id={message.id} className="group/msg py-1 px-2 sm:px-4 md:px-0 max-w-3xl mx-auto w-full min-w-0 overflow-hidden transition-all duration-300 rounded-2xl">
+    <div
+      id={`msg-${message.id}`}
+      data-message-id={message.id}
+      className="group/msg py-1 px-2 sm:px-4 md:px-0 max-w-3xl mx-auto w-full min-w-0 overflow-hidden rounded-2xl"
+    >
       {/* User Message Layout */}
       {isUser ? (
         <div className="flex flex-col items-end w-full min-w-0">
@@ -1010,21 +1034,33 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
               {(() => {
                 const rawUserText = message.content || '';
                 const lineCount = rawUserText.split('\n').length;
-                const isLongUserMessage = rawUserText.length > 420 || lineCount > 10;
-                const displayUserText =
-                  isLongUserMessage && !isUserMsgExpanded
-                    ? rawUserText.split('\n').slice(0, 8).join('\n').slice(0, 360).trim() + '…'
-                    : rawUserText;
+                const isLongUserMessage = rawUserText.length > 360 || lineCount > 8;
                 return (
                   <div
                     onClick={() => setShowActionsOnTap((prev) => !prev)}
-                    className={`text-[14px] sm:text-[14.5px] leading-[1.72] tracking-[0.01em] [word-spacing:0.02em] font-normal px-4 py-2.5 rounded-2xl sm:rounded-3xl backdrop-blur-2xl backdrop-saturate-150 border transition-all w-fit max-w-full min-w-0 overflow-hidden whitespace-pre-wrap break-words [overflow-wrap:anywhere] [word-break:break-word] cursor-pointer ${
+                    className={`text-[14.5px] sm:text-[15px] leading-[24px] tracking-normal [word-spacing:normal] font-normal px-4 py-2.5 rounded-[22px] backdrop-blur-2xl backdrop-saturate-150 border w-fit max-w-full min-w-0 overflow-hidden whitespace-pre-wrap break-words [overflow-wrap:anywhere] [word-break:break-word] cursor-pointer ${
                       isDark
-                        ? 'bg-neutral-900/55 border-white/[0.15] text-white shadow-[0_8px_28px_rgba(0,0,0,0.45)]'
-                        : 'bg-white/75 border-black/[0.08] text-[#000000] shadow-[0_8px_24px_rgba(0,0,0,0.06)]'
+                        ? 'bg-neutral-900/55 border-white/[0.15] text-[#f9fafb] shadow-[0_8px_28px_rgba(0,0,0,0.45)]'
+                        : 'bg-white/75 border-black/[0.08] text-[#0f1115] shadow-[0_8px_24px_rgba(0,0,0,0.06)]'
                     }`}
                   >
-                    <div>{displayUserText}</div>
+                    <motion.div
+                      initial={false}
+                      animate={{
+                        height: isLongUserMessage ? (isUserMsgExpanded ? 'auto' : 132) : 'auto',
+                      }}
+                      transition={MESSAGE_HEIGHT_TRANSITION}
+                      className="relative overflow-hidden"
+                    >
+                      <div>{rawUserText}</div>
+                      {isLongUserMessage && !isUserMsgExpanded && (
+                        <div
+                          className={`pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t ${
+                            isDark ? 'from-neutral-900/90 to-transparent' : 'from-white/90 to-transparent'
+                          }`}
+                        />
+                      )}
+                    </motion.div>
                     {isLongUserMessage && (
                       <button
                         type="button"
@@ -1032,23 +1068,23 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                           e.stopPropagation();
                           setIsUserMsgExpanded((prev) => !prev);
                         }}
-                        className={`mt-2 inline-flex items-center gap-1 text-[11.5px] font-semibold px-2.5 py-1 rounded-full border transition-colors cursor-pointer ${
+                        data-testid="toggle-user-message-expand"
+                        className={`mt-2 inline-flex items-center gap-1.5 text-[11.5px] font-medium px-2.5 py-1 rounded-full border transition-colors duration-200 cursor-pointer ${
                           isDark
-                            ? 'bg-white/[0.08] hover:bg-white/[0.14] border-white/[0.14] text-sky-400'
-                            : 'bg-black/[0.05] hover:bg-black/[0.09] border-black/[0.1] text-sky-600'
+                            ? 'bg-white/[0.07] hover:bg-white/[0.13] border-white/[0.14] text-neutral-200'
+                            : 'bg-black/[0.04] hover:bg-black/[0.08] border-black/[0.1] text-neutral-700'
                         }`}
                       >
-                        {isUserMsgExpanded ? (
-                          <>
-                            <ChevronUp className="w-3 h-3" />
-                            <span>Show less</span>
-                          </>
-                        ) : (
-                          <>
-                            <ChevronDown className="w-3 h-3" />
-                            <span>Show full message ({rawUserText.length.toLocaleString()} chars)</span>
-                          </>
-                        )}
+                        <ChevronDown
+                          className={`w-3.5 h-3.5 transition-transform duration-200 ease-out ${
+                            isUserMsgExpanded ? 'rotate-180' : 'rotate-0'
+                          }`}
+                        />
+                        <span>
+                          {isUserMsgExpanded
+                            ? 'Show less'
+                            : `Show full prompt (${rawUserText.length.toLocaleString()} chars)`}
+                        </span>
                       </button>
                     )}
                   </div>
@@ -1556,13 +1592,21 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
             </div>
           )}
 
-          <div
-            ref={messageContentRef}
-            onMouseUp={handleCaptureTextSelection}
-            onTouchEnd={() => setTimeout(handleCaptureTextSelection, 60)}
-            onClick={() => setShowActionsOnTap((prev) => !prev)}
-            className="prose-grok max-w-none my-0 text-[15px] sm:text-[15.5px] leading-[1.78] sm:leading-[1.8] tracking-[0.012em] [word-spacing:0.025em]"
+          <motion.div
+            initial={false}
+            animate={{
+              height: isLongAssistantMessage ? (isAssistantMsgExpanded ? 'auto' : 260) : 'auto',
+            }}
+            transition={MESSAGE_HEIGHT_TRANSITION}
+            className="relative overflow-hidden"
           >
+            <div
+              ref={messageContentRef}
+              onMouseUp={handleCaptureTextSelection}
+              onTouchEnd={() => setTimeout(handleCaptureTextSelection, 60)}
+              onClick={() => setShowActionsOnTap((prev) => !prev)}
+              className="prose-grok ds-markdown max-w-none my-0 text-[14.5px] sm:text-[15.5px] leading-[24px] sm:leading-[26px] tracking-normal [word-spacing:normal]"
+            >
               <StreamingText
                 isStreaming={message.isStreaming}
                 durationSec={message.timing?.totalSec}
@@ -1574,7 +1618,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                 components={{
                   p: ({ node, children, ...props }) => (
                     <p
-                      className="mt-0 mb-5 last:mb-0 leading-[1.78] sm:leading-[1.8] tracking-[0.012em] [word-spacing:0.025em]"
+                      className="ds-markdown-paragraph my-3 sm:my-3.5 first:mt-0 last:mb-0 leading-[24px] sm:leading-[26px] tracking-normal [word-spacing:normal]"
                       {...props}
                     >
                       {children}
@@ -1582,7 +1626,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                   ),
                   h1: ({ node, children, ...props }) => (
                     <h1
-                      className="mt-7 first:mt-0 mb-3.5 text-[1.35rem] font-semibold leading-[1.35] tracking-[0.004em]"
+                      className="mt-6 first:mt-0 mb-3 text-[20px] sm:text-[22px] font-bold leading-[28px] sm:leading-[30px] tracking-normal"
                       {...props}
                     >
                       {children}
@@ -1590,7 +1634,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                   ),
                   h2: ({ node, children, ...props }) => (
                     <h2
-                      className="mt-6 first:mt-0 mb-3 text-[1.18rem] font-semibold leading-[1.38] tracking-[0.004em]"
+                      className="mt-5.5 first:mt-0 mb-2.5 text-[18px] sm:text-[19.5px] font-bold leading-[26px] sm:leading-[28px] tracking-normal"
                       {...props}
                     >
                       {children}
@@ -1598,7 +1642,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                   ),
                   h3: ({ node, children, ...props }) => (
                     <h3
-                      className="mt-5 first:mt-0 mb-2.5 text-[1.06rem] font-semibold leading-[1.4] tracking-[0.006em]"
+                      className="mt-5 first:mt-0 mb-2 text-[16.5px] sm:text-[17.5px] font-bold leading-[24px] sm:leading-[26px] tracking-normal"
                       {...props}
                     >
                       {children}
@@ -1606,7 +1650,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                   ),
                   h4: ({ node, children, ...props }) => (
                     <h4
-                      className="mt-4 first:mt-0 mb-2 text-[0.98rem] font-semibold leading-[1.45] tracking-[0.008em]"
+                      className="mt-3.5 first:mt-0 mb-2 text-[15px] sm:text-[15.5px] font-semibold leading-[24px] sm:leading-[26px] tracking-normal"
                       {...props}
                     >
                       {children}
@@ -1614,7 +1658,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                   ),
                   ul: ({ node, children, ...props }) => (
                     <ul
-                      className="mt-2 mb-5 last:mb-0 pl-6 list-disc space-y-2.5 leading-[1.78] tracking-[0.012em]"
+                      className="my-3 first:mt-0 last:mb-0 pl-[18px] list-disc space-y-1.5 leading-[24px] sm:leading-[26px] tracking-normal"
                       {...props}
                     >
                       {children}
@@ -1622,7 +1666,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                   ),
                   ol: ({ node, children, ...props }) => (
                     <ol
-                      className="mt-2 mb-5 last:mb-0 pl-6 list-decimal space-y-2.5 leading-[1.78] tracking-[0.012em]"
+                      className="my-3 first:mt-0 last:mb-0 pl-[18px] list-decimal space-y-1.5 leading-[24px] sm:leading-[26px] tracking-normal"
                       {...props}
                     >
                       {children}
@@ -1630,7 +1674,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                   ),
                   li: ({ node, children, ...props }) => (
                     <li
-                      className="pl-1 leading-[1.78] tracking-[0.012em] [word-spacing:0.025em] [&>p]:mb-2.5 [&>p:last-child]:mb-0"
+                      className="pl-0 leading-[24px] sm:leading-[26px] tracking-normal [word-spacing:normal] [&>p]:my-1.5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
                       {...props}
                     >
                       {children}
@@ -1638,8 +1682,8 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                   ),
                   blockquote: ({ node, children, ...props }) => (
                     <blockquote
-                      className={`my-5 pl-4 border-l-[3px] leading-[1.78] tracking-[0.01em] italic ${
-                        isDark ? 'border-white/25 text-zinc-300' : 'border-zinc-400 text-zinc-600'
+                      className={`mt-3.5 mb-0 pl-[14px] border-l-2 leading-[24px] sm:leading-[26px] tracking-normal not-italic ${
+                        isDark ? 'border-[#81858c] text-[#cfd3d6]' : 'border-[#adb2b8] text-[#61666b]'
                       }`}
                       {...props}
                     >
@@ -1648,8 +1692,8 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                   ),
                   strong: ({ node, children, ...props }) => (
                     <strong
-                      className={`font-semibold tracking-[0.01em] ${
-                        isDark ? 'text-white' : 'text-zinc-950'
+                      className={`font-semibold tracking-normal ${
+                        isDark ? 'text-white' : 'text-[#0f1115]'
                       }`}
                       {...props}
                     >
@@ -1659,7 +1703,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                   hr: ({ node, ...props }) => (
                     <hr
                       className={`my-6 border-0 border-t ${
-                        isDark ? 'border-zinc-800' : 'border-zinc-200'
+                        isDark ? 'border-white/[0.12]' : 'border-black/[0.1]'
                       }`}
                       {...props}
                     />
@@ -2013,7 +2057,45 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                 {processedContent}
               </ReactMarkdown>
             </StreamingText>
-          </div>
+            </div>
+            {isLongAssistantMessage && !isAssistantMsgExpanded && (
+              <div
+                className={`pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t ${
+                  isDark ? 'from-black via-black/70 to-transparent' : 'from-white via-white/75 to-transparent'
+                }`}
+              />
+            )}
+          </motion.div>
+
+          {/* Clean Expand / Collapse Control for Long AI Responses */}
+          {isLongAssistantMessage && (
+            <div className="mt-1.5 mb-1 flex items-center">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsAssistantMsgExpanded((prev) => !prev);
+                }}
+                data-testid="toggle-assistant-message-expand"
+                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-[12px] font-medium transition-colors duration-200 cursor-pointer select-none ${
+                  isDark
+                    ? 'bg-neutral-900/75 hover:bg-neutral-800/90 border-white/[0.12] text-[#cfd3d6] hover:text-white'
+                    : 'bg-neutral-100/85 hover:bg-neutral-200/85 border-black/[0.08] text-[#43454a] hover:text-black'
+                }`}
+              >
+                <ChevronDown
+                  className={`w-3.5 h-3.5 transition-transform duration-200 ease-out ${
+                    isAssistantMsgExpanded ? 'rotate-180' : 'rotate-0'
+                  }`}
+                />
+                <span>
+                  {isAssistantMsgExpanded
+                    ? 'Collapse response'
+                    : `Expand response (${assistantWordCount.toLocaleString()} words)`}
+                </span>
+              </button>
+            </div>
+          )}
 
           {/* @kobra/product-cards: Intelligently triggered on product/buying/comparison queries */}
           {!message.isStreaming &&

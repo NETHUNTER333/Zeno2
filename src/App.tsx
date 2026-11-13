@@ -72,6 +72,9 @@ const KinichGrowthHubModal = lazy(() =>
 const PublicArtifactView = lazy(() =>
   import('./components/PublicArtifactView').then((m) => ({ default: m.PublicArtifactView }))
 );
+const SideChatWorkspace = lazy(() =>
+  import('./components/SideChatWorkspace').then((m) => ({ default: m.SideChatWorkspace }))
+);
 import { DeleteThreadConfirmDialog, DeleteThreadTarget } from './components/DeleteThreadConfirmDialog';
 import {
   captureReferralFromUrlIfPresent,
@@ -633,6 +636,7 @@ export default function App() {
   // SafeSearch is permanently active and enforced (adult/NSFW content strictly blocked)
   const nsfwMode = false;
   const [isResearchMode, setIsResearchMode] = useState(false);
+  const [isSideChatOpen, setIsSideChatOpen] = useState(false);
 
   // Studio & Research Tool Modals
   const [shareStudioState, setShareStudioState] = useState<{
@@ -950,15 +954,18 @@ export default function App() {
         reason: detail.reason || detail.message || 'Sign in to keep this in your Vault',
       });
     };
+    const onOpenSideChat = () => setIsSideChatOpen(true);
     window.addEventListener('popstate', onPopState);
     window.addEventListener('kinich-navigate-route', onLegalNav);
     window.addEventListener('kinich-open-vault', onOpenVaultEvent);
     window.addEventListener('kinich-open-auth', onOpenAuthEvent);
+    window.addEventListener('kinich-open-side-chat', onOpenSideChat);
     return () => {
       window.removeEventListener('popstate', onPopState);
       window.removeEventListener('kinich-navigate-route', onLegalNav);
       window.removeEventListener('kinich-open-vault', onOpenVaultEvent);
       window.removeEventListener('kinich-open-auth', onOpenAuthEvent);
+      window.removeEventListener('kinich-open-side-chat', onOpenSideChat);
     };
   }, []);
 
@@ -1780,7 +1787,16 @@ export default function App() {
       : mode === 'news' || isNewsQuery
       ? 'news'
       : 'organic';
-    const hasSearchIntent = !isClockQuery && !isCasualOrGreeting;
+    const isUncensoredActiveModel = /(?:uncensored|limitless)/i.test(activeModel.geminiModel);
+    const explicitlyWantsLiveWebSearch =
+      isNewsQuery ||
+      /\b(search|google|lookup|look up|latest|news|today|2025|2026|weather|stock|price|who won|score|https?:\/\/)\b/i.test(
+        query
+      );
+    const hasSearchIntent =
+      !isClockQuery &&
+      !isCasualOrGreeting &&
+      (!isUncensoredActiveModel || explicitlyWantsLiveWebSearch);
 
     const computedLoadingMode: 'vision' | 'file' | 'search' | 'thinking' = hasImageAtt
       ? 'vision'
@@ -1927,7 +1943,18 @@ export default function App() {
         headers: authHeaders,
         signal: controller.signal,
         body: JSON.stringify({
-          messages: [...allPriorMessages, userMessage].map((m, idx, arr) => {
+          messages: [
+            ...allPriorMessages.filter(
+              (m) =>
+                !(
+                  m.role === 'assistant' &&
+                  /cannot generate or assist with adult, sexually explicit, or NSFW content|strictly prohibits adult, pornographic/i.test(
+                    m.content || ''
+                  )
+                )
+            ),
+            userMessage,
+          ].map((m, idx, arr) => {
             let cleanContent = stripInjectedClockNote(m.content || '');
             if (m.role === 'assistant' && cleanContent) {
               cleanContent = cleanContent
@@ -1946,7 +1973,7 @@ export default function App() {
             };
           }),
           searchQuery: standaloneSearchQuery,
-          webSearch: isClockQuery ? false : true,
+          webSearch: isClockQuery ? false : hasSearchIntent,
           searchMode: effectiveMode,
           model: activeModel.geminiModel,
           nsfwMode,
@@ -3126,6 +3153,18 @@ export default function App() {
                   setUserProfile(UserAccountStore.getProfile());
                   setUserSub(UserAccountStore.getSubscription());
                 }}
+              />
+            </Suspense>
+          )}
+
+          {/* Side Chat & Parallel Subtasks Modal (Manus AI Style) */}
+          {isSideChatOpen && (
+            <Suspense fallback={<ModalSkeleton isDark={isDark} />}>
+              <SideChatWorkspace
+                isOpen={isSideChatOpen}
+                onClose={() => setIsSideChatOpen(false)}
+                isDark={isDark}
+                onAskKinich={(prompt) => handleSend(prompt)}
               />
             </Suspense>
           )}
