@@ -13,8 +13,6 @@ import {
 import {
   auth,
   db,
-  signInWithGoogle,
-  logOutUser,
   deleteUserAccount,
   signUpWithEmail,
   signInWithEmail,
@@ -28,6 +26,12 @@ import {
   loadUserDailyQuotaFromFirestore,
   syncUserDailyQuotaToFirestore,
 } from './firebase';
+import {
+  signInWithGoogle as unifiedSignInWithGoogle,
+  signOut as unifiedSignOut,
+  type GoogleSignInOutcome,
+} from './auth';
+import { syncLocationPrefFromFirestore } from './locationStore';
 import { onAuthStateChanged } from 'firebase/auth';
 
 onAuthStateChanged(auth, async (firebaseUser) => {
@@ -90,6 +94,9 @@ onAuthStateChanged(auth, async (firebaseUser) => {
 
       // Sync authoritative daily usage quota & tier from Firestore + Server Ledger
       await UserAccountStore.syncQuotaWithServerAndFirestore();
+
+      // Sync user-chosen location preferences (city/mode/opt-in flags) from Firestore
+      void syncLocationPrefFromFirestore().catch(() => {});
     } catch (err) {
       // Ensure local profile still reflects authenticated Firebase user even if Firestore sync fails
       UserAccountStore.saveProfile({
@@ -588,38 +595,39 @@ export const UserAccountStore = {
     return false;
   },
   isGuest(): boolean {
-    if (!this.isUserSignedIn()) return true;
     if (auth.currentUser?.isAnonymous) return true;
-    const profile = this.getProfile();
-    if (
-      profile.signinProvider === 'guest' ||
-      profile.email === 'guest@kinich.app' ||
-      String(profile.id || '').startsWith('guest_')
-    ) {
-      return !(auth.currentUser && !auth.currentUser.isAnonymous && auth.currentUser.email);
-    }
-    return false;
-  },
-  isGuestUser(): boolean {
+    if (!this.isUserSignedIn()) return true;
     try {
       const profile = this.getProfile();
-      return profile?.signinProvider === 'guest';
-    } catch {}
+      if (
+        profile?.signinProvider === 'guest' ||
+        profile?.email === 'guest@kinich.app' ||
+        String(profile?.id || '').startsWith('guest_')
+      ) {
+        return !(auth.currentUser && !auth.currentUser.isAnonymous && auth.currentUser.email);
+      }
+    } catch {
+      return true;
+    }
     return false;
   },
   getCurrentPlan(): 'free' | 'spark' | 'fire' {
     return this.getNormalizedPlan();
   },
-  async signIn() {
-    const user = await signInWithGoogle();
-    if (user) {
+  async signInWithGoogleOutcome(): Promise<GoogleSignInOutcome> {
+    const outcome = await unifiedSignInWithGoogle();
+    if (outcome.user) {
       try {
         localStorage.setItem('kinich_auth_session', 'true');
         localStorage.removeItem('kinich_explicit_signout');
       } catch {}
       this.emitChange();
     }
-    return user;
+    return outcome;
+  },
+  async signIn() {
+    const outcome = await this.signInWithGoogleOutcome();
+    return outcome.user;
   },
   async signUp(email: string, pass: string) {
     try {
@@ -735,7 +743,7 @@ export const UserAccountStore = {
   },
   async signOutUser() {
     try {
-      await logOutUser();
+      await unifiedSignOut();
     } catch {}
     try {
       localStorage.removeItem(STORAGE_KEYS.PROFILE);

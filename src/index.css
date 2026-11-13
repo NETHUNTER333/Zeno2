@@ -1,6 +1,5 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-@import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
 @custom-variant dark (&:where(.dark, .dark *));
 
@@ -174,10 +173,10 @@ html.light ::-webkit-scrollbar-thumb:hover {
 /* Markdown typography styling (ChatGPT-style clean reading layout) */
 .prose-grok {
   font-family: 'Geist Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  line-height: 1.72;
-  font-size: 0.95rem;
-  letter-spacing: -0.003em;
-  word-spacing: 0.012em;
+  line-height: 1.78;
+  font-size: 0.96rem;
+  letter-spacing: 0.012em;
+  word-spacing: 0.025em;
   font-weight: 400;
   word-break: break-word;
   -webkit-font-smoothing: antialiased;
@@ -185,8 +184,8 @@ html.light ::-webkit-scrollbar-thumb:hover {
 
 @media (min-width: 640px) {
   .prose-grok {
-    font-size: 0.985rem;
-    line-height: 1.75;
+    font-size: 0.99rem;
+    line-height: 1.8;
   }
 }
 
@@ -225,8 +224,10 @@ html.light .prose-grok b {
 
 .prose-grok p {
   margin-top: 0;
-  margin-bottom: 1.05rem;
-  line-height: 1.72;
+  margin-bottom: 1.25rem;
+  line-height: 1.78;
+  letter-spacing: 0.012em;
+  word-spacing: 0.025em;
 }
 
 .prose-grok p:last-child {
@@ -238,10 +239,10 @@ html.light .prose-grok b {
 .prose-grok h3,
 .prose-grok h4 {
   font-weight: 600;
-  margin-top: 1.6rem;
-  margin-bottom: 0.65rem;
-  line-height: 1.35;
-  letter-spacing: -0.016em;
+  margin-top: 1.75rem;
+  margin-bottom: 0.75rem;
+  line-height: 1.38;
+  letter-spacing: 0.004em;
 }
 
 .prose-grok h1:first-child,
@@ -265,15 +266,15 @@ html.light .prose-grok h4 {
   color: #09090b;
 }
 
-.prose-grok h1 { font-size: 1.325rem; }
-.prose-grok h2 { font-size: 1.15rem; }
-.prose-grok h3 { font-size: 1.035rem; }
+.prose-grok h1 { font-size: 1.35rem; }
+.prose-grok h2 { font-size: 1.18rem; }
+.prose-grok h3 { font-size: 1.06rem; }
 
 .prose-grok ul,
 .prose-grok ol {
-  margin-top: 0.65rem;
-  margin-bottom: 1.2rem;
-  padding-left: 1.35rem;
+  margin-top: 0.75rem;
+  margin-bottom: 1.3rem;
+  padding-left: 1.45rem;
 }
 
 .prose-grok ul {
@@ -285,9 +286,11 @@ html.light .prose-grok h4 {
 }
 
 .prose-grok li {
-  margin-bottom: 0.75rem;
-  padding-left: 0.2rem;
-  line-height: 1.7;
+  margin-bottom: 0.8rem;
+  padding-left: 0.25rem;
+  line-height: 1.78;
+  letter-spacing: 0.012em;
+  word-spacing: 0.025em;
 }
 
 .prose-grok li::marker {
@@ -392,6 +395,13 @@ html.light .prose-grok blockquote {
   max-width: 100%;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
+}
+
+.prose-grok .overflow-x-auto > table {
+  display: table;
+  margin: 0;
+  max-width: none;
+  overflow: visible;
 }
 
 .prose-grok th, .prose-grok td {

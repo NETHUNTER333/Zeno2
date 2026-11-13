@@ -390,6 +390,27 @@
         "createdAt": { "type": "number" }
       },
       "required": ["id", "userId", "question", "maxMarks", "studentAnswer", "marksAwarded", "examinerFeedback", "modelTopperAnswer", "createdAt"]
+    },
+    "UserLocationPreference": {
+      "title": "User Location Preference",
+      "description": "User-chosen location mode, preferred city/country/timezone, and opt-in persistence flag without storing raw GPS coordinates by default",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "locationEnabled": { "type": "boolean" },
+        "mode": { "type": "string", "enum": ["precise", "approximate", "manual", "disabled"] },
+        "preferredCity": { "type": "string", "maxLength": 120 },
+        "preferredRegion": { "type": "string", "maxLength": 120 },
+        "preferredCountry": { "type": "string", "maxLength": 120 },
+        "preferredCountryCode": { "type": "string", "maxLength": 8 },
+        "preferredTimezone": { "type": "string", "maxLength": 80 },
+        "preferredLatitude": { "type": "number" },
+        "preferredLongitude": { "type": "number" },
+        "persistPreciseLocation": { "type": "boolean" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["id", "userId", "locationEnabled", "mode", "persistPreciseLocation", "updatedAt"]
     }
   },
   "firestore": {
@@ -464,6 +485,10 @@
     "/users/{userId}/quotas/{quotaDate}": {
       "schema": { "$ref": "#/entities/UserDailyQuota" },
       "description": "Stores non-resettable daily quota consumption and active plan tier per user per UTC day"
+    },
+    "/users/{userId}/preferences/{prefId}": {
+      "schema": { "$ref": "#/entities/UserLocationPreference" },
+      "description": "Stores user-chosen location awareness preferences (mode, city, timezone, opt-in persistence)"
     },
     "/shared_threads/{shareId}": {
       "schema": { "$ref": "#/entities/SharedThreadSnapshot" },

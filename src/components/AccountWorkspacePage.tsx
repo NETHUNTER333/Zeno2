@@ -31,14 +31,21 @@ import {
   ShieldCheck,
   Globe,
   X,
+  Search,
 } from 'lucide-react';
 import {
   getStoredLocationPref,
-  saveStoredLocationPref,
   clearStoredLocationPref,
-  setSavedHomeCity,
-  requestPreciseLocationOnTap,
-  UserLocation,
+  searchCities,
+  setManualLocationPlace,
+  setLocationDisabled,
+  setLocationMode,
+  setPersistPreciseLocation,
+  requestPreciseLocation,
+  fetchClientApproximateIpLocation,
+  getEffectiveLocationPayload,
+  type GeocodedCityPlace,
+  type LocationPreferenceMode,
 } from '../lib/locationStore';
 import {
   UserAccountStore,
@@ -114,7 +121,7 @@ export const CancelSubscriptionSection: React.FC<{
   } | null>(null);
 
   const loadSubscriptionState = async () => {
-    if (!auth.currentUser || auth.currentUser.isAnonymous || UserAccountStore.isGuestUser()) {
+    if (UserAccountStore.isGuest()) {
       setCurrentPlan('free');
       return;
     }
@@ -519,7 +526,7 @@ export const RefundPolicySection: React.FC<{
   } | null>(null);
 
   const loadRefundEligibility = async () => {
-    if (!auth.currentUser || auth.currentUser.isAnonymous || UserAccountStore.isGuestUser()) {
+    if (UserAccountStore.isGuest()) {
       setCurrentPlan('free');
       return;
     }
@@ -803,7 +810,7 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
 
   useEffect(() => {
     // Load & sync profile + active model + streak reminder settings with backend on mount (signed-in accounts only)
-    if (!auth.currentUser || auth.currentUser.isAnonymous || UserAccountStore.isGuestUser()) {
+    if (UserAccountStore.isGuest()) {
       return;
     }
     let cancelled = false;
@@ -839,9 +846,50 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
 
   const isDark = theme === 'dark';
   const [locPref, setLocPref] = useState(() => getStoredLocationPref());
+  const [citySearchQuery, setCitySearchQuery] = useState('');
+  const [citySearchResults, setCitySearchResults] = useState<GeocodedCityPlace[]>([]);
+  const [isSearchingCities, setIsSearchingCities] = useState(false);
+  const [isDetectingLoc, setIsDetectingLoc] = useState(false);
+  const [locStatusMessage, setLocStatusMessage] = useState<string | null>(null);
   const [studyLanguage, setStudyLanguage] = useState<string>(() =>
     UserAccountStore.getPreferredStudyLanguage()
   );
+
+  useEffect(() => {
+    const syncLoc = () => setLocPref(getStoredLocationPref());
+    window.addEventListener('kinich-location-updated', syncLoc);
+    return () => window.removeEventListener('kinich-location-updated', syncLoc);
+  }, []);
+
+  useEffect(() => {
+    const trimmed = citySearchQuery.trim();
+    if (trimmed.length < 2) {
+      setCitySearchResults([]);
+      setIsSearchingCities(false);
+      return;
+    }
+    let cancelled = false;
+    setIsSearchingCities(true);
+    const timer = setTimeout(() => {
+      searchCities(trimmed, 6)
+        .then((results) => {
+          if (!cancelled) {
+            setCitySearchResults(results);
+            setIsSearchingCities(false);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setCitySearchResults([]);
+            setIsSearchingCities(false);
+          }
+        });
+    }, 260);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [citySearchQuery]);
 
   const handleSelectStudyLanguage = (lang: string) => {
     UserAccountStore.setPreferredStudyLanguage(lang);
@@ -852,9 +900,7 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
     );
   };
 
-  const isAuthenticatedUser = Boolean(
-    auth.currentUser && !auth.currentUser.isAnonymous && !UserAccountStore.isGuestUser()
-  );
+  const isAuthenticatedUser = Boolean(!UserAccountStore.isGuest());
 
   const navItems: { id: AccountTab; label: string; icon: React.ReactNode }[] = [
     { id: 'profile', label: 'Profile & Account', icon: <User className="w-4 h-4" /> },
@@ -1514,127 +1560,389 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
                   </div>
                 </div>
 
-                {/* Opt-in Location Awareness Settings Card */}
-                <div
-                  className={`p-5 rounded-2xl border space-y-4 ${
-                    isDark ? 'bg-white/[0.02] border-white/10' : 'bg-white border-black/10 shadow-xs'
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-9 h-9 rounded-xl bg-[#FC4C01]/15 border border-[#FC4C01]/40 flex items-center justify-center shrink-0">
-                        <MapPin className="w-4 h-4 text-[#FC4C01]" />
-                      </div>
-                      <div>
-                        <div className="text-sm font-bold flex items-center gap-2">
-                          <span>Location Awareness</span>
-                          <span className="px-2 py-0.5 rounded text-[10px] font-mono uppercase tracking-wider bg-[#FC4C01]/15 text-[#FC4C01] border border-[#FC4C01]/30">
-                            {locPref.usePreciseLocation
-                              ? `Precise: ${locPref.preciseLocation?.city || 'GPS'}`
-                              : locPref.homeCity
-                              ? `Saved: ${locPref.homeCity}`
-                              : 'IP Approximate (Default)'}
-                          </span>
-                        </div>
-                        <div className="text-xs text-neutral-400 mt-0.5">
-                          Kinich uses IP-based approximate location by default for local weather &amp; search. No permissions required.
-                        </div>
-                      </div>
-                    </div>
+                {/* Location Awareness & Privacy Settings Card */}
+                {(() => {
+                  const effectiveLoc = getEffectiveLocationPayload();
+                  const isDisabled = !locPref.locationEnabled || locPref.mode === 'disabled';
+                  const activeCityLabel = isDisabled
+                    ? 'Location Disabled'
+                    : effectiveLoc?.city
+                    ? [effectiveLoc.city, effectiveLoc.region, effectiveLoc.country]
+                        .filter(Boolean)
+                        .join(', ')
+                    : 'Not resolved yet';
 
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        if (locPref.usePreciseLocation) {
-                          saveStoredLocationPref({ usePreciseLocation: false, preciseLocation: null });
-                          setLocPref(getStoredLocationPref());
-                          triggerSuccessAlert('Precise location turned off');
-                        } else {
-                          try {
-                            const loc = await requestPreciseLocationOnTap();
-                            setLocPref(getStoredLocationPref());
-                            triggerSuccessAlert(`Precise location set to ${loc.city}`);
-                          } catch (err: any) {
-                            triggerSuccessAlert(err?.message || 'Could not fetch precise location');
-                          }
-                        }
-                      }}
-                      className={`w-11 h-6 rounded-full transition-colors relative shrink-0 cursor-pointer ${
-                        locPref.usePreciseLocation ? 'bg-[#FC4C01]' : isDark ? 'bg-neutral-700' : 'bg-neutral-300'
+                  const methodBadge =
+                    locPref.mode === 'disabled' || !locPref.locationEnabled
+                      ? 'Disabled'
+                      : effectiveLoc?.detectionMethod === 'gps'
+                      ? 'Precise GPS'
+                      : effectiveLoc?.detectionMethod === 'manual'
+                      ? 'Manual City'
+                      : effectiveLoc?.detectionMethod === 'ip'
+                      ? 'Approximate IP'
+                      : locPref.mode === 'precise'
+                      ? 'GPS Ready'
+                      : 'IP Mode';
+
+                  const handleSwitchMode = async (mode: LocationPreferenceMode) => {
+                    setLocStatusMessage(null);
+                    if (mode === 'disabled') {
+                      setLocationDisabled(true);
+                      setLocPref(getStoredLocationPref());
+                      triggerSuccessAlert('Location awareness disabled');
+                      return;
+                    }
+
+                    if (mode === 'precise') {
+                      setIsDetectingLoc(true);
+                      const result = await requestPreciseLocation({ allowIpFallback: true });
+                      setIsDetectingLoc(false);
+                      setLocPref(getStoredLocationPref());
+                      if (result.location && !result.usedFallback) {
+                        setLocStatusMessage(`GPS updated to ${result.location.city}`);
+                        triggerSuccessAlert(`Precise location set to ${result.location.city}`);
+                      } else if (result.errorMessage) {
+                        setLocStatusMessage(result.errorMessage);
+                      }
+                      return;
+                    }
+
+                    if (mode === 'approximate') {
+                      setLocationMode('approximate');
+                      setIsDetectingLoc(true);
+                      const ipLoc = await fetchClientApproximateIpLocation();
+                      setIsDetectingLoc(false);
+                      setLocPref(getStoredLocationPref());
+                      if (ipLoc?.city) {
+                        setLocStatusMessage(`Approximate IP city: ${ipLoc.city}`);
+                        triggerSuccessAlert(`Approximate location updated (${ipLoc.city})`);
+                      } else {
+                        setLocStatusMessage('Approximate IP city unavailable. You can pick a city manually below.');
+                      }
+                      return;
+                    }
+
+                    setLocationMode('manual');
+                    setLocPref(getStoredLocationPref());
+                    if (!locPref.manualLocation?.city) {
+                      setLocStatusMessage('Search and select a city below to activate Manual mode.');
+                    }
+                  };
+
+                  return (
+                    <div
+                      className={`p-5 rounded-2xl border space-y-4 ${
+                        isDark ? 'bg-white/[0.02] border-white/10' : 'bg-white border-black/10 shadow-xs'
                       }`}
-                      title="Toggle precise location (off by default)"
+                      data-testid="settings-location-card"
                     >
-                      <span
-                        className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-transform ${
-                          locPref.usePreciseLocation ? 'translate-x-5' : ''
-                        }`}
-                      />
-                    </button>
-                  </div>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-2.5">
+                          <div className="w-9 h-9 rounded-xl bg-[#FC4C01]/15 border border-[#FC4C01]/40 flex items-center justify-center shrink-0 mt-0.5">
+                            <MapPin className="w-4 h-4 text-[#FC4C01]" />
+                          </div>
+                          <div>
+                            <div className="text-sm font-bold flex flex-wrap items-center gap-2">
+                              <span>Location Awareness &amp; Privacy</span>
+                              <span
+                                className={`px-2 py-0.5 rounded text-[10px] font-mono uppercase tracking-wider border ${
+                                  isDisabled
+                                    ? 'bg-neutral-500/15 text-neutral-400 border-neutral-500/30'
+                                    : 'bg-[#FC4C01]/15 text-[#FC4C01] border-[#FC4C01]/30'
+                                }`}
+                              >
+                                {methodBadge}
+                              </span>
+                            </div>
+                            <div className="text-xs text-neutral-400 mt-0.5">
+                              Used only when you ask location-dependent questions (weather, local time, nearby places). Never injected unnecessarily.
+                            </div>
+                          </div>
+                        </div>
 
-                  {/* Home City Memory Section (Priority: Precise > Home City > IP) */}
-                  <div className="pt-3 border-t border-neutral-500/10 space-y-2">
-                    <div className="text-xs font-semibold text-neutral-300 flex items-center justify-between">
-                      <span>Saved Home City (Memory)</span>
-                      {locPref.homeCity && (
-                        <span className="text-[10px] text-[#FC4C01] font-mono">Active Memory</span>
-                      )}
-                    </div>
-                    <div className="text-[11px] text-neutral-400">
-                      If you use a VPN or travel, Kinich uses your saved home city when IP location looks inaccurate.
-                    </div>
-
-                    <div className="flex items-center gap-2 pt-1">
-                      <input
-                        type="text"
-                        defaultValue={locPref.homeCity || ''}
-                        placeholder="e.g. Hyderabad, India"
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            const val = (e.currentTarget as HTMLInputElement).value.trim();
-                            setSavedHomeCity(val);
-                            setLocPref(getStoredLocationPref());
-                            triggerSuccessAlert(val ? `Saved home city: ${val}` : 'Cleared home city');
-                          }
-                        }}
-                        id="kinich-home-city-input"
-                        className={`flex-1 px-3 py-1.5 rounded-xl border text-xs outline-none transition ${
-                          isDark
-                            ? 'bg-[#141418] border-white/15 text-white focus:border-[#FC4C01]'
-                            : 'bg-white border-black/15 text-neutral-900 focus:border-[#FC4C01]'
-                        }`}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const el = document.getElementById('kinich-home-city-input') as HTMLInputElement | null;
-                          const val = el?.value.trim() || '';
-                          setSavedHomeCity(val);
-                          setLocPref(getStoredLocationPref());
-                          triggerSuccessAlert(val ? `Saved home city: ${val}` : 'Cleared home city');
-                        }}
-                        className="px-3 py-1.5 rounded-xl bg-[#FC4C01] hover:bg-[#e04300] text-white text-xs font-semibold cursor-pointer transition shrink-0"
-                      >
-                        Save City
-                      </button>
-                      {locPref.homeCity && (
                         <button
                           type="button"
-                          onClick={() => {
-                            const el = document.getElementById('kinich-home-city-input') as HTMLInputElement | null;
-                            if (el) el.value = '';
-                            setSavedHomeCity('');
-                            setLocPref(getStoredLocationPref());
-                            triggerSuccessAlert('Home city cleared');
-                          }}
-                          className="px-2.5 py-1.5 rounded-xl border border-rose-500/30 text-rose-400 hover:bg-rose-500/10 text-xs font-medium cursor-pointer transition shrink-0"
+                          onClick={() => handleSwitchMode(isDisabled ? 'approximate' : 'disabled')}
+                          className={`w-11 h-6 rounded-full transition-colors relative shrink-0 cursor-pointer ${
+                            !isDisabled ? 'bg-[#FC4C01]' : isDark ? 'bg-neutral-700' : 'bg-neutral-300'
+                          }`}
+                          aria-label={isDisabled ? 'Enable location awareness' : 'Disable location awareness'}
+                          title={isDisabled ? 'Enable location awareness' : 'Disable location awareness'}
                         >
-                          Clear
+                          <span
+                            className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-transform ${
+                              !isDisabled ? 'translate-x-5' : ''
+                            }`}
+                          />
                         </button>
+                      </div>
+
+                      {/* Current Active Context Summary */}
+                      <div
+                        className={`p-3 rounded-xl border text-xs flex flex-wrap items-center justify-between gap-2 ${
+                          isDark ? 'bg-black/30 border-white/10' : 'bg-neutral-50 border-black/10'
+                        }`}
+                      >
+                        <div className="space-y-0.5 min-w-0">
+                          <div className="font-semibold truncate flex items-center gap-1.5">
+                            {effectiveLoc?.detectionMethod === 'gps' ? (
+                              <Navigation className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                            ) : (
+                              <Globe className="w-3.5 h-3.5 text-[#FC4C01] shrink-0" />
+                            )}
+                            <span className="truncate">{activeCityLabel}</span>
+                          </div>
+                          {!isDisabled && (
+                            <div className="text-[11px] text-neutral-400 flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                              {effectiveLoc?.timezone && <span>TZ: {effectiveLoc.timezone}</span>}
+                              {typeof effectiveLoc?.accuracy === 'number' && (
+                                <span>Accuracy: ~{Math.round(effectiveLoc.accuracy)}m</span>
+                              )}
+                              {effectiveLoc?.updatedAt ? (
+                                <span>
+                                  Updated:{' '}
+                                  {new Date(effectiveLoc.updatedAt).toLocaleTimeString([], {
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                  })}
+                                </span>
+                              ) : null}
+                            </div>
+                          )}
+                        </div>
+
+                        {!isDisabled && (
+                          <button
+                            type="button"
+                            disabled={isDetectingLoc}
+                            onClick={() =>
+                              handleSwitchMode(
+                                locPref.mode === 'precise' ? 'precise' : 'approximate'
+                              )
+                            }
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-medium cursor-pointer transition disabled:opacity-50 ${
+                              isDark
+                                ? 'border-white/15 hover:bg-white/10 text-neutral-200'
+                                : 'border-black/15 hover:bg-black/5 text-neutral-800'
+                            }`}
+                          >
+                            <RefreshCw className={`w-3 h-3 ${isDetectingLoc ? 'animate-spin' : ''}`} />
+                            <span>{isDetectingLoc ? 'Updating...' : 'Refresh'}</span>
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Mode Selector */}
+                      <div className="space-y-1.5">
+                        <div className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
+                          Detection Mode
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          {(
+                            [
+                              { id: 'precise', label: 'Precise GPS', desc: 'Device permission' },
+                              { id: 'approximate', label: 'Approximate IP', desc: 'City-level fallback' },
+                              { id: 'manual', label: 'Manual City', desc: 'Travel & override' },
+                              { id: 'disabled', label: 'Off', desc: 'Never use location' },
+                            ] as const
+                          ).map((opt) => {
+                            const selected =
+                              opt.id === 'disabled'
+                                ? isDisabled
+                                : !isDisabled && locPref.mode === opt.id;
+                            return (
+                              <button
+                                key={opt.id}
+                                type="button"
+                                disabled={isDetectingLoc}
+                                onClick={() => handleSwitchMode(opt.id)}
+                                className={`p-2.5 rounded-xl border text-left transition cursor-pointer disabled:opacity-50 ${
+                                  selected
+                                    ? 'border-[#FC4C01] bg-[#FC4C01]/10'
+                                    : isDark
+                                    ? 'border-white/10 hover:border-white/25 bg-white/[0.01]'
+                                    : 'border-black/10 hover:border-black/25 bg-white'
+                                }`}
+                              >
+                                <div className="text-xs font-semibold flex items-center justify-between">
+                                  <span>{opt.label}</span>
+                                  {selected && <Check className="w-3.5 h-3.5 text-[#FC4C01]" />}
+                                </div>
+                                <div className="text-[10px] text-neutral-400 mt-0.5">{opt.desc}</div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Permission / Error Feedback */}
+                      {(locStatusMessage || locPref.lastError || locPref.permissionState === 'denied' || locPref.permissionState === 'insecure') && (
+                        <div
+                          className={`p-3 rounded-xl border text-xs flex items-start gap-2 ${
+                            locPref.permissionState === 'denied' || locPref.lastError
+                              ? isDark
+                                ? 'bg-amber-500/10 border-amber-500/30 text-amber-200'
+                                : 'bg-amber-50 border-amber-200 text-amber-900'
+                              : isDark
+                              ? 'bg-white/5 border-white/10 text-neutral-300'
+                              : 'bg-neutral-50 border-black/10 text-neutral-700'
+                          }`}
+                        >
+                          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
+                          <div className="flex-1 space-y-1">
+                            <div>
+                              {locStatusMessage ||
+                                locPref.lastError ||
+                                (locPref.permissionState === 'denied'
+                                  ? 'Browser location permission is blocked. Enable location in site settings or select a city manually below.'
+                                  : 'Precise location requires an HTTPS connection.')}
+                            </div>
+                          </div>
+                        </div>
                       )}
+
+                      {/* Searchable Manual City & Travel Picker */}
+                      <div className="pt-3 border-t border-neutral-500/10 space-y-2">
+                        <div className="text-xs font-semibold flex items-center justify-between">
+                          <span>Search &amp; Set City (Travel / Override)</span>
+                          {locPref.mode === 'manual' && locPref.manualLocation?.city && (
+                            <span className="text-[10px] text-[#FC4C01] font-mono">
+                              Active: {locPref.manualLocation.city}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-neutral-400">
+                          Search any city worldwide when travelling or on VPN. Selecting a city switches immediately and aligns weather and time lookups.
+                        </div>
+
+                        <div className="relative">
+                          <div className="flex items-center gap-2">
+                            <div className="relative flex-1">
+                              <Search className="w-3.5 h-3.5 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                              <input
+                                type="text"
+                                value={citySearchQuery}
+                                onChange={(e) => setCitySearchQuery(e.target.value)}
+                                placeholder="Search city (e.g. Tokyo, London, Hyderabad)..."
+                                id="kinich-home-city-input"
+                                className={`w-full pl-8 pr-8 py-2 rounded-xl border text-xs outline-none transition ${
+                                  isDark
+                                    ? 'bg-[#141418] border-white/15 text-white focus:border-[#FC4C01]'
+                                    : 'bg-white border-black/15 text-neutral-900 focus:border-[#FC4C01]'
+                                }`}
+                              />
+                              {citySearchQuery && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setCitySearchQuery('');
+                                    setCitySearchResults([]);
+                                  }}
+                                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-200 cursor-pointer"
+                                  aria-label="Clear city search"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          {(isSearchingCities || citySearchResults.length > 0) && (
+                            <div
+                              className={`mt-1.5 rounded-xl border overflow-hidden divide-y ${
+                                isDark
+                                  ? 'bg-[#141418] border-white/15 divide-white/5'
+                                  : 'bg-white border-black/10 divide-black/5 shadow-md'
+                              }`}
+                            >
+                              {isSearchingCities && citySearchResults.length === 0 ? (
+                                <div className="px-3 py-2 text-xs text-neutral-400">
+                                  Searching cities...
+                                </div>
+                              ) : (
+                                citySearchResults.map((place, idx) => (
+                                  <button
+                                    key={`${place.name}-${place.latitude}-${place.longitude}-${idx}`}
+                                    type="button"
+                                    onClick={() => {
+                                      setManualLocationPlace(place);
+                                      setLocPref(getStoredLocationPref());
+                                      setCitySearchQuery('');
+                                      setCitySearchResults([]);
+                                      setLocStatusMessage(`Active city set to ${place.displayName}`);
+                                      triggerSuccessAlert(`Location set to ${place.displayName}`);
+                                    }}
+                                    className={`w-full px-3 py-2 text-left text-xs flex items-center justify-between gap-2 cursor-pointer transition ${
+                                      isDark ? 'hover:bg-white/5' : 'hover:bg-neutral-50'
+                                    }`}
+                                  >
+                                    <span className="truncate font-medium">{place.displayName}</span>
+                                    {place.timezone && (
+                                      <span className="text-[10px] font-mono text-neutral-400 shrink-0">
+                                        {place.timezone}
+                                      </span>
+                                    )}
+                                  </button>
+                                ))
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Privacy Disclosure & Opt-in Precise GPS Persistence */}
+                      <div className="pt-3 border-t border-neutral-500/10 space-y-3">
+                        <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(locPref.persistPreciseLocation)}
+                            onChange={(e) => {
+                              setPersistPreciseLocation(e.target.checked);
+                              setLocPref(getStoredLocationPref());
+                              triggerSuccessAlert(
+                                e.target.checked
+                                  ? 'Precise coordinates will persist across sessions'
+                                  : 'Precise coordinates restricted to current session only'
+                              );
+                            }}
+                            className="mt-0.5 rounded border-neutral-500 accent-[#FC4C01] cursor-pointer"
+                          />
+                          <div className="text-xs space-y-0.5">
+                            <div className="font-semibold flex items-center gap-1.5">
+                              <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
+                              <span>Save precise GPS coordinates across sessions</span>
+                            </div>
+                            <div className="text-[11px] text-neutral-400">
+                              Off by default for privacy: precise GPS coordinates stay in memory for this session only, and raw IP addresses are never stored. Enable only if you want your signed-in account to remember exact GPS coordinates across devices.
+                            </div>
+                          </div>
+                        </label>
+
+                        <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                          <span className="text-[11px] text-neutral-400">
+                            Remove local and synced location data from your account at any time.
+                          </span>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              await clearStoredLocationPref({ deleteRemote: true });
+                              setLocPref(getStoredLocationPref());
+                              setCitySearchQuery('');
+                              setCitySearchResults([]);
+                              setLocStatusMessage('All saved location data cleared.');
+                              triggerSuccessAlert('Saved location data deleted');
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-rose-500/30 text-rose-400 hover:bg-rose-500/10 text-xs font-medium cursor-pointer transition shrink-0"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Clear Saved Location Data</span>
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
+                  );
+                })()}
 
                 {/* Streaks & Achievement Badges Vault Card */}
                 <div

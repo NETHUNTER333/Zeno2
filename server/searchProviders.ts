@@ -9,6 +9,7 @@ import {
 import { isAdultUrlOrDomain, isAdultQueryOrText } from './legalAndSafetyEngine';
 import { reportUpstreamProviderFailure } from './sentry';
 import { searchKeenable } from './keenableSearch';
+import { analyzeLocationIntent } from './locationContextService';
 export { searchKeenable };
 
 export interface SearchResultItem {
@@ -945,8 +946,14 @@ export async function fallbackPublicWebSearchWithStatus(
   const errors: string[] = [];
   let succeededProviders = 0;
 
-  let glParam = (locationInfo?.countryCode || 'US').toUpperCase();
-  if (locationInfo?.country && !locationInfo?.countryCode) {
+  const isLocDisabled =
+    !locationInfo ||
+    (locationInfo as any).detectionMethod === 'disabled' ||
+    (locationInfo as any).locationEnabled === false ||
+    (locationInfo as any).source === 'disabled';
+
+  let glParam = (!isLocDisabled && locationInfo?.countryCode ? locationInfo.countryCode : 'US').toUpperCase();
+  if (!isLocDisabled && locationInfo?.country && !locationInfo?.countryCode) {
     if (/india/i.test(locationInfo.country)) glParam = 'IN';
     else if (/united states|usa/i.test(locationInfo.country)) glParam = 'US';
     else if (/united kingdom|uk/i.test(locationInfo.country)) glParam = 'GB';
@@ -1732,20 +1739,35 @@ export async function searchWebReliable(
         trimmed
       );
 
+    const isLocationDisabled =
+      !locationInfo ||
+      (locationInfo as any).detectionMethod === 'disabled' ||
+      (locationInfo as any).locationEnabled === false ||
+      (locationInfo as any).source === 'disabled';
+    const locIntent = analyzeLocationIntent(trimmed);
+
     let enrichedQuery = trimmed;
-    if (isLocalOrNewsQuery && locationInfo) {
+    if (
+      !isLocationDisabled &&
+      isLocalOrNewsQuery &&
+      locationInfo &&
+      !locIntent.explicitPlace
+    ) {
       const city = locationInfo.city || '';
       const region = locationInfo.region || '';
       const countryStr = locationInfo.country || locationInfo.countryCode || '';
-      if (city && !new RegExp(`\\b${city}\\b`, 'i').test(trimmed)) {
-        if (/\b(near me|nearby)\b/i.test(trimmed)) {
-          enrichedQuery = trimmed.replace(/\b(near me|nearby)\b/gi, `in ${city}${region ? ` ${region}` : ''}`);
+      if (city && !new RegExp(`\\b${city.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(trimmed)) {
+        if (/\b(near me|around me|nearby|in my city|here)\b/i.test(trimmed)) {
+          enrichedQuery = trimmed.replace(
+            /\b(near me|around me|nearby|in my city|here)\b/gi,
+            `in ${city}${region ? ` ${region}` : ''}`
+          );
         } else if (isWeatherQuery) {
           enrichedQuery = `${city}${region ? ` ${region}` : ''}${countryStr ? ` ${countryStr}` : ''} ${trimmed}`;
         } else {
           enrichedQuery = `${trimmed} ${city}${region ? ` ${region}` : ''}${countryStr ? ` ${countryStr}` : ''}`;
         }
-      } else if (countryStr && !new RegExp(`\\b${countryStr}\\b`, 'i').test(trimmed)) {
+      } else if (countryStr && !new RegExp(`\\b${countryStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(trimmed)) {
         enrichedQuery = `${trimmed} ${countryStr}`;
       }
     }
@@ -1760,12 +1782,14 @@ export async function searchWebReliable(
         (async () => {
           try {
             const tregPayload: Record<string, any> = { q: upstreamQuery, safe: 'active', adult: '0' };
-            const cCode = (locationInfo?.countryCode || locationInfo?.country || '').toLowerCase();
-            if (cCode) {
+            const cCode = !isLocationDisabled
+              ? (locationInfo?.countryCode || locationInfo?.country || '').toLowerCase()
+              : '';
+            if (cCode && !locIntent.explicitPlace) {
               tregPayload.gl = cCode.length === 2 ? cCode : cCode === 'india' ? 'in' : 'us';
               tregPayload.hl = 'en';
             }
-            if (locationInfo?.city) {
+            if (!isLocationDisabled && !locIntent.explicitPlace && locationInfo?.city) {
               tregPayload.location = locationInfo.city;
             }
 

@@ -36,7 +36,9 @@ import { PricingModal } from './components/PricingModal';
 import { StudyWorkspace } from './components/StudyWorkspace';
 import { YouTubeVideoInfo } from './types';
 import { QuickOnboardingModal } from './components/QuickOnboardingModal';
+import { GoogleSignInButton } from './components/GoogleSignInButton';
 import { UserAccountStore } from './lib/userAccountStore';
+import { StudyLoopStore } from './lib/studyLoopStore';
 import { exportConversationAsMarkdown, exportConversationAsPdf } from './lib/exportChat';
 import { ShareExportStudioModal } from './components/ShareExportStudioModal';
 import { DeepResearchModal } from './components/DeepResearchModal';
@@ -64,6 +66,8 @@ import {
   getEffectiveLocationPayload,
   ensureClientIpLocationResolved,
   detectAndSaveHomeCityFromText,
+  isLocationDependentPrompt,
+  requestPreciseLocation,
 } from './lib/locationStore';
 import { ModelRadiantBackground } from './components/ModelRadiantBackground';
 import { PullToRefresh } from './components/PullToRefresh';
@@ -272,6 +276,29 @@ function isDateOrTimeClockQuery(text: string): boolean {
     return false;
   }
 
+  // Let explicit city/country time queries ("what's the time in Tokyo?", "London time") go through AI location context
+  if (
+    /\b(?:time|clock|date)\s+(?:in|at|for|around|near)\s+(?!here\b|my\s+city\b|my\s+location\b|my\s+area\b)[a-zA-Z\u00C0-\u024F]{2,}/i.test(
+      q
+    ) ||
+    /^(?!what|tell|current|today|real|exact|local|device|server|right)[a-zA-Z\u00C0-\u024F\s]{2,30}\s+time\b/i.test(
+      q
+    )
+  ) {
+    return false;
+  }
+
+  // If user selected a manual travel city in another timezone, do not override with device local clock
+  const locPref = getStoredLocationPref();
+  if (locPref.locationEnabled && locPref.mode === 'manual' && locPref.manualLocation?.timezone) {
+    try {
+      const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (browserTz && locPref.manualLocation.timezone !== browserTz) {
+        return false;
+      }
+    } catch {}
+  }
+
   if (
     /\b(what\s+(is|s)\s+(today'?s?\s+date|the\s+date|the\s+time|today|the\s+day|the\s+current\s+(date|time|day|year)|the\s+real\s+(date|time))|what\s+(date|day|time|year)\s+is\s+(it|today|now|rn)|tell\s+me\s+(today'?s?\s+|the\s+|current\s+|real\s+)?(date|time|day)|current\s+(date|time|day|clock)|today'?s?\s+(date|day|time)|date\s+today|time\s+today|time\s+now|date\s+now|time\s+right\s+now|time\s+rn|date\s+rn|what'?s\s+the\s+(date|time|day)|real\s*(time|date)|true\s*(time|date)|exact\s*(time|date)|date\s+and\s+time|time\s+and\s+date)\b/i.test(
       q
@@ -447,14 +474,7 @@ async function fetchKinichApi(path: string, init?: RequestInit): Promise<Respons
   try {
     const localRes = await fetch(path, init);
     const contentType = localRes.headers.get('content-type') || '';
-    if (
-      (localRes.ok ||
-        localRes.status === 400 ||
-        localRes.status === 401 ||
-        localRes.status === 403 ||
-        localRes.status === 429) &&
-      contentType.includes('application/json')
-    ) {
+    if (contentType.includes('application/json')) {
       return localRes;
     }
   } catch (err: any) {
@@ -623,6 +643,7 @@ export default function App() {
   const [guestAuthPassword, setGuestAuthPassword] = useState('');
   const [guestAuthBusy, setGuestAuthBusy] = useState(false);
   const [guestAuthError, setGuestAuthError] = useState<string | null>(null);
+  const [authNoticeBanner, setAuthNoticeBanner] = useState<string | null>(null);
   const [showEmailFormInModal, setShowEmailFormInModal] = useState(false);
   const [publicArtifactModal, setPublicArtifactModal] = useState<{
     isOpen: boolean;
@@ -666,6 +687,8 @@ export default function App() {
         p.startsWith('/study/') ||
         p === '/battle' ||
         p.startsWith('/battle/') ||
+        p === '/snap-solve' ||
+        p.startsWith('/snap-solve/') ||
         p === '/vault' ||
         p.startsWith('/vault/') ||
         p === '/pricing' ||
@@ -983,6 +1006,9 @@ export default function App() {
         claimPendingReferralAfterAuth(user.uid, user.email || '').catch((e) => {
           console.warn('[Referral] Auto-claim on auth state change failed:', e);
         });
+        if (!user.isAnonymous) {
+          StudyLoopStore.syncFromFirestore().catch(() => {});
+        }
         try {
           const remoteThreads = await loadUserChatThreadsFromFirestore();
           if (Array.isArray(remoteThreads) && remoteThreads.length > 0) {
@@ -1009,9 +1035,29 @@ export default function App() {
           console.error('Failed to load Firestore chat threads:', err);
         }
       } else {
-        // If Firebase Auth currentUser is null, check if user explicitly signed out
+        // If Firebase Auth currentUser is null, check if user explicitly signed out (unless on a public guest route)
         try {
-          if (localStorage.getItem('kinich_explicit_signout') === 'true') {
+          const p = typeof window !== 'undefined' ? window.location.pathname.toLowerCase() : '/';
+          const onColdGuestRoute =
+            p === '/study' ||
+            p.startsWith('/study/') ||
+            p === '/battle' ||
+            p.startsWith('/battle/') ||
+            p === '/snap-solve' ||
+            p.startsWith('/snap-solve/') ||
+            p === '/vault' ||
+            p.startsWith('/vault/') ||
+            p === '/pricing' ||
+            p.startsWith('/pricing/') ||
+            p === '/research' ||
+            p.startsWith('/research/') ||
+            p === '/discover' ||
+            p.startsWith('/discover/') ||
+            p.startsWith('/share/') ||
+            p.startsWith('/p/');
+          if (onColdGuestRoute) {
+            setIsSignedIn(true);
+          } else if (localStorage.getItem('kinich_explicit_signout') === 'true') {
             setIsSignedIn(false);
           } else if (UserAccountStore.isUserSignedIn()) {
             setIsSignedIn(true);
@@ -1027,6 +1073,11 @@ export default function App() {
       setUserProfile(UserAccountStore.getProfile());
       setUserSub(UserAccountStore.getSubscription());
       try {
+        const p = typeof window !== 'undefined' ? window.location.pathname.toLowerCase() : '/';
+        if (p === '/snap-solve' || p.startsWith('/snap-solve/')) {
+          setIsSignedIn(true);
+          return;
+        }
         if (localStorage.getItem('kinich_explicit_signout') === 'true') {
           setIsSignedIn(false);
           return;
@@ -1037,7 +1088,17 @@ export default function App() {
       }
     };
     window.addEventListener('kinich-account-updated', handleAccountSync);
-    return () => window.removeEventListener('kinich-account-updated', handleAccountSync);
+    const handleAuthNotice = (e: Event) => {
+      const msg = (e as CustomEvent<{ message?: string }>)?.detail?.message;
+      if (msg) {
+        setAuthNoticeBanner(msg);
+      }
+    };
+    window.addEventListener('kinich-auth-notice', handleAuthNotice);
+    return () => {
+      window.removeEventListener('kinich-account-updated', handleAccountSync);
+      window.removeEventListener('kinich-auth-notice', handleAuthNotice);
+    };
   }, []);
 
   useEffect(() => {
@@ -1588,7 +1649,7 @@ export default function App() {
       /^(hi+|hey+|hello+|yo+|sup|wassup|whats up|howdy|greetings|good (morning|afternoon|evening|night)|how are you|thanks|thank you|thx|ty|ok|okay|k|cool|nice|great|awesome|got it|wave|hand wave|waving|bye|cya)$/i.test(query.trim().toLowerCase());
 
     // Auto-capture as a Vault Study Thread for signed-in users (Deduplicated, 5-10 key points, IST timestamp, agent comments)
-    if (!UserAccountStore.isGuestUser() && !isCasualOrGreeting) {
+    if (!UserAccountStore.isGuest() && !isCasualOrGreeting) {
       let detectedType: VaultThreadType = 'text';
       let detectedUrl: string | undefined = undefined;
 
@@ -1751,6 +1812,23 @@ export default function App() {
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
+
+    // On-demand multi-layer location resolution ONLY for location-dependent queries (non-nagging)
+    if (isLocationDependentPrompt(query)) {
+      const locPref = getStoredLocationPref();
+      if (
+        locPref.locationEnabled &&
+        locPref.mode === 'precise' &&
+        !locPref.preciseLocation &&
+        locPref.permissionState !== 'denied' &&
+        locPref.permissionState !== 'unsupported' &&
+        locPref.permissionState !== 'insecure'
+      ) {
+        await requestPreciseLocation({ allowIpFallback: true }).catch(() => null);
+      } else if (locPref.locationEnabled && locPref.mode === 'approximate' && !locPref.ipLocation) {
+        await ensureClientIpLocationResolved().catch(() => null);
+      }
+    }
 
     // Fetch real-time live sites being searched immediately (~400ms) and stream them in progressively while LLM is generating
     let chatCompleted = false;
@@ -2498,15 +2576,21 @@ export default function App() {
               <StudyWorkspace
                 initialVideo={activeStudyVideo}
                 onBackToChat={() => {
-                  if (typeof window !== 'undefined' && window.location.pathname.startsWith('/study')) {
-                    window.history.pushState({}, '', '/');
+                  if (typeof window !== 'undefined') {
+                    const p = window.location.pathname.toLowerCase();
+                    if (p.startsWith('/study') || p.startsWith('/snap-solve') || p.startsWith('/battle')) {
+                      window.history.pushState({}, '', '/');
+                    }
                   }
                   setCurrentView('chat');
                 }}
                 isDark={isDark}
                 onAskKinich={(prompt) => {
-                  if (typeof window !== 'undefined' && window.location.pathname.startsWith('/study')) {
-                    window.history.pushState({}, '', '/');
+                  if (typeof window !== 'undefined') {
+                    const p = window.location.pathname.toLowerCase();
+                    if (p.startsWith('/study') || p.startsWith('/snap-solve') || p.startsWith('/battle')) {
+                      window.history.pushState({}, '', '/');
+                    }
                   }
                   setCurrentView('chat');
                   handleSend(prompt);
@@ -2687,11 +2771,11 @@ export default function App() {
 
                     {/* Minimalist disclaimer */}
                     <div
-                      className={`mt-2 text-center text-[10px] ${
+                      className={`mt-2 flex items-center justify-center text-[10px] ${
                         isDark ? 'text-[#666666]' : 'text-[#8a8a8a]'
                       }`}
                     >
-                      Kinich can make mistakes. Verify important information.
+                      <span>Kinich can make mistakes. Verify important information.</span>
                     </div>
                   </div>
                 </div>
@@ -2821,11 +2905,11 @@ export default function App() {
                       />
 
                       <div
-                        className={`mt-1.5 text-center text-[10px] ${
+                        className={`mt-1.5 flex items-center justify-center text-[10px] pointer-events-auto ${
                           isDark ? 'text-[#666666]' : 'text-[#8a8a8a]'
                         }`}
                       >
-                        Kinich can make mistakes. Verify important information.
+                        <span>Kinich can make mistakes. Verify important information.</span>
                       </div>
                     </div>
                   </div>
@@ -3171,32 +3255,23 @@ export default function App() {
             )}
 
             <div className="space-y-2">
-              <button
-                type="button"
-                data-testid="modal-google-signin-btn"
+              <GoogleSignInButton
+                testId="modal-google-signin-btn"
+                isDark={isDark}
                 disabled={guestAuthBusy}
-                onClick={async () => {
-                  setGuestAuthBusy(true);
+                className="h-9 rounded-lg text-xs"
+                beforeSignIn={() => {
                   setGuestAuthError(null);
-                  try {
-                    const user = await UserAccountStore.signIn();
-                    if (user) {
-                      setGuestAuthModal((prev) => ({ ...prev, isOpen: false }));
-                    }
-                  } catch (err: any) {
-                    setGuestAuthError(err?.message || 'Google sign-in could not be completed.');
-                  } finally {
-                    setGuestAuthBusy(false);
+                  return true;
+                }}
+                onNotice={(msg) => setAuthNoticeBanner(msg)}
+                onError={(msg) => setGuestAuthError(msg)}
+                onSuccess={(outcome) => {
+                  if (outcome.user) {
+                    setGuestAuthModal((prev) => ({ ...prev, isOpen: false }));
                   }
                 }}
-                className={`w-full h-9 px-3 rounded-lg text-xs font-medium flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:opacity-50 ${
-                  isDark
-                    ? 'bg-white text-black hover:bg-neutral-200'
-                    : 'bg-black text-white hover:bg-neutral-800'
-                }`}
-              >
-                <span>{guestAuthBusy ? 'Signing in…' : 'Continue with Google'}</span>
-              </button>
+              />
 
               {!showEmailFormInModal ? (
                 <button
@@ -3284,6 +3359,26 @@ export default function App() {
               )}
             </div>
           </div>
+        </div>
+      )}
+      {authNoticeBanner && (
+        <div
+          role="status"
+          className={`fixed bottom-4 right-4 z-[140] max-w-sm rounded-xl border px-4 py-3 text-xs shadow-lg flex items-start justify-between gap-3 ${
+            isDark
+              ? 'bg-[#17171b] border-amber-500/35 text-amber-200'
+              : 'bg-amber-50 border-amber-300 text-amber-900'
+          }`}
+        >
+          <span>{authNoticeBanner}</span>
+          <button
+            type="button"
+            onClick={() => setAuthNoticeBanner(null)}
+            className="opacity-70 hover:opacity-100 cursor-pointer shrink-0"
+            aria-label="Dismiss notice"
+          >
+            ✕
+          </button>
         </div>
       )}
     </div>

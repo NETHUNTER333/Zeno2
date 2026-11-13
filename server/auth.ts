@@ -99,6 +99,10 @@ export const OPTIONAL_AUTH_API_ROUTES = [
   '/agents/on-save',
   '/agents/on-message',
   '/agents/memory',
+  '/location/search',
+  '/location/ip',
+  '/location/reverse-geocode',
+  '/weather',
 ] as const;
 
 export const PUBLIC_API_ROUTES = [

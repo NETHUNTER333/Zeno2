@@ -1,0 +1,1865 @@
+Here's a massive implementation prompt for OpenCode to upgrade your existing Zeno app with retention systems, viral growth features, social sharing, community discovery, referral loops, and analytics. I've completely removed Zeno Arena and all AI model comparison features. This prompt focuses on making Zeno's existing product grow without rebuilding it from scratch.
+
+ZENO GROWTH ENGINE
+
+Full-Scale Product Enhancement, Retention, Virality & Organic Acquisition
+
+Project: Zeno
+Production URL: https://zeno0x.vercel.app
+Environment: Existing deployed web application
+Primary objective: Transform Zeno into a product that retains users, encourages organic sharing, builds a useful community, and generates sustainable user acquisition through its existing capabilities.
+
+---
+
+1. YOUR ROLE AND MISSION
+
+Act as a senior full-stack engineer, product growth architect, UX engineer, security engineer, analytics engineer, and technical lead.
+
+You are working on an EXISTING, DEPLOYED application called Zeno.
+
+Zeno is an AI-powered platform focused on:
+
+- AI conversations.
+- Research and information discovery.
+- Learning and educational assistance.
+- PDF and document workflows.
+- Study tools.
+- AI-powered productivity.
+- Saved knowledge and useful outputs.
+- Multiple AI models and existing integrations.
+- User accounts and personalized experiences.
+
+The existing application is already implemented and deployed.
+
+Your mission is to inspect the existing codebase, understand its architecture, identify the features that already exist, and implement a comprehensive growth system that integrates naturally into the current product.
+
+This is an implementation task, not a proposal-writing task.
+
+Do not merely generate documentation, mockups, plans, screenshots, or an isolated prototype.
+
+Inspect the repository, implement the appropriate changes, run tests, verify the integrations, and report what actually works.
+
+Do not claim a feature is complete unless its implementation and relevant functionality have been verified.
+
+ABSOLUTE PRODUCT CONSTRAINTS
+
+1. Preserve the existing Zeno application and its current functionality.
+2. Do not rebuild the application from scratch.
+3. Do not replace the existing design system without a compelling technical reason.
+4. Do not remove working features.
+5. Do not break authentication, Firebase, Firestore, API routes, AI integrations, or deployment configuration.
+6. Do not replace real functionality with fake UI.
+7. Do not invent API responses, fake analytics, fake users, fake activity, or fabricated achievements.
+8. Do not hardcode secrets or expose API keys.
+9. Do not deploy unapproved database rules or destructive migrations.
+10. Do not introduce unnecessary dependencies.
+11. Do not create duplicate systems when equivalent functionality already exists.
+12. Do not introduce mandatory social registration or forced referrals.
+13. Do not introduce artificial limits to existing free functionality merely to encourage referrals.
+14. Do not add cryptocurrency, token economies, gambling mechanics, or paid streak protection.
+15. Do not add a public social feed that exposes private user information.
+16. Do not implement Zeno Arena, AI model competitions, model-versus-model comparisons, or model voting as a growth feature.
+
+The result must remain recognizably Zeno.
+
+---
+
+2. PHASE ZERO: INSPECT THE ENTIRE EXISTING PROJECT
+
+Before modifying files, investigate the repository thoroughly.
+
+Inspect:
+
+- Package manager and package scripts.
+- Application framework and routing.
+- Existing application layouts.
+- Navigation and sidebar components.
+- Dashboard and home screen.
+- AI chat implementation.
+- Research functionality.
+- PDF and document workflows.
+- Existing file upload and export functionality.
+- Authentication.
+- Firebase configuration.
+- Firestore collections and security rules.
+- User profile storage.
+- Existing database abstractions.
+- Existing analytics and event tracking.
+- API routes and server-side services.
+- Existing notification capabilities.
+- Existing reusable UI components.
+- Existing tests and CI workflows.
+- Environment-variable handling.
+- Deployment configuration.
+- Responsive behavior.
+- Accessibility support.
+
+Search for existing implementations before creating new ones.
+
+For every proposed feature, classify it as:
+
+- Already implemented and functional.
+- Partially implemented.
+- Implemented but broken.
+- Not implemented.
+- Blocked by missing credentials or external infrastructure.
+
+Reuse working components whenever possible.
+
+Create an internal implementation checklist and identify dependencies between features.
+
+Do not waste time rebuilding functionality that already works.
+
+Baseline verification
+
+Run the available project checks before changes:
+
+- Install or verify dependencies using the existing package manager.
+- Run linting where available.
+- Run type checking where available.
+- Run relevant unit tests.
+- Run production builds where feasible.
+- Inspect existing errors.
+
+Record baseline failures separately from failures introduced by your changes.
+
+Do not make unrelated modifications merely to make the code appear cleaner.
+
+---
+
+3. DESIGN DIRECTION: ZENO MUST LOOK PREMIUM
+
+The growth system must integrate into the existing Zeno interface.
+
+Preserve the current visual identity unless inspection reveals a specific usability problem.
+
+The design should feel like a polished, serious AI research and productivity product.
+
+Visual principles
+
+- Minimalist.
+- Premium.
+- Typography-driven.
+- Fast.
+- Responsive.
+- Consistent spacing.
+- Restrained animation.
+- Clear information hierarchy.
+- Accessible contrast.
+- Mobile-first functionality.
+- No unnecessary decorative clutter.
+
+Avoid:
+
+- Generic AI-generated dashboard aesthetics.
+- Excessive gradient backgrounds.
+- Random floating cards.
+- Excessive rounded containers.
+- Emoji-filled navigation.
+- Badge overload.
+- Unnecessary animated backgrounds.
+- Fake charts.
+- Fake counters.
+- Fake testimonials.
+- Fake social proof.
+- Persistent promotional popups.
+- Excessive notification permission requests.
+- Intrusive onboarding.
+
+Do not force every feature onto the main dashboard.
+
+Use progressive disclosure, contextual actions, and a clear navigation hierarchy.
+
+The interface must remain usable on Android mobile browsers, tablets, and desktop screens.
+
+---
+
+4. FEATURE ONE: ZENO SHARE ENGINE
+
+Objective
+
+Allow users to transform valuable results they create inside Zeno into polished, shareable content.
+
+This should become one of the primary organic acquisition mechanisms.
+
+4.1 Identify shareable outputs
+
+Inspect existing Zeno functionality and integrate sharing into suitable output types.
+
+Examples include:
+
+- AI-generated explanations.
+- Research summaries.
+- Study guides.
+- Document summaries.
+- Structured notes.
+- Useful research findings.
+- Educational guides.
+- Mind maps, if supported.
+- Generated reports.
+- Reusable workflows, if supported.
+
+Do not add fake output types just to populate a sharing menu.
+
+Only enable export options supported by the actual application.
+
+4.2 Add contextual sharing actions
+
+For supported outputs, provide appropriate actions:
+
+- Share.
+- Copy link.
+- Download.
+- Export.
+- Create public page.
+- Save to knowledge collection.
+
+Avoid adding all actions to every screen regardless of relevance.
+
+Use the existing design system for buttons, menus, dialogs, and notifications.
+
+4.3 Create attractive share cards
+
+Implement a reusable share-card generation system.
+
+A share card should support:
+
+- Clear title.
+- Concise summary.
+- Selected key insights.
+- Appropriate source attribution.
+- Optional author attribution.
+- Zeno branding.
+- Readable typography.
+- Consistent spacing.
+- Appropriate dimensions for social platforms.
+
+Supported formats should include square and vertical layouts when practical.
+
+Prioritize:
+
+- Instagram Stories.
+- WhatsApp sharing.
+- X.
+- LinkedIn.
+- Downloadable images.
+
+Use a reliable image-generation method appropriate to the existing stack, such as a supported HTML-to-image implementation or a server-rendered image route.
+
+Do not assume that every browser supports the same image APIs.
+
+Provide graceful fallbacks.
+
+The share card must remain readable when the original output is long. Use a concise excerpt rather than shrinking the entire output to an unreadable size.
+
+4.4 Share content safely
+
+Before creating a public artifact, show users exactly what they are publishing.
+
+Do not automatically publish:
+
+- Private conversations.
+- Entire conversation histories.
+- Uploaded PDFs.
+- Personal information.
+- Private notes.
+- Authentication details.
+- API credentials.
+- Hidden internal application metadata.
+
+Allow users to edit the title, summary, and selected content.
+
+Require explicit confirmation before publication.
+
+4.5 Native sharing support
+
+Use the Web Share API when available.
+
+Fallbacks should include:
+
+- Copy to clipboard.
+- Download image.
+- Copy public URL.
+- Open supported social-sharing destinations.
+
+Handle permission failures and unsupported browser APIs without breaking the interface.
+
+Never claim that a share was completed if the browser only opened a sharing menu.
+
+4.6 Branding
+
+Use subtle Zeno branding on exported artifacts.
+
+The branding should be attractive rather than intrusive.
+
+Do not make branding removal a paid feature unless such a monetization model already exists and is explicitly intended.
+
+Acceptance criteria
+
+- Users can share supported outputs.
+- The generated content is visually readable.
+- The share action works on mobile.
+- Public content has a working destination URL.
+- Private content is never published without consent.
+- Clipboard and download fallbacks work.
+- Invalid or empty outputs are handled gracefully.
+- Existing chat and research functionality remains intact.
+
+---
+
+5. FEATURE TWO: PUBLIC ZENO PAGES
+
+Objective
+
+Give users a way to publish selected work as useful, independently accessible web pages.
+
+These pages should make Zeno discoverable through direct sharing, social platforms, and potentially search engines.
+
+5.1 Public artifact types
+
+Support suitable content already generated by the application, such as:
+
+- Study guides.
+- Research summaries.
+- Educational explanations.
+- Selected notes.
+- Reusable prompts.
+- Document-derived summaries.
+- Curated learning resources.
+
+The architecture should allow additional artifact types to be introduced later.
+
+Do not publish entire chat sessions by default.
+
+5.2 Public page structure
+
+Each published artifact should have:
+
+- A stable public identifier.
+- A human-readable title.
+- A content preview.
+- The published content.
+- Optional author attribution.
+- Creation or publication date.
+- Relevant tags.
+- A clear Zeno call to action.
+- A way to report inappropriate content.
+- A way to return to the original creator's public profile, when applicable.
+
+Provide appropriate responsive layouts.
+
+Long documents should remain readable and navigable.
+
+5.3 Public URLs
+
+Use the application's existing routing conventions.
+
+Generate stable URLs that can be shared externally.
+
+Ensure:
+
+- Invalid identifiers return appropriate errors.
+- Unpublished artifacts are not publicly accessible.
+- Deleted artifacts no longer expose their content.
+- Private artifacts cannot be accessed by guessing identifiers.
+- Server-side access checks are performed where required.
+
+Do not rely on hiding buttons in the frontend as an authorization mechanism.
+
+5.4 Social previews and metadata
+
+Implement appropriate metadata for public pages:
+
+- Page title.
+- Meta description.
+- Canonical URL where appropriate.
+- Open Graph title.
+- Open Graph description.
+- Open Graph image.
+- Twitter/X-compatible card metadata where appropriate.
+
+Inspect the current rendering architecture before choosing an implementation.
+
+If the existing application is a client-rendered SPA, determine how its hosting environment handles metadata and crawlers before assuming that dynamic client-side tags are sufficient.
+
+Use server-rendered metadata, statically generated pages, or a compatible metadata endpoint where appropriate.
+
+Do not claim search-engine indexing is guaranteed.
+
+5.5 Public and private controls
+
+Every artifact must have a clear visibility state.
+
+At minimum:
+
+- Private.
+- Public.
+
+If unlisted links are implemented, make their privacy implications explicit.
+
+Allow creators to:
+
+- Publish.
+- Edit.
+- Unpublish.
+- Delete.
+- Change visibility.
+
+Recheck permissions on every relevant server-side operation.
+
+5.6 Public page analytics
+
+Where privacy-compliant and technically supported, track:
+
+- Page views.
+- Unique or approximate unique visitors.
+- Clicks on the Zeno call to action.
+- Shares initiated through the application.
+
+Avoid invasive tracking.
+
+Do not collect unnecessary personal data or fingerprint visitors.
+
+Distinguish observed events from inferred metrics.
+
+Acceptance criteria
+
+- Public pages load without authentication when intended.
+- Private pages remain private.
+- Public content displays correctly on mobile.
+- Social previews use the correct metadata.
+- Editing or unpublishing changes access appropriately.
+- Invalid pages show useful errors.
+- Existing user-generated content is not exposed automatically.
+
+---
+
+6. FEATURE THREE: ZENO DISCOVER
+
+Objective
+
+Create a useful discovery area for public resources created by Zeno users.
+
+This should be a searchable library, not another engagement-maximizing social feed.
+
+6.1 Discovery categories
+
+Use categories that match actual Zeno capabilities.
+
+Potential categories:
+
+- Learning.
+- Research.
+- Science.
+- Technology.
+- Programming.
+- Writing.
+- Productivity.
+- Study resources.
+
+Only implement categories that can be supported meaningfully.
+
+Avoid empty categories and placeholder content.
+
+6.2 Discovery interface
+
+Provide:
+
+- Search.
+- Category filtering.
+- Relevant sorting.
+- Recently published sorting.
+- Pagination or efficient incremental loading.
+- Resource previews.
+- Author attribution where enabled.
+- Bookmarking.
+- A clear way to open a resource.
+
+Do not load the entire public library into the browser.
+
+Implement pagination, indexing, or another approach appropriate to the actual database.
+
+6.3 Search
+
+Start with a reliable search implementation that fits the current stack.
+
+Search should support relevant fields such as:
+
+- Title.
+- Description.
+- Tags.
+- Public content, when appropriate.
+
+If Firestore limitations make full-text search unsuitable, evaluate a lightweight alternative before adding an external search service.
+
+Do not pretend that basic substring matching is semantic search.
+
+Keep the implementation modular so a more advanced search system can be added later.
+
+6.4 Bookmarks and collections
+
+Allow authenticated users to save public resources.
+
+Users should be able to organize their saved resources into collections if that functionality can be implemented without excessive complexity.
+
+Examples:
+
+- Exam preparation.
+- Research ideas.
+- Programming.
+- Reading list.
+- Useful explanations.
+
+Bookmarks must be private by default.
+
+Never expose a user's saved resources to other users without explicit permission.
+
+6.5 Quality and moderation
+
+Public resources should support:
+
+- Reporting.
+- Removal by the creator.
+- Basic abuse prevention.
+- Reasonable publication limits.
+- Server-side validation.
+- Safe rendering of user-generated content.
+
+Do not execute arbitrary user-supplied HTML or scripts.
+
+Sanitize or safely render rich text and Markdown according to the existing architecture.
+
+If moderation requires an external service that is not configured, document the limitation rather than pretending automated moderation exists.
+
+Acceptance criteria
+
+- Users can browse public resources.
+- Search and filters return relevant results.
+- Bookmarks persist correctly.
+- Private resources never appear in discovery.
+- User-generated content is safely rendered.
+- Large collections do not create unnecessary database reads.
+- Empty states and errors are handled properly.
+
+---
+
+7. FEATURE FOUR: ZENO PERSONAL KNOWLEDGE VAULT
+
+Objective
+
+Give users a persistent place to organize and revisit useful knowledge created or collected in Zeno.
+
+The purpose is to make returning to Zeno valuable because users can continue previous work.
+
+7.1 Saved knowledge
+
+Where supported, allow users to save:
+
+- Useful AI responses.
+- Research summaries.
+- Notes.
+- Study guides.
+- Selected document insights.
+- Public resources.
+- Personal learning materials.
+
+Preserve references to original sources when available.
+
+Do not fabricate citations or source URLs.
+
+7.2 Organization
+
+Support:
+
+- Collections.
+- Tags.
+- Search.
+- Editing.
+- Deletion.
+- Creation dates.
+- Recently updated sorting.
+- Optional pinning.
+
+Use a consistent data model.
+
+Avoid creating separate, overlapping storage systems for every content type.
+
+7.3 Searchable knowledge
+
+Implement search across the user's own saved materials.
+
+If semantic search is already supported, reuse it.
+
+Otherwise, implement a reliable baseline and leave semantic indexing as a clearly documented future enhancement.
+
+Do not advertise embeddings or semantic retrieval if they are not actually implemented.
+
+7.4 Privacy
+
+All personal knowledge must be private by default.
+
+Enforce user ownership on the server and in Firestore security rules where relevant.
+
+Do not rely solely on frontend filtering.
+
+Ensure that one authenticated user cannot read, edit, or delete another user's private materials.
+
+7.5 Data export
+
+Where practical, allow users to export their own saved content.
+
+Use formats appropriate to the data and existing dependencies.
+
+Exports should preserve useful structure and source references.
+
+Acceptance criteria
+
+- Saved content persists across sessions.
+- Search returns the user's own saved resources.
+- Collections and tags work correctly.
+- Ownership checks prevent cross-user access.
+- Deleted resources are handled consistently.
+- Exported content is valid and readable.
+
+---
+
+8. FEATURE FIVE: SMART CONTINUATION
+
+Objective
+
+Help users resume useful work instead of returning to an empty dashboard.
+
+This is a retention feature, not a mechanism for manufacturing engagement.
+
+8.1 Recent work
+
+Use existing authenticated user data to display appropriate recent items.
+
+Potential items include:
+
+- Recent conversations.
+- Saved research.
+- Unfinished study guides.
+- Recent document summaries.
+- Recently edited knowledge collections.
+
+Only include types supported by the current application.
+
+8.2 Continue actions
+
+Each item should provide a relevant action.
+
+Examples:
+
+- Continue conversation.
+- Open saved research.
+- Review study notes.
+- Reopen a document summary.
+- Continue editing a resource.
+
+Make sure the action actually navigates to the relevant content.
+
+Do not implement buttons that merely display success messages.
+
+8.3 Suggested next steps
+
+Where appropriate, suggest useful actions based on the user's explicit activity and saved content.
+
+Suggestions might include:
+
+- Continue a previous topic.
+- Organize recent notes.
+- Review saved insights.
+- Explore a related public resource.
+- Turn an existing answer into a study guide.
+
+Avoid generating arbitrary suggestions that have no relationship to the user's work.
+
+Do not introduce additional AI API calls on every dashboard render.
+
+Prefer deterministic suggestions when they provide sufficient value.
+
+If AI-generated recommendations are implemented, use existing backend integrations and sensible caching.
+
+8.4 Dashboard controls
+
+Allow users to dismiss suggestions and hide sections that are not useful.
+
+Do not make the dashboard crowded.
+
+Do not use guilt-based copy such as "You are losing your progress."
+
+Acceptance criteria
+
+- Recent work is accurate.
+- Continue actions open the correct destination.
+- Dismissed items behave consistently.
+- The dashboard performs well on mobile.
+- Unnecessary AI requests are avoided.
+
+---
+
+9. FEATURE SIX: WEEKLY INTELLIGENCE REPORT
+
+Objective
+
+Provide a useful, privacy-conscious summary of the user's activity and progress.
+
+This should demonstrate real value rather than fabricate achievements.
+
+9.1 Report contents
+
+Potential report sections:
+
+- Topics explored.
+- Research sessions completed.
+- Resources saved.
+- Documents processed.
+- Study materials created.
+- Public resources published.
+- Unfinished items worth revisiting.
+
+Only include activity that can be measured reliably.
+
+Do not invent time saved, knowledge mastered, productivity gains, or completed tasks.
+
+If a metric cannot be measured, omit it.
+
+9.2 Reporting period
+
+Support a clear weekly reporting window.
+
+Use consistent timezone handling.
+
+Avoid counting the same event multiple times.
+
+Where event data is incomplete, disclose the limitations or omit the metric.
+
+9.3 Presentation
+
+Create a clean report that includes:
+
+- A concise overview.
+- Selected highlights.
+- Relevant links to the user's own work.
+- Suggested next steps.
+- An optional sharing action.
+
+Allow users to preview the report before sharing it.
+
+9.4 Sharing
+
+Generate a shareable version containing only information the user explicitly approves.
+
+Never publish private conversation titles, document names, or research details automatically.
+
+The user should be able to remove individual report sections before export.
+
+9.5 Implementation efficiency
+
+Do not scan every conversation and every document on every dashboard load.
+
+Use appropriate aggregation, caching, and existing event infrastructure.
+
+Avoid excessive Firestore reads.
+
+If a background job or scheduled function is required but unavailable, implement a reasonable on-demand alternative and document what remains necessary.
+
+Acceptance criteria
+
+- All displayed metrics come from real data.
+- Reporting periods are consistent.
+- Duplicate events are handled.
+- Private information is excluded from public exports by default.
+- Report generation does not cause excessive database reads.
+- Empty weeks produce a useful, nonjudgmental empty state.
+
+---
+
+10. FEATURE SEVEN: ZENO REFERRAL SYSTEM
+
+Objective
+
+Give users a straightforward way to invite others to discover Zeno.
+
+Referrals should be optional and transparent.
+
+10.1 Referral links
+
+Generate referral links using an appropriate identifier.
+
+Requirements:
+
+- Each referral identifier must be unique.
+- Users cannot impersonate another referrer by modifying arbitrary account fields.
+- Referral attribution must be validated server-side.
+- Self-referrals must not count.
+- Duplicate attribution must be prevented.
+- Referral parameters must not expose private user information.
+
+Avoid placing email addresses, authentication tokens, or sensitive identifiers in URLs.
+
+10.2 Invitation interface
+
+Add a simple invitation experience with:
+
+- Copy invitation link.
+- Share invitation.
+- Explain how referrals work.
+- Display verified referral status where appropriate.
+
+Use native mobile sharing where supported.
+
+Avoid forced contact uploads or unsolicited messaging.
+
+10.3 Referral attribution
+
+Define the referral lifecycle precisely.
+
+For example:
+
+1. An existing user generates an invitation link.
+2. A new visitor opens the link.
+3. Referral attribution is recorded using a suitable, privacy-conscious mechanism.
+4. The visitor creates an account, if applicable.
+5. The server validates the attribution.
+6. A qualifying event is recorded.
+7. The referrer sees an updated status.
+
+Choose a reasonable attribution window and document it.
+
+Handle multiple referral links deterministically.
+
+Do not attribute an existing account to a new referral.
+
+Do not trust client-submitted claims that a referral milestone was completed.
+
+10.4 Rewards
+
+Implement a reward system only if there is a real reward that can be granted safely.
+
+Potential rewards include:
+
+- Profile customization.
+- Themes.
+- Cosmetic profile achievements.
+- Optional trial access, if a legitimate premium tier exists.
+
+Do not invent a premium tier that does not exist.
+
+Do not introduce artificial restrictions on currently available free functionality.
+
+Do not promise free credits, extra API usage, or premium access unless the application can enforce and fund those benefits.
+
+Rewards must be recorded transactionally or through an equivalent reliable mechanism.
+
+10.5 Fraud prevention
+
+Prevent:
+
+- Self-referrals.
+- Repeated reward claims.
+- Duplicate accounts where detectable.
+- Client-side reward manipulation.
+- Arbitrary changes to referral ownership.
+- Repeated qualifying events.
+- Direct modification of reward balances.
+
+Use reasonable rate limits.
+
+Avoid invasive device fingerprinting.
+
+Acceptance criteria
+
+- Referral links work.
+- Attribution persists correctly.
+- Self-referrals are rejected.
+- Duplicate claims do not grant repeated rewards.
+- Referral status reflects verified backend data.
+- Users can participate without inviting anyone.
+- Missing reward infrastructure is documented.
+
+---
+
+11. FEATURE EIGHT: OPTIONAL MISSIONS AND ACHIEVEMENTS
+
+Objective
+
+Help users discover existing Zeno functionality through optional, meaningful milestones.
+
+Do not turn the application into a badge collection game.
+
+11.1 Mission examples
+
+Only introduce missions corresponding to real capabilities.
+
+Examples:
+
+- Save your first useful answer.
+- Create your first knowledge collection.
+- Publish your first public study guide.
+- Complete your first research session.
+- Organize your saved materials.
+- Share a resource with someone.
+- Return to continue a previous project.
+
+Avoid requiring users to invite friends to access ordinary features.
+
+11.2 Achievement data
+
+Use a clear achievement schema.
+
+Potential fields:
+
+- Achievement identifier.
+- User identifier.
+- Achievement status.
+- Completion timestamp.
+- Optional progress count.
+
+Enforce uniqueness for each user's achievement.
+
+Do not trust the client to declare completion of server-verifiable milestones.
+
+11.3 Presentation
+
+Display achievements unobtrusively.
+
+Use subtle progress indicators and optional notifications.
+
+Avoid full-screen celebration dialogs for trivial events.
+
+Allow users to dismiss achievement prompts.
+
+11.4 Rewards
+
+Prefer non-monetary recognition and customization.
+
+Do not create fake currencies or simulated premium balances.
+
+Acceptance criteria
+
+- Achievements correspond to actual events.
+- Duplicate completion is prevented.
+- Progress is consistent across sessions.
+- Achievements do not block normal functionality.
+- Users can ignore or dismiss the system.
+
+---
+
+12. FEATURE NINE: OPTIONAL USER PROFILES
+
+Objective
+
+Allow users to present selected public work and interests without exposing their private account information.
+
+12.1 Public profile
+
+Where appropriate, support:
+
+- Display name.
+- Optional profile image.
+- Optional biography.
+- Selected public artifacts.
+- Selected public collections.
+- Account creation or publication information where appropriate.
+
+Do not expose email addresses, authentication identifiers, private notes, or internal account metadata.
+
+12.2 Visibility
+
+Allow users to control whether their profile is public.
+
+If public profiles are disabled, do not expose profile data through public endpoints.
+
+12.3 Creator attribution
+
+Public artifacts may link to their creator's public profile when enabled.
+
+Do not automatically publish the user's entire activity history.
+
+Do not expose private bookmarks or recent conversations.
+
+12.4 Editing
+
+Users must be able to edit their profile and remove optional information.
+
+Validate input length and safely render user-supplied content.
+
+Acceptance criteria
+
+- Public profiles contain only approved fields.
+- Private profiles are inaccessible publicly.
+- Profile editing works.
+- Deleting or disabling a profile is handled correctly.
+- Public artifact attribution respects visibility settings.
+
+---
+
+13. FEATURE TEN: ZENO CREATOR AND COMMUNITY FEATURES
+
+Objective
+
+Encourage users to contribute genuinely useful learning and research resources.
+
+Build the smallest useful community system first.
+
+13.1 Resource creation
+
+Allow users to publish selected resources from existing workflows.
+
+Provide:
+
+- Title.
+- Description.
+- Category.
+- Tags.
+- Content preview.
+- Visibility control.
+- Publication confirmation.
+
+Avoid duplicate content when publishing the same resource repeatedly.
+
+13.2 Creator recognition
+
+Where useful, provide:
+
+- Creator profile pages.
+- Featured resources.
+- Publication statistics.
+- Curated collections.
+- Optional creator spotlights.
+
+Do not fabricate popularity rankings.
+
+Do not use raw views as proof of quality.
+
+13.3 Moderation
+
+Provide a reporting mechanism and an administrative path for reviewing reports.
+
+Do not build an elaborate moderation console if the application has no operational way to manage it.
+
+Document the actual moderation workflow.
+
+Implement appropriate server-side controls for publication and deletion.
+
+13.4 No artificial social network
+
+Do not introduce:
+
+- Endless scrolling designed solely to maximize screen time.
+- Fake activity feeds.
+- Fake user counts.
+- Fake likes.
+- Fake comments.
+- Automated fake community members.
+- Spammy follow suggestions.
+
+Build discovery around useful content.
+
+Acceptance criteria
+
+- Users can publish supported resources.
+- Public resources are discoverable.
+- Reports can be recorded and reviewed through an actual workflow.
+- No fake community data is introduced.
+- Private user activity remains private.
+
+---
+
+14. FEATURE ELEVEN: OPTIONAL NOTIFICATIONS
+
+Objective
+
+Help users return to unfinished work when they have chosen to receive reminders.
+
+14.1 Notification preferences
+
+Provide user controls for:
+
+- Enabling or disabling reminders.
+- Selecting relevant reminder types.
+- Choosing a reasonable frequency.
+- Muting nonessential notifications.
+
+Default to a respectful notification policy.
+
+14.2 Notification types
+
+Potential notifications include:
+
+- A reminder to continue unfinished research.
+- A weekly intelligence report.
+- An update to a public resource the user follows, if following is implemented.
+- A referral milestone that has actually been verified.
+
+Do not send notifications merely because a user has been inactive for a few hours.
+
+14.3 Delivery
+
+Inspect the existing infrastructure.
+
+Use supported mechanisms such as in-app notifications or browser notifications where appropriate.
+
+Do not assume push notifications work without a service worker, permission handling, subscription storage, and a delivery mechanism.
+
+If push delivery requires additional infrastructure, clearly separate the implemented functionality from the remaining setup.
+
+14.4 Security
+
+Never expose notification subscription secrets or authentication tokens.
+
+Validate notification actions server-side.
+
+Avoid sending sensitive research titles in notification previews by default.
+
+Acceptance criteria
+
+- Preferences persist.
+- Disabled notifications are respected.
+- Notifications are based on real events.
+- Delivery status is not fabricated.
+- Unsupported notification environments degrade gracefully.
+
+---
+
+15. FEATURE TWELVE: GROWTH ANALYTICS
+
+Objective
+
+Measure whether Zeno's new features actually improve activation, retention, and organic acquisition.
+
+Do not implement vanity metrics that merely make a dashboard look impressive.
+
+15.1 Core events
+
+Define a consistent event taxonomy.
+
+Possible events:
+
+- "signup_completed"
+- "first_core_action_completed"
+- "knowledge_item_saved"
+- "share_card_created"
+- "share_action_initiated"
+- "public_artifact_created"
+- "public_artifact_opened"
+- "discover_resource_opened"
+- "referral_link_created"
+- "referral_visit_recorded"
+- "referral_signup_validated"
+- "weekly_report_viewed"
+- "returning_session_started"
+
+Adapt the names to the existing analytics conventions.
+
+Do not record events for features that do not exist.
+
+Do not send entire prompts, conversations, uploaded document contents, or other sensitive information as analytics properties.
+
+15.2 Event reliability
+
+Separate events into:
+
+- Client-observed interactions.
+- Server-verified actions.
+- Derived metrics.
+
+For example, clicking a share button is not proof that the content was successfully delivered to another person.
+
+A referral visit is not proof that a new active user was acquired.
+
+Use idempotency or deduplication where appropriate.
+
+15.3 Funnel analytics
+
+Measure:
+
+Acquisition
+
+- Landing-page visits.
+- Referral visits.
+- Public artifact visits.
+
+Activation
+
+- Account creation.
+- First meaningful product action.
+- First saved item.
+- First completed research or learning workflow, if measurable.
+
+Retention
+
+- Day-1 return rate.
+- Day-7 return rate.
+- Day-30 return rate, once sufficient data exists.
+
+Virality
+
+- Share-card creation rate.
+- Share-page visit rate.
+- Public artifact visitor-to-product-action conversion.
+- Validated referral conversion.
+
+Engagement
+
+- Saved resources.
+- Return visits.
+- Reopened projects.
+- Use of supported core features.
+
+Use consistent definitions and time windows.
+
+Do not fabricate historical events or fill missing data with estimates presented as facts.
+
+15.4 Dashboard
+
+Create an internal growth dashboard only if it fits the existing application and there is a secure way to restrict access.
+
+Show real metrics with clear definitions.
+
+If no reliable analytics dataset exists, implement event collection first and show an honest empty state until sufficient data is available.
+
+Never expose the dashboard publicly.
+
+15.5 Privacy
+
+Collect only what is necessary.
+
+Avoid unnecessary tracking cookies and invasive identification.
+
+Respect applicable consent requirements.
+
+Do not store private AI prompts in the growth analytics dataset.
+
+Acceptance criteria
+
+- Events have documented meanings.
+- Duplicate events are handled.
+- Sensitive content is excluded.
+- Server-verified events cannot be forged by arbitrary client requests.
+- Dashboard metrics are calculated from real data.
+- Access to internal metrics is restricted.
+
+---
+
+16. FEATURE THIRTEEN: LANDING PAGE AND ONBOARDING OPTIMIZATION
+
+Objective
+
+Improve how quickly a new visitor understands Zeno and experiences its existing product value.
+
+Do not rebuild the entire landing page without inspecting the current version.
+
+16.1 Explain the product clearly
+
+The landing page should quickly communicate what Zeno can actually do.
+
+Potential messaging themes:
+
+- AI-powered learning.
+- Research assistance.
+- Document workflows.
+- Knowledge organization.
+- Productivity tools.
+
+Only make claims supported by the deployed application.
+
+Do not claim unlimited usage, unrestricted model access, guaranteed accuracy, or premium capabilities unless these claims are technically and commercially accurate.
+
+16.2 Demonstrate real capabilities
+
+Use genuine screenshots or actual application output.
+
+Where a live demonstration is feasible, make it functional.
+
+Do not use fake conversations or fabricated testimonials.
+
+16.3 Clear calls to action
+
+Provide a clear path to:
+
+- Start using Zeno.
+- Try an available feature.
+- Explore public resources.
+- Open a shared artifact.
+
+Do not create unnecessary signup walls for public content that is intentionally designed to be accessible without an account.
+
+16.4 Onboarding
+
+Provide a lightweight introduction to relevant features.
+
+Avoid forcing users through a long tutorial.
+
+Allow users to skip onboarding.
+
+Do not request notification permission immediately on the first page load.
+
+Request permissions only when the user has context for why they would be useful.
+
+Acceptance criteria
+
+- New visitors can understand the product.
+- Main actions lead to working destinations.
+- Messaging matches actual capabilities.
+- Onboarding can be dismissed.
+- Public pages remain accessible as intended.
+
+---
+
+17. FEATURE FOURTEEN: MOBILE EXPERIENCE AND PERFORMANCE
+
+Zeno must work reliably on mobile browsers, particularly Android.
+
+17.1 Responsive behavior
+
+Test:
+
+- Small mobile screens.
+- Larger Android screens.
+- Tablets.
+- Desktop browsers.
+
+Check:
+
+- Navigation.
+- Dialogs.
+- Dropdowns.
+- Share menus.
+- Long research content.
+- PDF interfaces.
+- Forms.
+- Public artifact pages.
+- Knowledge collections.
+- Search.
+- Authentication flows.
+
+Prevent horizontal overflow and inaccessible controls.
+
+17.2 Performance
+
+Avoid unnecessary:
+
+- Database reads.
+- AI API requests.
+- Large client bundles.
+- Repeated image generation.
+- Uncached public page queries.
+- Duplicate analytics requests.
+
+Use pagination, caching, and lazy loading where appropriate.
+
+Do not cache private content in a publicly accessible shared cache.
+
+17.3 Accessibility
+
+Provide:
+
+- Keyboard navigation.
+- Visible focus states.
+- Appropriate labels.
+- Accessible dialogs.
+- Screen-reader-friendly controls.
+- Sufficient contrast.
+- Reduced-motion support.
+
+Do not rely on color alone to communicate success or failure.
+
+Acceptance criteria
+
+- Core workflows work on mobile.
+- Navigation remains usable.
+- Public content renders correctly.
+- Accessibility issues introduced by new features are addressed.
+- Performance regressions are investigated.
+
+---
+
+18. DATABASE AND FIREBASE REQUIREMENTS
+
+Zeno already has Firebase Authentication and Firestore integration.
+
+Inspect and reuse the existing Firebase setup.
+
+Do not create a second authentication system.
+
+Do not create duplicate user records without a clear reason.
+
+18.1 Data model
+
+Design data structures appropriate to the existing architecture.
+
+Potential logical entities:
+
+- Public artifacts.
+- Saved knowledge.
+- Collections.
+- Bookmarks.
+- Referral records.
+- Achievement records.
+- User preferences.
+- Notification preferences.
+- Analytics events.
+- Moderation reports.
+
+These are logical entities, not mandatory collection names.
+
+Use the existing naming conventions wherever possible.
+
+18.2 Authorization
+
+For every new data operation, determine:
+
+- Who can create the record?
+- Who owns it?
+- Who can read it?
+- Who can edit it?
+- Who can delete it?
+- Which records are public?
+- Which fields must never be exposed publicly?
+
+Enforce permissions server-side and in Firestore rules where appropriate.
+
+Never assume that authentication alone authorizes access to a specific record.
+
+18.3 Firestore rules
+
+Review existing rules before editing them.
+
+Preserve valid protections.
+
+Add the minimum required permissions for the new features.
+
+Prevent users from modifying protected fields such as:
+
+- Ownership.
+- Referral attribution.
+- Verified reward status.
+- Administrative privileges.
+- Server-calculated metrics.
+
+Use server-controlled writes for sensitive state transitions.
+
+Test authorized and unauthorized access.
+
+18.4 Migrations
+
+If schema changes are required:
+
+- Make them backward-compatible where practical.
+- Preserve existing user data.
+- Avoid destructive migrations.
+- Document required deployment steps.
+- Test against an emulator when available.
+
+Do not reset production data.
+
+18.5 Environment variables
+
+Inspect the existing environment-variable conventions.
+
+Use server-side secrets only in server-side code.
+
+Do not expose private keys through client-side environment variables or build artifacts.
+
+Do not overwrite production credentials.
+
+If a required service credential is missing, document the exact variable name and setup requirement without inventing a value.
+
+---
+
+19. SECURITY REQUIREMENTS
+
+Security is mandatory for every new feature.
+
+Review the existing security modules and reuse them where appropriate.
+
+Preserve existing SSRF validation, input sanitization, authentication verification, and error-handling protections.
+
+Do not weaken security controls to make implementation easier.
+
+Required protections
+
+- Authentication verification.
+- Authorization checks.
+- Input validation.
+- Output sanitization.
+- Rate limiting where appropriate.
+- Safe public identifiers.
+- Ownership validation.
+- Safe file handling.
+- No secret leakage.
+- No arbitrary HTML execution.
+- Appropriate error handling.
+- No sensitive information in public URLs.
+- Protection against duplicate reward claims.
+- Protection against unauthorized publication.
+- Protection against cross-user access.
+
+Do not return raw stack traces or sensitive internal details to users.
+
+Avoid logging private conversation contents or uploaded document text.
+
+Inspect dependency vulnerabilities where supported.
+
+Do not blindly upgrade major dependencies if doing so risks breaking the existing application.
+
+---
+
+20. TESTING STRATEGY
+
+Testing is part of the implementation, not an optional final step.
+
+20.1 Unit tests
+
+Test relevant logic for:
+
+- Share-card formatting.
+- Public visibility checks.
+- Referral attribution.
+- Duplicate referral prevention.
+- Achievement uniqueness.
+- Event deduplication.
+- Report aggregation.
+- Input validation.
+- Content sanitization.
+
+20.2 Integration tests
+
+Where infrastructure permits, test:
+
+- Authentication.
+- Saving and retrieving knowledge.
+- Publishing an artifact.
+- Accessing a public artifact.
+- Rejecting private artifact access.
+- Editing and unpublishing.
+- Bookmark persistence.
+- Referral attribution.
+- Analytics event handling.
+
+20.3 Security tests
+
+Verify that:
+
+- Anonymous users cannot access private resources.
+- Authenticated users cannot access another user's private records.
+- Users cannot modify another user's resources.
+- Referral rewards cannot be forged.
+- Unpublished resources are not accessible through public routes.
+- Administrative functionality is protected.
+- Malicious HTML is safely handled.
+- Secrets are not exposed in client bundles.
+
+20.4 Browser verification
+
+Use the existing test framework or available browser automation.
+
+Test the real interface where feasible.
+
+Verify important actions rather than only checking that components render.
+
+20.5 Build verification
+
+After changes, run the applicable:
+
+- Linter.
+- Type checker.
+- Unit tests.
+- Integration tests.
+- Production build.
+
+Compare results against the baseline.
+
+Investigate regressions.
+
+Do not hide failing tests or silently remove existing checks.
+
+---
+
+21. IMPLEMENTATION ORDER
+
+Implement the project in the following sequence.
+
+Phase A: Audit and baseline
+
+1. Inspect the repository.
+2. Identify existing working features.
+3. Record baseline test and build results.
+4. Map the current application architecture.
+5. Identify required environment variables and external dependencies.
+6. Establish an implementation checklist.
+
+Phase B: Core data and security
+
+1. Define required data structures.
+2. Implement access-control helpers.
+3. Update validation and authorization.
+4. Update Firestore rules where necessary.
+5. Add relevant tests.
+6. Verify backward compatibility.
+
+Phase C: Sharing and public pages
+
+1. Implement share-card generation.
+2. Add contextual sharing actions.
+3. Implement public artifact publishing.
+4. Implement public artifact routes.
+5. Add social metadata.
+6. Add publication controls.
+7. Verify public/private separation.
+
+Phase D: Knowledge and discovery
+
+1. Implement or improve saved knowledge.
+2. Add collections and bookmarks.
+3. Implement Zeno Discover.
+4. Add search and filtering.
+5. Add resource reporting.
+6. Verify data ownership.
+
+Phase E: Retention
+
+1. Implement Smart Continuation.
+2. Add the weekly intelligence report.
+3. Add optional missions and achievements.
+4. Add notification preferences.
+5. Integrate the features into existing navigation.
+
+Phase F: Referrals and community
+
+1. Implement referral links.
+2. Implement validated attribution.
+3. Add referral status.
+4. Add optional reward handling only if supported.
+5. Add creator profiles where appropriate.
+6. Verify abuse prevention.
+
+Phase G: Analytics
+
+1. Define the event taxonomy.
+2. Instrument relevant actions.
+3. Implement reliable event collection.
+4. Calculate retention and acquisition metrics.
+5. Add a protected dashboard if appropriate.
+6. Verify event accuracy.
+
+Phase H: Final verification
+
+1. Run all relevant tests.
+2. Run type checking.
+3. Run linting.
+4. Run the production build.
+5. Test mobile layouts.
+6. Test authentication.
+7. Test security boundaries.
+8. Inspect deployment configuration.
+9. Document unresolved issues.
+10. Prepare the final implementation report.
+
+Adjust the order when the existing architecture requires it, but preserve the dependency relationships.
+
+---
+
+22. ENGINEERING RULES
+
+Follow these rules throughout implementation.
+
+Rule 1: Understand before modifying
+
+Inspect the relevant files before editing them.
+
+Do not blindly replace entire components.
+
+Rule 2: Preserve existing behavior
+
+Modify the smallest reasonable set of files.
+
+Avoid unrelated refactoring.
+
+Rule 3: Reuse existing abstractions
+
+If Zeno already has a service, component, store, or utility for the required task, reuse it.
+
+Do not create competing implementations.
+
+Rule 4: No fake functionality
+
+Every button, menu, form, and action must work or be explicitly disabled with a clear explanation.
+
+Rule 5: No silent failure
+
+Handle errors properly and provide useful feedback.
+
+Log appropriate diagnostic information without exposing secrets.
+
+Rule 6: Avoid unnecessary dependencies
+
+Use the current framework and libraries wherever possible.
+
+Add a dependency only when it provides a clear benefit.
+
+Rule 7: Keep costs under control
+
+Avoid expensive AI calls, excessive database reads, and unnecessary background jobs.
+
+Use deterministic logic when it is sufficient.
+
+Rule 8: Respect user privacy
+
+Public sharing must always be deliberate.
+
+Do not expose private work through discovery, analytics, profiles, or notifications.
+
+Rule 9: Verify before declaring success
+
+A successful build does not prove every feature works.
+
+Test the actual critical workflows.
+
+Rule 10: Be honest about limitations
+
+If a feature requires unavailable infrastructure, credentials, subscriptions, or manual configuration, document the dependency.
+
+Do not simulate success.
+
+---
+
+23. DEFINITION OF DONE
+
+The project is complete only when the following criteria have been addressed.
+
+Product
+
+- [ ] Existing Zeno functionality remains intact.
+- [ ] Share actions work for supported outputs.
+- [ ] Public artifact publishing works.
+- [ ] Public artifact privacy controls work.
+- [ ] Social metadata is configured appropriately.
+- [ ] Saved knowledge works.
+- [ ] Discovery works.
+- [ ] Smart Continuation works.
+- [ ] Weekly reports use real data.
+- [ ] Referral attribution is validated.
+- [ ] Optional achievements use real events.
+- [ ] Community features respect visibility settings.
+- [ ] Notification preferences work where notifications are implemented.
+
+Engineering
+
+- [ ] Existing architecture is reused.
+- [ ] Database changes are documented.
+- [ ] Firestore permissions are reviewed.
+- [ ] Authentication and ownership checks are tested.
+- [ ] Relevant tests pass.
+- [ ] Type checking passes where available.
+- [ ] Linting passes or remaining baseline issues are documented.
+- [ ] Production build passes or the exact blocker is documented.
+- [ ] Mobile behavior is checked.
+- [ ] No new secrets are exposed.
+- [ ] No destructive production changes are introduced.
+
+Growth
+
+- [ ] Share interactions can be measured.
+- [ ] Public artifact visits can be measured.
+- [ ] Meaningful activation events can be measured.
+- [ ] Retention metrics have defined calculations.
+- [ ] Referral conversion can be measured.
+- [ ] Metrics are based on real events.
+- [ ] Private content is excluded from analytics.
+- [ ] No fabricated social proof is introduced.
+
+---
+
+24. FINAL REPORT
+
+When finished, provide a concise but technically accurate report containing:
+
+A. What was implemented
+
+List the actual features and important files changed.
+
+B. What already existed
+
+Identify relevant functionality that was reused rather than rebuilt.
+
+C. Testing results
+
+Report the actual results of:
+
+- Type checking.
+- Linting.
+- Unit tests.
+- Integration tests.
+- Production build.
+- Relevant browser verification.
+
+Include failures rather than hiding them.
+
+D. Security changes
+
+Summarize authentication, authorization, Firestore rules, public visibility controls, and any other relevant security work.
+
+E. Environment setup
+
+List any missing environment variables, external services, or manual configuration still required.
+
+Never include secret values.
+
+F. Deployment readiness
+
+State whether the changes are:
+
+- Implemented locally.
+- Tested locally.
+- Ready for deployment.
+- Deployed and verified.
+
+These are different states. Do not conflate them.
+
+Do not deploy to production unless the environment and authorization explicitly permit it.
+
+G. Remaining work
+
+Identify unfinished features, infrastructure dependencies, known bugs, and recommended next steps.
+
+H. Growth measurement
+
+Explain how to measure whether the new systems improve:
+
+- Activation.
+- Retention.
+- Sharing.
+- Referral conversion.
+- Return visits.
+
+Do not claim the application has become viral or that retention has improved without real post-deployment evidence.
+
+---
+
+FINAL DIRECTIVE
+
+Start by inspecting the actual Zeno repository.
+
+Then implement the highest-value features using the existing architecture.
+
+Prioritize functional sharing, public resources, a private knowledge vault, Smart Continuation, reliable referral attribution, and accurate growth analytics.
+
+Build the system in small, verifiable stages.
+
+Preserve the application's existing identity and functionality.
+
+Do not stop after producing a plan.
+
+Do not stop after creating attractive UI.
+
+Implement, integrate, test, verify, and document.
+
+The objective is to make Zeno more useful, more discoverable, easier to share, and more valuable over time—without compromising security, privacy, performance, or product quality.Before you run it
+
+One important point: this is a substantial product upgrade, not a single small feature. Run it against your existing repository so the coding agent can inspect the actual implementation rather than blindly creating duplicate systems.
+
+I'd prioritize Share Engine → Public Pages → Knowledge Vault → Smart Continuation → Analytics first. Those establish the foundation for organic growth and retention before you invest in a larger community or notification system.

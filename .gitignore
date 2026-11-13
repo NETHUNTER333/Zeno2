@@ -27,3 +27,25 @@ skills-lock.json
 .insta/.agent-session-*.tmp
 .insta/zeno_quota_ledger.json
 
+# Android / Capacitor Firebase secrets & keystores (never commit)
+google-services.json
+android/app/google-services.json
+android/**/google-services.json
+GoogleService-Info.plist
+*.jks
+*.keystore
+keystore.properties
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+
+# Local API keys and router secrets (never commit)
+keys/
+keysAndRouters.json
+
+# Local agent / runtime state (never commit)
+.aistudio/
+.claude/
+.codex/
+.insta/

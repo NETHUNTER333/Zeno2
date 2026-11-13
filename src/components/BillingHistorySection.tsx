@@ -57,7 +57,7 @@ export const BillingHistorySection: React.FC<BillingHistorySectionProps> = ({ is
   const [refundBusy, setRefundBusy] = useState<boolean>(false);
 
   const fetchBillingHistory = async () => {
-    if (!auth.currentUser || auth.currentUser.isAnonymous || UserAccountStore.isGuestUser()) {
+    if (UserAccountStore.isGuest()) {
       setPayments([]);
       setRefunds([]);
       setLoading(false);

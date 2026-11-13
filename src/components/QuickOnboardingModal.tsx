@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { X, Check, ArrowRight, User } from 'lucide-react';
+import { X, Check, ArrowRight } from 'lucide-react';
 import { UserAccountStore } from '../lib/userAccountStore';
+import { GoogleSignInButton } from './GoogleSignInButton';
 
 interface QuickOnboardingModalProps {
   isOpen: boolean;
@@ -21,12 +22,14 @@ export const QuickOnboardingModal: React.FC<QuickOnboardingModalProps> = ({
   const [displayName, setDisplayName] = useState(currentProfile.displayName || '');
   const [username, setUsername] = useState(currentProfile.username || '');
   const [authMethod, setAuthMethod] = useState<'google' | 'email' | 'guest'>('guest');
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
   const handleFinish = () => {
     UserAccountStore.saveProfile({
-      ...currentProfile,
+      ...UserAccountStore.getProfile(),
       displayName: displayName.trim() || 'User',
       username: username.trim() || 'user',
       signinProvider: authMethod,
@@ -66,23 +69,43 @@ export const QuickOnboardingModal: React.FC<QuickOnboardingModalProps> = ({
               Continue as guest or sign in to save your history.
             </p>
 
-            <div className="space-y-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setAuthMethod('google')}
-                className={`w-full p-3 rounded-xl border flex items-center justify-between text-xs font-semibold transition-all cursor-pointer ${
-                  authMethod === 'google'
-                    ? isDark ? 'border-white bg-white/10 text-white' : 'border-black bg-black/5 text-black'
-                    : isDark ? 'border-white/10 hover:bg-white/5 text-neutral-300' : 'border-black/10 hover:bg-black/5 text-neutral-700'
-                }`}
-              >
-                <span>Continue with Google</span>
-                {authMethod === 'google' && <Check className="w-4 h-4 text-emerald-400" />}
-              </button>
+            {error && (
+              <div className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg p-2">
+                {error}
+              </div>
+            )}
+            {notice && (
+              <div className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg p-2">
+                {notice}
+              </div>
+            )}
+
+            <div className="space-y-2.5 pt-2">
+              <GoogleSignInButton
+                testId="onboarding-google-signin-btn"
+                isDark={isDark}
+                beforeSignIn={() => {
+                  setError(null);
+                  setNotice(null);
+                  return true;
+                }}
+                onError={(msg) => setError(msg)}
+                onNotice={(msg) => setNotice(msg)}
+                onSuccess={(outcome) => {
+                  if (outcome.user) {
+                    setAuthMethod('google');
+                    if (outcome.user.displayName) setDisplayName(outcome.user.displayName);
+                    setStep(2);
+                  }
+                }}
+              />
 
               <button
                 type="button"
-                onClick={() => setAuthMethod('guest')}
+                onClick={() => {
+                  setAuthMethod('guest');
+                  UserAccountStore.loginAsGuest();
+                }}
                 className={`w-full p-3 rounded-xl border flex items-center justify-between text-xs font-semibold transition-all cursor-pointer ${
                   authMethod === 'guest'
                     ? isDark ? 'border-white bg-white/10 text-white' : 'border-black bg-black/5 text-black'
@@ -95,7 +118,12 @@ export const QuickOnboardingModal: React.FC<QuickOnboardingModalProps> = ({
             </div>
 
             <button
-              onClick={() => setStep(2)}
+              onClick={() => {
+                if (authMethod === 'guest') {
+                  UserAccountStore.loginAsGuest();
+                }
+                setStep(2);
+              }}
               className="mt-4 w-full py-2.5 rounded-xl bg-white text-black font-semibold text-xs flex items-center justify-center gap-2 cursor-pointer"
             >
               <span>Next</span>

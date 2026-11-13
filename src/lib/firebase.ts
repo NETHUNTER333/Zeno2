@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, deleteUser, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, onAuthStateChanged, signInAnonymously, User as FirebaseUser } from 'firebase/auth';
+import { getAuth, deleteUser, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, User as FirebaseUser } from 'firebase/auth';
 import {
   getFirestore,
   initializeFirestore,
@@ -50,14 +50,6 @@ function initFirestoreInstance(): Firestore {
 
 export const db = initFirestoreInstance();
 export const auth = getAuth(app);
-export const googleProvider = new GoogleAuthProvider();
-
-export async function signInGuestAnonymously(): Promise<FirebaseUser | null> {
-  // Guest mode on Kinich is self-contained with server-authoritative IP/client rate limits.
-  // We do not fire Firebase anonymous auth to avoid failing 400 calls in the Network tab
-  // when anonymous sign-in is not enabled on the Firebase project.
-  return null;
-}
 
 export enum OperationType {
   CREATE = 'create',
@@ -376,25 +368,6 @@ export async function ensureUserProfileInFirestore(
   }
 }
 
-export async function signInWithGoogle() {
-  try {
-    const result = await signInWithPopup(auth, googleProvider);
-    const user = result.user;
-    try {
-      await ensureUserProfileInFirestore(user);
-    } catch (e) {
-      console.warn('Non-fatal profile sync error after Google login:', e);
-    }
-    return user;
-  } catch (error: any) {
-    if (error.code === 'auth/popup-closed-by-user') {
-      console.log('Google sign in cancelled by user');
-      return null;
-    }
-    console.error('Google sign in error:', error);
-    throw error;
-  }
-}
 
 export async function signUpWithEmail(email: string, pass: string) {
   try {
@@ -434,14 +407,6 @@ export async function sendPasswordReset(email: string) {
   await sendPasswordResetEmail(auth, email);
 }
 
-export async function logOutUser() {
-  try {
-    await signOut(auth);
-  } catch (error) {
-    console.error('Sign out error:', error);
-    throw error;
-  }
-}
 
 export async function deleteUserAccount() {
   const user = auth.currentUser;
@@ -1523,6 +1488,100 @@ export async function saveAnswerEvaluationToFirestore(
   } catch (error) {
     if (!isFirestoreOfflineError(error)) {
       handleFirestoreError(error, OperationType.WRITE, path);
+    }
+  }
+}
+
+export interface FirestoreLocationPreferenceDoc {
+  id: 'location';
+  userId: string;
+  locationEnabled: boolean;
+  mode: 'precise' | 'approximate' | 'manual' | 'disabled';
+  preferredCity?: string;
+  preferredRegion?: string;
+  preferredCountry?: string;
+  preferredCountryCode?: string;
+  preferredTimezone?: string;
+  preferredLatitude?: number;
+  preferredLongitude?: number;
+  persistPreciseLocation: boolean;
+  updatedAt: number;
+}
+
+export async function saveUserLocationPrefToFirestore(
+  pref: Omit<FirestoreLocationPreferenceDoc, 'id' | 'userId'>
+): Promise<void> {
+  const user = auth.currentUser;
+  if (!user || user.isAnonymous) return;
+  const path = `users/${user.uid}/preferences/location`;
+  try {
+    const validMode =
+      pref.mode === 'precise' || pref.mode === 'manual' || pref.mode === 'disabled'
+        ? pref.mode
+        : 'approximate';
+    const allowCoords = validMode === 'manual' || Boolean(pref.persistPreciseLocation);
+    const hasCoords =
+      allowCoords &&
+      typeof pref.preferredLatitude === 'number' &&
+      Number.isFinite(pref.preferredLatitude) &&
+      pref.preferredLatitude >= -90 &&
+      pref.preferredLatitude <= 90 &&
+      typeof pref.preferredLongitude === 'number' &&
+      Number.isFinite(pref.preferredLongitude) &&
+      pref.preferredLongitude >= -180 &&
+      pref.preferredLongitude <= 180;
+
+    const payload = stripUndefined({
+      id: 'location' as const,
+      userId: user.uid,
+      locationEnabled: Boolean(pref.locationEnabled),
+      mode: validMode,
+      preferredCity: pref.preferredCity ? String(pref.preferredCity).trim().slice(0, 120) : undefined,
+      preferredRegion: pref.preferredRegion ? String(pref.preferredRegion).trim().slice(0, 120) : undefined,
+      preferredCountry: pref.preferredCountry ? String(pref.preferredCountry).trim().slice(0, 120) : undefined,
+      preferredCountryCode: pref.preferredCountryCode
+        ? String(pref.preferredCountryCode).trim().toUpperCase().slice(0, 8)
+        : undefined,
+      preferredTimezone: pref.preferredTimezone ? String(pref.preferredTimezone).trim().slice(0, 80) : undefined,
+      preferredLatitude: hasCoords ? Number(pref.preferredLatitude) : undefined,
+      preferredLongitude: hasCoords ? Number(pref.preferredLongitude) : undefined,
+      persistPreciseLocation: Boolean(pref.persistPreciseLocation),
+      updatedAt: Number(pref.updatedAt) > 0 ? Number(pref.updatedAt) : Date.now(),
+    });
+
+    await setDoc(doc(db, 'users', user.uid, 'preferences', 'location'), payload);
+  } catch (error) {
+    if (!isFirestoreOfflineError(error)) {
+      handleFirestoreError(error, OperationType.WRITE, path);
+    }
+  }
+}
+
+export async function loadUserLocationPrefFromFirestore(): Promise<FirestoreLocationPreferenceDoc | null> {
+  const user = auth.currentUser;
+  if (!user || user.isAnonymous) return null;
+  const path = `users/${user.uid}/preferences/location`;
+  try {
+    const snap = await getDoc(doc(db, 'users', user.uid, 'preferences', 'location'));
+    if (!snap.exists()) return null;
+    return snap.data() as FirestoreLocationPreferenceDoc;
+  } catch (error) {
+    if (!isFirestoreOfflineError(error)) {
+      handleFirestoreError(error, OperationType.GET, path);
+    }
+    return null;
+  }
+}
+
+export async function deleteUserLocationPrefFromFirestore(): Promise<void> {
+  const user = auth.currentUser;
+  if (!user || user.isAnonymous) return;
+  const path = `users/${user.uid}/preferences/location`;
+  try {
+    await deleteDoc(doc(db, 'users', user.uid, 'preferences', 'location'));
+  } catch (error) {
+    if (!isFirestoreOfflineError(error)) {
+      handleFirestoreError(error, OperationType.DELETE, path);
     }
   }
 }

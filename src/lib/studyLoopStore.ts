@@ -101,14 +101,15 @@ export interface DailyRevisionSummary {
 export interface SnapSolveResult {
   questionExtracted: string;
   steps: string[];
+  answer: string;
   finalAnswer: string;
-  conceptBehindIt: {
+  conceptBehindIt?: {
     title: string;
     subject: string;
     chapter: string;
     explanation: string;
   };
-  similarPracticeQuestion: {
+  similarPracticeQuestion?: {
     question: string;
     options: string[];
     correctIndex: number;
@@ -116,6 +117,21 @@ export interface SnapSolveResult {
   };
   confidence: 'high' | 'medium' | 'low';
   checkWithTextbook: boolean;
+}
+
+export interface SnapSolveApiResponse {
+  ok?: boolean;
+  success?: boolean;
+  questionExtracted?: string;
+  steps?: string[];
+  answer?: string;
+  finalAnswer?: string;
+  conceptBehindIt?: SnapSolveResult['conceptBehindIt'];
+  similarPracticeQuestion?: SnapSolveResult['similarPracticeQuestion'];
+  confidence?: 'high' | 'medium' | 'low';
+  checkWithTextbook?: boolean;
+  error?: string;
+  message?: string;
 }
 
 export interface UploadedStudyPack {
@@ -1315,7 +1331,7 @@ export const StudyLoopStore = {
     error?: string;
   }> {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 14000);
+    const timer = setTimeout(() => controller.abort(), 32000);
     try {
       const headers = await getAuthHeaders();
       const res = await fetch('/api/study-loop/weak-spots/practice', {
@@ -1333,16 +1349,17 @@ export const StudyLoopStore = {
       clearTimeout(timer);
 
       const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data?.ok) {
+      if (!res.ok || !data?.ok || !Array.isArray(data.questions) || data.questions.length === 0) {
         return {
           ok: false,
           error:
+            data?.message ||
             data?.error ||
             'Could not generate practice questions right now. Tap Retry to try again.',
         };
       }
 
-      const questions = Array.isArray(data.questions) ? data.questions : [];
+      const questions = data.questions;
       // If signed in, also add these 5 questions into Recall cards automatically
       if (!UserAccountStore.isGuest() && questions.length > 0) {
         await this.addCardsToRecall(
@@ -1401,7 +1418,7 @@ export const StudyLoopStore = {
     }
 
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 16000);
+    const timer = setTimeout(() => controller.abort(), 35000);
     try {
       const headers = await getAuthHeaders();
       const res = await fetch('/api/study/upload', {
@@ -1421,6 +1438,7 @@ export const StudyLoopStore = {
         return {
           ok: false,
           error:
+            data?.message ||
             data?.error ||
             'Could not process this study upload right now. Please tap Retry.',
         };
@@ -1482,11 +1500,17 @@ export const StudyLoopStore = {
       });
       clearTimeout(timer);
 
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || (!data?.ok && !Array.isArray(data?.steps))) {
+      const data = (await res.json().catch(() => ({}))) as SnapSolveApiResponse;
+      const validSteps = Array.isArray(data?.steps)
+        ? data.steps.map((s) => String(s).trim()).filter(Boolean)
+        : [];
+      const validAnswer = String(data?.answer || data?.finalAnswer || '').trim();
+
+      if (!res.ok || validSteps.length === 0 || !validAnswer) {
         return {
           ok: false,
           error:
+            data?.message ||
             data?.error ||
             'Snap & Solve could not analyze the question right now. Please tap Retry.',
         };
@@ -1496,20 +1520,11 @@ export const StudyLoopStore = {
         ok: true,
         result: {
           questionExtracted: data.questionExtracted || input.questionText || 'Problem Solution',
-          steps: data.steps || [],
-          finalAnswer: data.finalAnswer || data.answer || '',
-          conceptBehindIt: data.conceptBehindIt || {
-            title: 'Core Principle',
-            subject: 'STEM',
-            chapter: 'Problem Solving',
-            explanation: 'Solved step-by-step using governing conservation and equilibrium laws.',
-          },
-          similarPracticeQuestion: data.similarPracticeQuestion || {
-            question: 'Verify the calculation when the input parameter is doubled.',
-            options: ['2x', '0.5x', '1x', '4x'],
-            correctIndex: 0,
-            explanation: 'Follow the same substitution steps.',
-          },
+          steps: validSteps,
+          answer: validAnswer,
+          finalAnswer: validAnswer,
+          conceptBehindIt: data.conceptBehindIt,
+          similarPracticeQuestion: data.similarPracticeQuestion,
           confidence: data.confidence || 'high',
           checkWithTextbook: Boolean(data.checkWithTextbook),
         },

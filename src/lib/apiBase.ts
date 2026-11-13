@@ -14,12 +14,20 @@ export function isCapacitorOrMobileApp(): boolean {
   const p = window.location.protocol;
   const h = window.location.hostname.toLowerCase();
   const port = window.location.port;
-  const hasCapacitor = typeof (window as any).Capacitor !== 'undefined';
+  const cap = (window as any).Capacitor;
+  const isNativeCapacitor = Boolean(
+    cap &&
+      (typeof cap.isNativePlatform === 'function'
+        ? cap.isNativePlatform()
+        : typeof cap.getPlatform === 'function'
+        ? cap.getPlatform() !== 'web'
+        : false)
+  );
   return (
     p === 'capacitor:' ||
     p === 'ionic:' ||
     p === 'file:' ||
-    hasCapacitor ||
+    isNativeCapacitor ||
     ((h === 'localhost' || h === '127.0.0.1') && !port)
   );
 }

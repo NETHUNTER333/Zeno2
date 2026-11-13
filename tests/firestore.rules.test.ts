@@ -121,6 +121,32 @@ function isValidSharedThread(data: Record<string, any>, shareId: string, authUid
   );
 }
 
+function isValidLocationPreference(data: Record<string, any>, userId: string, prefId: string): boolean {
+  return (
+    hasAllKeys(data, ['id', 'userId', 'locationEnabled', 'mode', 'persistPreciseLocation', 'updatedAt']) &&
+    hasOnlyKeys(data, [
+      'id', 'userId', 'locationEnabled', 'mode',
+      'preferredCity', 'preferredRegion', 'preferredCountry', 'preferredCountryCode', 'preferredTimezone',
+      'preferredLatitude', 'preferredLongitude', 'persistPreciseLocation', 'updatedAt',
+    ]) &&
+    isValidId(data.id) &&
+    data.id === prefId &&
+    isValidId(data.userId) &&
+    data.userId === userId &&
+    typeof data.locationEnabled === 'boolean' &&
+    ['precise', 'approximate', 'manual', 'disabled'].includes(data.mode) &&
+    typeof data.persistPreciseLocation === 'boolean' &&
+    (!('preferredCity' in data) || (typeof data.preferredCity === 'string' && data.preferredCity.length <= 120)) &&
+    (!('preferredRegion' in data) || (typeof data.preferredRegion === 'string' && data.preferredRegion.length <= 120)) &&
+    (!('preferredCountry' in data) || (typeof data.preferredCountry === 'string' && data.preferredCountry.length <= 120)) &&
+    (!('preferredCountryCode' in data) || (typeof data.preferredCountryCode === 'string' && data.preferredCountryCode.length <= 8)) &&
+    (!('preferredTimezone' in data) || (typeof data.preferredTimezone === 'string' && data.preferredTimezone.length <= 80)) &&
+    (!('preferredLatitude' in data) || (typeof data.preferredLatitude === 'number' && data.preferredLatitude >= -90 && data.preferredLatitude <= 90)) &&
+    (!('preferredLongitude' in data) || (typeof data.preferredLongitude === 'number' && data.preferredLongitude >= -180 && data.preferredLongitude <= 180)) &&
+    typeof data.updatedAt === 'number'
+  );
+}
+
 /**
  * Evaluates a Firestore operation against the exact rules defined in `firestore.rules`.
  */
@@ -249,6 +275,47 @@ function evaluateFirestoreRule(ctx: EvalContext): boolean {
         ctx.incomingData.userId === ctx.existingData.userId &&
         ctx.incomingData.savedAt === ctx.existingData.savedAt &&
         allowedChanged
+      );
+    }
+    return false;
+  }
+
+  // Match /users/{userId}/preferences/{prefId}
+  if (segments.length === 4 && segments[0] === 'users' && segments[2] === 'preferences') {
+    const [, userId, , prefId] = segments;
+    if (ctx.operation === 'get' || ctx.operation === 'delete') {
+      return isOwner(userId) && isValidId(userId) && isValidId(prefId);
+    }
+    if (ctx.operation === 'list') {
+      return (
+        isOwner(userId) &&
+        Boolean(ctx.existingData) &&
+        ctx.existingData!.userId === ctx.auth!.uid
+      );
+    }
+    if (ctx.operation === 'create') {
+      return (
+        isOwner(userId) &&
+        isValidId(userId) &&
+        isValidId(prefId) &&
+        Boolean(ctx.incomingData) &&
+        isValidLocationPreference(ctx.incomingData!, userId, prefId)
+      );
+    }
+    if (ctx.operation === 'update') {
+      if (
+        !isOwner(userId) ||
+        !isValidId(userId) ||
+        !isValidId(prefId) ||
+        !ctx.incomingData ||
+        !ctx.existingData
+      ) {
+        return false;
+      }
+      return (
+        isValidLocationPreference(ctx.incomingData, userId, prefId) &&
+        ctx.incomingData.id === ctx.existingData.id &&
+        ctx.incomingData.userId === ctx.existingData.userId
       );
     }
     return false;
@@ -535,5 +602,86 @@ describe('Phase 4 — Firestore Security Rules & Dirty Dozen Authorization Audit
     expect(rulesContent).toContain('match /cards/{cardId}');
     expect(rulesContent).toContain('isValidCard(incoming(), userId, cardId)');
     expect(rulesContent).toContain("data.lastGrade in ['again', 'hard', 'good', 'easy']");
+  });
+
+  it('enforces owner-only access and schema bounds for /users/{userId}/preferences/{prefId}', () => {
+    expect(rulesContent).toContain('match /preferences/{prefId}');
+    expect(rulesContent).toContain('isValidLocationPreference(incoming(), userId, prefId)');
+
+    const validPref = {
+      id: 'location',
+      userId: 'user_alice',
+      locationEnabled: true,
+      mode: 'manual',
+      preferredCity: 'Tokyo',
+      preferredCountry: 'Japan',
+      preferredCountryCode: 'JP',
+      preferredTimezone: 'Asia/Tokyo',
+      preferredLatitude: 35.6895,
+      preferredLongitude: 139.6917,
+      persistPreciseLocation: false,
+      updatedAt: 1700000000000,
+    };
+
+    // Owner create allowed
+    expect(
+      evaluateFirestoreRule({
+        auth: { uid: 'user_alice' },
+        path: '/users/user_alice/preferences/location',
+        operation: 'create',
+        incomingData: validPref,
+      })
+    ).toBe(true);
+
+    // Cross-user read/create/delete denied
+    expect(
+      evaluateFirestoreRule({
+        auth: { uid: 'user_mallory' },
+        path: '/users/user_alice/preferences/location',
+        operation: 'get',
+      })
+    ).toBe(false);
+    expect(
+      evaluateFirestoreRule({
+        auth: { uid: 'user_mallory' },
+        path: '/users/user_alice/preferences/location',
+        operation: 'create',
+        incomingData: validPref,
+      })
+    ).toBe(false);
+    expect(
+      evaluateFirestoreRule({
+        auth: { uid: 'user_mallory' },
+        path: '/users/user_alice/preferences/location',
+        operation: 'delete',
+      })
+    ).toBe(false);
+
+    // Invalid mode or out-of-range latitude denied
+    expect(
+      evaluateFirestoreRule({
+        auth: { uid: 'user_alice' },
+        path: '/users/user_alice/preferences/location',
+        operation: 'create',
+        incomingData: { ...validPref, mode: 'spoofed' },
+      })
+    ).toBe(false);
+    expect(
+      evaluateFirestoreRule({
+        auth: { uid: 'user_alice' },
+        path: '/users/user_alice/preferences/location',
+        operation: 'create',
+        incomingData: { ...validPref, preferredLatitude: 120 },
+      })
+    ).toBe(false);
+
+    // Owner delete allowed
+    expect(
+      evaluateFirestoreRule({
+        auth: { uid: 'user_alice' },
+        path: '/users/user_alice/preferences/location',
+        operation: 'delete',
+      })
+    ).toBe(true);
   });
 });

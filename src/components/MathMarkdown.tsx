@@ -6,6 +6,97 @@ import rehypeKatex from 'rehype-katex';
 import { PrismCodeBlock } from './PrismCodeBlock';
 import { PeleDiagram } from './PeleDiagram';
 
+const NAMED_OR_NUMERIC_ENTITY_RE =
+  /&(?:amp|apos|quot|nbsp|rsquo|lsquo|ldquo|rdquo|ndash|mdash|#0*(?:34|38|39|160|8211|8212|8216|8217|8220|8221)|#x0*(?:22|26|27|a0|2013|2014|2018|2019|201c|201d)|#(\d+)|#x([0-9a-fA-F]+));/gi;
+
+function decodeSafeEntitiesOnce(text: string): string {
+  return text.replace(NAMED_OR_NUMERIC_ENTITY_RE, (full, decGroup, hexGroup) => {
+    const lower = full.toLowerCase();
+    if (lower === '&amp;' || lower === '&#38;' || lower === '&#x26;') return '&';
+    if (
+      lower === '&apos;' ||
+      lower === '&rsquo;' ||
+      lower === '&lsquo;' ||
+      lower === '&#39;' ||
+      lower === '&#039;' ||
+      lower === '&#x27;' ||
+      lower === '&#8216;' ||
+      lower === '&#8217;' ||
+      lower === '&#x2018;' ||
+      lower === '&#x2019;'
+    ) {
+      return "'";
+    }
+    if (
+      lower === '&quot;' ||
+      lower === '&ldquo;' ||
+      lower === '&rdquo;' ||
+      lower === '&#34;' ||
+      lower === '&#x22;' ||
+      lower === '&#8220;' ||
+      lower === '&#8221;' ||
+      lower === '&#x201c;' ||
+      lower === '&#x201d;'
+    ) {
+      return '"';
+    }
+    if (lower === '&nbsp;' || lower === '&#160;' || lower === '&#xa0;') return ' ';
+    if (lower === '&ndash;' || lower === '&#8211;' || lower === '&#x2013;') return '–';
+    if (lower === '&mdash;' || lower === '&#8212;' || lower === '&#x2014;') return '—';
+
+    const code = decGroup
+      ? parseInt(decGroup, 10)
+      : hexGroup
+      ? parseInt(hexGroup, 16)
+      : NaN;
+    // Never decode < (60) or > (62) in markdown prose so rehypeRaw cannot interpret literal escaped tags as HTML
+    if (!Number.isFinite(code) || code === 60 || code === 62 || code < 32 || code > 0x10ffff) {
+      return full;
+    }
+    try {
+      return String.fromCodePoint(code);
+    } catch {
+      return full;
+    }
+  });
+}
+
+/**
+ * Single canonical render-layer normalizer for HTML entities, escaped Unicode quotes,
+ * and apostrophes outside fenced/inline code blocks.
+ */
+export function normalizeDisplayText(raw: string): string {
+  if (!raw || typeof raw !== 'string') return '';
+
+  const segments = raw.split(/(```[\s\S]*?```|`[^`\n]+`)/g);
+  return segments
+    .map((segment) => {
+      if (segment.startsWith('```') || segment.startsWith('`')) {
+        return segment;
+      }
+
+      let s = segment
+        .replace(/\\u0027/gi, "'")
+        .replace(/\\u0026/gi, '&')
+        .replace(/\\u0022/gi, '"')
+        .replace(/\\u2018|\\u2019/gi, "'")
+        .replace(/\\u201c|\\u201d/gi, '"');
+
+      // Up to 3 bounded passes unwind double-escaped entities like &amp;#39; -> &#39; -> '
+      for (let pass = 0; pass < 3; pass++) {
+        const next = decodeSafeEntitiesOnce(s);
+        if (next === s) break;
+        s = next;
+      }
+
+      return s
+        .replace(/[\u2018\u2019\u02BC]/g, "'")
+        .replace(/[\u201C\u201D]/g, '"')
+        .normalize('NFC');
+    })
+    .join('');
+}
+
 /**
  * Normalizes LaTeX / KaTeX math delimiters in AI responses and study documents
  * so that remark-math + rehype-katex reliably parse both inline ($...$) and
@@ -14,13 +105,7 @@ import { PeleDiagram } from './PeleDiagram';
 export function normalizeMathDelimiters(raw: string): string {
   if (!raw || typeof raw !== 'string') return '';
 
-  // Clean escaped Unicode entity artifacts and normalize Unicode mathematical symbols
-  const cleanRaw = raw
-    .replace(/\\u0027/g, "'")
-    .replace(/\\u0026/g, '&')
-    .replace(/\\u0022/g, '"')
-    .replace(/\\u2019/g, "’")
-    .normalize('NFKD');
+  const cleanRaw = normalizeDisplayText(raw);
 
   // Split by fenced code blocks (```...```) and inline code (`...`) so code is never touched
   const segments = cleanRaw.split(/(```[\s\S]*?```|`[^`\n]+`)/g);

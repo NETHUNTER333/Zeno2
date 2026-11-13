@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
-import { FcGoogle } from "react-icons/fc";
 import { Gift, CheckCircle2, Sparkles, ShieldCheck } from "lucide-react";
 
 import { Button } from "./button";
 import { Input } from "./input";
+import { GoogleSignInButton } from "../GoogleSignInButton";
 import { UserAccountStore } from "../../lib/userAccountStore";
 import {
   getPendingReferral,
@@ -11,9 +11,8 @@ import {
   PendingReferralInfo,
 } from "../../lib/referralClient";
 import { apiFetch } from "../../lib/apiBase";
-import { auth, signInGuestAnonymously } from "../../lib/firebase";
+import { auth } from "../../lib/firebase";
 import { recordUserLegalConsent, SiteFooter } from "../LegalAndInfoPages";
-import { MIN_AGE } from "../../legal/config";
 
 interface Signup1Props {
   heading?: string;
@@ -56,6 +55,7 @@ const Signup1 = ({
   const [resetLoading, setResetLoading] = useState(false);
   const [guestLoading, setGuestLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [resetSuccess, setResetSuccess] = useState<string | null>(null);
 
   // Stored referral detection and validation upon landing
@@ -195,36 +195,15 @@ const Signup1 = ({
     }
   };
 
-  const handleGoogleSignup = async () => {
+  const checkConsentBeforeGoogle = () => {
     if (!isConsentChecked()) {
       setError("Please confirm you're 18+ and accept the Terms to continue.");
-      return;
+      return false;
     }
-    try {
-      setLoading(true);
-      setError(null);
-      setResetSuccess(null);
-      const user = await UserAccountStore.signIn();
-      if (user) {
-        await recordUserLegalConsent(user.uid, "google_signin");
-        if (onSuccess) onSuccess();
-      } else {
-        setError("Google sign-in was cancelled or closed.");
-      }
-    } catch (err: any) {
-      const isPopupBlocked =
-        err?.code === "auth/popup-blocked" ||
-        /popup/i.test(err?.message || "") ||
-        /cross-origin/i.test(err?.message || "");
-
-      if (isPopupBlocked) {
-        setError("Browser prevented opening the Google popup. Please sign in with email and password.");
-      } else {
-        setError(err?.message || "Google sign in failed. Please try again.");
-      }
-    } finally {
-      setLoading(false);
-    }
+    setError(null);
+    setNotice(null);
+    setResetSuccess(null);
+    return true;
   };
 
   return (
@@ -372,6 +351,11 @@ const Signup1 = ({
             {error && (
               <div className="text-xs text-red-500 font-medium text-center bg-red-500/10 p-3 rounded-xl border border-red-500/20">
                 <div>{error}</div>
+              </div>
+            )}
+            {notice && (
+              <div className="text-xs text-amber-400 font-medium text-center bg-amber-500/10 p-3 rounded-xl border border-amber-500/20">
+                <div>{notice}</div>
               </div>
             )}
             {resetSuccess && (
@@ -522,31 +506,28 @@ const Signup1 = ({
                   ? "Claim Rewards & Create Account"
                   : signupText}
               </Button>
-              <Button
-                data-testid="google-continue-btn"
-                type="button"
-                variant="outline"
-                className={`w-full h-10 transition-all ${
-                  isDark
-                    ? "border-zinc-700 bg-zinc-900/60 text-zinc-100 hover:bg-zinc-800"
-                    : "border-zinc-300 bg-white text-zinc-900 hover:bg-zinc-100"
-                } ${
-                  !consentAccepted || loading || resetLoading
-                    ? "opacity-50"
-                    : "cursor-pointer"
-                }`}
-                onClick={handleGoogleSignup}
+              <GoogleSignInButton
+                testId="google-continue-btn"
+                isDark={isDark}
                 disabled={loading || resetLoading}
-              >
-                <FcGoogle className="mr-2 size-5 shrink-0" />
-                <span className="text-xs sm:text-sm truncate">
-                  {isLoginMode
+                className={!consentAccepted ? "opacity-50" : ""}
+                label={
+                  isLoginMode
                     ? "Continue with Google"
                     : pendingReferral?.code
                     ? "Claim Rewards with Google"
-                    : googleText}
-                </span>
-              </Button>
+                    : googleText
+                }
+                beforeSignIn={checkConsentBeforeGoogle}
+                onNotice={(msg) => setNotice(msg)}
+                onError={(msg) => setError(msg)}
+                onSuccess={async (outcome) => {
+                  if (outcome.user) {
+                    await recordUserLegalConsent(outcome.user.uid, "google_signin");
+                    if (onSuccess) onSuccess();
+                  }
+                }}
+              />
               <Button
                 data-testid="guest-continue-btn"
                 type="button"

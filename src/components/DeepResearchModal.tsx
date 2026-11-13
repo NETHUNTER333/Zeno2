@@ -1305,23 +1305,6 @@ export const DeepResearchModal: React.FC<DeepResearchModalProps> = ({
         };
       });
 
-      // FIX 1: Log each source's URL, title and the first 300 chars of the excerpt passed to the writer.
-      const sourceLogsForWriter = keptSources.map((s) => ({
-        sid: s.sid,
-        url: s.url,
-        title: s.title,
-        excerpt300: s.excerpt.slice(0, 300),
-      }));
-      console.log(`[Kinich Deep Research] Sources passed to writer for "${cleanQ}":`, sourceLogsForWriter);
-      for (const logItem of sourceLogsForWriter) {
-        console.log(
-          `[${logItem.sid}] URL: ${logItem.url} | Title: ${logItem.title} | Excerpt (first 300 chars): ${logItem.excerpt300}`
-        );
-      }
-      if (typeof window !== 'undefined') {
-        (window as any).__LAST_DEEP_RESEARCH_SOURCE_LOGS__ = sourceLogsForWriter;
-      }
-
       setActiveSources(keptSources);
       setThinkingSteps(buildDynamicThinkingSteps(cleanQ, keptSources));
       setIsSearching(false);
@@ -1614,12 +1597,12 @@ STRICT RULES:
     setLiveStatusAnnouncement('Exported report (.md)');
   };
 
-  const [isGuestResearchUser, setIsGuestResearchUser] = useState(() => UserAccountStore.isGuestUser());
+  const [isGuestResearchUser, setIsGuestResearchUser] = useState(() => UserAccountStore.isGuest());
   const [savedResearchTurnMap, setSavedResearchTurnMap] = useState<Record<string, string>>({});
   const [sageResearchCardMap, setSageResearchCardMap] = useState<Record<string, AgentReplyCard>>({});
 
   useEffect(() => {
-    const syncGuest = () => setIsGuestResearchUser(UserAccountStore.isGuestUser());
+    const syncGuest = () => setIsGuestResearchUser(UserAccountStore.isGuest());
     window.addEventListener('kinich-account-updated', syncGuest);
     return () => window.removeEventListener('kinich-account-updated', syncGuest);
   }, []);
@@ -1643,7 +1626,7 @@ STRICT RULES:
   }, [savedResearchTurnMap]);
 
   const handleSaveTurnToVault = (turn: DeepResearchTurn) => {
-    if (UserAccountStore.isGuestUser()) {
+    if (UserAccountStore.isGuest()) {
       window.dispatchEvent(new CustomEvent('kinich-open-auth', { detail: { message: 'Sign in to keep this in your Vault.' } }));
       return;
     }

@@ -348,6 +348,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const openStreakCenter = (
     tab: 'calendar' | 'badges' | 'milestones' | 'protection' = 'calendar'
   ) => {
+    if (UserAccountStore.isGuest()) {
+      window.dispatchEvent(
+        new CustomEvent('kinich-open-auth', {
+          detail: { reason: 'Sign in or upgrade to unlock Streaks, Badges & cloud sync.' },
+        })
+      );
+      return;
+    }
     setStreakModalTab(tab);
     setShowStreakModal(true);
   };
@@ -596,12 +604,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
         items.push({
           id: 'action-vault',
           label: 'The Vault',
-          sublabel: UserAccountStore.isGuestUser()
+          sublabel: UserAccountStore.isGuest()
             ? 'Sign in to save'
             : `${vaultItems.length} saved`,
           icon: <Bookmark className="w-3.5 h-3.5 text-[#FC4C01]" />,
           onClick: () => {
-            if (UserAccountStore.isGuestUser()) {
+            if (UserAccountStore.isGuest()) {
               window.dispatchEvent(
                 new CustomEvent('kinich-open-auth', {
                   detail: { reason: 'Sign in to keep this in your Vault' },
@@ -1235,7 +1243,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <button
             type="button"
             onClick={() => {
-              if (onOpenAccountModal) {
+              if (UserAccountStore.isGuest()) {
+                window.dispatchEvent(
+                  new CustomEvent('kinich-open-auth', {
+                    detail: {
+                      reason: 'Sign in or upgrade to save history, streaks, and Vault items.',
+                    },
+                  })
+                );
+              } else if (onOpenAccountModal) {
                 onOpenAccountModal('profile');
               } else {
                 onOpenSettings();
@@ -1245,7 +1261,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
             className={`flex items-center gap-2.5 min-w-0 flex-1 px-2 py-1.5 rounded-lg transition-colors cursor-pointer text-left ${
               isDark ? 'hover:text-white hover:bg-[#181818]' : 'hover:text-[#0d0d0d] hover:bg-[#f2f2f2]'
             }`}
-            title="Open Profile, AI Model Backend & Settings"
+            title={
+              UserAccountStore.isGuest()
+                ? 'Sign in or upgrade from Guest Explorer'
+                : 'Open Profile, AI Model Backend & Settings'
+            }
           >
             <div
               className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-semibold shrink-0 border ${
@@ -1264,7 +1284,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               >
                 {userProfile.displayName || 'User'}
               </div>
-              {UserAccountStore.isGuestUser() ? (
+              {UserAccountStore.isGuest() ? (
                 <div
                   className="text-[10px] text-[#FC4C01] font-medium truncate hover:underline"
                   title="Sign in to save your history & keep your research"

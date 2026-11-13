@@ -1,0 +1,13 @@
+{
+	"appId": "app.kinich.android",
+	"appName": "Kinich",
+	"webDir": "dist",
+	"plugins": {
+		"FirebaseAuthentication": {
+			"skipNativeAuth": true,
+			"providers": [
+				"google.com"
+			]
+		}
+	}
+}

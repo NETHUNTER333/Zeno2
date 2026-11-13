@@ -221,7 +221,7 @@ export const KinichGrowthHubModal: React.FC<KinichGrowthHubModalProps> = ({
   const [threadCommentInput, setThreadCommentInput] = useState<string>('');
   const [copiedShareNotice, setCopiedShareNotice] = useState<string | null>(null);
   const [activeVideoTimeSec, setActiveVideoTimeSec] = useState<number>(0);
-  const [isGuestVault, setIsGuestVault] = useState<boolean>(() => UserAccountStore.isGuestUser());
+  const [isGuestVault, setIsGuestVault] = useState<boolean>(() => UserAccountStore.isGuest());
 
   // --- TAB 3: REFERRALS STATE ---
   const [referralStatus, setReferralStatus] = useState<KinichReferralStatus | null>(null);
@@ -262,8 +262,8 @@ export const KinichGrowthHubModal: React.FC<KinichGrowthHubModalProps> = ({
           setActiveThread(match);
         }
       }
-      setIsGuestVault(UserAccountStore.isGuestUser());
-      if (!UserAccountStore.isGuestUser()) {
+      setIsGuestVault(UserAccountStore.isGuest());
+      if (!UserAccountStore.isGuest()) {
         KnowledgeVaultStore.syncFromCloud().then((synced) => {
           setVaultItems(synced);
         });
@@ -287,7 +287,7 @@ export const KinichGrowthHubModal: React.FC<KinichGrowthHubModalProps> = ({
     const syncVault = () => {
       setVaultItems(KnowledgeVaultStore.getItems());
       setVaultThreads(VaultThreadStore.getThreads());
-      setIsGuestVault(UserAccountStore.isGuestUser());
+      setIsGuestVault(UserAccountStore.isGuest());
     };
     window.addEventListener('kinich-vault-updated', syncVault);
     window.addEventListener('kinich-account-updated', syncVault);
@@ -502,7 +502,7 @@ export const KinichGrowthHubModal: React.FC<KinichGrowthHubModalProps> = ({
 
   const handleCreateCustomNote = () => {
     if (!newNoteTitle.trim() || !newNoteContent.trim()) return;
-    if (UserAccountStore.isGuestUser()) {
+    if (UserAccountStore.isGuest()) {
       window.dispatchEvent(new CustomEvent('kinich-open-auth'));
       return;
     }

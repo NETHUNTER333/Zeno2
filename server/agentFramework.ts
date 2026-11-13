@@ -2,6 +2,7 @@ import type { Express, Request, Response } from 'express';
 import fs from 'fs';
 import path from 'path';
 import { GoogleGenAI, Type } from '@google/genai';
+import { z } from 'zod';
 import { getEffectiveServerUserPlan } from './billingEngine';
 import { verifyChatQuotaBeforeExecution, recordServerQuotaConsumption } from './rateLimiter';
 
@@ -314,6 +315,36 @@ export interface AgentLlmCallResult {
   tokensUsed: number;
 }
 
+const AGENT_GEMINI_MODELS = [
+  'gemini-4-hydrogen',
+  'gemini-3.8-flash',
+  'gemini-3.1-flash-lite',
+];
+
+const agentGeminiCooldownUntil = new Map<string, number>();
+
+function isAgentGeminiModelAvailable(modelName: string): boolean {
+  const until = agentGeminiCooldownUntil.get(modelName);
+  if (!until) return true;
+  if (Date.now() >= until) {
+    agentGeminiCooldownUntil.delete(modelName);
+    return true;
+  }
+  return false;
+}
+
+function recordAgentGeminiError(modelName: string, err: any): void {
+  const msg = String(err?.message || err || '');
+  const status = Number(err?.status || err?.code || 0);
+  if (status === 404 || /\b404\b|NOT_FOUND|no longer available/i.test(msg)) {
+    agentGeminiCooldownUntil.set(modelName, Date.now() + 24 * 60 * 60 * 1000);
+  } else if (status === 429 || /\b429\b|RESOURCE_EXHAUSTED|quota|rate[- ]?limit/i.test(msg)) {
+    const retryMatch = msg.match(/retryDelay["']?\s*:\s*["']?(\d+)s/i);
+    const delaySec = retryMatch ? Math.min(3600, Math.max(60, parseInt(retryMatch[1], 10))) : 1800;
+    agentGeminiCooldownUntil.set(modelName, Date.now() + delaySec * 1000);
+  }
+}
+
 export function getGeminiClient(): GoogleGenAI | null {
   const apiKey =
     process.env.GEMINI_API_KEY ||
@@ -322,7 +353,14 @@ export function getGeminiClient(): GoogleGenAI | null {
     '';
   if (!apiKey || apiKey.includes('YOUR_')) return null;
   try {
-    return new GoogleGenAI({ apiKey });
+    return new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        },
+      },
+    });
   } catch {
     return null;
   }
@@ -504,36 +542,38 @@ export async function callAgentLlm(options: AgentLlmCallOptions): Promise<AgentL
   // Gemini Fallback
   const gemini = getGeminiClient();
   if (gemini) {
-    try {
-      const contents = options.systemPrompt
-        ? `${options.systemPrompt}\n\n${options.prompt}`
-        : options.prompt;
+    const contents = options.systemPrompt
+      ? `${options.systemPrompt}\n\n${options.prompt}`
+      : options.prompt;
 
-      const llmPromise = gemini.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents,
-        config: {
-          responseMimeType: options.responseMimeType,
-        },
-      });
+    for (const modelName of AGENT_GEMINI_MODELS.filter(isAgentGeminiModelAvailable)) {
+      try {
+        const llmPromise = gemini.models.generateContent({
+          model: modelName,
+          contents,
+          config: options.responseMimeType
+            ? { responseMimeType: options.responseMimeType }
+            : undefined,
+        });
 
-      const timeoutPromise = new Promise<null>((resolve) =>
-        setTimeout(() => resolve(null), timeoutMs)
-      );
-      const resp = await Promise.race([llmPromise, timeoutPromise]);
-      if (resp && resp.text) {
-        const tokensUsed =
-          Number((resp as any).usageMetadata?.totalTokenCount) ||
-          Math.ceil((options.prompt.length + resp.text.length) / 4);
-        return {
-          text: resp.text.trim(),
-          provider: 'gemini',
-          model: 'gemini-2.5-flash',
-          tokensUsed,
-        };
+        const timeoutPromise = new Promise<null>((resolve) =>
+          setTimeout(() => resolve(null), timeoutMs)
+        );
+        const resp = await Promise.race([llmPromise, timeoutPromise]);
+        if (resp && resp.text) {
+          const tokensUsed =
+            Number((resp as any).usageMetadata?.totalTokenCount) ||
+            Math.ceil((options.prompt.length + resp.text.length) / 4);
+          return {
+            text: resp.text.trim(),
+            provider: 'gemini',
+            model: modelName,
+            tokensUsed,
+          };
+        }
+      } catch (err: any) {
+        recordAgentGeminiError(modelName, err);
       }
-    } catch {
-      // Fall through to null
     }
   }
 
@@ -2470,6 +2510,57 @@ export function registerStudyLoopRoutes(app: Express) {
       const examName = String(req.body?.examName || '').trim().slice(0, 100);
       const existingContext = String(req.body?.contextNotes || '').trim().slice(0, 1200);
 
+      const prompt = `You are Recall, Kinich's academic exam drill generator.
+Generate exactly 5 high-yield multiple-choice practice questions strictly focused on the weak chapter "${chapter}" in subject "${subject}"${examName ? ` for the exam "${examName}"` : ''}.
+${existingContext ? `Reference study notes:\n${existingContext}\n` : ''}
+Rules:
+- Strictly educational, accurate, and SFW.
+- Each question must have 4 clear, plausible options, correctIndex (0-3), and a concise 1-2 sentence explanation.
+- Do NOT include timestamps (like [00:00] or 12:34), "according to the video", "the speaker", "on Page X", or placeholder options like "Option A".
+Return ONLY valid JSON:
+{
+  "questions": [
+    {
+      "question": "...",
+      "options": ["...", "...", "...", "..."],
+      "correctIndex": 0,
+      "explanation": "..."
+    }
+  ]
+}`;
+
+      const hasDisallowedText = (val: string): boolean => {
+        const s = String(val || '').trim();
+        if (!s) return true;
+        return (
+          /\[\d{1,2}:\d{2}(?::\d{2})?\]/.test(s) ||
+          /\b\d{1,2}:\d{2}(?::\d{2})?\b/.test(s) ||
+          /\(t=\d+s\)/i.test(s) ||
+          /\baccording to (?:the )?(?:video|lecture|transcript|speaker|page\s*\d+)\b/i.test(s) ||
+          /\b(?:the speaker|the lecturer|the narrator|the presenter|in this video|in the video|from the video|cited from page)\b/i.test(s) ||
+          /\[(music|applause|laughter|inaudible|silence)\]/i.test(s) ||
+          />>/.test(s) ||
+          /^option [a-d]$/i.test(s) ||
+          /What is the key takeaway presented on Page/i.test(s) ||
+          /Which mechanism or claim is established/i.test(s)
+        );
+      };
+
+      const WeakPracticeQuestionSchema = z.object({
+        question: z.string().trim().min(10).max(400),
+        options: z.tuple([
+          z.string().trim().min(1).max(200),
+          z.string().trim().min(1).max(200),
+          z.string().trim().min(1).max(200),
+          z.string().trim().min(1).max(200),
+        ]),
+        correctIndex: z.number().int().min(0).max(3),
+        explanation: z.string().trim().min(8).max(400),
+      });
+      const WeakPracticeResponseSchema = z.object({
+        questions: z.array(WeakPracticeQuestionSchema).min(5),
+      });
+
       let generatedQuestions: Array<{
         id: string;
         question: string;
@@ -2479,137 +2570,67 @@ export function registerStudyLoopRoutes(app: Express) {
         chapter: string;
         subject: string;
       }> = [];
+      let lastFailure = 'LLM did not return 5 valid multiple-choice questions.';
 
-      const prompt = `You are Recall, Kinich's academic exam drill generator.
-Generate exactly 5 high-yield multiple-choice practice questions strictly focused on the weak chapter "${chapter}" in subject "${subject}"${examName ? ` for the exam "${examName}"` : ''}.
-${existingContext ? `Reference study notes:\n${existingContext}\n` : ''}
-Rules:
-- Strictly educational, accurate, and SFW.
-- Each question must have 4 clear options, correctIndex (0-3), and a concise 1-2 sentence explanation.
-Return ONLY valid JSON:
-{
-  "questions": [
-    {
-      "question": "...",
-      "options": ["A", "B", "C", "D"],
-      "correctIndex": 0,
-      "explanation": "..."
-    }
-  ]
-}`;
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        const attemptPrompt =
+          attempt === 1
+            ? prompt
+            : `${prompt}\n\nRETRY REQUIRED (previous output failed: ${lastFailure}). Return strictly valid JSON with 5 clean questions, 4 distinct non-placeholder options each, and no timestamps or speaker references.`;
 
-      const llmRes = await callAgentLlm({
-        prompt,
-        responseMimeType: 'application/json',
-        timeoutMs: 8500,
-      });
+        const llmRes = await callAgentLlm({
+          prompt: attemptPrompt,
+          responseMimeType: 'application/json',
+          timeoutMs: 16000,
+        });
 
-      if (llmRes && llmRes.text) {
+        if (!llmRes?.text) {
+          lastFailure = 'Empty response from AI provider.';
+          continue;
+        }
+
         try {
-          const match = llmRes.text.match(/\{[\s\S]*\}/);
-          if (match) {
-            const parsed = JSON.parse(match[0]);
-            if (Array.isArray(parsed.questions) && parsed.questions.length > 0) {
-              generatedQuestions = parsed.questions.slice(0, 5).map((q: any, idx: number) => ({
-                id: `weak_q_${Date.now()}_${idx}`,
-                question: String(q.question || `Question ${idx + 1} on ${chapter}`).slice(0, 400),
-                options:
-                  Array.isArray(q.options) && q.options.length === 4
-                    ? q.options.map((o: any) => String(o).slice(0, 200))
-                    : [
-                        `Primary mechanism of ${chapter}`,
-                        `Secondary boundary condition in ${subject}`,
-                        `Inverse proportional relationship`,
-                        `Constant equilibrium state`,
-                      ],
-                correctIndex:
-                  typeof q.correctIndex === 'number' && q.correctIndex >= 0 && q.correctIndex <= 3
-                    ? q.correctIndex
-                    : 0,
-                explanation: String(
-                  q.explanation ||
-                    `This tests the core governing principle of ${chapter} in ${subject}.`
-                ).slice(0, 400),
-                chapter,
-                subject,
-              }));
-            }
+          const parsedJson = safeExtractJsonObject(llmRes.text);
+          const validated = WeakPracticeResponseSchema.safeParse(parsedJson);
+          if (!validated.success) {
+            lastFailure = validated.error.issues.map((i) => i.message).join('; ');
+            continue;
           }
-        } catch {}
-      }
 
-      // Deterministic academic fallback so the student ALWAYS gets 5 targeted questions without failing
-      if (generatedQuestions.length < 5) {
-        const templates = [
-          {
-            question: `In ${subject}, which fundamental principle directly governs ${chapter}?`,
-            options: [
-              `Conservation and state transition laws applied to ${chapter}`,
-              `Random uncoupled thermal drift only`,
-              `Zero-gradient static equilibrium in all conditions`,
-              `Non-causal empirical approximation`,
-            ],
-            correctIndex: 0,
-            explanation: `${chapter} is governed by foundational conservation and state transition relationships in ${subject}.`,
-          },
-          {
-            question: `When solving exam problems on ${chapter}, what is the most common pitfall to avoid?`,
-            options: [
-              `Memorizing the definition before applying formulas`,
-              `Confusing boundary conditions and sign conventions in ${chapter}`,
-              `Writing down the known variables first`,
-              `Checking dimensional consistency of the final answer`,
-            ],
-            correctIndex: 1,
-            explanation: `Most exam errors in ${chapter} come from mixing up boundary conditions or sign conventions.`,
-          },
-          {
-            question: `Which parameter change has the strongest direct effect on a system modeled under ${chapter}?`,
-            options: [
-              `Altering the primary driving variable beyond its threshold`,
-              `Changing the label of the reference frame`,
-              `Re-ordering the steps of algebraic simplification`,
-              `Converting units from SI to CGS after solving`,
-            ],
-            correctIndex: 0,
-            explanation: `Varying the primary driving variable shifts the system state predicted by ${chapter}.`,
-          },
-          {
-            question: `How does ${chapter} connect to broader topics in ${subject}${examName ? ` (${examName})` : ''}?`,
-            options: [
-              `It is completely isolated from all other chapters`,
-              `It provides the analytical foundation for multi-step synthesis problems in ${subject}`,
-              `It only applies to historical experiments prior to 1900`,
-              `It replaces all quantitative equations with qualitative guesses`,
-            ],
-            correctIndex: 1,
-            explanation: `Exam questions frequently combine ${chapter} with adjacent concepts in ${subject} for multi-step problems.`,
-          },
-          {
-            question: `During rapid exam revision of ${chapter}, which active-recall check confirms mastery?`,
-            options: [
-              `Re-reading the textbook heading three times passively`,
-              `Deriving the core relationship of ${chapter} from first principles and solving a numerical application`,
-              `Highlighting every sentence on the page`,
-              `Skipping worked examples`,
-            ],
-            correctIndex: 1,
-            explanation: `Reconstructing the core relationship from memory and applying it to a problem verifies true recall mastery.`,
-          },
-        ];
+          const clean = validated.data.questions.filter(
+            (q) =>
+              !hasDisallowedText(q.question) &&
+              !q.options.some((o) => hasDisallowedText(o)) &&
+              !hasDisallowedText(q.explanation)
+          );
 
-        for (let i = generatedQuestions.length; i < 5; i++) {
-          const tpl = templates[i % templates.length];
-          generatedQuestions.push({
-            id: `weak_q_${Date.now()}_${i}`,
-            question: tpl.question,
-            options: tpl.options,
-            correctIndex: tpl.correctIndex,
-            explanation: tpl.explanation,
+          if (clean.length < 5) {
+            lastFailure = `Only ${clean.length}/5 questions passed quality filters.`;
+            continue;
+          }
+
+          generatedQuestions = clean.slice(0, 5).map((q, idx) => ({
+            id: `weak_q_${Date.now()}_${idx}`,
+            question: q.question,
+            options: [...q.options],
+            correctIndex: q.correctIndex,
+            explanation: q.explanation,
             chapter,
             subject,
-          });
+          }));
+          break;
+        } catch (parseErr: any) {
+          lastFailure = parseErr?.message || 'Malformed JSON from AI provider.';
         }
+      }
+
+      if (generatedQuestions.length < 5) {
+        return res.status(502).json({
+          ok: false,
+          success: false,
+          error: 'WEAK_SPOTS_PRACTICE_FAILED',
+          message: `Could not generate 5 valid practice questions (${lastFailure}). Please tap Retry.`,
+        });
       }
 
       usage.weakDrillsUsed += 1;
@@ -2626,7 +2647,9 @@ Return ONLY valid JSON:
     } catch (err: any) {
       return res.status(500).json({
         ok: false,
-        error: err?.message || 'Could not generate weak-topic practice questions.',
+        success: false,
+        error: 'WEAK_SPOTS_INTERNAL_ERROR',
+        message: err?.message || 'Could not generate weak-topic practice questions.',
       });
     }
   });
@@ -2700,46 +2723,54 @@ Return ONLY valid JSON:
       if (uploadType === 'image' && imageDataUrl.startsWith('data:image/')) {
         const gemini = getGeminiClient();
         if (gemini) {
-          try {
-            const commaIdx = imageDataUrl.indexOf(',');
-            const meta = imageDataUrl.slice(0, commaIdx);
-            const base64Data = imageDataUrl.slice(commaIdx + 1);
-            const mimeMatch = meta.match(/data:(image\/[a-zA-Z0-9.+-]+);base64/);
-            const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+          const commaIdx = imageDataUrl.indexOf(',');
+          const meta = imageDataUrl.slice(0, commaIdx);
+          const base64Data = imageDataUrl.slice(commaIdx + 1);
+          const mimeMatch = meta.match(/data:(image\/[a-zA-Z0-9.+-]+);base64/);
+          const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
 
-            const ocrPromise = gemini.models.generateContent({
-              model: 'gemini-2.5-flash',
-              contents: [
-                {
-                  inlineData: {
-                    mimeType,
-                    data: base64Data,
+          for (const modelName of AGENT_GEMINI_MODELS.filter(isAgentGeminiModelAvailable)) {
+            try {
+              const ocrPromise = gemini.models.generateContent({
+                model: modelName,
+                contents: [
+                  {
+                    inlineData: {
+                      mimeType,
+                      data: base64Data,
+                    },
                   },
-                },
-                {
-                  text: 'Transcribe all handwritten or printed study notes, textbook paragraphs, formulas, and diagrams from this page accurately. Keep headings and bullet points clear.',
-                },
-              ],
-            });
-            const timeoutPromise = new Promise<null>((resolve) =>
-              setTimeout(() => resolve(null), 9000)
-            );
-            const ocrResp = await Promise.race([ocrPromise, timeoutPromise]);
-            if (ocrResp && ocrResp.text) {
-              rawText = ocrResp.text.trim();
+                  {
+                    text: 'Transcribe all handwritten or printed study notes, textbook paragraphs, formulas, and diagrams from this page accurately. Keep headings and bullet points clear.',
+                  },
+                ],
+              });
+              const timeoutPromise = new Promise<null>((resolve) =>
+                setTimeout(() => resolve(null), 9000)
+              );
+              const ocrResp = await Promise.race([ocrPromise, timeoutPromise]);
+              if (ocrResp && ocrResp.text) {
+                rawText = ocrResp.text.trim();
+                break;
+              }
+            } catch (err: any) {
+              recordAgentGeminiError(modelName, err);
             }
-          } catch {}
+          }
         }
         if (!rawText) {
-          rawText =
-            req.body?.fallbackDescription ||
-            `Extracted study notes from uploaded image (${title}). Key definitions, worked formulas, and active recall points.`;
+          return res.status(422).json({
+            ok: false,
+            success: false,
+            error: 'VISION_OCR_FAILED',
+            message: 'Could not extract readable text from that image. Please try a sharper photo or paste the notes directly.',
+          });
         }
         pagesText = [{ page: 1, text: rawText }];
       }
 
       if (pagesText.length === 0 && rawText) {
-        // Chunk rawText into synthetic ~1500-char pages so Page citations always work
+        // Chunk rawText into synthetic ~1600-char pages so Page citations always work
         const chunkSize = 1600;
         for (let i = 0; i < rawText.length; i += chunkSize) {
           pagesText.push({
@@ -2751,12 +2782,12 @@ Return ONLY valid JSON:
       }
 
       if (pagesText.length === 0) {
-        pagesText = [
-          {
-            page: 1,
-            text: `Study notes for ${title}. Core academic concepts, definitions, and exam review points.`,
-          },
-        ];
+        return res.status(400).json({
+          ok: false,
+          success: false,
+          error: 'EMPTY_STUDY_MATERIAL',
+          message: 'Please provide readable notes, text, PDF pages, or an image to generate study materials.',
+        });
       }
 
       const sampledExcerpts = pagesText
@@ -2774,6 +2805,95 @@ Return ONLY valid JSON:
         []
       );
 
+      const hasDisallowedStudyText = (val: string): boolean => {
+        const s = String(val || '').trim();
+        if (!s) return true;
+        return (
+          /\[\d{1,2}:\d{2}(?::\d{2})?\]/.test(s) ||
+          /\b\d{1,2}:\d{2}(?::\d{2})?\b/.test(s) ||
+          /\(t=\d+s\)/i.test(s) ||
+          /\baccording to (?:the )?(?:video|lecture|transcript|speaker|page\s*\d+)\b/i.test(s) ||
+          /\b(?:the speaker|the lecturer|the narrator|the presenter|in this video|in the video|from the video|cited from page|on page\s*\d+)\b/i.test(s) ||
+          /\[(music|applause|laughter|inaudible|silence)\]/i.test(s) ||
+          />>/.test(s) ||
+          /^option [a-d]$/i.test(s) ||
+          /What is the key takeaway presented on Page/i.test(s) ||
+          /Which mechanism or claim is established/i.test(s)
+        );
+      };
+
+      const UploadSummaryBulletSchema = z.object({
+        text: z.string().trim().min(8).max(320),
+        page: z.number().int().min(1).optional(),
+      });
+      const UploadChapterSchema = z.object({
+        title: z.string().trim().min(2).max(120),
+        page: z.number().int().min(1).optional(),
+        summary: z.string().trim().min(8).max(400),
+      });
+      const UploadFlashcardSchema = z.object({
+        front: z.string().trim().min(6).max(300),
+        back: z.string().trim().min(2).max(500),
+        page: z.number().int().min(1).optional(),
+      });
+      const UploadQuizSchema = z.object({
+        question: z.string().trim().min(10).max(350),
+        options: z.tuple([
+          z.string().trim().min(1).max(180),
+          z.string().trim().min(1).max(180),
+          z.string().trim().min(1).max(180),
+          z.string().trim().min(1).max(180),
+        ]),
+        correctIndex: z.number().int().min(0).max(3),
+        explanation: z.string().trim().min(8).max(350),
+        page: z.number().int().min(1).optional(),
+      });
+      const UploadStudyPackResponseSchema = z.object({
+        subject: z.string().trim().min(1).max(80).optional(),
+        chapter: z.string().trim().min(1).max(120).optional(),
+        summaryBullets: z.array(UploadSummaryBulletSchema).min(3),
+        chapters: z.array(UploadChapterSchema).min(1),
+        flashcards: z.array(UploadFlashcardSchema).min(4),
+        quiz: z.array(UploadQuizSchema).min(4),
+      });
+
+      const studyPrompt = `You are Kinich's academic Study Synthesizer.
+Analyze this uploaded ${uploadType.toUpperCase()} document ("${title}", ${pagesText.length} pages) and generate a complete study pack.
+Rules:
+- Stay strictly educational, accurate, and SFW.
+- Write self-contained conceptual questions, flashcards, and explanations.
+- Do NOT put "according to Page X", "according to the video", "the speaker", "on Page X", or timestamps inside question, option, explanation, or flashcard text (use the numeric "page" JSON field for provenance).
+- Generate at least 5 summaryBullets, 2 chapters, 6 flashcards, and 5 multiple-choice quiz questions with 4 distinct plausible options each.
+
+Document Excerpts by Page:
+${sampledExcerpts.slice(0, 6000)}
+
+Return ONLY valid JSON:
+{
+  "subject": "${heuristic.subject}",
+  "chapter": "${heuristic.chapter}",
+  "summaryBullets": [
+    { "text": "Clear academic takeaway...", "page": 1 }
+  ],
+  "chapters": [
+    { "title": "Section title", "page": 1, "summary": "2-sentence section summary of key concepts." }
+  ],
+  "flashcards": [
+    { "front": "Active recall question?", "back": "Concise accurate answer", "page": 1 }
+  ],
+  "quiz": [
+    {
+      "question": "Exam-style multiple choice question?",
+      "options": ["Plausible A", "Plausible B", "Plausible C", "Plausible D"],
+      "correctIndex": 0,
+      "explanation": "Concise 1-2 sentence conceptual explanation of why the answer is correct.",
+      "page": 1
+    }
+  ]
+}`;
+
+      let subject = heuristic.subject;
+      let chapter = heuristic.chapter;
       let summaryBullets: Array<{ text: string; page: number }> = [];
       let chaptersList: Array<{
         id: string;
@@ -2800,163 +2920,114 @@ Return ONLY valid JSON:
         pageLabel: string;
         chapter: string;
       }> = [];
+      let lastFailure = 'Failed to synthesize valid study pack.';
 
-      const studyPrompt = `You are Kinich's academic Study Synthesizer.
-Analyze this uploaded ${uploadType.toUpperCase()} document ("${title}", ${pagesText.length} pages) and generate a complete study pack.
-CRITICAL: Cite page numbers (e.g. page: 1, page: 2) for every chapter, summary bullet, flashcard, and quiz question instead of video timestamps. Stay strictly educational and SFW.
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        const attemptPrompt =
+          attempt === 1
+            ? studyPrompt
+            : `${studyPrompt}\n\nRETRY REQUIRED (previous attempt failed: ${lastFailure}). Ensure strict JSON with >= 3 summaryBullets, >= 4 clean flashcards, and >= 4 clean quiz questions (each with 4 distinct options, no "Option A", no timestamps, and no "According to Page X" wording).`;
 
-Document Excerpts by Page:
-${sampledExcerpts.slice(0, 5500)}
-
-Return ONLY valid JSON:
-{
-  "subject": "${heuristic.subject}",
-  "chapter": "${heuristic.chapter}",
-  "summaryBullets": [
-    { "text": "Clear academic takeaway...", "page": 1 }
-  ],
-  "chapters": [
-    { "title": "Section title", "page": 1, "summary": "2-sentence section summary citing key concepts." }
-  ],
-  "flashcards": [
-    { "front": "Active recall question?", "back": "Concise accurate answer", "page": 1 }
-  ],
-  "quiz": [
-    {
-      "question": "Exam-style multiple choice question?",
-      "options": ["Option A", "Option B", "Option C", "Option D"],
-      "correctIndex": 0,
-      "explanation": "Why this option is correct according to Page X.",
-      "page": 1
-    }
-  ]
-}`;
-
-      const llmRes = await callAgentLlm({
-        prompt: studyPrompt,
-        responseMimeType: 'application/json',
-        timeoutMs: 9500,
-      });
-
-      let subject = heuristic.subject;
-      let chapter = heuristic.chapter;
-
-      if (llmRes && llmRes.text) {
-        try {
-          const match = llmRes.text.match(/\{[\s\S]*\}/);
-          if (match) {
-            const parsed = JSON.parse(match[0]);
-            if (parsed.subject) subject = String(parsed.subject).slice(0, 80);
-            if (parsed.chapter) chapter = String(parsed.chapter).slice(0, 120);
-
-            if (Array.isArray(parsed.summaryBullets)) {
-              summaryBullets = parsed.summaryBullets.slice(0, 8).map((b: any, i: number) => ({
-                text: String(b?.text || b || '').slice(0, 320),
-                page: Math.max(1, Math.min(pagesText.length, Number(b?.page || i + 1))),
-              }));
-            }
-            if (Array.isArray(parsed.chapters)) {
-              chaptersList = parsed.chapters.slice(0, 8).map((c: any, i: number) => {
-                const pg = Math.max(1, Math.min(pagesText.length, Number(c?.page || i + 1)));
-                return {
-                  id: `ch_${i + 1}`,
-                  title: String(c?.title || `Section ${i + 1}`).slice(0, 120),
-                  page: pg,
-                  pageLabel: `Page ${pg}`,
-                  summary: String(c?.summary || '').slice(0, 400),
-                };
-              });
-            }
-            if (Array.isArray(parsed.flashcards)) {
-              flashcardsList = parsed.flashcards.slice(0, 10).map((f: any, i: number) => {
-                const pg = Math.max(1, Math.min(pagesText.length, Number(f?.page || (i % pagesText.length) + 1)));
-                return {
-                  id: `fc_${Date.now()}_${i}`,
-                  front: String(f?.front || `Key concept on Page ${pg}`).slice(0, 300),
-                  back: String(f?.back || '').slice(0, 500),
-                  page: pg,
-                  pageLabel: `Page ${pg}`,
-                  chapter,
-                };
-              });
-            }
-            if (Array.isArray(parsed.quiz)) {
-              quizList = parsed.quiz.slice(0, 8).map((q: any, i: number) => {
-                const pg = Math.max(1, Math.min(pagesText.length, Number(q?.page || (i % pagesText.length) + 1)));
-                return {
-                  id: `qz_${Date.now()}_${i}`,
-                  question: String(q?.question || '').slice(0, 350),
-                  options:
-                    Array.isArray(q?.options) && q.options.length === 4
-                      ? q.options.map((o: any) => String(o).slice(0, 180))
-                      : ['Option A', 'Option B', 'Option C', 'Option D'],
-                  correctIndex:
-                    typeof q?.correctIndex === 'number' && q.correctIndex >= 0 && q.correctIndex <= 3
-                      ? q.correctIndex
-                      : 0,
-                  explanation: String(q?.explanation || `Verified on Page ${pg}.`).slice(0, 350),
-                  page: pg,
-                  pageLabel: `Page ${pg}`,
-                  chapter,
-                };
-              });
-            }
-          }
-        } catch {}
-      }
-
-      // Deterministic page-grounded fallback if LLM timed out or returned partial fields
-      if (summaryBullets.length === 0) {
-        summaryBullets = pagesText.slice(0, 6).map((p) => {
-          const firstSentence =
-            p.text
-              .split(/(?<=[.!?])\s+/)
-              .map((s) => s.trim())
-              .find((s) => s.length > 25) || p.text.slice(0, 180);
-          return {
-            text: firstSentence.slice(0, 260),
-            page: p.page,
-          };
+        const llmRes = await callAgentLlm({
+          prompt: attemptPrompt,
+          responseMimeType: 'application/json',
+          timeoutMs: 18000,
         });
+
+        if (!llmRes?.text) {
+          lastFailure = 'Empty response from AI provider.';
+          continue;
+        }
+
+        try {
+          const parsedRaw = safeExtractJsonObject(llmRes.text);
+          const validated = UploadStudyPackResponseSchema.safeParse(parsedRaw);
+          if (!validated.success) {
+            lastFailure = validated.error.issues.map((i) => i.message).join('; ');
+            continue;
+          }
+
+          const data = validated.data;
+          const resolvedSubject = data.subject ? data.subject.slice(0, 80) : heuristic.subject;
+          const resolvedChapter = data.chapter ? data.chapter.slice(0, 120) : heuristic.chapter;
+
+          const nextBullets = data.summaryBullets.slice(0, 8).map((b, i) => ({
+            text: b.text,
+            page: Math.max(1, Math.min(pagesText.length, Number(b.page || i + 1))),
+          }));
+
+          const nextChapters = data.chapters.slice(0, 8).map((c, i) => {
+            const pg = Math.max(1, Math.min(pagesText.length, Number(c.page || i + 1)));
+            return {
+              id: `ch_${i + 1}`,
+              title: c.title,
+              page: pg,
+              pageLabel: `Page ${pg}`,
+              summary: c.summary,
+            };
+          });
+
+          const nextFlashcards = data.flashcards
+            .filter((f) => !hasDisallowedStudyText(f.front) && !hasDisallowedStudyText(f.back))
+            .slice(0, 10)
+            .map((f, i) => {
+              const pg = Math.max(1, Math.min(pagesText.length, Number(f.page || (i % pagesText.length) + 1)));
+              return {
+                id: `fc_${Date.now()}_${i}`,
+                front: f.front,
+                back: f.back,
+                page: pg,
+                pageLabel: `Page ${pg}`,
+                chapter: resolvedChapter,
+              };
+            });
+
+          const nextQuiz = data.quiz
+            .filter(
+              (q) =>
+                !hasDisallowedStudyText(q.question) &&
+                !q.options.some((o) => hasDisallowedStudyText(o)) &&
+                !hasDisallowedStudyText(q.explanation)
+            )
+            .slice(0, 8)
+            .map((q, i) => {
+              const pg = Math.max(1, Math.min(pagesText.length, Number(q.page || (i % pagesText.length) + 1)));
+              return {
+                id: `qz_${Date.now()}_${i}`,
+                question: q.question,
+                options: [...q.options],
+                correctIndex: q.correctIndex,
+                explanation: q.explanation,
+                page: pg,
+                pageLabel: `Page ${pg}`,
+                chapter: resolvedChapter,
+              };
+            });
+
+          if (nextFlashcards.length < 4 || nextQuiz.length < 4) {
+            lastFailure = `Quality filter kept ${nextFlashcards.length} flashcards and ${nextQuiz.length} quiz questions (need >= 4 each).`;
+            continue;
+          }
+
+          subject = resolvedSubject;
+          chapter = resolvedChapter;
+          summaryBullets = nextBullets;
+          chaptersList = nextChapters;
+          flashcardsList = nextFlashcards;
+          quizList = nextQuiz;
+          break;
+        } catch (parseErr: any) {
+          lastFailure = parseErr?.message || 'Invalid JSON response from AI provider.';
+        }
       }
 
-      if (chaptersList.length === 0) {
-        chaptersList = pagesText.slice(0, 6).map((p, idx) => ({
-          id: `ch_${idx + 1}`,
-          title: idx === 0 ? `${title} — Core Foundations` : `Section ${idx + 1}: Key Concepts (Page ${p.page})`,
-          page: p.page,
-          pageLabel: `Page ${p.page}`,
-          summary: p.text.slice(0, 280),
-        }));
-      }
-
-      if (flashcardsList.length === 0) {
-        flashcardsList = summaryBullets.slice(0, 5).map((b, idx) => ({
-          id: `fc_${Date.now()}_${idx}`,
-          front: `What is the key takeaway presented on Page ${b.page} of "${title}" (${chapter})?`,
-          back: b.text,
-          page: b.page,
-          pageLabel: `Page ${b.page}`,
-          chapter,
-        }));
-      }
-
-      if (quizList.length === 0) {
-        quizList = summaryBullets.slice(0, 4).map((b, idx) => ({
-          id: `qz_${Date.now()}_${idx}`,
-          question: `According to Page ${b.page} of "${title}", which statement accurately reflects ${chapter}?`,
-          options: [
-            b.text.slice(0, 150),
-            `An unrelated hypothesis not supported by Page ${b.page}`,
-            `The inverse of the relationship described on Page ${b.page}`,
-            `None of the concepts discussed in ${subject}`,
-          ],
-          correctIndex: 0,
-          explanation: `Directly cited from Page ${b.page}: "${b.text.slice(0, 180)}"`,
-          page: b.page,
-          pageLabel: `Page ${b.page}`,
-          chapter,
-        }));
+      if (flashcardsList.length < 4 || quizList.length < 4) {
+        return res.status(502).json({
+          ok: false,
+          success: false,
+          error: 'STUDY_UPLOAD_FAILED',
+          message: `Could not generate valid quiz and flashcards from this upload (${lastFailure}). Please tap Retry.`,
+        });
       }
 
       const studyPack = {
@@ -2993,7 +3064,9 @@ Return ONLY valid JSON:
     } catch (err: any) {
       return res.status(500).json({
         ok: false,
-        error: err?.message || 'Could not process uploaded study material.',
+        success: false,
+        error: 'STUDY_UPLOAD_INTERNAL_ERROR',
+        message: err?.message || 'Could not process uploaded study material.',
       });
     }
   });
@@ -3076,7 +3149,9 @@ Return ONLY valid JSON:
         if (parsedMp.tooLarge) {
           return res.status(413).json({
             ok: false,
-            error: 'Image exceeds the 5 MB size limit. Please upload an image under 5 MB.',
+            success: false,
+            error: 'PAYLOAD_TOO_LARGE',
+            message: 'Image exceeds the 5 MB size limit. Please upload an image under 5 MB.',
           });
         }
         bodyObj = { ...bodyObj, ...parsedMp.fields };
@@ -3099,7 +3174,9 @@ Return ONLY valid JSON:
       if (!rawImage && !questionText) {
         return res.status(400).json({
           ok: false,
-          error: 'Please enter question text or upload a photo of the problem.',
+          success: false,
+          error: 'INVALID_INPUT',
+          message: 'Please enter question text or upload a photo of the problem.',
         });
       }
 
@@ -3113,7 +3190,9 @@ Return ONLY valid JSON:
         if (decodedByteSize > MAX_IMAGE_BYTES) {
           return res.status(413).json({
             ok: false,
-            error: 'Image exceeds the 5 MB size limit. Please upload an image under 5 MB.',
+            success: false,
+            error: 'PAYLOAD_TOO_LARGE',
+            message: 'Image exceeds the 5 MB size limit. Please upload an image under 5 MB.',
           });
         }
         imageDataUrl = rawImage.startsWith('data:image/')
@@ -3130,20 +3209,26 @@ Return ONLY valid JSON:
         attachmentsCount: imageDataUrl ? 1 : 0,
       });
       if (!chatQuotaCheck.allowed && chatQuotaCheck.statusCode === 429) {
+        const msg = chatQuotaCheck.message || 'Daily guest quota reached.';
         return res.status(429).json({
           ok: false,
+          success: false,
           code: chatQuotaCheck.code || 'SNAP_SOLVE_LIMIT_REACHED',
-          error: chatQuotaCheck.message || 'Daily guest quota reached.',
+          error: chatQuotaCheck.code || 'SNAP_SOLVE_LIMIT_REACHED',
+          message: msg,
           usage,
           limits,
         });
       }
 
       if (usage.snapSolvesUsed >= limits.dailySnapSolves) {
+        const msg = `You've used your ${limits.dailySnapSolves} daily Snap & Solve questions on the ${limits.tier.toUpperCase()} tier. Upgrade to Spark or Fire for more daily problem solving.`;
         return res.status(429).json({
           ok: false,
+          success: false,
           code: 'SNAP_SOLVE_LIMIT_REACHED',
-          error: `You've used your ${limits.dailySnapSolves} daily Snap & Solve questions on the ${limits.tier.toUpperCase()} tier. Upgrade to Spark or Fire for more daily problem solving.`,
+          error: 'SNAP_SOLVE_LIMIT_REACHED',
+          message: msg,
           usage,
           limits,
         });
@@ -3156,35 +3241,40 @@ Return ONLY valid JSON:
         let visionExtracted = '';
         const gemini = getGeminiClient();
         if (gemini) {
-          try {
-            const commaIdx = imageDataUrl.indexOf(',');
-            const meta = imageDataUrl.slice(0, commaIdx);
-            const base64Data = imageDataUrl.slice(commaIdx + 1);
-            const mimeMatch = meta.match(/data:(image\/[a-zA-Z0-9.+-]+);base64/);
-            const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+          const commaIdx = imageDataUrl.indexOf(',');
+          const meta = imageDataUrl.slice(0, commaIdx);
+          const base64Data = imageDataUrl.slice(commaIdx + 1);
+          const mimeMatch = meta.match(/data:(image\/[a-zA-Z0-9.+-]+);base64/);
+          const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
 
-            const visionPromise = gemini.models.generateContent({
-              model: 'gemini-2.5-flash',
-              contents: [
-                {
-                  inlineData: {
-                    mimeType,
-                    data: base64Data,
+          for (const modelName of AGENT_GEMINI_MODELS.filter(isAgentGeminiModelAvailable)) {
+            try {
+              const visionPromise = gemini.models.generateContent({
+                model: modelName,
+                contents: [
+                  {
+                    inlineData: {
+                      mimeType,
+                      data: base64Data,
+                    },
                   },
-                },
-                {
-                  text: 'Extract the exact academic question shown in this image (including any numbers, equations, or multiple-choice options). If the handwriting or image is blurry or ambiguous, prefix with [UNCLEAR].',
-                },
-              ],
-            });
-            const timeoutPromise = new Promise<null>((resolve) =>
-              setTimeout(() => resolve(null), 8000)
-            );
-            const visionResp = await Promise.race([visionPromise, timeoutPromise]);
-            if (visionResp && visionResp.text) {
-              visionExtracted = visionResp.text.trim();
+                  {
+                    text: 'Extract the exact academic question shown in this image (including any numbers, equations, or multiple-choice options). If the handwriting or image is blurry or ambiguous, prefix with [UNCLEAR].',
+                  },
+                ],
+              });
+              const timeoutPromise = new Promise<null>((resolve) =>
+                setTimeout(() => resolve(null), 8000)
+              );
+              const visionResp = await Promise.race([visionPromise, timeoutPromise]);
+              if (visionResp && visionResp.text) {
+                visionExtracted = visionResp.text.trim();
+                break;
+              }
+            } catch (err: any) {
+              recordAgentGeminiError(modelName, err);
             }
-          } catch {}
+          }
         }
 
         // Vision model fallback via main server multimodal bridge (glm-5v-turbo / auto)
@@ -3224,9 +3314,13 @@ Return ONLY valid JSON:
       }
 
       if (!questionText) {
-        questionText =
-          'Solve the uploaded problem step-by-step, state the governing formula/concept, and provide the final answer.';
-        ocrConfidence = 'low';
+        return res.status(422).json({
+          ok: false,
+          success: false,
+          error: 'VISION_EXTRACTION_FAILED',
+          message:
+            'Could not read the question from the uploaded image. Please crop closer or enter the question text.',
+        });
       }
 
       const langInstruction =
@@ -3244,10 +3338,10 @@ A student submitted this question:
 
 ${langInstruction}
 Requirements:
-1. Provide a rigorous, step-by-step mathematical/conceptual solution in "steps" (list each formula statement, substitution, and numerical calculation clearly).
+1. Provide a rigorous, step-by-step mathematical/conceptual solution in "steps" (non-empty array of clear step strings covering formula, substitution, and calculation).
 2. State the exact concise final answer in "answer" and "finalAnswer" (e.g. "50%" or "v = 15 m/s").
 3. Explain the underlying concept in "conceptBehindIt" with title, subject, chapter, and a 2-3 sentence explanation.
-4. Provide 1 similar multiple-choice practice question in "similarPracticeQuestion" with 4 options, 0-based correctIndex, and a clear explanation.
+4. Provide 1 similar multiple-choice practice question in "similarPracticeQuestion" with 4 distinct options, 0-based correctIndex, and a clear explanation.
 5. Set "confidence": "high" and "checkWithTextbook": false.
 
 Return ONLY valid JSON matching this schema:
@@ -3261,75 +3355,100 @@ Return ONLY valid JSON matching this schema:
   "answer": "50%",
   "finalAnswer": "50%",
   "conceptBehindIt": {
-    "title": "Carnot Engine & Thermal Efficiency",
-    "subject": "Physics",
-    "chapter": "Thermodynamics",
-    "explanation": "The maximum theoretical efficiency of any heat engine operating between temperatures T_H and T_C is η = 1 - (T_C / T_H), with absolute temperatures in Kelvin."
+    "title": "Concept Title",
+    "subject": "Subject",
+    "chapter": "Chapter",
+    "explanation": "Short explanation of the underlying law or formula."
   },
   "similarPracticeQuestion": {
-    "question": "A Carnot engine has an efficiency of 40% with a sink at 300 K. What is the temperature of the hot reservoir?",
-    "options": ["500 K", "450 K", "600 K", "400 K"],
+    "question": "Similar practice question",
+    "options": ["Option A", "Option B", "Option C", "Option D"],
     "correctIndex": 0,
-    "explanation": "η = 1 - T_C / T_H => 0.40 = 1 - 300 / T_H => T_H = 500 K."
+    "explanation": "Step-by-step check of the correct option."
   },
   "confidence": "high",
   "checkWithTextbook": false
 }`;
 
+      const snapSolveSchema = z
+        .object({
+          questionExtracted: z.string().optional(),
+          steps: z.array(z.string().trim().min(1)).min(1),
+          answer: z.string().trim().min(1).optional(),
+          finalAnswer: z.string().trim().min(1).optional(),
+          conceptBehindIt: z
+            .object({
+              title: z.string().trim().min(1),
+              subject: z.string().trim().min(1),
+              chapter: z.string().trim().min(1),
+              explanation: z.string().trim().min(1),
+            })
+            .optional(),
+          similarPracticeQuestion: z
+            .object({
+              question: z.string().trim().min(1),
+              options: z.array(z.string().trim().min(1)).length(4),
+              correctIndex: z.number().int().min(0).max(3),
+              explanation: z.string().trim().min(1),
+            })
+            .optional(),
+          confidence: z.enum(['high', 'medium', 'low']).optional(),
+          checkWithTextbook: z.boolean().optional(),
+        })
+        .refine((d) => Boolean((d.answer || d.finalAnswer || '').trim()), {
+          message: 'answer is required',
+        });
+
       const parseSolveResponse = (rawText: string) => {
-        const match = rawText.match(/\{[\s\S]*\}/);
+        const cleaned = rawText
+          .replace(/^```(?:json)?\s*/i, '')
+          .replace(/```\s*$/i, '')
+          .trim();
+        const match = cleaned.match(/\{[\s\S]*\}/);
         if (!match) return null;
-        const parsed = JSON.parse(match[0]);
-        if (!Array.isArray(parsed.steps) || parsed.steps.length === 0) return null;
-        const finalAns = String(parsed.finalAnswer || parsed.answer || '').trim();
+        const parsed = snapSolveSchema.safeParse(JSON.parse(match[0]));
+        if (!parsed.success) return null;
+        const data = parsed.data;
+        const finalAns = String(data.answer || data.finalAnswer || '').trim().slice(0, 300);
         if (!finalAns) return null;
         const conf: 'high' | 'medium' | 'low' =
           ocrConfidence === 'low'
             ? 'low'
-            : parsed.confidence === 'low' || parsed.confidence === 'medium'
-            ? parsed.confidence
+            : data.confidence === 'low' || data.confidence === 'medium'
+            ? data.confidence
             : 'high';
         return {
-          questionExtracted: String(parsed.questionExtracted || questionText).slice(0, 600),
-          steps: parsed.steps.slice(0, 7).map((s: any) => String(s).slice(0, 450)),
-          answer: finalAns.slice(0, 300),
-          finalAnswer: finalAns.slice(0, 300),
-          conceptBehindIt: {
-            title: String(parsed.conceptBehindIt?.title || 'Core Governing Principle').slice(0, 120),
-            subject: String(parsed.conceptBehindIt?.subject || 'Physics').slice(0, 80),
-            chapter: String(parsed.conceptBehindIt?.chapter || 'Problem Solving').slice(0, 120),
-            explanation: String(
-              parsed.conceptBehindIt?.explanation ||
-                'This problem tests the direct application of foundational physical and mathematical principles.'
-            ).slice(0, 500),
-          },
-          similarPracticeQuestion: {
-            question: String(
-              parsed.similarPracticeQuestion?.question ||
-                `Practice variation: Apply ${parsed.conceptBehindIt?.title || 'this concept'} with modified boundary values.`
-            ).slice(0, 400),
-            options:
-              Array.isArray(parsed.similarPracticeQuestion?.options) &&
-              parsed.similarPracticeQuestion.options.length === 4
-                ? parsed.similarPracticeQuestion.options.map((o: any) => String(o).slice(0, 180))
-                : ['25%', '50%', '75%', '80%'],
-            correctIndex:
-              typeof parsed.similarPracticeQuestion?.correctIndex === 'number' &&
-              parsed.similarPracticeQuestion.correctIndex >= 0 &&
-              parsed.similarPracticeQuestion.correctIndex <= 3
-                ? parsed.similarPracticeQuestion.correctIndex
-                : 0,
-            explanation: String(
-              parsed.similarPracticeQuestion?.explanation ||
-                'Substitute the given parameters into the governing formula.'
-            ).slice(0, 400),
-          },
+          questionExtracted: String(data.questionExtracted || questionText).slice(0, 600),
+          steps: data.steps.slice(0, 7).map((s) => s.slice(0, 450)),
+          answer: finalAns,
+          // KEEP FOR NOW: backward-compat duplicate of `answer` — drop after client migration
+          finalAnswer: finalAns,
+          ...(data.conceptBehindIt
+            ? {
+                conceptBehindIt: {
+                  title: data.conceptBehindIt.title.slice(0, 120),
+                  subject: data.conceptBehindIt.subject.slice(0, 80),
+                  chapter: data.conceptBehindIt.chapter.slice(0, 120),
+                  explanation: data.conceptBehindIt.explanation.slice(0, 500),
+                },
+              }
+            : {}),
+          ...(data.similarPracticeQuestion
+            ? {
+                similarPracticeQuestion: {
+                  question: data.similarPracticeQuestion.question.slice(0, 400),
+                  options: data.similarPracticeQuestion.options.map((o) => o.slice(0, 180)),
+                  correctIndex: data.similarPracticeQuestion.correctIndex,
+                  explanation: data.similarPracticeQuestion.explanation.slice(0, 400),
+                },
+              }
+            : {}),
           confidence: conf,
-          checkWithTextbook: Boolean(parsed.checkWithTextbook) || conf !== 'high',
+          checkWithTextbook: Boolean(data.checkWithTextbook) || conf !== 'high',
         };
       };
 
-      let resultPayload: any = null;
+      let resultPayload: ReturnType<typeof parseSolveResponse> = null;
       for (let attempt = 0; attempt < 2 && !resultPayload; attempt++) {
         const llmRes = await callAgentLlm({
           prompt: solvePrompt,
@@ -3344,9 +3463,12 @@ Return ONLY valid JSON matching this schema:
       }
 
       if (!resultPayload) {
-        return res.status(500).json({
+        return res.status(502).json({
           ok: false,
-          error: 'Snap & Solve could not generate a verified solution right now. Please try again.',
+          success: false,
+          error: 'SNAP_SOLVE_FAILED',
+          message:
+            'Snap & Solve could not generate a verified step-by-step solution right now. Please try again.',
         });
       }
 
@@ -3359,20 +3481,24 @@ Return ONLY valid JSON matching this schema:
 
       return res.json({
         ok: true,
+        // KEEP FOR NOW: backward-compat duplicate of `ok` — drop after client migration
+        success: true,
         ...resultPayload,
         usage,
         limits,
       });
     } catch (err: any) {
+      console.error('[SnapSolve] Unexpected error:', err);
       return res.status(500).json({
         ok: false,
-        error: err?.message || 'Snap & Solve encountered an error. Please try again.',
+        success: false,
+        error: 'SNAP_SOLVE_INTERNAL_ERROR',
+        message: err?.message || 'Snap & Solve encountered an error. Please try again.',
       });
     }
   };
 
   app.post('/api/study/snap-solve', handleSnapSolve);
-  app.post('/api/snap-solve', handleSnapSolve);
 
   // ==========================================================================
   // PHASE C: AUDIO RECAP ("Listen" button on any Summary, 2-5 min Spark/Fire, 30s preview Free)

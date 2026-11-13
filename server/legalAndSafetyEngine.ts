@@ -1369,10 +1369,6 @@ export function registerLegalAndSafetyRoutes(
     contactTicketsStore.unshift(ticket);
     if (contactTicketsStore.length > 500) contactTicketsStore.pop();
 
-    console.log(
-      `[ContactTicket] ${ticket.ticketId} routed to ${targetDepartmentEmail} (${cleanTopic}) from ${cleanEmail}`
-    );
-
     return res.status(200).json({
       success: true,
       ticketId: ticket.ticketId,
@@ -1427,10 +1423,6 @@ export function registerLegalAndSafetyRoutes(
 
     contentReportsStore.unshift(record);
     if (contentReportsStore.length > 500) contentReportsStore.pop();
-
-    console.log(
-      `[SafetyReport] ${record.reportId} target=${record.targetType}:${record.targetId} reason="${record.reason}"`
-    );
 
     return res.status(200).json({
       success: true,

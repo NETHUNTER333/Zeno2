@@ -122,4 +122,3 @@ export function runCitationChipUnitTests(): void {
 }
 
 runCitationChipUnitTests();
-console.log('PASS: citationChipRender unit tests passed (Text [1]. renders 1 button chip, first-appearance renumbering, and markdown bullet chips).');

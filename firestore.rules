@@ -250,6 +250,28 @@ service cloud.firestore {
         data.updatedAt is number;
     }
 
+    function isValidLocationPreference(data, userId, prefId) {
+      return data.keys().hasAll(['id', 'userId', 'locationEnabled', 'mode', 'persistPreciseLocation', 'updatedAt']) &&
+        data.keys().hasOnly([
+          'id', 'userId', 'locationEnabled', 'mode',
+          'preferredCity', 'preferredRegion', 'preferredCountry', 'preferredCountryCode', 'preferredTimezone',
+          'preferredLatitude', 'preferredLongitude', 'persistPreciseLocation', 'updatedAt'
+        ]) &&
+        isValidId(data.id) && data.id == prefId &&
+        isValidId(data.userId) && data.userId == userId &&
+        data.locationEnabled is bool &&
+        data.mode in ['precise', 'approximate', 'manual', 'disabled'] &&
+        data.persistPreciseLocation is bool &&
+        (!('preferredCity' in data) || (data.preferredCity is string && data.preferredCity.size() <= 120)) &&
+        (!('preferredRegion' in data) || (data.preferredRegion is string && data.preferredRegion.size() <= 120)) &&
+        (!('preferredCountry' in data) || (data.preferredCountry is string && data.preferredCountry.size() <= 120)) &&
+        (!('preferredCountryCode' in data) || (data.preferredCountryCode is string && data.preferredCountryCode.size() <= 8)) &&
+        (!('preferredTimezone' in data) || (data.preferredTimezone is string && data.preferredTimezone.size() <= 80)) &&
+        (!('preferredLatitude' in data) || (data.preferredLatitude is number && data.preferredLatitude >= -90 && data.preferredLatitude <= 90)) &&
+        (!('preferredLongitude' in data) || (data.preferredLongitude is number && data.preferredLongitude >= -180 && data.preferredLongitude <= 180)) &&
+        data.updatedAt is number;
+    }
+
     match /users/{userId} {
       allow get: if isOwner(userId) && isValidId(userId);
       allow create: if isOwner(userId) && isValidId(userId) && isValidUserProfile(incoming(), userId);
@@ -412,6 +434,16 @@ service cloud.firestore {
           incoming().pdfStudyUsed >= existing().pdfStudyUsed &&
           incoming().tokensUsed >= existing().tokensUsed;
         allow delete: if false;
+      }
+
+      match /preferences/{prefId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(prefId);
+        allow list: if isOwner(userId) && existing().userId == request.auth.uid;
+        allow create: if isOwner(userId) && isValidId(userId) && isValidId(prefId) && isValidLocationPreference(incoming(), userId, prefId);
+        allow update: if resource != null && isOwner(userId) && isValidId(userId) && isValidId(prefId) && isValidLocationPreference(incoming(), userId, prefId) &&
+          incoming().id == existing().id &&
+          incoming().userId == existing().userId;
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(prefId);
       }
     }
 

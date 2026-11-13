@@ -443,7 +443,7 @@ export const KnowledgeVaultStore = {
   VAULT_FREE_ITEM_LIMIT,
 
   isGuest(): boolean {
-    return UserAccountStore.isGuestUser();
+    return UserAccountStore.isGuest();
   },
 
   canSaveToVault(existingItemId?: string): {
@@ -453,7 +453,7 @@ export const KnowledgeVaultStore = {
     currentCount: number;
     maxCount: number | null;
   } {
-    if (UserAccountStore.isGuestUser()) {
+    if (UserAccountStore.isGuest()) {
       return {
         allowed: false,
         reason: 'guest',
@@ -717,7 +717,7 @@ export const KnowledgeVaultStore = {
             lastReviewedAt: now,
           };
 
-    if (UserAccountStore.isGuestUser()) {
+    if (UserAccountStore.isGuest()) {
       if (typeof window !== 'undefined') {
         window.dispatchEvent(
           new CustomEvent('kinich-open-auth', {
@@ -739,7 +739,7 @@ export const KnowledgeVaultStore = {
     emitVaultUpdate();
 
     // Trigger Agent "Sage" (on_save) in background to auto-assign Subject + Chapter + Tags and link related Vault items within <10s
-    if (!input.skipSage && !UserAccountStore.isGuestUser()) {
+    if (!input.skipSage && !UserAccountStore.isGuest()) {
       this.organizeWithSage(item, nextItems).catch(() => {});
     }
 
@@ -1067,7 +1067,7 @@ export function formatToIstDate(dateInput: number | string | Date): string {
 
 export const VaultThreadStore = {
   isGuest(): boolean {
-    return UserAccountStore.isGuestUser();
+    return UserAccountStore.isGuest();
   },
 
   getThreads(): VaultThread[] {
@@ -1604,8 +1604,6 @@ export async function publishKinichArtifact(input: {
   return createdArtifact;
 }
 
-export const publishPublicArtifact = publishKinichArtifact;
-
 export async function updateKinichArtifact(
   artifactId: string,
   patch: Partial<
@@ -1989,8 +1987,6 @@ export function evaluateMissionsAndLevel(
   };
 }
 
-export const computeMissionsAndIntelligenceLevel = evaluateMissionsAndLevel;
-
 export interface WeeklyIntelligenceReportSummary {
   periodLabel: string;
   conversationsCount: number;
@@ -2181,8 +2177,6 @@ export async function saveCreatorPublicProfile(
   emitGrowthUpdate();
   return updated;
 }
-
-export const saveCreatorProfile = saveCreatorPublicProfile;
 
 // ============================================================================
 // ELITE REFERRER LEADERBOARD, TOP CONTRIBUTORS & FEEDBACK CLIENT
@@ -2836,7 +2830,6 @@ export const REFERRAL_8_REWARD_TIERS: ReferralRewardTier[] = [
 ];
 
 const EIGHT_REF_STORAGE_KEY = 'kinich_eight_referral_rewards_v1';
-const HOME_REF_POPUP_DISMISSED_KEY = 'kinich_home_ref_popup_dismissed_v1';
 
 export interface EightReferralTrackerState {
   count: number;
@@ -2844,7 +2837,6 @@ export interface EightReferralTrackerState {
   claimedTiers: number[];
   code: string;
   inviteUrl: string;
-  dismissedOnHome: boolean;
 }
 
 export function getEightReferralTrackerState(): EightReferralTrackerState {
@@ -2874,30 +2866,13 @@ export function getEightReferralTrackerState(): EightReferralTrackerState {
       )
     : [];
 
-  let dismissedOnHome = false;
-  try {
-    dismissedOnHome = localStorage.getItem(HOME_REF_POPUP_DISMISSED_KEY) === 'true';
-  } catch {}
-
   return {
     count,
     target: 8,
     claimedTiers,
     code,
     inviteUrl,
-    dismissedOnHome,
   };
-}
-
-export function setHomeReferralPopupDismissed(dismissed: boolean): void {
-  try {
-    if (dismissed) {
-      localStorage.setItem(HOME_REF_POPUP_DISMISSED_KEY, 'true');
-    } else {
-      localStorage.removeItem(HOME_REF_POPUP_DISMISSED_KEY);
-    }
-  } catch {}
-  emitGrowthUpdate();
 }
 
 export function addOneReferralProgress(): EightReferralTrackerState {

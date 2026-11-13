@@ -51,6 +51,8 @@ import {
 } from 'lucide-react';
 import { ViewOnMap } from './watermelon/view-on-map';
 import { ThinkingOrb } from 'thinking-orbs';
+import ErrorState from './ErrorState';
+import { normalizeDisplayText } from './MathMarkdown';
 import {
   YouTubeTranscriptSegment,
   YouTubeStudyBundle,
@@ -179,13 +181,9 @@ export function extractYouTubeIdFromInput(input?: string | null): string | null 
 }
 
 function cleanCaptionText(raw: string): string {
-  return (raw || '')
-    .replace(/&amp;/g, '&')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&apos;/g, "'")
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
+  return normalizeDisplayText(raw || '')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
     .replace(/\[(?:music|applause|laughter)\]/gi, '')
     .replace(/\s+/g, ' ')
     .trim();
@@ -406,6 +404,7 @@ export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
   initialPdf,
   onBackToChat,
   isDark = true,
+  onOpenPricing,
 }) => {
   const initialId =
     initialVideo?.videoId ||
@@ -440,13 +439,23 @@ export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
   const [ytWebSearchQuery, setYtWebSearchQuery] = useState<string>('');
   const [ytWebSearching, setYtWebSearching] = useState<boolean>(false);
 
-  const [showHomeStudyLoop, setShowHomeStudyLoop] = useState<boolean>(() => {
+  const [isSnapSolveRoute, setIsSnapSolveRoute] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
       const p = window.location.pathname.toLowerCase();
-      if (p === '/snap-solve' || p.startsWith('/snap-solve')) return true;
+      return p === '/snap-solve' || p.startsWith('/snap-solve/');
     }
     return false;
   });
+  const [showHomeStudyLoop, setShowHomeStudyLoop] = useState<boolean>(false);
+
+  useEffect(() => {
+    const syncSnapRoute = () => {
+      const p = window.location.pathname.toLowerCase();
+      setIsSnapSolveRoute(p === '/snap-solve' || p.startsWith('/snap-solve/'));
+    };
+    window.addEventListener('popstate', syncSnapRoute);
+    return () => window.removeEventListener('popstate', syncSnapRoute);
+  }, []);
   const [seekSeconds, setSeekSeconds] = useState<number>(0);
   const [autoPlayVideo, setAutoPlayVideo] = useState<boolean>(false);
   const [showSourceViewer, setShowSourceViewer] = useState<boolean>(true);
@@ -893,7 +902,7 @@ ${fullTranscriptText}`;
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
-        throw new Error(errData?.error || `Server responded with HTTP ${res.status}`);
+        throw new Error(errData?.message || errData?.error || `Server responded with HTTP ${res.status}`);
       }
 
       const data = await res.json();
@@ -1245,7 +1254,7 @@ ${fullTranscriptText}`;
         }
       } else {
         const errData = await aiRes.json().catch(() => ({}));
-        setStudyError(errData?.error || 'Could not synthesize quiz and flashcards right now. Please tap Retry.');
+        setStudyError(errData?.message || errData?.error || 'Could not synthesize quiz and flashcards right now. Please tap Retry.');
       }
     } catch {
       setStudyError('Study synthesis timed out. Please tap Retry Generation.');
@@ -1362,6 +1371,7 @@ ${fullTranscriptText}`;
       let shouldPoll = false;
       let pollJobId = normVidId;
 
+      let serverStudyError = '';
       try {
         const authHeaders = await getAuthHeaders();
         const aiRes = await apiFetch('/api/youtube/study', {
@@ -1383,9 +1393,12 @@ ${fullTranscriptText}`;
             shouldPoll = Boolean(aiData.partial || aiData.status === 'enriching');
             pollJobId = aiData.jobId || normVidId;
           }
+        } else {
+          const errData = await aiRes.json().catch(() => ({}));
+          serverStudyError = String(errData?.message || errData?.error || '').trim();
         }
       } catch {
-        // If the POST connection dropped or timed out, check /api/youtube/study/status before using client fallback
+        // If the POST connection dropped or timed out, check /api/youtube/study/status before failing
         try {
           const statusRes = await apiFetch(
             `/api/youtube/study/status?videoId=${encodeURIComponent(normVidId)}`,
@@ -1403,7 +1416,10 @@ ${fullTranscriptText}`;
       }
 
       if (!finalStudy) {
-        throw new Error('Could not synthesize exam-style quiz and flashcards right now. Please tap Retry Generation.');
+        throw new Error(
+          serverStudyError ||
+            'Could not synthesize exam-style quiz and flashcards right now. Please tap Retry Generation.'
+        );
       }
 
       applyStudyBundleToState(finalStudy);
@@ -1489,7 +1505,7 @@ ${fullTranscriptText}`;
 
       if (!res.ok) {
         const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson?.error || `Document synthesis failed with HTTP ${res.status}`);
+        throw new Error(errJson?.message || errJson?.error || `Document synthesis failed with HTTP ${res.status}`);
       }
 
       const data = await res.json();
@@ -1762,7 +1778,7 @@ ${fullTranscriptText}`;
     URL.revokeObjectURL(url);
   };
 
-  const [isGuestStudyUser, setIsGuestStudyUser] = useState(() => UserAccountStore.isGuestUser());
+  const [isGuestStudyUser, setIsGuestStudyUser] = useState(() => UserAccountStore.isGuest());
   const [savedStudyVaultId, setSavedStudyVaultId] = useState<string | null>(null);
   const savedStudyVaultIdRef = useRef<string | null>(null);
   const [sageStudyOrganizing, setSageStudyOrganizing] = useState(false);
@@ -1773,7 +1789,7 @@ ${fullTranscriptText}`;
   const sageAutoHideTimerRef = useRef<any>(null);
 
   useEffect(() => {
-    const syncGuest = () => setIsGuestStudyUser(UserAccountStore.isGuestUser());
+    const syncGuest = () => setIsGuestStudyUser(UserAccountStore.isGuest());
     window.addEventListener('kinich-account-updated', syncGuest);
     return () => window.removeEventListener('kinich-account-updated', syncGuest);
   }, []);
@@ -1809,7 +1825,7 @@ ${fullTranscriptText}`;
   const handleSaveStudyResultToVault = (
     saveType: 'lecture' | 'quiz' | 'flashcard_deck' = 'lecture'
   ) => {
-    if (UserAccountStore.isGuestUser()) {
+    if (UserAccountStore.isGuest()) {
       window.dispatchEvent(new CustomEvent('kinich-open-auth', { detail: { message: 'Sign in to keep this in your Vault.' } }));
       return;
     }
@@ -2517,39 +2533,46 @@ ${fullTranscriptText}`;
               </div>
             )}
 
-            {/* Collapsible Study Loop Dropdown on Study Home */}
-            <div className="pt-1">
-              <button
-                type="button"
-                onClick={() => setShowHomeStudyLoop((v) => !v)}
-                className={`w-full px-3.5 py-2.5 rounded-xl border flex items-center justify-between text-xs font-medium transition cursor-pointer ${
-                  isDark
-                    ? 'bg-[#121215] border-white/[0.08] text-neutral-200 hover:border-white/[0.2]'
-                    : 'bg-white border-black/[0.08] text-neutral-800 hover:border-black/[0.2]'
-                }`}
-              >
-                <span>Daily Recall, Exam Plan &amp; Snap Solve</span>
-                <ChevronDown
-                  className={`w-3.5 h-3.5 transition-transform ${
-                    showHomeStudyLoop ? 'rotate-180' : ''
-                  }`}
+            {isSnapSolveRoute ? (
+              <div className="pt-1" data-testid="snap-solve-direct-panel">
+                <StudyLoopPanel
+                  embedded={true}
+                  isDark={isDark}
+                  initialTab="snap_solve"
+                  onOpenPricing={() => onOpenPricing?.('spark')}
                 />
-              </button>
-              {showHomeStudyLoop && (
-                <div className="pt-2">
-                  <StudyLoopPanel
-                    embedded={true}
-                    isDark={isDark}
-                    initialTab={
-                      typeof window !== 'undefined' &&
-                      window.location.pathname.toLowerCase().startsWith('/snap-solve')
-                        ? 'snap_solve'
-                        : 'revision'
-                    }
+              </div>
+            ) : (
+              /* Collapsible Study Loop Dropdown on Study Home */
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowHomeStudyLoop((v) => !v)}
+                  className={`w-full px-3.5 py-2.5 rounded-xl border flex items-center justify-between text-xs font-medium transition cursor-pointer ${
+                    isDark
+                      ? 'bg-[#121215] border-white/[0.08] text-neutral-200 hover:border-white/[0.2]'
+                      : 'bg-white border-black/[0.08] text-neutral-800 hover:border-black/[0.2]'
+                  }`}
+                >
+                  <span>Daily Recall, Exam Plan &amp; Snap Solve</span>
+                  <ChevronDown
+                    className={`w-3.5 h-3.5 transition-transform ${
+                      showHomeStudyLoop ? 'rotate-180' : ''
+                    }`}
                   />
-                </div>
-              )}
-            </div>
+                </button>
+                {showHomeStudyLoop && (
+                  <div className="pt-2">
+                    <StudyLoopPanel
+                      embedded={true}
+                      isDark={isDark}
+                      initialTab="revision"
+                      onOpenPricing={() => onOpenPricing?.('spark')}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Saved Spaces Section */}
             <div className="space-y-2.5 pt-1">
@@ -3385,17 +3408,18 @@ ${fullTranscriptText}`;
                 )}
               </div>
             ) : studyError ? (
-              <div className="max-w-md mx-auto my-12 p-6 rounded-2xl border border-red-500/20 bg-red-500/5 text-center space-y-4">
-                <div className="text-red-400 font-semibold text-sm">Failed to Generate Study Materials</div>
-                <p className="text-xs text-neutral-400 leading-relaxed">{studyError}</p>
-                <button
-                  type="button"
-                  onClick={() => {
+              <div className="max-w-lg mx-auto my-8 space-y-4">
+                <ErrorState
+                  title="Failed to Generate Study Materials"
+                  message={studyError}
+                  retryLabel="Retry Generation"
+                  isDark={isDark}
+                  testId="study-workspace-error"
+                  onRetry={() => {
                     const resolvedId =
                       extractYouTubeIdFromInput(activeVideoId || initialId || '') ||
                       (activeVideoId || initialId || '').trim();
                     if (sourceType === 'youtube' && resolvedId) {
-                      console.log('[StudyWorkspace] Retry Generation for videoId:', resolvedId);
                       loadYouTubeSource(resolvedId, resolvedTitle, resolvedAuthor);
                     } else if (sourceType === 'topic') {
                       loadTopicStudySpace(resolvedTitle);
@@ -3403,12 +3427,9 @@ ${fullTranscriptText}`;
                       loadTextOrPdfSource(resolvedTitle, rawSourceText, 'pdf', pdfUrl);
                     }
                   }}
-                  className="px-4 py-2.5 rounded-xl bg-white text-black text-xs font-semibold hover:bg-neutral-200 transition cursor-pointer min-h-[44px]"
-                >
-                  Retry Generation
-                </button>
+                />
                 {sourceType === 'youtube' && activeVideoId && (
-                  <div className="pt-4 border-t border-red-500/10 space-y-2 text-left">
+                  <div className={`p-4 rounded-xl border space-y-2 text-left ${isDark ? 'border-white/[0.1] bg-white/[0.02]' : 'border-black/[0.1] bg-black/[0.02]'}`}>
                     <label className="text-xs font-medium text-neutral-400">Or paste the video transcript</label>
                     <textarea
                       rows={5}

@@ -105,6 +105,25 @@ import {
 import { initBackendSentry, sentryBackendMiddleware, sentryErrorHandler, reportUpstreamProviderFailure, Sentry } from './server/sentry';
 import { registerDodoBillingRoutes } from './server/billingEngine';
 import { registerAgentFrameworkRoutes, setAgentLlmBridge } from './server/agentFramework';
+import {
+  isValidCoordinate,
+  reverseGeocodeCoordinates,
+  searchCitiesGeocoding,
+  type LocationContext,
+} from './server/locationService';
+import {
+  resolveApproximateIpLocation,
+  resolveRequestLocationContext,
+} from './server/geolocationService';
+import {
+  formatWeatherReportAsSearchSources,
+  getLiveWeatherReport,
+} from './server/weatherService';
+import {
+  analyzeLocationIntent,
+  buildLocationContextForChat,
+  extractExplicitPlaceFromQuery,
+} from './server/locationContextService';
 
 dotenv.config();
 initBackendSentry();
@@ -143,10 +162,69 @@ export const geminiClient = process.env.GEMINI_API_KEY
   : null;
 
 const GEMINI_FALLBACK_MODELS = [
-  'gemini-2.5-flash',
-  'gemini-3.1-flash-lite-preview',
-  'gemini-3-flash-preview',
+  'gemini-4-hydrogen',
+  'gemini-3.8-flash',
+  'gemini-3.1-flash-lite',
 ];
+
+const geminiModelCooldownUntil = new Map<string, number>();
+
+function isGeminiModelAvailable(modelName: string): boolean {
+  const until = geminiModelCooldownUntil.get(modelName);
+  if (!until) return true;
+  if (Date.now() >= until) {
+    geminiModelCooldownUntil.delete(modelName);
+    return true;
+  }
+  return false;
+}
+
+function recordGeminiModelError(modelName: string, err: any): void {
+  const msg = String(err?.message || err || '');
+  const status = Number(err?.status || err?.code || 0);
+  const is404 =
+    status === 404 ||
+    /\b404\b|NOT_FOUND|no longer available/i.test(msg);
+  const is429 =
+    status === 429 ||
+    /\b429\b|RESOURCE_EXHAUSTED|quota|rate[- ]?limit/i.test(msg);
+
+  if (is404) {
+    geminiModelCooldownUntil.set(modelName, Date.now() + 24 * 60 * 60 * 1000);
+  } else if (is429) {
+    const retryMatch = msg.match(/retryDelay["']?\s*:\s*["']?(\d+)s/i);
+    const delaySec = retryMatch ? Math.min(3600, Math.max(60, parseInt(retryMatch[1], 10))) : 1800;
+    geminiModelCooldownUntil.set(modelName, Date.now() + delaySec * 1000);
+  }
+}
+
+function buildGeminiConfigForModel(
+  modelName: string,
+  options: {
+    maxOutputTokens: number;
+    isResearch?: boolean;
+    responseMimeType?: string;
+    temperature?: number;
+  }
+): Record<string, any> {
+  const isGemini4 = modelName.startsWith('gemini-4');
+  const isGemini3 = modelName.startsWith('gemini-3');
+  const config: Record<string, any> = {
+    maxOutputTokens: options.maxOutputTokens,
+  };
+  if (options.responseMimeType) {
+    config.responseMimeType = options.responseMimeType;
+  }
+  if (!isGemini4 && typeof options.temperature === 'number') {
+    config.temperature = options.temperature;
+  }
+  if (isGemini4 || isGemini3) {
+    config.thinkingConfig = {
+      thinkingLevel: options.isResearch ? ThinkingLevel.HIGH : ThinkingLevel.LOW,
+    };
+  }
+  return config;
+}
 
 function isCodeGenerationQuery(query: string, modelId = ''): boolean {
   const q = String(query || '').trim();
@@ -334,32 +412,43 @@ async function generateGeminiContentWithFallback(contents: any, isResearchMode =
   const candidates: Promise<{ resp: any; modelName: string }>[] = [];
 
   if (client) {
-    for (const modelName of GEMINI_FALLBACK_MODELS) {
+    const activeGeminiModels = GEMINI_FALLBACK_MODELS.filter(isGeminiModelAvailable);
+    if (activeGeminiModels.length > 0) {
       candidates.push(
-        Promise.race([
-          client.models
-            .generateContent({
-              model: modelName,
-              contents: normalizedContents,
-              config: {
-                maxOutputTokens: geminiMaxTokens,
-                thinkingConfig: modelName.startsWith('gemini-3')
-                  ? { thinkingLevel: isResearch ? ThinkingLevel.HIGH : ThinkingLevel.LOW }
-                  : { thinkingBudget: isResearch ? 2048 : 0 },
-              },
-            })
-            .then((resp) => {
-              const text = (resp.text || '').trim();
-              if (!text) throw new Error('Empty Gemini text');
-              if (isCodePrompt && !text.includes('```')) {
-                throw new Error('Gemini response missing fenced code block for code request');
-              }
-              return { resp, modelName };
-            }),
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error(`Gemini ${modelName} timed out`)), geminiTimeoutMs)
-          ),
-        ])
+        (async () => {
+          let lastErr: any = new Error('All Gemini models unavailable');
+          for (const modelName of activeGeminiModels) {
+            try {
+              const result = await Promise.race([
+                client.models
+                  .generateContent({
+                    model: modelName,
+                    contents: normalizedContents,
+                    config: buildGeminiConfigForModel(modelName, {
+                      maxOutputTokens: geminiMaxTokens,
+                      isResearch,
+                    }),
+                  })
+                  .then((resp) => {
+                    const text = (resp.text || '').trim();
+                    if (!text) throw new Error('Empty Gemini text');
+                    if (isCodePrompt && !text.includes('```')) {
+                      throw new Error('Gemini response missing fenced code block for code request');
+                    }
+                    return { resp, modelName };
+                  }),
+                new Promise<never>((_, reject) =>
+                  setTimeout(() => reject(new Error(`Gemini ${modelName} timed out`)), geminiTimeoutMs)
+                ),
+              ]);
+              return result;
+            } catch (err: any) {
+              recordGeminiModelError(modelName, err);
+              lastErr = err;
+            }
+          }
+          throw lastErr;
+        })()
       );
     }
   }
@@ -3161,6 +3250,11 @@ function isDateOrTimeClockQuery(text: string): boolean {
   const q = stripInjectedClockNote(text).toLowerCase();
   if (!q) return false;
 
+  // Exclude explicit foreign-place time queries (e.g., "what's the time in Tokyo?") so locationContextService resolves that city's timezone
+  if (extractExplicitPlaceFromQuery(q)) {
+    return false;
+  }
+
   // Exclude non-clock topics like release dates, due dates, time complexity, etc.
   if (
     /\b(release\s+date|due\s+date|expiration\s+date|expiry\s+date|birth\s*date|up\s+to\s+date|date\s+night|dating|blind\s+date|time\s+complexity|time\s+travel|time\s+dilation|time\s+series|screen\s+time|part\s+time|full\s+time|once\s+upon\s+a\s+time|all\s+time|lap\s+time)\b/i.test(
@@ -3879,6 +3973,7 @@ app.use((req, res, next) => {
     !origin ||
     ALLOWED_ORIGINS.includes(origin) ||
     origin.endsWith('.vercel.app') ||
+    origin.endsWith('.run.app') ||
     origin.includes('localhost') ||
     origin.startsWith('capacitor:') ||
     origin.startsWith('ionic:') ||
@@ -3893,7 +3988,7 @@ app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, PUT, DELETE, OPTIONS');
   res.setHeader(
     'Access-Control-Allow-Headers',
-    'Content-Type, Authorization, X-Zeno-Client-Id, X-Visitor-Id, X-InstaCloud-Project, Accept, Origin, X-Requested-With, Cache-Control, Pragma'
+    'Content-Type, Authorization, X-Zeno-Client-Id, X-Kinich-Client-Id, X-Guest-Id, X-Visitor-Id, X-InstaCloud-Project, Accept, Origin, X-Requested-With, Cache-Control, Pragma'
   );
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
@@ -5254,7 +5349,7 @@ app.post('/api/tts', async (req, res) => {
 
     if (ttsGeminiClient) {
       const geminiTtsVoice = gender === 'male' ? 'Charon' : 'Kore';
-      for (const ttsModel of ['gemini-2.5-flash-preview-tts']) {
+      for (const ttsModel of ['gemini-3.8-flash-lite-tts', 'gemini-3.8-flash-tts'].filter(isGeminiModelAvailable)) {
         try {
           const gemRes = await Promise.race([
             ttsGeminiClient.models.generateContent({
@@ -5300,7 +5395,8 @@ app.post('/api/tts', async (req, res) => {
               return res.send(finalWav);
             }
           }
-        } catch {
+        } catch (ttsErr: any) {
+          recordGeminiModelError(ttsModel, ttsErr);
           // Proceed to Tier 2 neural voice synthesis
         }
       }
@@ -6036,313 +6132,164 @@ app.get('/api/treg/status', async (_req, res) => {
   }
 });
 
-export interface ServerLocationInfo {
-  city?: string;
-  region?: string;
-  country?: string;
-  countryCode?: string;
-  timezone?: string;
-  source: 'gps' | 'manual' | 'ip' | 'none';
-  homeCity?: string;
+export interface ServerLocationInfo extends LocationContext {
+  source: 'gps' | 'manual' | 'ip' | 'disabled' | 'none';
 }
 
 export function resolveRequestLocation(req: express.Request, payloadLocation?: any): ServerLocationInfo {
-  // Read Vercel IP headers (URL decode city)
-  let ipCity = '';
-  try {
-    const rawCity = typeof req.headers['x-vercel-ip-city'] === 'string' ? req.headers['x-vercel-ip-city'] : '';
-    ipCity = rawCity ? decodeURIComponent(rawCity).trim() : '';
-  } catch {
-    ipCity = (req.headers['x-vercel-ip-city'] as string) || '';
-  }
-  const ipCountry = typeof req.headers['x-vercel-ip-country'] === 'string' ? decodeURIComponent(req.headers['x-vercel-ip-country']).trim() : '';
-  const ipRegion = typeof req.headers['x-vercel-ip-country-region'] === 'string' ? decodeURIComponent(req.headers['x-vercel-ip-country-region']).trim() : '';
-  const ipTimezone = typeof req.headers['x-vercel-ip-timezone'] === 'string' ? decodeURIComponent(req.headers['x-vercel-ip-timezone']).trim() : '';
-
-  // 1. Precise location (GPS) from payload takes highest priority
-  if (payloadLocation && typeof payloadLocation === 'object' && payloadLocation.source === 'gps') {
-    const city = String(payloadLocation.city || '').trim();
-    if (city) {
-      return {
-        city,
-        region: String(payloadLocation.region || '').trim() || undefined,
-        country: String(payloadLocation.country || '').trim() || undefined,
-        countryCode: String(payloadLocation.countryCode || '').trim() || undefined,
-        timezone: String(payloadLocation.timezone || '').trim() || undefined,
-        source: 'gps',
-        homeCity: String(payloadLocation.homeCity || '').trim() || undefined,
-      };
-    }
-  }
-
-  // 2. User-Saved City (Memory) from profile or payload takes second priority
-  const savedCity = String(
-    payloadLocation?.homeCity ||
-    payloadLocation?.savedCity ||
-    (payloadLocation?.source === 'manual' ? payloadLocation?.city : '') ||
-    ''
-  ).trim();
-
-  if (savedCity) {
-    return {
-      city: savedCity,
-      region: String(payloadLocation?.region || ipRegion || '').trim() || undefined,
-      country: String(payloadLocation?.country || ipCountry || '').trim() || undefined,
-      countryCode: String(payloadLocation?.countryCode || ipCountry || '').trim() || undefined,
-      timezone: String(payloadLocation?.timezone || ipTimezone || '').trim() || undefined,
-      source: 'manual',
-      homeCity: savedCity,
-    };
-  }
-
-  // 2b. Client-resolved Geo-IP or payload city when Vercel IP headers are absent
-  if (payloadLocation && typeof payloadLocation === 'object' && payloadLocation.city) {
-    return {
-      city: String(payloadLocation.city).trim(),
-      region: String(payloadLocation.region || ipRegion || '').trim() || undefined,
-      country: String(payloadLocation.country || ipCountry || '').trim() || undefined,
-      countryCode: String(payloadLocation.countryCode || ipCountry || '').trim() || undefined,
-      timezone: String(payloadLocation.timezone || ipTimezone || '').trim() || undefined,
-      source: payloadLocation.source === 'manual' ? 'manual' : 'ip',
-      homeCity: String(payloadLocation.homeCity || '').trim() || undefined,
-    };
-  }
-
-  // 2c. Detect explicit city mention in conversation history (e.g. "I live in Ramagundam Telangana")
-  if (Array.isArray(req.body?.messages)) {
-    for (let i = req.body.messages.length - 1; i >= 0; i--) {
-      const m = req.body.messages[i];
-      const txt = typeof m?.content === 'string' ? m.content : '';
-      if (/\bramagundam\b/i.test(txt)) {
-        return {
-          city: 'Ramagundam',
-          region: 'Telangana',
-          country: 'India',
-          countryCode: 'IN',
-          timezone: 'Asia/Kolkata',
-          source: 'manual',
-          homeCity: 'Ramagundam, Telangana, India',
-        };
-      }
-    }
-  }
-
-  // 3. Fallback to Vercel IP approximate location
-  if (ipCity || ipCountry) {
-    return {
-      city: ipCity || undefined,
-      region: ipRegion || undefined,
-      country: ipCountry || undefined,
-      countryCode: ipCountry || undefined,
-      timezone: ipTimezone || undefined,
-      source: 'ip',
-    };
-  }
-
-  // 4. Timezone-based approximate fallback when running behind proxies without x-vercel-ip-* headers
-  const clientTz = String(
-    req.body?.clientClock?.timezone ||
-    payloadLocation?.timezone ||
-    ipTimezone ||
-    ''
-  ).trim();
-  if (/^Asia\/(Calcutta|Kolkata)$/i.test(clientTz)) {
-    return {
-      city: 'Ramagundam',
-      region: 'Telangana',
-      country: 'India',
-      countryCode: 'IN',
-      timezone: 'Asia/Kolkata',
-      source: 'ip',
-    };
-  }
-
-  return { source: 'none' };
-}
-
-function serverWeatherCodeToLabel(code: number): string {
-  if (code === 0) return 'Clear Sky';
-  if (code === 1 || code === 2) return 'Partly Cloudy';
-  if (code === 3) return 'Overcast';
-  if (code >= 45 && code <= 48) return 'Foggy';
-  if (code >= 51 && code <= 67) return 'Rain';
-  if (code >= 71 && code <= 77) return 'Snow';
-  if (code >= 80 && code <= 82) return 'Rain Showers';
-  if (code >= 95) return 'Thunderstorm';
-  return 'Mild Sky';
+  const ctx = resolveRequestLocationContext(req, payloadLocation);
+  return {
+    ...ctx,
+    source: (ctx.detectionMethod || 'none') as ServerLocationInfo['source'],
+  };
 }
 
 export async function fetchServerOpenMeteoWeatherSources(
   userQuery: string,
   locationInfo?: ServerLocationInfo
 ): Promise<any[]> {
-  if (!/\b(weather|forecast|temperature|rain|monsoon|humidity|wind\s+speed|uv\s+index|climate)\b/i.test(userQuery)) {
+  const intent = analyzeLocationIntent(userQuery);
+  if (intent.intentType !== 'weather') {
     return [];
   }
   try {
-    let targetCity = '';
-    const m1 = userQuery.match(
-      /\b(?:weather|temperature|forecast|climate|rain|humidity|wind)\s+(?:in|for|at|of)\s+([a-zA-Z\s,.-]{2,40})/i
-    );
-    if (m1 && m1[1]) {
-      targetCity = m1[1].replace(/\b(today|tomorrow|now|right now|this week)\b/gi, '').replace(/[?.,!]+$/, '').trim();
+    if (intent.explicitPlace) {
+      const report = await getLiveWeatherReport({ city: intent.explicitPlace });
+      return report ? formatWeatherReportAsSearchSources(report) : [];
     }
-    if (!targetCity) {
-      const m2 = userQuery.match(/^([a-zA-Z\s]{2,30})\s+(?:weather|temperature|forecast|5-day forecast)\b/i);
-      if (m2 && m2[1] && !/^(what|how|is|the|current|today|tomorrow|local|live)$/i.test(m2[1].trim())) {
-        targetCity = m2[1].trim();
-      }
+    if (!locationInfo || locationInfo.detectionMethod === 'disabled' || locationInfo.locationEnabled === false) {
+      return [];
     }
-    if (!targetCity) {
-      targetCity = locationInfo?.city || 'Ramagundam';
+    if (!locationInfo.city && !isValidCoordinate(locationInfo.latitude, locationInfo.longitude)) {
+      return [];
     }
-
-    const searchName = targetCity.split(',')[0].trim() || 'Ramagundam';
-    const geoRes = await fetch(
-      `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(searchName)}&count=5&language=en&format=json`,
-      { signal: AbortSignal.timeout(2200) }
-    );
-    if (!geoRes.ok) return [];
-    const geoJson: any = await geoRes.json();
-    const results: any[] = Array.isArray(geoJson?.results) ? geoJson.results : [];
-    const preferredPlace =
-      results.find((r) => /india/i.test(r.country || '') || r.country_code === 'IN') || results[0];
-    if (!preferredPlace) return [];
-
-    const wxRes = await fetch(
-      `https://api.open-meteo.com/v1/forecast?latitude=${preferredPlace.latitude}&longitude=${preferredPlace.longitude}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m&hourly=temperature_2m,precipitation_probability,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto`,
-      { signal: AbortSignal.timeout(2500) }
-    );
-    if (!wxRes.ok) return [];
-    const wxJson: any = await wxRes.json();
-    if (!wxJson?.current) return [];
-
-    const placeLabel = [preferredPlace.name, preferredPlace.admin1, preferredPlace.country]
-      .filter(Boolean)
-      .join(', ');
-    const curTemp = Math.round(wxJson.current.temperature_2m);
-    const feelsLike = Math.round(wxJson.current.apparent_temperature ?? wxJson.current.temperature_2m);
-    const humidity = Math.round(wxJson.current.relative_humidity_2m ?? 50);
-    const windKmh = Math.round(wxJson.current.wind_speed_10m ?? 8);
-    const condition = serverWeatherCodeToLabel(wxJson.current.weather_code ?? 0);
-    const highToday = Math.round(wxJson.daily?.temperature_2m_max?.[0] ?? curTemp);
-    const lowToday = Math.round(wxJson.daily?.temperature_2m_min?.[0] ?? curTemp);
-    const rainToday = Math.round(wxJson.daily?.precipitation_probability_max?.[0] ?? 0);
-
-    const dailySummaries: string[] = [];
-    const dailyTimes: string[] = wxJson.daily?.time || [];
-    for (let i = 0; i < Math.min(5, dailyTimes.length); i++) {
-      const d = new Date(`${dailyTimes[i]}T12:00:00`);
-      const dayLabel = i === 0 ? 'Today' : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-      const dMax = Math.round(wxJson.daily?.temperature_2m_max?.[i] ?? highToday);
-      const dMin = Math.round(wxJson.daily?.temperature_2m_min?.[i] ?? lowToday);
-      const dRain = Math.round(wxJson.daily?.precipitation_probability_max?.[i] ?? 0);
-      const dCond = serverWeatherCodeToLabel(wxJson.daily?.weather_code?.[i] ?? 0);
-      dailySummaries.push(`${dayLabel}: ${dCond}, High ${dMax}°C / Low ${dMin}°C (${dRain}% chance of rain)`);
-    }
-
-    const snippet1 =
-      `Live Open-Meteo meteorological station telemetry for ${placeLabel}: Current temperature is ${curTemp}°C (feels like ${feelsLike}°C) with ${condition} skies. ` +
-      `Today's high is ${highToday}°C and low is ${lowToday}°C, with a ${rainToday}% probability of precipitation, relative humidity of ${humidity}%, and wind speed of ${windKmh} km/h. ` +
-      `5-Day Forecast for ${placeLabel}: ${dailySummaries.join(' | ')}.`;
-
-    const snippet2 =
-      `India Meteorological Department (IMD) & regional weather outlook for ${placeLabel}: ` +
-      `${preferredPlace.name} (${preferredPlace.admin1 || 'Telangana'}) is currently experiencing ${condition.toLowerCase()} conditions at ${curTemp}°C (apparent temperature ${feelsLike}°C, humidity ${humidity}%, winds ${windKmh} km/h). ` +
-      `Daytime maximum temperature reaches ${highToday}°C with an overnight minimum of ${lowToday}°C and ${rainToday}% rain chance across the ${preferredPlace.name} region.`;
-
-    return [
-      {
-        position: 1,
-        title: `${placeLabel} Live Weather Forecast — ${curTemp}°C, ${condition} (High ${highToday}°C / Low ${lowToday}°C)`,
-        url: `https://open-meteo.com/en/docs#latitude=${preferredPlace.latitude}&longitude=${preferredPlace.longitude}`,
-        snippet: snippet1,
-        domain: 'open-meteo.com',
-        source: 'Open-Meteo Weather',
-      },
-      {
-        position: 2,
-        title: `Regional Meteorological Outlook for ${placeLabel} — Temperature, Humidity & 5-Day Forecast`,
-        url: 'https://mausam.imd.gov.in/',
-        snippet: snippet2,
-        domain: 'mausam.imd.gov.in',
-        source: 'IMD Weather',
-      },
-    ];
+    const report = await getLiveWeatherReport({
+      latitude: locationInfo.latitude,
+      longitude: locationInfo.longitude,
+      city: locationInfo.city,
+      region: locationInfo.region,
+      country: locationInfo.country,
+      countryCode: locationInfo.countryCode,
+      timezone: locationInfo.timezone,
+    });
+    return report ? formatWeatherReportAsSearchSources(report) : [];
   } catch {
     return [];
   }
 }
 
-// LocationIQ Reverse Geocode Endpoint (server-side LOCATIONIQ_KEY, city-level only, coords discarded)
+// Search cities for manual location selection & travel switching
+app.get('/api/location/search', async (req, res) => {
+  try {
+    const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const count = typeof req.query.count === 'string' ? Number(req.query.count) : 6;
+    const countryCode = typeof req.query.countryCode === 'string' ? req.query.countryCode.trim() : undefined;
+    if (q.length < 2) {
+      return res.json({ success: true, results: [] });
+    }
+    const results = await searchCitiesGeocoding(q, Number.isFinite(count) ? count : 6, countryCode);
+    return res.json({ success: true, results });
+  } catch (error: any) {
+    return sendNormalizedError(res, 500, 'location/search-failed', error?.message || 'Failed to search cities');
+  }
+});
+
+// Privacy-safe approximate IP geolocation fallback (never stores or returns raw IP)
+app.get('/api/location/ip', async (req, res) => {
+  try {
+    const clientTz = typeof req.query.tz === 'string' ? req.query.tz.trim() : undefined;
+    const location = await resolveApproximateIpLocation(req, clientTz);
+    return res.json({ success: true, location });
+  } catch (error: any) {
+    return sendNormalizedError(res, 500, 'location/ip-failed', error?.message || 'Failed to resolve approximate location');
+  }
+});
+
+// Reverse Geocode Endpoint (validated coordinates, no raw coord logging)
 app.post('/api/location/reverse-geocode', async (req, res) => {
   try {
-    const { lat, lng } = req.body || {};
-    if (typeof lat !== 'number' || typeof lng !== 'number') {
-      return sendNormalizedError(res, 400, 'validation/missing-coords', 'Valid latitude and longitude required');
+    const { lat, lng, timezone } = req.body || {};
+    if (!isValidCoordinate(lat, lng)) {
+      return sendNormalizedError(res, 400, 'validation/missing-coords', 'Valid latitude (-90..90) and longitude (-180..180) required');
     }
-
-    const locationIqKey = process.env.LOCATIONIQ_KEY || '';
-    let city = '';
-    let region = '';
-    let country = '';
-    let countryCode = '';
-    let timezone = '';
-
-    if (locationIqKey) {
-      try {
-        const response = await fetch(
-          `https://us1.locationiq.com/v1/reverse?key=${encodeURIComponent(locationIqKey)}&lat=${lat}&lon=${lng}&format=json`,
-          { signal: AbortSignal.timeout(5000) }
-        );
-        if (response.ok) {
-          const data = await response.json();
-          const addr = data.address || {};
-          city = addr.city || addr.town || addr.village || addr.municipality || addr.county || addr.suburb || '';
-          region = addr.state || addr.region || '';
-          country = addr.country || '';
-          countryCode = (addr.country_code || '').toUpperCase();
-        }
-      } catch (err) {
-        console.warn('[LocationIQ] Reverse geocode error:', err);
-      }
-    }
-
-    if (!city) {
-      try {
-        const resNom = await fetch(
-          `https://nominatim.openstreetmap.org/reverse?format=json&lat=${Math.round(lat * 100) / 100}&lon=${Math.round(lng * 100) / 100}&zoom=10`,
-          {
-            headers: { 'User-Agent': 'KinichApp/1.0 (https://kinich.app; location-service)' },
-            signal: AbortSignal.timeout(4000),
-          }
-        );
-        if (resNom.ok) {
-          const data = await resNom.json();
-          const addr = data.address || {};
-          city = addr.city || addr.town || addr.village || addr.municipality || addr.county || addr.suburb || '';
-          region = addr.state || addr.region || '';
-          country = addr.country || '';
-          countryCode = (addr.country_code || '').toUpperCase();
-        }
-      } catch {}
-    }
-
-    if (!city) city = 'Current Location';
-
-    // DISCARD LAT AND LNG IMMEDIATELY! Return city-level location only
-    const locationInfo: ServerLocationInfo = {
-      city,
-      region: region || undefined,
-      country: country || undefined,
-      countryCode: countryCode || undefined,
-      timezone: timezone || undefined,
-      source: 'gps',
-    };
-
+    const locationInfo = await reverseGeocodeCoordinates(Number(lat), Number(lng), {
+      fallbackTimezone: typeof timezone === 'string' ? timezone : undefined,
+    });
     return res.json({ success: true, location: locationInfo });
   } catch (error: any) {
     return sendNormalizedError(res, 500, 'location/geocoding-failed', error?.message || 'Failed to reverse geocode');
+  }
+});
+
+// Live Weather & Air Quality Endpoint (Open-Meteo with TTL cache and freshness metadata)
+app.get('/api/weather', async (req, res) => {
+  try {
+    const lat = req.query.lat !== undefined ? Number(req.query.lat) : undefined;
+    const lng = req.query.lng !== undefined ? Number(req.query.lng) : undefined;
+    const city = typeof req.query.city === 'string' ? req.query.city.trim() : undefined;
+    const region = typeof req.query.region === 'string' ? req.query.region.trim() : undefined;
+    const country = typeof req.query.country === 'string' ? req.query.country.trim() : undefined;
+    const countryCode = typeof req.query.countryCode === 'string' ? req.query.countryCode.trim() : undefined;
+    const timezone = typeof req.query.timezone === 'string' ? req.query.timezone.trim() : undefined;
+    const bypassCache = req.query.refresh === '1' || req.query.refresh === 'true';
+
+    const hasCoords = isValidCoordinate(lat, lng);
+    if (!hasCoords && !city) {
+      return sendNormalizedError(res, 400, 'validation/missing-location', 'Valid coordinates (lat, lng) or city name required');
+    }
+    if ((lat !== undefined || lng !== undefined) && !hasCoords) {
+      return sendNormalizedError(res, 400, 'validation/invalid-coords', 'Coordinates out of valid range');
+    }
+
+    const report = await getLiveWeatherReport({
+      latitude: hasCoords ? lat : undefined,
+      longitude: hasCoords ? lng : undefined,
+      city,
+      region,
+      country,
+      countryCode,
+      timezone,
+      bypassCache,
+    });
+    if (!report) {
+      return sendNormalizedError(res, 404, 'weather/not-found', 'Weather data unavailable for requested location');
+    }
+    return res.json({ success: true, weather: report });
+  } catch (error: any) {
+    return sendNormalizedError(res, 500, 'weather/fetch-failed', error?.message || 'Failed to fetch weather');
+  }
+});
+
+app.post('/api/weather', async (req, res) => {
+  try {
+    const { latitude, longitude, lat, lng, city, region, country, countryCode, timezone, bypassCache } = req.body || {};
+    const resolvedLat = typeof latitude === 'number' ? latitude : typeof lat === 'number' ? lat : undefined;
+    const resolvedLng = typeof longitude === 'number' ? longitude : typeof lng === 'number' ? lng : undefined;
+    const hasCoords = isValidCoordinate(resolvedLat, resolvedLng);
+
+    if ((resolvedLat !== undefined || resolvedLng !== undefined) && !hasCoords) {
+      return sendNormalizedError(res, 400, 'validation/invalid-coords', 'Coordinates out of valid range');
+    }
+    if (!hasCoords && (!city || typeof city !== 'string' || !city.trim())) {
+      return sendNormalizedError(res, 400, 'validation/missing-location', 'Valid coordinates or city name required');
+    }
+
+    const report = await getLiveWeatherReport({
+      latitude: hasCoords ? resolvedLat : undefined,
+      longitude: hasCoords ? resolvedLng : undefined,
+      city: typeof city === 'string' ? city.trim() : undefined,
+      region: typeof region === 'string' ? region.trim() : undefined,
+      country: typeof country === 'string' ? country.trim() : undefined,
+      countryCode: typeof countryCode === 'string' ? countryCode.trim() : undefined,
+      timezone: typeof timezone === 'string' ? timezone.trim() : undefined,
+      bypassCache: Boolean(bypassCache),
+    });
+    if (!report) {
+      return sendNormalizedError(res, 404, 'weather/not-found', 'Weather data unavailable for requested location');
+    }
+    return res.json({ success: true, weather: report });
+  } catch (error: any) {
+    return sendNormalizedError(res, 500, 'weather/fetch-failed', error?.message || 'Failed to fetch weather');
   }
 });
 
@@ -9700,20 +9647,98 @@ Requirements:
       throw new Error('Invalid JSON');
     };
 
+    const hasDisallowedTopicText = (val: string): boolean => {
+      const s = String(val || '').trim();
+      if (!s) return true;
+      return (
+        /\[\d{1,2}:\d{2}(?::\d{2})?\]/.test(s) ||
+        /\b\d{1,2}:\d{2}(?::\d{2})?\b/.test(s) ||
+        /\(t=\d+s\)/i.test(s) ||
+        /\baccording to (?:the )?(?:video|lecture|transcript|speaker|page\s*\d+)\b/i.test(s) ||
+        /\b(?:the speaker|the lecturer|the narrator|the presenter|in this video|in the video|from the video)\b/i.test(s) ||
+        /Which statement best describes the principle of/i.test(s) ||
+        /Which mechanism or claim is established/i.test(s) ||
+        /^option [a-d]$/i.test(s)
+      );
+    };
+
+    const TopicSectionSchema = z.object({
+      title: z.string().trim().min(2).max(160).optional(),
+      heading: z.string().trim().min(2).max(160).optional(),
+      claim: z.string().trim().optional(),
+      summary: z.string().trim().optional(),
+      elaboration: z.string().trim().optional(),
+    });
+    const TopicFlashcardSchema = z.object({
+      front: z.string().trim().min(6),
+      back: z.string().trim().min(2),
+      category: z.string().trim().optional(),
+    });
+    const TopicQuizSchema = z.object({
+      question: z.string().trim().min(10),
+      options: z.tuple([
+        z.string().trim().min(1),
+        z.string().trim().min(1),
+        z.string().trim().min(1),
+        z.string().trim().min(1),
+      ]),
+      correctIndex: z.number().int().min(0).max(3),
+      explanation: z.string().trim().min(8),
+    });
+    const TopicBatchResponseSchema = z.object({
+      overview: z.string().trim().optional(),
+      sections: z.array(TopicSectionSchema).min(2),
+      concepts: z
+        .array(
+          z.object({
+            term: z.string().trim().min(1),
+            definition: z.string().trim().min(2),
+            mechanism: z.string().trim().optional(),
+          })
+        )
+        .optional(),
+      flashcards: z.array(TopicFlashcardSchema).min(4),
+      quiz: z.array(TopicQuizSchema).min(4),
+    });
+
     const runTopicBatch = async (sysPrompt: string, usrPrompt: string) => {
-      try {
-        const llmRes = await callStudyJsonLLM(sysPrompt, usrPrompt, 0.25, 3800, 22000);
-        return parseJsonFromText(llmRes.text);
-      } catch {
-        const fallbackCompletion = await generateChatCompletion(
-          [
-            { role: 'system', content: sysPrompt },
-            { role: 'user', content: usrPrompt },
-          ],
-          'zro/deepseek-v4.1-flash'
-        );
-        return parseJsonFromText(fallbackCompletion?.text || '');
+      let lastError = 'Invalid topic study response';
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        const promptForAttempt =
+          attempt === 1
+            ? usrPrompt
+            : `${usrPrompt}\n\nRETRY REQUIRED (${lastError}). Ensure valid JSON with >= 2 sections, >= 4 clean flashcards, and >= 4 clean 4-option quiz questions with no timestamps or speaker references.`;
+        try {
+          const llmRes = await callStudyJsonLLM(sysPrompt, promptForAttempt, 0.25, 3800, 26000);
+          const rawParsed = parseJsonFromText(llmRes.text);
+          const validated = TopicBatchResponseSchema.safeParse(rawParsed);
+          if (!validated.success) {
+            lastError = validated.error.issues.map((i) => i.message).join('; ');
+            continue;
+          }
+          const cleanQuiz = validated.data.quiz.filter(
+            (q) =>
+              !hasDisallowedTopicText(q.question) &&
+              !q.options.some(hasDisallowedTopicText) &&
+              !hasDisallowedTopicText(q.explanation)
+          );
+          const cleanFc = validated.data.flashcards.filter(
+            (fc) => !hasDisallowedTopicText(fc.front) && !hasDisallowedTopicText(fc.back)
+          );
+          if (cleanQuiz.length < 4 || cleanFc.length < 4) {
+            lastError = `Filtered quiz (${cleanQuiz.length}) or flashcards (${cleanFc.length}) below minimum 4`;
+            continue;
+          }
+          return {
+            ...validated.data,
+            quiz: cleanQuiz,
+            flashcards: cleanFc,
+          };
+        } catch (batchErr: any) {
+          lastError = batchErr?.message || 'LLM call failed';
+        }
       }
+      throw new Error(lastError);
     };
 
     const [batch1Settled, batch2Settled] = await Promise.allSettled([
@@ -9725,13 +9750,21 @@ Requirements:
     const parsed2 = batch2Settled.status === 'fulfilled' ? batch2Settled.value : null;
     const parsed = parsed1 || parsed2;
 
+    if (!parsed) {
+      return res.status(502).json({
+        success: false,
+        ok: false,
+        error: 'TOPIC_STUDY_FAILED',
+        message: 'Could not generate quiz and flashcards for this topic right now. Please tap Retry.',
+      });
+    }
+
     const rawSections = [
       ...(Array.isArray(parsed1?.sections) ? parsed1.sections : []),
       ...(Array.isArray(parsed2?.sections) ? parsed2.sections : []),
     ];
 
-    // Build resilient sections if LLM output was incomplete
-    let finalSections = rawSections
+    const finalSections = rawSections
       .map((s: any, idx: number) => ({
         index: idx + 1,
         heading: String(s.title || s.heading || `Concept ${idx + 1}`),
@@ -9739,33 +9772,6 @@ Requirements:
         elaboration: String(s.elaboration || s.summary || s.claim || ''),
       }))
       .filter((s: any) => s.heading && s.elaboration);
-
-    if (finalSections.length === 0) {
-      const contextPieces = groundingParagraphs.filter((p) => p.length > 50).slice(0, 6);
-      if (contextPieces.length > 0) {
-        finalSections = contextPieces.map((p, idx) => ({
-          index: idx + 1,
-          heading: `${rawQuery} — Foundation ${idx + 1}`,
-          claim: p.split('.')[0] || `${rawQuery} fundamental principle`,
-          elaboration: p.slice(0, 300),
-        }));
-      } else {
-        finalSections = [
-          {
-            index: 1,
-            heading: `${rawQuery} Fundamentals`,
-            claim: `Core principles and definitions for understanding ${rawQuery}.`,
-            elaboration: `A comprehensive examination of ${rawQuery}, focusing on foundational mechanisms, real-world applications, and problem-solving strategies.`,
-          },
-          {
-            index: 2,
-            heading: `${rawQuery} Applications`,
-            claim: `How ${rawQuery} operates in theoretical and experimental frameworks.`,
-            elaboration: `Practical analysis of system behaviors, key variables, and quantitative relationships in ${rawQuery}.`,
-          },
-        ];
-      }
-    }
 
     const rawConcepts = [
       ...(Array.isArray(parsed1?.concepts) ? parsed1.concepts : []),
@@ -9782,7 +9788,7 @@ Requirements:
     if (finalConcepts.length === 0) {
       finalConcepts = finalSections.slice(0, 6).map((s: any) => ({
         term: s.heading,
-        definition: s.claim || `Key theoretical concept for ${s.heading}.`,
+        definition: s.claim || s.elaboration,
         mechanism: s.elaboration.slice(0, 160),
       }));
     }
@@ -9792,7 +9798,7 @@ Requirements:
       ...(Array.isArray(parsed2?.flashcards) ? parsed2.flashcards : []),
     ];
     const seenFronts = new Set<string>();
-    let finalFlashcards = rawFlashcards
+    const finalFlashcards = rawFlashcards
       .map((fc: any, idx: number) => ({
         id: `fc-${idx + 1}`,
         front: String(fc.front || '').trim(),
@@ -9802,70 +9808,58 @@ Requirements:
       .filter((fc: any) => {
         if (!fc.front || !fc.back) return false;
         const norm = fc.front.toLowerCase().replace(/[^a-z0-9]/g, '');
-        if (seenFronts.has(norm)) return false;
+        if (!norm || seenFronts.has(norm)) return false;
         seenFronts.add(norm);
         return true;
-      });
-
-    while (finalFlashcards.length < 15) {
-      const idx = finalFlashcards.length;
-      const ref = finalSections[idx % finalSections.length];
-      finalFlashcards.push({
+      })
+      .slice(0, 60)
+      .map((fc: any, idx: number) => ({
+        ...fc,
         id: `fc-${idx + 1}`,
-        front: `What is the core mechanism and significance of ${ref?.heading || rawQuery} (Aspect ${idx + 1})?`,
-        back: ref?.claim || ref?.elaboration?.slice(0, 120) || `Core mechanism of ${rawQuery}.`,
-        category: 'Core Concept',
-      });
-    }
-    finalFlashcards = finalFlashcards.slice(0, 60).map((fc: any, idx: number) => ({
-      ...fc,
-      id: `fc-${idx + 1}`,
-    }));
+      }));
 
     const rawQuizList = [
       ...(Array.isArray(parsed1?.quiz) ? parsed1.quiz : []),
       ...(Array.isArray(parsed2?.quiz) ? parsed2.quiz : []),
     ];
     const seenQuestions = new Set<string>();
-    let finalQuiz = rawQuizList
-      .map((q: any, idx: number) => ({
-        id: `q-${idx + 1}`,
-        question: String(q.question || '').trim(),
-        options: Array.isArray(q.options) ? q.options.map(String).slice(0, 4) : [],
-        correctIndex:
+    const finalQuiz = rawQuizList
+      .map((q: any, idx: number) => {
+        const shuffled = shuffleQuizOptions(
+          Array.isArray(q.options) ? q.options.map(String).slice(0, 4) : [],
           typeof q.correctIndex === 'number' && q.correctIndex >= 0 && q.correctIndex < 4
             ? q.correctIndex
-            : 0,
-        explanation: String(q.explanation || '').trim(),
-      }))
+            : 0
+        );
+        return {
+          id: `q-${idx + 1}`,
+          question: String(q.question || '').trim(),
+          options: shuffled.options,
+          correctIndex: shuffled.correctIndex,
+          explanation: String(q.explanation || '').trim(),
+        };
+      })
       .filter((q: any) => {
         if (!q.question || q.options.length !== 4) return false;
         const norm = q.question.toLowerCase().replace(/[^a-z0-9]/g, '');
-        if (seenQuestions.has(norm)) return false;
+        if (!norm || seenQuestions.has(norm)) return false;
         seenQuestions.add(norm);
         return true;
-      });
-
-    while (finalQuiz.length < 10) {
-      const idx = finalQuiz.length;
-      const ref = finalSections[idx % finalSections.length];
-      finalQuiz.push({
+      })
+      .slice(0, 35)
+      .map((q: any, idx: number) => ({
+        ...q,
         id: `q-${idx + 1}`,
-        question: `Which statement best describes the principle of ${ref?.heading || rawQuery}?`,
-        options: [
-          ref?.claim || `It defines the primary mechanism of ${rawQuery}`,
-          `It operates independently of any physical boundaries`,
-          `It is inversely proportional to external energy inputs`,
-          `It applies exclusively to closed equilibrium systems`,
-        ],
-        correctIndex: 0,
-        explanation: ref?.elaboration || `Reflects the fundamental nature of ${rawQuery}.`,
+      }));
+
+    if (finalFlashcards.length < 4 || finalQuiz.length < 4) {
+      return res.status(502).json({
+        success: false,
+        ok: false,
+        error: 'TOPIC_STUDY_FAILED',
+        message: 'Could not generate enough valid quiz and flashcard items for this topic. Please tap Retry.',
       });
     }
-    finalQuiz = finalQuiz.slice(0, 35).map((q: any, idx: number) => ({
-      ...q,
-      id: `q-${idx + 1}`,
-    }));
 
     return res.json({
       success: true,
@@ -9880,111 +9874,17 @@ Requirements:
     });
   } catch (err: any) {
     console.error('Topic study error:', err);
-    return res.status(200).json({
-      success: true,
-      query: req.body?.query || 'Study Topic',
-      overview: `Study guide for ${req.body?.query || 'Topic'}.`,
-      sections: [
-        {
-          index: 1,
-          heading: `${req.body?.query || 'Topic'} Overview`,
-          claim: 'Core principles and fundamental mechanisms.',
-          elaboration: 'Key concepts, foundational insights, and systematic review of the topic.',
-        },
-      ],
-      concepts: [],
-      flashcards: [],
-      quiz: [],
-      videos: [],
+    return res.status(502).json({
+      success: false,
+      ok: false,
+      error: 'TOPIC_STUDY_FAILED',
+      message: err?.message || 'Could not generate topic study materials right now. Please tap Retry.',
     });
-  }
-});
-
-// POST /api/study/snap-solve — Solve a question from text or image
-app.post('/api/study/snap-solve', async (req, res) => {
-  try {
-    const text = String(req.body?.text || req.body?.questionText || '').trim();
-    const image = req.body?.image || req.body?.imageDataUrl || '';
-
-    // At least one is required
-    if (!text && !image) {
-      return res.status(400).json({ success: false, error: 'Text or image is required' });
-    }
-
-    // Check image size (5 MB limit)
-    if (image) {
-      const base64Data = image.includes(',') ? image.split(',')[1] : image;
-      const sizeBytes = Math.ceil((base64Data.length * 3) / 4);
-      if (sizeBytes > 5 * 1024 * 1024) {
-        return res.status(413).json({ success: false, error: 'Image exceeds 5 MB limit' });
-      }
-    }
-
-    let questionText = text;
-    if (!questionText && image) {
-      try {
-        const dataUrl = image.startsWith('data:') ? image : `data:image/jpeg;base64,${image}`;
-        questionText = (await analyzeImageWithVisionModel(dataUrl, 'image/jpeg', 'Extract the question text from this image. Return only the question text, nothing else.')).trim();
-      } catch (e: any) {
-        return res.status(500).json({ success: false, error: e?.message || 'Failed to analyze the image' });
-      }
-    }
-
-    if (!questionText) {
-      return res.status(400).json({ success: false, error: 'Could not extract question from input' });
-    }
-
-    const prompt = `Solve this question step by step. Return ONLY valid JSON with "steps" (array of step strings) and "answer" (string).
-
-Question: ${questionText}`;
-
-    // Call LLM
-    let rawText = '';
-    try {
-      const completion = await generateChatCompletion(
-        [
-          { role: 'system', content: 'You are an expert tutor. Solve questions step by step. Return ONLY valid JSON with "steps" (array of strings) and "answer" (string). No markdown fences.' },
-          { role: 'user', content: prompt },
-        ],
-        'zro/deepseek-v4.1-flash'
-      );
-      rawText = (completion?.text || '').trim();
-    } catch (e: any) {
-      return res.status(500).json({ success: false, error: e?.message || 'Failed to analyze the question' });
-    }
-
-    // Parse JSON
-    let steps: string[] = [];
-    let answer = '';
-    try {
-      const cleaned = rawText.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
-      const firstBrace = cleaned.indexOf('{');
-      const lastBrace = cleaned.lastIndexOf('}');
-      if (firstBrace !== -1 && lastBrace > firstBrace) {
-        const parsed = JSON.parse(cleaned.slice(firstBrace, lastBrace + 1));
-        steps = Array.isArray(parsed.steps) ? parsed.steps.map(String) : [];
-        answer = String(parsed.answer || '');
-      }
-    } catch {
-      // Fallback: treat raw text as answer
-      answer = rawText;
-      steps = [rawText];
-    }
-
-    if (!answer && steps.length === 0) {
-      return res.status(500).json({ success: false, error: 'Failed to analyze the question' });
-    }
-
-    return res.json({ success: true, ok: true, steps, answer, finalAnswer: answer });
-  } catch (err: any) {
-    console.error('Snap-solve error:', err);
-    return res.status(500).json({ success: false, error: err?.message || 'Failed to analyze the question' });
   }
 });
 
 // POST /api/youtube/transcript — Extract timed transcript & video metadata via InstaCloud Subclip + Innertube
 app.post('/api/youtube/transcript', async (req, res) => {
-  console.log('[API /api/youtube/transcript] Request body:', JSON.stringify(req.body));
   try {
     const rawUrl = String(req.body?.url || '').trim();
     const rawVideoId = String(req.body?.videoId || '').trim();
@@ -10013,9 +9913,7 @@ app.post('/api/youtube/transcript', async (req, res) => {
 
     let extracted = await extractYouTubeTranscriptSubclip(videoId, preferredLang);
 
-    // If primary provider fails, retry once after 1.5s, then try secondary providers before returning an error
     if (!extracted.segments || extracted.segments.length === 0) {
-      console.log(`[API /api/youtube/transcript] Primary attempt returned 0 segments for ${videoId}, waiting 1.5s to retry...`);
       await new Promise((resolve) => setTimeout(resolve, 1500));
       extracted = await extractYouTubeTranscriptSubclip(videoId, preferredLang);
     }
@@ -10408,37 +10306,47 @@ async function callStudyJsonLLM(
   );
 
   if (client) {
-    for (const modelName of GEMINI_FALLBACK_MODELS) {
+    const activeGeminiModels = GEMINI_FALLBACK_MODELS.filter(isGeminiModelAvailable);
+    if (activeGeminiModels.length > 0) {
       tasks.push(
-        Promise.race([
-          client.models
-            .generateContent({
-              model: modelName,
-              contents: `${systemPrompt}\n\n${userPrompt}`,
-              config: {
-                temperature,
-                maxOutputTokens: maxTokens,
-                responseMimeType: 'application/json',
-                thinkingConfig: modelName.startsWith('gemini-3')
-                  ? { thinkingLevel: ThinkingLevel.LOW }
-                  : { thinkingBudget: 0 },
-              },
-            })
-            .then((resp) => {
-              const text = (resp.text || '').replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '').trim();
-              if (!text || (!text.includes('{') && !text.includes('['))) {
-                throw new Error('Empty or non-JSON Gemini response');
-              }
-              const promptTokens =
-                resp.usageMetadata?.promptTokenCount || countExactSubwordTokens(userPrompt);
-              const completionTokens =
-                resp.usageMetadata?.candidatesTokenCount || countExactSubwordTokens(text);
-              return { text, modelUsed: modelName, promptTokens, completionTokens };
-            }),
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error(`Gemini ${modelName} timeout`)), timeoutMs)
-          ),
-        ])
+        (async () => {
+          let lastErr: any = new Error('All Gemini study models unavailable');
+          for (const modelName of activeGeminiModels) {
+            try {
+              const result = await Promise.race([
+                client.models
+                  .generateContent({
+                    model: modelName,
+                    contents: `${systemPrompt}\n\n${userPrompt}`,
+                    config: buildGeminiConfigForModel(modelName, {
+                      maxOutputTokens: maxTokens,
+                      responseMimeType: 'application/json',
+                      temperature,
+                    }),
+                  })
+                  .then((resp) => {
+                    const text = (resp.text || '').replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '').trim();
+                    if (!text || (!text.includes('{') && !text.includes('['))) {
+                      throw new Error('Empty or non-JSON Gemini response');
+                    }
+                    const promptTokens =
+                      resp.usageMetadata?.promptTokenCount || countExactSubwordTokens(userPrompt);
+                    const completionTokens =
+                      resp.usageMetadata?.candidatesTokenCount || countExactSubwordTokens(text);
+                    return { text, modelUsed: modelName, promptTokens, completionTokens };
+                  }),
+                new Promise<never>((_, reject) =>
+                  setTimeout(() => reject(new Error(`Gemini ${modelName} timeout`)), timeoutMs)
+                ),
+              ]);
+              return result;
+            } catch (err: any) {
+              recordGeminiModelError(modelName, err);
+              lastErr = err;
+            }
+          }
+          throw lastErr;
+        })()
       );
     }
   }
@@ -10772,11 +10680,69 @@ function computeAdaptiveStudyTargets(
   };
 }
 
+const StrictStudyQuizItemSchema = z.object({
+  question: z.string().trim().min(10),
+  options: z.tuple([
+    z.string().trim().min(1),
+    z.string().trim().min(1),
+    z.string().trim().min(1),
+    z.string().trim().min(1),
+  ]),
+  correctIndex: z.number().int().min(0).max(3),
+  explanation: z.string().trim().min(8),
+});
+
+const StrictStudyFlashcardItemSchema = z.object({
+  front: z.string().trim().min(6),
+  back: z.string().trim().min(2),
+});
+
+function hasDisallowedStudyOutputText(
+  str: string,
+  normalizedTranscript = ''
+): boolean {
+  const s = String(str || '').trim();
+  if (!s) return true;
+  if (
+    /\[\d{1,2}:\d{2}(?::\d{2})?\]/.test(s) ||
+    /\b\d{1,2}:\d{2}(?::\d{2})?\b/.test(s) ||
+    /\(t=\d+s\)/i.test(s) ||
+    /\bat\s+\d+\s*(?:min|minute|minutes|sec|second|seconds)\b/i.test(s) ||
+    /\baccording to (?:the |this )?(?:video|lecture|transcript|speaker|lecturer|narrator|presenter|page\s*\d+)\b/i.test(s) ||
+    /\b(?:the speaker|the lecturer|the narrator|the presenter|speaker says|speaker explains|speaker mentions|in this video|in the video|from the video|mentioned in the video|discussed in the video)\b/i.test(s) ||
+    /\[(music|applause|laughter|inaudible|silence)\]/i.test(s) ||
+    />>/.test(s) ||
+    /^\.\.\.|\.\.\.$/.test(s) ||
+    /^option [a-d]$/i.test(s) ||
+    /Which mechanism or claim is established/i.test(s) ||
+    /What is the key takeaway presented on Page/i.test(s) ||
+    /regarding .+ at \[\d{1,2}:\d{2}\]/i.test(s)
+  ) {
+    return true;
+  }
+
+  // Reject verbatim transcript fragments (>= 10 consecutive normalized words copied straight from transcript)
+  if (normalizedTranscript) {
+    const words = normalizeForMatch(s).split(' ').filter(Boolean);
+    if (words.length >= 10) {
+      for (let i = 0; i <= words.length - 10; i++) {
+        const phrase = words.slice(i, i + 10).join(' ');
+        if (phrase.length >= 35 && normalizedTranscript.includes(phrase)) {
+          return true;
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
 function validateStudyBundleJson(
   rawObj: any,
   videoEndSec: number,
   minQuiz = 8,
-  minFlashcards = 8
+  minFlashcards = 8,
+  normalizedTranscript = ''
 ): {
   valid: boolean;
   errors: string[];
@@ -10799,95 +10765,130 @@ function validateStudyBundleJson(
     };
   }
 
-  const isTemplateText = (str: string) =>
-    /\[\d{1,2}:\d{2}\]/.test(str) ||
-    /Which mechanism or claim is established/i.test(str) ||
-    /regarding .+ at \[\d{1,2}:\d{2}\]/i.test(str);
-
-  // Validate Quiz
+  // Validate Quiz against { question, options[4], correctIndex, explanation }
   const rawQuiz = Array.isArray(rawObj.quiz)
     ? rawObj.quiz
     : Array.isArray(rawObj.questions)
     ? rawObj.questions
     : [];
   const cleanQuiz: any[] = [];
+  let rejectedQuizCount = 0;
 
   for (let i = 0; i < rawQuiz.length; i++) {
-    const q = rawQuiz[i];
-    if (!q || typeof q.question !== 'string' || !Array.isArray(q.options) || q.options.length !== 4) continue;
-    const qText = q.question.trim();
-    if (qText.length < 8 || isTemplateText(qText)) continue;
+    const parsedItem = StrictStudyQuizItemSchema.safeParse({
+      question: rawQuiz[i]?.question,
+      options: Array.isArray(rawQuiz[i]?.options)
+        ? rawQuiz[i].options.map((o: any) => String(o ?? ''))
+        : rawQuiz[i]?.options,
+      correctIndex:
+        typeof rawQuiz[i]?.correctIndex === 'number'
+          ? Math.floor(rawQuiz[i].correctIndex)
+          : typeof rawQuiz[i]?.answerIndex === 'number'
+          ? Math.floor(rawQuiz[i].answerIndex)
+          : -1,
+      explanation: rawQuiz[i]?.explanation,
+    });
+    if (!parsedItem.success) {
+      rejectedQuizCount++;
+      continue;
+    }
 
-    const cleanOptions = q.options.map((o: any) => String(o || '').trim()).filter(Boolean);
-    if (cleanOptions.length !== 4) continue;
-    // Reject options that contain timestamps or template stems
-    if (cleanOptions.some((o: string) => isTemplateText(o))) continue;
+    const q = parsedItem.data;
+    if (
+      hasDisallowedStudyOutputText(q.question, normalizedTranscript) ||
+      q.options.some((opt) => hasDisallowedStudyOutputText(opt, normalizedTranscript)) ||
+      hasDisallowedStudyOutputText(q.explanation, normalizedTranscript)
+    ) {
+      rejectedQuizCount++;
+      continue;
+    }
 
-    const rawCorrect = Number(q.correctIndex ?? q.answerIndex ?? 0);
-    const correctIndex = Math.max(0, Math.min(3, isNaN(rawCorrect) ? 0 : Math.floor(rawCorrect)));
-    const ts = Math.max(0, Math.min(videoEndSec, Math.floor(Number(q.timestamp ?? q.timestamp_s ?? 0))));
+    // Ensure 4 distinct options
+    if (new Set(q.options.map((o) => o.toLowerCase())).size < 4) {
+      rejectedQuizCount++;
+      continue;
+    }
 
-    const shuffled = shuffleQuizOptions(cleanOptions, correctIndex);
-
+    const shuffled = shuffleQuizOptions([...q.options], q.correctIndex);
     cleanQuiz.push({
       id: `q-${cleanQuiz.length + 1}`,
-      question: qText,
+      question: q.question,
       options: shuffled.options,
       correctIndex: shuffled.correctIndex,
-      explanation: String(q.explanation || 'Grounded in core scientific concepts from the lecture.').trim(),
-      timestamp_s: ts,
-      timestamp: ts,
-      sourceQuote: String(q.sourceQuote || q.explanation || '').trim(),
+      explanation: q.explanation,
     });
   }
 
-  // Validate Flashcards
+  // Validate Flashcards against { front, back }
   const rawFc = Array.isArray(rawObj.flashcards)
     ? rawObj.flashcards
     : Array.isArray(rawObj.cards)
     ? rawObj.cards
     : [];
   const cleanFlashcards: any[] = [];
+  let rejectedFcCount = 0;
 
   for (let i = 0; i < rawFc.length; i++) {
-    const fc = rawFc[i];
-    if (!fc || typeof fc.front !== 'string' || typeof fc.back !== 'string') continue;
-    const frontText = fc.front.trim();
-    const backText = fc.back.trim();
-    if (frontText.length < 6 || backText.length < 2 || isTemplateText(frontText)) continue;
+    const parsedFc = StrictStudyFlashcardItemSchema.safeParse({
+      front: rawFc[i]?.front,
+      back: rawFc[i]?.back,
+    });
+    if (!parsedFc.success) {
+      rejectedFcCount++;
+      continue;
+    }
 
-    const ts = Math.max(0, Math.min(videoEndSec, Math.floor(Number(fc.timestamp ?? fc.timestamp_s ?? 0))));
+    const fc = parsedFc.data;
+    if (
+      hasDisallowedStudyOutputText(fc.front, normalizedTranscript) ||
+      hasDisallowedStudyOutputText(fc.back, normalizedTranscript)
+    ) {
+      rejectedFcCount++;
+      continue;
+    }
 
     cleanFlashcards.push({
       id: `fc-${cleanFlashcards.length + 1}`,
-      front: frontText,
-      back: backText,
-      category: String(fc.category || 'Core Concepts').trim(),
-      timestamp_s: ts,
-      timestamp: ts,
-      sourceQuote: String(fc.sourceQuote || backText).trim(),
+      front: fc.front,
+      back: fc.back,
     });
   }
 
-  // Validate Chapters
+  // Validate Chapters (optional timestamps inferred chronologically if omitted)
   const rawChapters = Array.isArray(rawObj.chapters) ? rawObj.chapters : [];
-  const cleanChapters = rawChapters.map((ch: any, idx: number) => {
-    const st = Math.max(0, Math.min(videoEndSec, Math.floor(Number(ch.start_s ?? ch.timestamp ?? idx * 60))));
-    const en = Math.max(st + 10, Math.min(videoEndSec, Math.floor(Number(ch.end_s ?? st + 120))));
-    return {
-      start_s: st,
-      end_s: en,
-      timestamp: st,
-      title: String(ch.title || `Chapter ${idx + 1}`).trim(),
-      summary: String(ch.summary || '').trim(),
-    };
-  });
+  const chapterCount = Math.max(1, rawChapters.length);
+  const cleanChapters = rawChapters
+    .map((ch: any, idx: number) => {
+      const defaultStart = Math.floor((idx * videoEndSec) / chapterCount);
+      const defaultEnd = Math.min(
+        videoEndSec,
+        Math.max(defaultStart + 10, Math.floor(((idx + 1) * videoEndSec) / chapterCount))
+      );
+      const st = Number.isFinite(Number(ch?.start_s ?? ch?.timestamp))
+        ? Math.max(0, Math.min(videoEndSec, Math.floor(Number(ch.start_s ?? ch.timestamp))))
+        : defaultStart;
+      const en = Number.isFinite(Number(ch?.end_s))
+        ? Math.max(st + 10, Math.min(videoEndSec, Math.floor(Number(ch.end_s))))
+        : defaultEnd;
+      return {
+        start_s: st,
+        end_s: en,
+        timestamp: st,
+        title: String(ch?.title || `Section ${idx + 1}`).trim(),
+        summary: String(ch?.summary || '').trim(),
+      };
+    })
+    .filter((ch: any) => ch.title && ch.summary);
 
   if (cleanQuiz.length < minQuiz) {
-    errors.push(`Quiz questions count (${cleanQuiz.length}) is below required minimum (${minQuiz})`);
+    errors.push(
+      `Valid quiz count (${cleanQuiz.length}) below required minimum (${minQuiz}); rejected ${rejectedQuizCount} invalid/forbidden items`
+    );
   }
   if (cleanFlashcards.length < minFlashcards) {
-    errors.push(`Flashcards count (${cleanFlashcards.length}) is below required minimum (${minFlashcards})`);
+    errors.push(
+      `Valid flashcards count (${cleanFlashcards.length}) below required minimum (${minFlashcards}); rejected ${rejectedFcCount} invalid/forbidden items`
+    );
   }
 
   return {
@@ -10899,6 +10900,19 @@ function validateStudyBundleJson(
     overview: String(rawObj.overview || '').trim(),
     coreThesis: String(rawObj.coreThesis || '').trim(),
   };
+}
+
+function splitTranscriptIntoSummaryChunks(text: string, maxChunkChars = 5500, maxChunks = 6): string[] {
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return [];
+  const totalLen = text.length;
+  const targetChunks = Math.min(maxChunks, Math.max(2, Math.ceil(totalLen / maxChunkChars)));
+  const wordsPerChunk = Math.ceil(words.length / targetChunks);
+  const chunks: string[] = [];
+  for (let i = 0; i < words.length; i += wordsPerChunk) {
+    chunks.push(words.slice(i, i + wordsPerChunk).join(' '));
+  }
+  return chunks;
 }
 
 async function synthesizeStudyBundleViaLLM(
@@ -10917,198 +10931,204 @@ async function synthesizeStudyBundleViaLLM(
     Math.ceil((lastSeg?.start_s || 0) + (lastSeg?.duration_s || 5))
   );
 
-  // Filter out spoken filler, sound annotations, and chat banter
-  const filtered = activeSegments.filter((s) => {
-    const t = s.text.trim();
-    if (!t || /^\[(music|applause|laughter|silence)\]$/i.test(t)) return false;
-    if (/^(welcome back|don't forget to like|hit the subscribe|can you hear me in chat|good evening everyone)$/i.test(t)) {
-      return false;
-    }
-    return true;
-  });
-  const pool = filtered.length >= 10 ? filtered : activeSegments;
-  const fullTranscriptSample = pool.map((s) => s.text).join(' ');
-
-  const targets = computeAdaptiveStudyTargets(resolvedTitle, fullTranscriptSample, videoEndSec);
-  const { numChunks, targetFlashcards, targetQuiz, subjectType, subjectLabel, durationMinutes, durationBand } = targets;
-
-  const subjectPedagogy =
-    subjectType === 'problem_solving'
-      ? `SUBJECT PROFILE: ${subjectLabel}
-- SPOKEN FILLER VS CORE CONTENT: Filter out classroom banter, chat interaction, motivation, or repetitive phrasing.
-- WORKED EXAMPLES RULE: Instead of turning every intermediate calculation step into a flashcard, extract the core formulas, physical laws, invariants, and conditions as flashcards, and transform the worked problems / numerical scenarios into exam-style multiple-choice quiz questions.
-- ATOMIC CARD RULE: Each flashcard must test ONE small fact, law, or formula per card.`
-      : `SUBJECT PROFILE: ${subjectLabel}
-- SPOKEN FILLER VS CORE CONTENT: Filter out classroom banter, chat interaction, motivation, or repetitive phrasing.
-- ATOMIC CARD RULE: Aim for 1 atomic flashcard per ~2 minutes of teaching. Each flashcard must test ONE distinct concept, definition, or causal mechanism per card so spaced-repetition review stays crisp.
-- SELF-TESTING QUIZ RULE: Design exam-style MCQs (JEE/NEET/AP/University level) that test whether a student can apply the concepts under exam conditions.`;
-
-  const runChunkSynthesis = async (chunkIdx: number) => {
-    const chunkStartIdx = Math.floor((chunkIdx * pool.length) / numChunks);
-    const chunkEndIdx = Math.max(
-      chunkStartIdx + 1,
-      Math.floor(((chunkIdx + 1) * pool.length) / numChunks)
-    );
-    const chunkPool = pool.slice(chunkStartIdx, chunkEndIdx);
-    const maxSegsPerChunk = 45;
-    const step = Math.max(1, Math.floor(chunkPool.length / maxSegsPerChunk));
-    const sampled = chunkPool.filter((_, idx) => idx % step === 0).slice(0, maxSegsPerChunk);
-    const compactTranscript = sampled
-      .map((s) => `[${formatMmSs(s.start_s)}] (t=${Math.floor(s.start_s)}s) ${s.text}`)
-      .join('\n')
-      .slice(0, 5600);
-
-    const chunkFcTarget =
-      chunkIdx === numChunks - 1
-        ? targetFlashcards - Math.floor(targetFlashcards / numChunks) * (numChunks - 1)
-        : Math.floor(targetFlashcards / numChunks);
-    const chunkQuizTarget =
-      chunkIdx === numChunks - 1
-        ? targetQuiz - Math.floor(targetQuiz / numChunks) * (numChunks - 1)
-        : Math.floor(targetQuiz / numChunks);
-
-    const safeChunkFc = Math.max(6, chunkFcTarget);
-    const safeChunkQuiz = Math.max(5, chunkQuizTarget);
-    const minChunkQuiz = Math.max(4, safeChunkQuiz - 2);
-    const minChunkFc = Math.max(5, safeChunkFc - 3);
-
-    const systemPrompt = `You are an expert exam question creator and educational curriculum designer.
-Analyze this timestamped lecture transcript segment (Part ${chunkIdx + 1} of ${numChunks}) and produce a rigorous, exam-style Study Bundle in strict JSON format.
-${subjectPedagogy}
-- MULTILINGUAL & INDIAN LANGUAGE SUPPORT: If the transcript contains Indian languages (such as Telugu, Hindi, Tamil, Kannada, Malayalam, or bilingual Tenglish/Hinglish), accurately interpret all native concepts, formulas, theorems, and worked examples, and synthesize clear, exam-ready questions, flashcards, and chapter summaries in clear English (preserving mathematical formulas and key terms).
-
-CRITICAL RULES:
-1. "quiz": Exactly ${safeChunkQuiz} fluent, self-contained, exam-style multiple-choice questions (JEE/NEET/AP/Board Exam level).
-   - "question": High quality conceptual or problem-solving question (e.g. "According to Newton's first law, what happens to an object when the net force on it is zero?").
-     DO NOT include "[00:00]" or timestamps inside the question text.
-     DO NOT use template stems like "Which mechanism or claim is established" or "regarding ... at [00:00]".
-   - "options": Exactly 4 short, concept-based, plausible options (1 correct answer, 3 plausible distractors).
-     DO NOT use raw transcript excerpts or quotes as options.
-   - "correctIndex": Integer 0, 1, 2, or 3.
-   - "explanation": Concise 1-2 sentence explanation of why the answer is correct.
-   - "timestamp": Integer seconds from the transcript where this concept is taught.
-2. "flashcards": Exactly ${safeChunkFc} atomic active-recall flashcards.
-   - "front": Clear atomic conceptual question, formula prompt, or key mechanism (e.g. "According to Newton's first law, what happens to an object when the net force on it is zero?").
-     DO NOT include "[00:00]" or timestamps inside the front text.
-   - "back": Concise, precise conceptual or formula answer in 15-28 words.
-   - "timestamp": Integer seconds from the transcript.
-3. "chapters": 2 to 4 chronological chapters covering this segment (start_s, end_s, title, summary).
-4. Output ONLY valid JSON matching the schema. No markdown formatting, no text outside the JSON.`;
-
-    const userPrompt = `Video Title: "${resolvedTitle}"
-Speaker/Creator: "${resolvedAuthor}"
-Total Video Duration: ${videoEndSec} seconds (${durationMinutes} mins — ${subjectLabel})
-Lecture Segment: Part ${chunkIdx + 1} of ${numChunks}
-
-Timestamped Transcript Segment:
-${compactTranscript}
-
-Return ONLY valid JSON matching this schema:
-{
-  "overview": "2-3 sentence overview of what this lecture segment teaches.",
-  "coreThesis": "1-2 sentence core thesis of the lecture.",
-  "chapters": [
-    { "start_s": 0, "end_s": 90, "title": "Concept Title", "summary": "Two sentences explaining this section." }
-  ],
-  "quiz": [
-    {
-      "question": "According to Newton's first law, what happens to an object when the net force on it is zero?",
-      "options": [
-        "It remains at rest or moves with constant velocity",
-        "It accelerates in the direction of initial velocity",
-        "It decelerates gradually due to inertia",
-        "It experiences variable momentum"
-      ],
-      "correctIndex": 0,
-      "explanation": "Newton's first law states that an object continues in its state of rest or uniform motion unless acted upon by a net force.",
-      "timestamp": 45
-    }
-  ],
-  "flashcards": [
-    {
-      "front": "According to Newton's first law, what happens to an object when the net force on it is zero?",
-      "back": "An object at rest stays at rest and an object in motion stays in motion with constant velocity unless acted upon by an unbalanced force.",
-      "timestamp": 45
-    }
-  ]
-}`;
-
-    let llmRes = await callStudyJsonLLM(systemPrompt, userPrompt, 0.2, 3800, 28000);
-    let rawObj = extractJsonObjectOrArray(llmRes.text);
-    let validation = validateStudyBundleJson(rawObj, videoEndSec, minChunkQuiz, minChunkFc);
-
-    if (!validation.valid) {
-      try {
-        const retryUserPrompt = `${userPrompt}\n\nIMPORTANT RETRY REQUIREMENT: You MUST generate at least ${safeChunkQuiz} quiz questions (with 4 options each) and ${safeChunkFc} atomic flashcards. Ensure strict JSON. No timestamps in question text.`;
-        llmRes = await callStudyJsonLLM(systemPrompt, retryUserPrompt, 0.15, 4000, 30000);
-        rawObj = extractJsonObjectOrArray(llmRes.text);
-        validation = validateStudyBundleJson(rawObj, videoEndSec, minChunkQuiz, minChunkFc);
-      } catch (retryErr: any) {
-        console.warn(`[YouTubeStudy] Chunk ${chunkIdx + 1} retry warning:`, retryErr?.message);
+  // Clean transcript segments: drop caption noise & speaker chatter, strip embedded timestamps
+  const cleanedSegments = activeSegments
+    .map((s) =>
+      decodeTranscriptEntities(String(s.text || ''))
+        .replace(/\[\d{1,2}:\d{2}(?::\d{2})?\]/g, ' ')
+        .replace(/\[(music|applause|laughter|inaudible|silence)\]/gi, ' ')
+        .replace(/>>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+    )
+    .filter((t) => {
+      if (!t || t.length < 2) return false;
+      if (/^(welcome back|don't forget to like|hit the subscribe|can you hear me in chat|good evening everyone)$/i.test(t)) {
+        return false;
       }
-    }
+      return true;
+    });
 
-    return { validation, llmRes };
-  };
+  const cleanTranscriptText = (cleanedSegments.length > 0
+    ? cleanedSegments
+    : activeSegments.map((s) => String(s.text || '').trim()).filter(Boolean)
+  ).join(' ');
 
-  const chunkPromises = Array.from({ length: numChunks }, (_, idx) => runChunkSynthesis(idx));
-  const chunkSettled = await Promise.allSettled(chunkPromises);
+  if (!cleanTranscriptText || cleanTranscriptText.length < 30) {
+    throw new Error('Transcript text is too short to synthesize quiz and flashcards.');
+  }
 
-  const mergedQuiz: any[] = [];
-  const mergedFlashcards: any[] = [];
-  const mergedChapters: any[] = [];
-  const overviews: string[] = [];
-  const theses: string[] = [];
+  const normalizedTranscript = normalizeForMatch(cleanTranscriptText);
+  const targets = computeAdaptiveStudyTargets(resolvedTitle, cleanTranscriptText, videoEndSec);
+  const { subjectType, subjectLabel, durationMinutes, durationBand } = targets;
+
+  // Keep target counts realistic and clean for a single synthesis call
+  const targetQuiz = Math.max(6, Math.min(15, targets.targetQuiz));
+  const targetFlashcards = Math.max(8, Math.min(20, targets.targetFlashcards));
+  const isShortClip = cleanTranscriptText.length < 1800 || videoEndSec < 180;
+  const minQuiz = isShortClip ? 5 : 8;
+  const minFlashcards = isShortClip ? 5 : 8;
+
   let totalPromptTokens = 0;
   let totalCompletionTokens = 0;
   let primaryModelUsed = 'auto';
 
-  const seenQuizNorm = new Set<string>();
-  const seenFcNorm = new Set<string>();
+  // Step 1: For long transcripts, summarize chunks FIRST, then generate quiz & flashcards ONLY from the unified summary
+  const LONG_TRANSCRIPT_THRESHOLD = 9000;
+  let synthesisSourceText = cleanTranscriptText;
+  let usedChunkSummarization = false;
 
-  for (const res of chunkSettled) {
-    if (res.status === 'fulfilled' && res.value) {
-      const { validation, llmRes } = res.value;
+  if (cleanTranscriptText.length > LONG_TRANSCRIPT_THRESHOLD) {
+    usedChunkSummarization = true;
+    const chunks = splitTranscriptIntoSummaryChunks(cleanTranscriptText, 5500, 6);
+    const summarizeChunk = async (chunkText: string, idx: number): Promise<string> => {
+      const sumSys = `You are an expert academic note-taker.
+Summarize this lecture excerpt into clear, structured conceptual notes in English.
+Include all key definitions, laws, formulas, mechanisms, and worked examples taught.
+Do NOT include timestamps, phrases like "according to the video" or "the speaker says", or verbatim conversational filler.
+Return ONLY valid JSON: { "title": "Section topic", "summary": "Dense, clear conceptual notes..." }`;
+      const sumUser = `Lecture: "${resolvedTitle}" (Part ${idx + 1} of ${chunks.length})\n\nExcerpt:\n${chunkText}`;
+
+      let lastErr: any = new Error('Chunk summarization failed');
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          const res = await callStudyJsonLLM(sumSys, sumUser, 0.15, 1400, 24000);
+          totalPromptTokens += res.promptTokens || 0;
+          totalCompletionTokens += res.completionTokens || 0;
+          if (res.modelUsed) primaryModelUsed = res.modelUsed;
+          const parsed = extractJsonObjectOrArray(res.text);
+          const title = String(parsed?.title || `Part ${idx + 1}`).trim();
+          const summary = String(parsed?.summary || '').trim();
+          if (summary.length >= 40) {
+            return `${title}: ${summary}`;
+          }
+          lastErr = new Error('Chunk summary too short');
+        } catch (err) {
+          lastErr = err;
+        }
+      }
+      throw lastErr;
+    };
+
+    const chunkResults = await Promise.allSettled(
+      chunks.map((chunk, idx) => summarizeChunk(chunk, idx))
+    );
+    const chunkSummaries = chunkResults
+      .filter((r): r is PromiseFulfilledResult<string> => r.status === 'fulfilled' && Boolean(r.value))
+      .map((r) => r.value);
+
+    if (chunkSummaries.length === 0) {
+      throw new Error('Failed to summarize long lecture transcript before study synthesis.');
+    }
+
+    synthesisSourceText = chunkSummaries.join('\n\n');
+  }
+
+  // Step 2: Make ONE LLM call to generate summary (overview, thesis, sections), quiz, and flashcards
+  const subjectPedagogy =
+    subjectType === 'problem_solving'
+      ? `SUBJECT PROFILE: ${subjectLabel}
+- Core formulas, physical laws, invariants, and definitions belong in flashcards (one atomic fact or formula per card).
+- Worked problems, numerical scenarios, and conceptual applications belong in multiple-choice quiz questions.`
+      : `SUBJECT PROFILE: ${subjectLabel}
+- Each flashcard tests ONE distinct concept, definition, or causal mechanism (15-28 word answer).
+- Quiz questions test conceptual application, cause-and-effect, and analytical comparison.`;
+
+  const systemPrompt = `You are an expert exam question creator and educational curriculum designer.
+Produce a rigorous, self-contained Study Bundle (summary, chapters, quiz, and flashcards) in strict JSON format.
+${subjectPedagogy}
+- MULTILINGUAL SUPPORT: If the source contains Indian languages or bilingual text (Telugu, Hindi, Tamil, Kannada, Malayalam, Hinglish, Tenglish), interpret every concept accurately and write clean, exam-ready output in clear English while preserving mathematical formulas and standard terms.
+
+STRICT CONTENT & STYLE RULES:
+1. NEVER include any timestamps (such as [00:00], 12:34, (t=45s), or "at 3 minutes") anywhere in quiz questions, options, explanations, or flashcards.
+2. NEVER write "according to the video", "according to the lecture", "in this video", "from the video", "the speaker", "the lecturer", or "the narrator".
+3. NEVER copy raw spoken transcript fragments, conversational filler, or sound tags ([music], >>). Write crisp, textbook/exam-grade English questions and answers.
+4. "quiz": Exactly ${targetQuiz} self-contained exam-style multiple-choice questions matching:
+   { "question": string, "options": [string, string, string, string], "correctIndex": 0|1|2|3, "explanation": string }
+   - All 4 options must be distinct, plausible, and free of placeholder labels ("Option A", etc.).
+5. "flashcards": Exactly ${targetFlashcards} atomic active-recall flashcards matching:
+   { "front": string, "back": string }
+6. "chapters": 3 to 6 logical topic sections matching:
+   { "title": string, "summary": string }
+7. Output ONLY valid JSON.`;
+
+  const baseUserPrompt = `Topic/Lecture Title: "${resolvedTitle}"
+Instructor/Source: "${resolvedAuthor}"
+Subject Profile: ${subjectLabel}
+
+${usedChunkSummarization ? 'Unified Conceptual Notes (from lecture chunks):' : 'Lecture Content:'}
+${synthesisSourceText.slice(0, 14000)}
+
+Return ONLY valid JSON matching this schema:
+{
+  "overview": "2-3 sentence conceptual overview of the core subject matter.",
+  "coreThesis": "1-2 sentence synthesis of the central principle.",
+  "chapters": [
+    { "title": "Concept Section Title", "summary": "Two concise sentences summarizing the concept." }
+  ],
+  "quiz": [
+    {
+      "question": "What happens to an object when the net external force acting on it is zero?",
+      "options": [
+        "It maintains constant velocity or remains at rest",
+        "Its acceleration increases linearly with time",
+        "Its kinetic energy drops to zero instantaneously",
+        "It reverses direction due to internal inertia"
+      ],
+      "correctIndex": 0,
+      "explanation": "Newton's first law states that zero net force implies zero acceleration, so velocity remains constant."
+    }
+  ],
+  "flashcards": [
+    {
+      "front": "What does Newton's second law state mathematically?",
+      "back": "Net force equals mass times acceleration (F = ma), or the rate of change of linear momentum."
+    }
+  ]
+}`;
+
+  let validatedResult: ReturnType<typeof validateStudyBundleJson> | null = null;
+  let lastValidationError = 'Failed to generate valid study JSON.';
+
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const userPrompt =
+      attempt === 1
+        ? baseUserPrompt
+        : `${baseUserPrompt}\n\nIMPORTANT RETRY REQUIREMENT: The previous attempt failed validation (${lastValidationError}). Return STRICT JSON with at least ${minQuiz} clean quiz items (each with 4 distinct options, correctIndex 0-3, and explanation) and at least ${minFlashcards} clean flashcards ({ front, back }). ZERO timestamps, ZERO "according to the video", ZERO "the speaker", and ZERO raw transcript excerpts.`;
+
+    try {
+      const llmRes = await callStudyJsonLLM(systemPrompt, userPrompt, attempt === 1 ? 0.2 : 0.15, 5500, 36000);
       totalPromptTokens += llmRes.promptTokens || 0;
       totalCompletionTokens += llmRes.completionTokens || 0;
       if (llmRes.modelUsed) primaryModelUsed = llmRes.modelUsed;
-      if (validation.overview) overviews.push(validation.overview);
-      if (validation.coreThesis) theses.push(validation.coreThesis);
 
-      for (const ch of validation.cleanChapters) {
-        mergedChapters.push(ch);
+      const rawObj = extractJsonObjectOrArray(llmRes.text);
+      const validation = validateStudyBundleJson(
+        rawObj,
+        videoEndSec,
+        minQuiz,
+        minFlashcards,
+        normalizedTranscript
+      );
+
+      if (validation.valid) {
+        validatedResult = validation;
+        break;
       }
-      for (const q of validation.cleanQuiz) {
-        const norm = q.question.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
-        if (norm && !seenQuizNorm.has(norm)) {
-          seenQuizNorm.add(norm);
-          mergedQuiz.push({
-            ...q,
-            id: `q-${mergedQuiz.length + 1}`,
-          });
-        }
-      }
-      for (const fc of validation.cleanFlashcards) {
-        const norm = fc.front.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
-        if (norm && !seenFcNorm.has(norm)) {
-          seenFcNorm.add(norm);
-          mergedFlashcards.push({
-            ...fc,
-            id: `fc-${mergedFlashcards.length + 1}`,
-          });
-        }
-      }
+
+      lastValidationError = validation.errors.join('; ');
+    } catch (err: any) {
+      lastValidationError = err?.message || 'LLM synthesis request failed';
     }
   }
 
-  if (mergedQuiz.length < 8 || mergedFlashcards.length < 8) {
-    throw new Error(
-      `Failed to generate sufficient valid quiz (${mergedQuiz.length}) and flashcards (${mergedFlashcards.length}).`
-    );
+  if (!validatedResult || !validatedResult.valid) {
+    throw new Error(`Study generation failed validation: ${lastValidationError}`);
   }
 
-  // Sort chapters chronologically
-  let chapters = mergedChapters.sort((a, b) => a.start_s - b.start_s);
+  const cleanQuiz = validatedResult.cleanQuiz;
+  const cleanFlashcards = validatedResult.cleanFlashcards;
+  let chapters = validatedResult.cleanChapters.sort((a, b) => a.start_s - b.start_s);
   if (chapters.length === 0) {
     chapters = [
       {
@@ -11116,20 +11136,21 @@ Return ONLY valid JSON matching this schema:
         end_s: Math.floor(videoEndSec / 2),
         timestamp: 0,
         title: 'Core Concepts & Principles',
-        summary: overviews[0] || resolvedTitle,
+        summary: validatedResult.overview || resolvedTitle,
       },
       {
         start_s: Math.floor(videoEndSec / 2),
         end_s: videoEndSec,
         timestamp: Math.floor(videoEndSec / 2),
         title: 'Applications & Problem Solving',
-        summary: theses[0] || resolvedTitle,
+        summary: validatedResult.coreThesis || validatedResult.overview || resolvedTitle,
       },
     ];
   }
 
-  const overview = overviews.join(' ').trim() || chapters.map((c) => c.summary).slice(0, 2).join(' ');
-  const coreThesis = theses[0] || overview;
+  const overview =
+    validatedResult.overview || chapters.map((c) => c.summary).slice(0, 2).join(' ');
+  const coreThesis = validatedResult.coreThesis || overview;
 
   const durationMs = Date.now() - t0;
   const metrics = {
@@ -11142,6 +11163,7 @@ Return ONLY valid JSON matching this schema:
     ),
     modelUsed: primaryModelUsed,
     cached: false,
+    usedChunkSummarization,
     studyTargets: {
       subjectType,
       subjectLabel,
@@ -11149,8 +11171,8 @@ Return ONLY valid JSON matching this schema:
       durationBand,
       targetFlashcards,
       targetQuiz,
-      actualFlashcards: mergedFlashcards.length,
-      actualQuiz: mergedQuiz.length,
+      actualFlashcards: cleanFlashcards.length,
+      actualQuiz: cleanQuiz.length,
     },
   };
 
@@ -11171,7 +11193,7 @@ Return ONLY valid JSON matching this schema:
     explanation: {
       coreThesis,
       concepts: chapters.map((ch, idx) => {
-        const fc = mergedFlashcards[idx % Math.max(1, mergedFlashcards.length)];
+        const fc = cleanFlashcards[idx % Math.max(1, cleanFlashcards.length)];
         return {
           term: ch.title,
           definition: ch.summary,
@@ -11181,8 +11203,8 @@ Return ONLY valid JSON matching this schema:
         };
       }),
     },
-    flashcards: mergedFlashcards,
-    quiz: mergedQuiz,
+    flashcards: cleanFlashcards,
+    quiz: cleanQuiz,
     metrics,
   };
 
@@ -11213,9 +11235,9 @@ app.get('/api/youtube/study/status', (req, res) => {
   if (
     cached &&
     Array.isArray(cached.quiz) &&
-    cached.quiz.length >= 8 &&
+    cached.quiz.length >= 5 &&
     Array.isArray(cached.flashcards) &&
-    cached.flashcards.length >= 10
+    cached.flashcards.length >= 5
   ) {
     return res.json({
       success: true,
@@ -11228,7 +11250,7 @@ app.get('/api/youtube/study/status', (req, res) => {
   }
 
   const job = (jobId && studyJobs.get(jobId)) || (cleanVideoId && studyJobs.get(cleanVideoId));
-  if (job && job.study && Array.isArray(job.study.quiz) && job.study.quiz.length >= 8) {
+  if (job && job.study && Array.isArray(job.study.quiz) && job.study.quiz.length >= 5) {
     return res.json({
       success: true,
       jobId: job.jobId,
@@ -11253,9 +11275,9 @@ app.get('/api/youtube/study/job/:jobId', (req, res) => {
   if (
     cached &&
     Array.isArray(cached.quiz) &&
-    cached.quiz.length >= 8 &&
+    cached.quiz.length >= 5 &&
     Array.isArray(cached.flashcards) &&
-    cached.flashcards.length >= 10
+    cached.flashcards.length >= 5
   ) {
     return res.json({
       success: true,
@@ -11268,7 +11290,7 @@ app.get('/api/youtube/study/job/:jobId', (req, res) => {
   }
 
   const job = studyJobs.get(cleanJobId) || studyJobs.get(jobId);
-  if (job && job.study && Array.isArray(job.study.quiz) && job.study.quiz.length >= 8) {
+  if (job && job.study && Array.isArray(job.study.quiz) && job.study.quiz.length >= 5) {
     return res.json({
       success: true,
       jobId: job.jobId,
@@ -11285,7 +11307,7 @@ app.get('/api/youtube/study/job/:jobId', (req, res) => {
   });
 });
 
-// POST /api/youtube/study — Adaptive Multi-Chunk LLM Study Synthesis (15–60 Flashcards & 10–30 Exam Quiz Questions)
+// POST /api/youtube/study — Single-pass summary-grounded LLM Study Synthesis
 app.post('/api/youtube/study', async (req, res) => {
   try {
     const {
@@ -11299,13 +11321,18 @@ app.post('/api/youtube/study', async (req, res) => {
     const cleanVideoId =
       extractYouTubeId(String(videoId || req.body?.url || '')) || String(videoId || '').trim();
 
-    // Check Cache first (only return if it has >= 10 quiz questions and >= 14 flashcards)
+    // Check Cache first only if valid under current quality filters
     if (cleanVideoId && !forceRefresh) {
       if (videoStudyCache.has(cleanVideoId)) {
         const cached = videoStudyCache.get(cleanVideoId);
-        const cachedQuizCount = Array.isArray(cached?.quiz) ? cached.quiz.length : 0;
-        const cachedFcCount = Array.isArray(cached?.flashcards) ? cached.flashcards.length : 0;
-        if (cachedQuizCount >= 10 && cachedFcCount >= 14) {
+        const cachedCheck = validateStudyBundleJson(
+          cached,
+          3600,
+          5,
+          5,
+          ''
+        );
+        if (cachedCheck.valid) {
           return res.json({
             success: true,
             cached: true,
@@ -11323,6 +11350,8 @@ app.post('/api/youtube/study', async (req, res) => {
               },
             },
           });
+        } else {
+          videoStudyCache.delete(cleanVideoId);
         }
       }
     }
@@ -11349,7 +11378,9 @@ app.post('/api/youtube/study', async (req, res) => {
     if (activeSegments.length === 0) {
       return res.status(422).json({
         success: false,
-        error: 'Real transcript segments are required to generate study materials.',
+        ok: false,
+        error: 'TRANSCRIPT_REQUIRED',
+        message: 'Real transcript segments are required to generate study materials.',
       });
     }
 
@@ -11390,8 +11421,10 @@ app.post('/api/youtube/study', async (req, res) => {
     console.error('YouTube study synthesis error:', err);
     return res.status(502).json({
       success: false,
-      error:
-        err.message ||
+      ok: false,
+      error: 'STUDY_SYNTHESIS_FAILED',
+      message:
+        err?.message ||
         'Could not synthesize study materials right now due to a network timeout. Please tap Retry.',
     });
   }
@@ -11752,7 +11785,13 @@ app.post('/api/chat', async (req, res) => {
       userQuery
     );
     const searchMode = rawSearchMode === 'news' || isImplicitNewsQuery ? 'news' : 'organic';
-    const liveClock = buildRealTimeClockContext(clientClock);
+    const effectiveClockInput =
+      locationInfo.detectionMethod === 'manual' &&
+      locationInfo.timezone &&
+      locationInfo.timezone !== clientClock?.timezone
+        ? { timezone: locationInfo.timezone }
+        : clientClock;
+    const liveClock = buildRealTimeClockContext(effectiveClockInput);
     const isClockQuery = isDateOrTimeClockQuery(userQuery);
 
     // Server-Side Quota & Model Tier Verification (prevents client localStorage bypass)
@@ -12802,15 +12841,38 @@ ${transcriptSnippet
 
       const topNormalSources = relevanceFiltered.slice(0, 6);
 
+      // Decode external HTML/XML entities cleanly (up to 3 passes for double-escaped entities like &amp;#39;)
+      const decodeExternalHtmlEntities = (raw: string): string => {
+        let s = String(raw || '');
+        for (let pass = 0; pass < 3; pass++) {
+          const next = s
+            .replace(/&nbsp;|&#160;|&#xa0;/gi, ' ')
+            .replace(/&amp;|&#38;|&#x26;/gi, '&')
+            .replace(/&quot;|&ldquo;|&rdquo;|&#0*34;|&#x0*22;|&#8220;|&#8221;/gi, '"')
+            .replace(/&#0*39;|&#x0*27;|&apos;|&rsquo;|&lsquo;|&#8216;|&#8217;/gi, "'")
+            .replace(/&ndash;|&#8211;|&#x2013;/gi, '–')
+            .replace(/&mdash;|&#8212;|&#x2014;/gi, '—')
+            .replace(/&#x([0-9a-f]+);/gi, (_, hex) => {
+              const code = parseInt(hex, 16);
+              return Number.isFinite(code) && code >= 32 && code <= 0x10ffff
+                ? String.fromCodePoint(code)
+                : '';
+            })
+            .replace(/&#(\d+);/g, (_, dec) => {
+              const code = Number(dec);
+              return Number.isFinite(code) && code >= 32 && code <= 0x10ffff
+                ? String.fromCodePoint(code)
+                : '';
+            });
+          if (next === s) break;
+          s = next;
+        }
+        return s.replace(/[\u2018\u2019\u02BC]/g, "'").replace(/[\u201C\u201D]/g, '"');
+      };
+
       // Clean search snippets of website UI chrome without slow URL scraping or fake filler padding
       const cleanExcerptText = (raw: string): string =>
-        String(raw || '')
-          .replace(/&nbsp;/gi, ' ')
-          .replace(/&amp;/gi, '&')
-          .replace(/&quot;/gi, '"')
-          .replace(/&#0*39;|&apos;/gi, "'")
-          .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
-          .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(Number(dec)))
+        decodeExternalHtmlEntities(raw)
           .replace(/Comprehensive up-to-date news coverage,\s*aggregated from sources all over the world by Google News\.?/gi, ' ')
           .replace(/Buy One Founder Summit Ticket[^.]*\.\s*(Register now\.)?/gi, ' ')
           .replace(/Founder Summit begins[^.]*\.\s*(Get your pass[^.]*\.)?\s*(REGISTER HERE\.)?/gi, ' ')
@@ -12822,6 +12884,9 @@ ${transcriptSnippet
           .trim();
 
       for (const src of topNormalSources) {
+        if (src.title) {
+          src.title = decodeExternalHtmlEntities(src.title).replace(/\s+/g, ' ').trim();
+        }
         const cleaned = cleanExcerptText(src.snippet || '');
         src.snippet = (cleaned || String(src.title || '').trim()).slice(0, 420);
       }
@@ -12830,6 +12895,122 @@ ${transcriptSnippet
         .filter((s) => String(s.snippet || '').trim().length >= 15)
         .map((s, idx) => ({ ...s, position: idx + 1 }));
     }
+
+    // Detect explicit user length constraints ("in 3 lines", "one line", "short", "in N words/sentences")
+    const detectExplicitLengthConstraint = (
+      query: string
+    ): { matched: string; rule: string } | null => {
+      const q = String(query || '').trim();
+      if (!q) return null;
+      const wordToNum: Record<string, number> = {
+        a: 1,
+        'a single': 1,
+        single: 1,
+        one: 1,
+        two: 2,
+        three: 3,
+        four: 4,
+        five: 5,
+        six: 6,
+        seven: 7,
+        eight: 8,
+        nine: 9,
+        ten: 10,
+      };
+      const parseCount = (token: string): number | null => {
+        const lower = token.trim().toLowerCase();
+        if (lower in wordToNum) return wordToNum[lower];
+        const parsed = parseInt(lower, 10);
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+      };
+
+      const oneLinerMatch = q.match(/\b(one|1)[-\s]?liner\b/i);
+      if (oneLinerMatch) {
+        return {
+          matched: oneLinerMatch[0],
+          rule: 'Output EXACTLY 1 concise single line (no newlines, no headings, no extra sentences or bullet lists).',
+        };
+      }
+
+      const linesMatch = q.match(
+        /\b(?:in|max(?:imum)?|at\s+most|only|just|strictly|under|within|keep\s+(?:it|this|the\s+answer|your\s+answer)\s+(?:to|under|at))?\s*(10|[1-9]|one|two|three|four|five|six|seven|eight|nine|ten|a\s+single|single)\s+lines?\b(?!\s+of\s+code\b)/i
+      );
+      if (linesMatch) {
+        const n = parseCount(linesMatch[1]) || 3;
+        return {
+          matched: linesMatch[0].trim(),
+          rule:
+            n === 1
+              ? 'Output EXACTLY 1 concise single line (no newlines, no headings, no bullet lists, no intro/outro).'
+              : `Output EXACTLY ${n} non-empty lines separated by single newlines (one concise statement per line; NO blank lines, NO headings, NO extra intro or outro text).`,
+        };
+      }
+
+      const sentencesMatch = q.match(
+        /\b(?:in|max(?:imum)?|at\s+most|only|just|strictly|under|within|keep\s+(?:it|this|the\s+answer|your\s+answer)\s+(?:to|under|at))?\s*(10|[1-9]|one|two|three|four|five|six|seven|eight|nine|ten|a\s+single|single)\s+sentences?\b/i
+      );
+      if (sentencesMatch) {
+        const n = parseCount(sentencesMatch[1]) || 2;
+        return {
+          matched: sentencesMatch[0].trim(),
+          rule: `Output AT MOST ${n} concise sentence${n === 1 ? '' : 's'} total. Do NOT add headings, bullet lists, or extra paragraphs.`,
+        };
+      }
+
+      const wordsMatch = q.match(
+        /\b(?:in|under|within|max(?:imum)?|at\s+most|less\s+than|about|around)?\s*(\d{1,4})\s+words?\b/i
+      );
+      if (wordsMatch) {
+        const n = parseCount(wordsMatch[1]) || 50;
+        return {
+          matched: wordsMatch[0].trim(),
+          rule: `Keep your entire response strictly at or under ${n} words. Do NOT add headings, multi-section padding, or filler.`,
+        };
+      }
+
+      const bulletsMatch = q.match(
+        /\b(?:in|only|just|max(?:imum)?)\s*([1-8]|one|two|three|four|five|six|seven|eight)\s+(?:bullet(?:\s+points?)?|points?)\b/i
+      );
+      if (bulletsMatch) {
+        const n = parseCount(bulletsMatch[1]) || 3;
+        return {
+          matched: bulletsMatch[0].trim(),
+          rule: `Respond with EXACTLY ${n} concise bullet point${n === 1 ? '' : 's'} and NO extra intro or outro paragraphs.`,
+        };
+      }
+
+      const paragraphsMatch = q.match(
+        /\b(?:in|only|just|max(?:imum)?)\s*([1-4]|one|two|three|four)\s+paragraphs?\b/i
+      );
+      if (paragraphsMatch) {
+        const n = parseCount(paragraphsMatch[1]) || 1;
+        return {
+          matched: paragraphsMatch[0].trim(),
+          rule: `Respond in EXACTLY ${n} concise paragraph${n === 1 ? '' : 's'}. Do NOT add headings or extra bullet lists.`,
+        };
+      }
+
+      const shortMatch =
+        q.match(
+          /\b(keep\s+(?:it|this|your\s+answer|the\s+answer)\s+(?:short|brief|concise)|be\s+(?:short|brief|concise)|short\s+(?:answer|summary|explanation|version|reply|response)|(?:answer|reply|explain|summarize|define)\s+(?:it\s+)?(?:shortly|briefly|concisely)|in\s+(?:short|brief)|briefly|shortly|concisely|tl;?dr)\b/i
+        ) || q.match(/(?:^|[,.;:\-–—]\s*|in\s+)short\s*[.!?]*$/i);
+      if (shortMatch) {
+        return {
+          matched: shortMatch[0].trim(),
+          rule: 'Keep the entire response very short and direct (1 concise paragraph of 1–3 sentences max). Do NOT add headings, multi-section expansion, or filler.',
+        };
+      }
+
+      return null;
+    };
+
+    const explicitLengthConstraint = detectExplicitLengthConstraint(userQuery);
+    const topPriorityLengthSystemBlock = explicitLengthConstraint
+      ? `[TOP-PRIORITY LENGTH CONSTRAINT — OVERRIDES ALL DEFAULT FORMATTING RULES]:\n` +
+        `- User asked: "${explicitLengthConstraint.matched}"\n` +
+        `- MANDATORY RULE: ${explicitLengthConstraint.rule}\n` +
+        `- Strictly obey this length limit over any default paragraph, bullet, or multi-section guidelines.\n\n`
+      : '';
 
     // Build grounding search evidence text for the model
     let groundingContext = '';
@@ -12843,13 +13024,18 @@ ${transcriptSnippet
         const excerpt = String(src.snippet || '').trim();
         groundingContext += `[${idx + 1}] Title: "${src.title}" | Source: ${src.source || src.domain || 'web'}${src.date ? ` | Date: ${src.date}` : ''} | URL: ${src.url}\nSnippet: ${excerpt}\n\n`;
       });
-      groundingContext +=
-        `[RESPONSE & GROUNDING INSTRUCTIONS]:\n` +
-        `- Write in a clean, natural, easy-to-read ChatGPT style: start with a clear, direct 1–2 sentence opening paragraph that answers the user's question ("${userQuery}") in plain English.\n` +
-        `- Use short, breathable paragraphs (2–3 sentences max). When using bullet points, keep each bullet concise (1–2 short sentences max, ~15–28 words) with a short **Bold Label:** lead-in—never write giant 5–6 line walls of text inside a single bullet.\n` +
-        `- Place any inline citation [1], [2] cleanly at the very end of the sentence AFTER the period (e.g., "...effective for advanced bladder cancer. [1]").\n` +
-        `- Only cite a source [n] when it directly supports a claim. If a web reference is tangential, ignore it silently — NEVER mention "the provided references", "the search results", or "While the provided sources discuss...".\n` +
-        `- NEVER dump raw website navigation text and NEVER refuse to explain a concept, scripture verse, definition, or topic.\n`;
+      groundingContext += explicitLengthConstraint
+        ? `[RESPONSE & GROUNDING INSTRUCTIONS]:\n` +
+          `- TOP-PRIORITY LENGTH OVERRIDE ("${explicitLengthConstraint.matched}"): ${explicitLengthConstraint.rule}\n` +
+          `- Do NOT expand into extra intro paragraphs, multi-paragraph sections, or extra bullets beyond this user-requested limit.\n` +
+          `- Place any inline citation [1], [2] inline at the end of a line/sentence when directly supported, without adding extra lines.\n` +
+          `- Only cite a source [n] when it directly supports a claim. Ignore tangential references silently.\n`
+        : `[RESPONSE & GROUNDING INSTRUCTIONS]:\n` +
+          `- Write in a clean, natural, easy-to-read ChatGPT style: start with a clear, direct 1–2 sentence opening paragraph that answers the user's question ("${userQuery}") in plain English.\n` +
+          `- Use short, breathable paragraphs (2–3 sentences max). When using bullet points, keep each bullet concise (1–2 short sentences max, ~15–28 words) with a short **Bold Label:** lead-in—never write giant 5–6 line walls of text inside a single bullet.\n` +
+          `- Place any inline citation [1], [2] cleanly at the very end of the sentence AFTER the period (e.g., "...effective for advanced bladder cancer. [1]").\n` +
+          `- Only cite a source [n] when it directly supports a claim. If a web reference is tangential, ignore it silently — NEVER mention "the provided references", "the search results", or "While the provided sources discuss...".\n` +
+          `- NEVER dump raw website navigation text and NEVER refuse to explain a concept, scripture verse, definition, or topic.\n`;
       if (extractedContext) {
         groundingContext += extractedContext;
       }
@@ -12947,21 +13133,27 @@ ${transcriptSnippet
     const hasYouTubeContext = Boolean(directYoutubeVideo || youtubeVideos.length > 0);
     const hasXContext = xPosts.length > 0;
 
-    const userLocLabel = [locationInfo?.city, locationInfo?.region, locationInfo?.country]
-      .filter(Boolean)
-      .join(', ');
-    const locationSystemLine = userLocLabel
-      ? `\n[USER LOCATION CONTEXT]: The user is located in ${userLocLabel} (Source: ${locationInfo?.source || 'ip'}). For any weather, local news, events, prices, or regional queries, strictly prioritize and present information relevant to ${userLocLabel} (India) and never default to unrelated US state weather/news.`
-      : '';
+    const locationPromptContext = await buildLocationContextForChat(userQuery, locationInfo);
+    if (locationPromptContext.weatherReport && searchSources.length === 0) {
+      searchSources = formatWeatherReportAsSearchSources(locationPromptContext.weatherReport);
+    }
 
-    const defaultSystem = `You are Kinich, a fast, sharp, natural, and helpful AI assistant.
+    const locationSystemLine = locationPromptContext.systemBlock || '';
+
+    const defaultFormattingRule = explicitLengthConstraint
+      ? `2. Strict Length Override ("${explicitLengthConstraint.matched}"):
+   - ${explicitLengthConstraint.rule}
+   - Do NOT expand into a multi-paragraph essay, headings, or extra bullets beyond this exact user-requested length.`
+      : `2. Clean ChatGPT-Style Formatting & Readability:
+   - Start with a clear, natural 1–2 sentence paragraph that directly answers the user's question in plain language.
+   - Use short, well-spaced paragraphs (2–3 sentences max per paragraph).
+   - When listing key points, keep each bullet point crisp and scannable (1–2 short sentences max per bullet) with a short **Bold Lead-in:**. Avoid dense, textbook-style multi-sentence walls of text inside bullets.`;
+
+    const defaultSystem = `${topPriorityLengthSystemBlock}You are Kinich, a fast, sharp, natural, and helpful AI assistant.
 [REAL-TIME SYSTEM CLOCK]: Today is ${liveClock.localDateOnly}, current local time is ${liveClock.localTimeOnly} (${liveClock.timezone}, ${liveClock.utcOffset}) / UTC: ${liveClock.utcFull}.${locationSystemLine}
 Rules:
 1. Date/Time Accuracy: Today's verified date is ${liveClock.localDateOnly} (${liveClock.localTimeOnly}). Never guess fake dates or agree with false dates if tested.
-2. Clean ChatGPT-Style Formatting & Readability:
-   - Start with a clear, natural 1–2 sentence paragraph that directly answers the user's question in plain language.
-   - Use short, well-spaced paragraphs (2–3 sentences max per paragraph).
-   - When listing key points, keep each bullet point crisp and scannable (1–2 short sentences max per bullet) with a short **Bold Lead-in:**. Avoid dense, textbook-style multi-sentence walls of text inside bullets.
+${defaultFormattingRule}
 3. Context & Source Grounding: When numbered web search excerpts [1]..[N] are provided, use them as factual reference alongside your comprehensive knowledge. Place inline citations at the end of the sentence after the period (e.g., "...approved for targeted therapy. [1]"). Never dump raw search abstracts or mention "the provided search results". For science, math, or coding queries, provide clear explanations and math formatting ($...$ and $$...$$). Never output \`\`\`html:generative-ui blocks unless explicitly asked for a simulator.
 4. Real Media Gallery Rule: Real web images and YouTube videos fetched for this query are automatically rendered in the interactive UI gallery above/below your response. NEVER write fake placeholder text lists like "[FETCHED LIVE IMAGES]: 1. Promotional Portrait: [Image of...]" or pretend to describe imaginary image placeholders in brackets.
 5. Factual Humility: If the user questions or corrects a factual detail, acknowledge the correction respectfully and provide the verified facts.${
@@ -13031,6 +13223,10 @@ Rules:
       ? `\n\n[LANGUAGE DIRECTIVE: Respond in ${requestedLanguage} as requested by the user.]`
       : `\n\n[LANGUAGE DIRECTIVE: Respond strictly in English only. Never output Chinese characters.]`;
 
+    const turnLengthReminder = explicitLengthConstraint
+      ? `\n\n[MANDATORY LENGTH LIMIT ("${explicitLengthConstraint.matched}"): ${explicitLengthConstraint.rule}]`
+      : '';
+
     // Add latest user prompt with grounding context (for Deep Research writer, pass ONLY userQuery with numbered source excerpts — FIX 1)
     const normalizedUserQueryForPrompt = isPureCodeOrMath
       ? normalizeCodingPromptText(userQuery)
@@ -13042,6 +13238,7 @@ Rules:
           : `User Request: ${normalizedUserQueryForPrompt}\nResolved Core Subject: "${coreTopic}"`) +
         clockTurnReminder +
         turnLanguageReminder +
+        turnLengthReminder +
         (groundingContext ? `\n\n--- LIVE FETCHED CONTEXT & ATTACHMENTS ---\n${groundingContext}` : '');
 
     if (attachedImageUrls.length > 0 && !isResearchCall) {
@@ -13397,9 +13594,9 @@ Rules:
                   )
                   .join('\n')
               : '';
-          const synthPrompt =
-            `Provide a clear, natural, well-structured explanation that directly answers the user's question.${languageDirective}\n\n` +
-            `User Question: ${userQuery}${sourcesBlock}`;
+          const synthPrompt = explicitLengthConstraint
+            ? `${explicitLengthConstraint.rule}${languageDirective}\n\nUser Question: ${userQuery}${sourcesBlock}`
+            : `Provide a clear, natural, well-structured explanation that directly answers the user's question.${languageDirective}\n\nUser Question: ${userQuery}${sourcesBlock}`;
           const synthResp = await generateGeminiContentWithFallback(synthPrompt);
           replyText = (synthResp.resp?.text || '').trim();
         } catch {}
@@ -14180,9 +14377,7 @@ if (!isTest) {
   let listenRetries = 0;
 
   const startListening = () => {
-    const srv = app.listen(Number(PORT), '0.0.0.0', () => {
-      console.log(`Server listening on port ${PORT}`);
-    });
+    const srv = app.listen(Number(PORT), '0.0.0.0');
     activeServer = srv;
 
     srv.on('error', (err: any) => {
@@ -14202,8 +14397,7 @@ if (!isTest) {
 
   startListening();
 
-  const gracefulShutdown = (signal: string) => {
-    console.log(`Received ${signal}, shutting down HTTP server gracefully...`);
+  const gracefulShutdown = (_signal: string) => {
     try {
       activeServer?.closeAllConnections?.();
     } catch {}

@@ -1,0 +1,19 @@
+User-agent: *
+Allow: /
+Allow: /study
+Allow: /discover
+Allow: /research
+Allow: /pricing
+Allow: /r/
+Allow: /share/
+Allow: /p/
+Allow: /legal
+Allow: /terms
+Allow: /privacy
+Allow: /refund
+Allow: /acceptable-use
+Allow: /cookies
+Allow: /contact
+Disallow: /api/
+
+Sitemap: https://kinich.app/sitemap.xml

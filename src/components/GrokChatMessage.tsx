@@ -467,7 +467,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
   }, [isUser]);
 
   const handleSaveSegmentToVault = (rawSegment?: string, collectionOverride?: string) => {
-    if (UserAccountStore.isGuestUser()) {
+    if (UserAccountStore.isGuest()) {
       window.dispatchEvent(
         new CustomEvent('kinich-open-auth', {
           detail: { reason: 'Sign in to keep this in your Vault' },
@@ -504,7 +504,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
   };
 
   const handleToggleParagraphHighlight = (segmentText: string) => {
-    if (UserAccountStore.isGuestUser()) {
+    if (UserAccountStore.isGuest()) {
       window.dispatchEvent(
         new CustomEvent('kinich-open-auth', {
           detail: { reason: 'Sign in to keep this in your Vault' },
@@ -524,7 +524,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
     }
   };
 
-  const [isGuestUser, setIsGuestUser] = useState(() => UserAccountStore.isGuestUser());
+  const [isGuestUser, setIsGuestUser] = useState(() => UserAccountStore.isGuest());
   const [liveAgentCards, setLiveAgentCards] = useState<AgentReplyCard[]>(() => {
     const list: AgentReplyCard[] = [];
     if (message.agentReply) list.push(message.agentReply);
@@ -537,7 +537,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
   });
 
   useEffect(() => {
-    const syncAccount = () => setIsGuestUser(UserAccountStore.isGuestUser());
+    const syncAccount = () => setIsGuestUser(UserAccountStore.isGuest());
     window.addEventListener('kinich-account-updated', syncAccount);
     return () => window.removeEventListener('kinich-account-updated', syncAccount);
   }, []);
@@ -565,7 +565,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
   }, [message.id]);
 
   const handleSaveToKnowledgeVault = () => {
-    if (UserAccountStore.isGuestUser()) {
+    if (UserAccountStore.isGuest()) {
       window.dispatchEvent(
         new CustomEvent('kinich-open-auth', {
           detail: { reason: 'Sign in to keep this in your Vault' },
@@ -1002,7 +1002,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                 return (
                   <div
                     onClick={() => setShowActionsOnTap((prev) => !prev)}
-                    className={`text-[13px] sm:text-[13.5px] leading-[1.55] font-normal px-3.5 py-2.5 rounded-2xl sm:rounded-3xl backdrop-blur-2xl backdrop-saturate-150 border transition-all w-fit max-w-full min-w-0 overflow-hidden whitespace-pre-wrap break-words [overflow-wrap:anywhere] [word-break:break-word] cursor-pointer ${
+                    className={`text-[14px] sm:text-[14.5px] leading-[1.72] tracking-[0.01em] [word-spacing:0.02em] font-normal px-4 py-2.5 rounded-2xl sm:rounded-3xl backdrop-blur-2xl backdrop-saturate-150 border transition-all w-fit max-w-full min-w-0 overflow-hidden whitespace-pre-wrap break-words [overflow-wrap:anywhere] [word-break:break-word] cursor-pointer ${
                       isDark
                         ? 'bg-neutral-900/55 border-white/[0.15] text-white shadow-[0_8px_28px_rgba(0,0,0,0.45)]'
                         : 'bg-white/75 border-black/[0.08] text-[#000000] shadow-[0_8px_24px_rgba(0,0,0,0.06)]'
@@ -1545,7 +1545,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
             onMouseUp={handleCaptureTextSelection}
             onTouchEnd={() => setTimeout(handleCaptureTextSelection, 60)}
             onClick={() => setShowActionsOnTap((prev) => !prev)}
-            className="prose-grok max-w-none my-0"
+            className="prose-grok max-w-none my-0 text-[15px] sm:text-[15.5px] leading-[1.78] sm:leading-[1.8] tracking-[0.012em] [word-spacing:0.025em]"
           >
               <StreamingText
                 isStreaming={message.isStreaming}
@@ -1556,6 +1556,143 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                   remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: true }]]}
                   rehypePlugins={[rehypeRaw, rehypeKatex]}
                 components={{
+                  p: ({ node, children, ...props }) => (
+                    <p
+                      className="mt-0 mb-5 last:mb-0 leading-[1.78] sm:leading-[1.8] tracking-[0.012em] [word-spacing:0.025em]"
+                      {...props}
+                    >
+                      {children}
+                    </p>
+                  ),
+                  h1: ({ node, children, ...props }) => (
+                    <h1
+                      className="mt-7 first:mt-0 mb-3.5 text-[1.35rem] font-semibold leading-[1.35] tracking-[0.004em]"
+                      {...props}
+                    >
+                      {children}
+                    </h1>
+                  ),
+                  h2: ({ node, children, ...props }) => (
+                    <h2
+                      className="mt-6 first:mt-0 mb-3 text-[1.18rem] font-semibold leading-[1.38] tracking-[0.004em]"
+                      {...props}
+                    >
+                      {children}
+                    </h2>
+                  ),
+                  h3: ({ node, children, ...props }) => (
+                    <h3
+                      className="mt-5 first:mt-0 mb-2.5 text-[1.06rem] font-semibold leading-[1.4] tracking-[0.006em]"
+                      {...props}
+                    >
+                      {children}
+                    </h3>
+                  ),
+                  h4: ({ node, children, ...props }) => (
+                    <h4
+                      className="mt-4 first:mt-0 mb-2 text-[0.98rem] font-semibold leading-[1.45] tracking-[0.008em]"
+                      {...props}
+                    >
+                      {children}
+                    </h4>
+                  ),
+                  ul: ({ node, children, ...props }) => (
+                    <ul
+                      className="mt-2 mb-5 last:mb-0 pl-6 list-disc space-y-2.5 leading-[1.78] tracking-[0.012em]"
+                      {...props}
+                    >
+                      {children}
+                    </ul>
+                  ),
+                  ol: ({ node, children, ...props }) => (
+                    <ol
+                      className="mt-2 mb-5 last:mb-0 pl-6 list-decimal space-y-2.5 leading-[1.78] tracking-[0.012em]"
+                      {...props}
+                    >
+                      {children}
+                    </ol>
+                  ),
+                  li: ({ node, children, ...props }) => (
+                    <li
+                      className="pl-1 leading-[1.78] tracking-[0.012em] [word-spacing:0.025em] [&>p]:mb-2.5 [&>p:last-child]:mb-0"
+                      {...props}
+                    >
+                      {children}
+                    </li>
+                  ),
+                  blockquote: ({ node, children, ...props }) => (
+                    <blockquote
+                      className={`my-5 pl-4 border-l-[3px] leading-[1.78] tracking-[0.01em] italic ${
+                        isDark ? 'border-white/25 text-zinc-300' : 'border-zinc-400 text-zinc-600'
+                      }`}
+                      {...props}
+                    >
+                      {children}
+                    </blockquote>
+                  ),
+                  strong: ({ node, children, ...props }) => (
+                    <strong
+                      className={`font-semibold tracking-[0.01em] ${
+                        isDark ? 'text-white' : 'text-zinc-950'
+                      }`}
+                      {...props}
+                    >
+                      {children}
+                    </strong>
+                  ),
+                  hr: ({ node, ...props }) => (
+                    <hr
+                      className={`my-6 border-0 border-t ${
+                        isDark ? 'border-zinc-800' : 'border-zinc-200'
+                      }`}
+                      {...props}
+                    />
+                  ),
+                  table: ({ node, children, ...props }) => (
+                    <div
+                      className={`my-5 w-full max-w-full min-w-0 overflow-x-auto rounded-xl border [-webkit-overflow-scrolling:touch] ${
+                        isDark
+                          ? 'border-zinc-800 bg-zinc-950/50'
+                          : 'border-zinc-200 bg-white'
+                      }`}
+                    >
+                      <table
+                        className="w-full min-w-max border-collapse text-left text-[0.84rem] leading-[1.6] tracking-[0.008em]"
+                        {...props}
+                      >
+                        {children}
+                      </table>
+                    </div>
+                  ),
+                  tbody: ({ node, children, ...props }) => (
+                    <tbody className="[&>tr:last-child>td]:border-b-0" {...props}>
+                      {children}
+                    </tbody>
+                  ),
+                  th: ({ node, children, ...props }) => (
+                    <th
+                      className={`px-3.5 py-2.5 font-semibold whitespace-nowrap border-b ${
+                        isDark
+                          ? 'bg-zinc-900/80 text-white border-zinc-800'
+                          : 'bg-zinc-50 text-zinc-950 border-zinc-200'
+                      }`}
+                      {...props}
+                    >
+                      {children}
+                    </th>
+                  ),
+                  td: ({ node, children, ...props }) => (
+                    <td
+                      className={`px-3.5 py-2.5 align-top border-b ${
+                        isDark
+                          ? 'text-zinc-200 border-zinc-800/80'
+                          : 'text-zinc-800 border-zinc-200/80'
+                      }`}
+                      {...props}
+                    >
+                      {children}
+                    </td>
+                  ),
                   a: ({ node, href, children, ...props }) => {
                     const flatText = React.Children.toArray(children)
                       .map((c) => (typeof c === 'string' || typeof c === 'number' ? String(c) : ''))
@@ -2654,7 +2791,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    if (UserAccountStore.isGuestUser()) {
+                    if (UserAccountStore.isGuest()) {
                       window.dispatchEvent(
                         new CustomEvent('kinich-open-auth', {
                           detail: { reason: 'Sign in to keep this in your Vault' },

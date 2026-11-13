@@ -22,6 +22,7 @@ import { UserAccountStore, toIstDateKey } from '../lib/userAccountStore';
 import { KnowledgeVaultStore, VaultThreadStore } from '../lib/growthStore';
 import { extractTextFromPdfFile } from '../lib/pdfStudyEngine';
 import { StudyLanguageDropdown } from './CustomSearchSelect';
+import ErrorState from './ErrorState';
 
 interface StudyLoopPanelProps {
   isOpen?: boolean;
@@ -74,9 +75,16 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
         setActiveTab('snap_solve');
       }
     };
+    handleLocationChange();
     window.addEventListener('popstate', handleLocationChange);
     return () => window.removeEventListener('popstate', handleLocationChange);
   }, []);
+
+  useEffect(() => {
+    if (initialTab === 'snap_solve') {
+      setActiveTab('snap_solve');
+    }
+  }, [initialTab]);
   const [exams, setExams] = useState<StudyExam[]>(() => StudyLoopStore.getExams());
   const [cards, setCards] = useState<RecallCard[]>(() => StudyLoopStore.getCards());
   const [streak, setStreak] = useState(() => UserAccountStore.getDailyStreak());
@@ -674,7 +682,10 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
     }
     setSnapTranslating(true);
     setSnapTranslateError(null);
-    const combined = `${snapResult.steps.join('\n')}\n\nConcept (${snapResult.conceptBehindIt.title}): ${snapResult.conceptBehindIt.explanation}`;
+    const conceptSummary = snapResult.conceptBehindIt
+      ? `\n\nConcept (${snapResult.conceptBehindIt.title}): ${snapResult.conceptBehindIt.explanation}`
+      : '';
+    const combined = `${snapResult.steps.join('\n')}${conceptSummary}`;
     const res = await StudyLoopStore.explainInLanguage(combined, targetLang);
     setSnapTranslating(false);
     if (!res.ok || !res.explainedText) {
@@ -1317,15 +1328,6 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                       </span>
                       <h4 className={`text-sm sm:text-base font-bold ${textPrimary}`}>{drillingChapter}</h4>
                     </div>
-                    {drillError && (
-                      <button
-                        type="button"
-                        onClick={() => handlePracticeWeakTopic(drillingChapter, 'General Studies')}
-                        className="px-3 py-1.5 rounded-lg bg-[#FC4C01] text-white text-xs font-semibold cursor-pointer"
-                      >
-                        Retry
-                      </button>
-                    )}
                   </div>
 
                   {drillLoading && (
@@ -1335,16 +1337,13 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                   )}
 
                   {drillError && (
-                    <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-xs text-rose-600 dark:text-rose-200 flex items-center justify-between">
-                      <span>{drillError}</span>
-                      <button
-                        type="button"
-                        onClick={() => handlePracticeWeakTopic(drillingChapter, 'General Studies')}
-                        className="px-3 py-1 rounded-lg bg-[#FC4C01] text-white font-semibold"
-                      >
-                        Retry
-                      </button>
-                    </div>
+                    <ErrorState
+                      title="Practice generation failed"
+                      message={drillError}
+                      onRetry={() => handlePracticeWeakTopic(drillingChapter, 'General Studies')}
+                      isDark={isDark}
+                      testId="weak-spot-drill-error"
+                    />
                   )}
 
                   {drillQuestions.length > 0 && (
@@ -1520,16 +1519,13 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
               )}
 
               {uploadError && (
-                <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-xs text-rose-600 dark:text-rose-200 flex items-center justify-between gap-2">
-                  <span>{uploadError}</span>
-                  <button
-                    type="button"
-                    onClick={handleRetryUpload}
-                    className="px-3 py-1 rounded-lg bg-[#FC4C01] text-white font-semibold shrink-0 cursor-pointer"
-                  >
-                    Retry
-                  </button>
-                </div>
+                <ErrorState
+                  title="Study pack generation failed"
+                  message={uploadError}
+                  onRetry={handleRetryUpload}
+                  isDark={isDark}
+                  testId="upload-study-error"
+                />
               )}
 
               {activeStudyPack && (
@@ -1904,16 +1900,13 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
               </div>
 
               {snapError && (
-                <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-xs text-rose-600 dark:text-rose-200 flex items-center justify-between gap-2">
-                  <span>{snapError}</span>
-                  <button
-                    type="button"
-                    onClick={() => triggerSnapSolve(snapImageDataUrl, snapQuestionText, language)}
-                    className="px-3 py-1 rounded-lg bg-[#FC4C01] text-white font-semibold cursor-pointer"
-                  >
-                    Retry
-                  </button>
-                </div>
+                <ErrorState
+                  title="Snap & Solve failed"
+                  message={snapError}
+                  onRetry={() => triggerSnapSolve(snapImageDataUrl, snapQuestionText, language)}
+                  isDark={isDark}
+                  testId="snap-solve-error"
+                />
               )}
 
               {snapResult && (
@@ -1972,59 +1965,62 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                       </div>
                     ))}
                     <div className="p-3 rounded-xl bg-[#FC4C01]/12 border border-[#FC4C01]/35 text-xs sm:text-sm font-bold text-[#FC4C01]">
-                      Final Answer: {snapResult.finalAnswer}
+                      Final Answer: {snapResult.answer || snapResult.finalAnswer}
                     </div>
                   </div>
 
-                  <div className={`p-3.5 rounded-xl border space-y-1 ${surfaceElevated}`}>
-                    <div className="text-[11px] uppercase tracking-wider text-[#FC4C01] font-bold">
-                      Concept Behind It · {snapResult.conceptBehindIt.subject} → {snapResult.conceptBehindIt.chapter}
+                  {snapResult.conceptBehindIt && (
+                    <div className={`p-3.5 rounded-xl border space-y-1 ${surfaceElevated}`}>
+                      <div className="text-[11px] uppercase tracking-wider text-[#FC4C01] font-bold">
+                        Concept Behind It · {snapResult.conceptBehindIt.subject} → {snapResult.conceptBehindIt.chapter}
+                      </div>
+                      <div className={`text-sm font-bold ${textPrimary}`}>
+                        {snapResult.conceptBehindIt.title}
+                      </div>
+                      <p className={`text-xs leading-relaxed ${textSecondary}`}>
+                        {snapResult.conceptBehindIt.explanation}
+                      </p>
                     </div>
-                    <div className={`text-sm font-bold ${textPrimary}`}>
-                      {snapResult.conceptBehindIt.title}
-                    </div>
-                    <p className={`text-xs leading-relaxed ${textSecondary}`}>
-                      {snapResult.conceptBehindIt.explanation}
-                    </p>
-                  </div>
+                  )}
 
-                  <div className={`p-3.5 rounded-xl border border-[#FC4C01]/30 space-y-2.5 ${surfaceElevated}`}>
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold uppercase tracking-wider text-[#FC4C01]">
-                        1 Similar Practice Question
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          StudyLoopStore.addCardsToRecall([
-                            {
-                              type: 'quiz',
-                              front: snapResult.similarPracticeQuestion.question,
-                              back:
-                                snapResult.similarPracticeQuestion.options[
-                                  snapResult.similarPracticeQuestion.correctIndex
-                                ] || snapResult.similarPracticeQuestion.explanation,
-                              options: snapResult.similarPracticeQuestion.options,
-                              correctIndex: snapResult.similarPracticeQuestion.correctIndex,
-                              explanation: snapResult.similarPracticeQuestion.explanation,
-                              subject: snapResult.conceptBehindIt.subject,
-                              chapter: snapResult.conceptBehindIt.chapter,
-                            },
-                          ])
-                        }
-                        className="text-xs font-semibold text-[#FC4C01] hover:underline cursor-pointer"
-                      >
-                        + Add to Recall
-                      </button>
-                    </div>
-                    <p className={`text-xs sm:text-sm font-semibold ${textPrimary}`}>
-                      {snapResult.similarPracticeQuestion.question}
-                    </p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {snapResult.similarPracticeQuestion.options.map((opt, idx) => {
-                        const isPicked = snapPracticeAnswer === idx;
-                        const isRight =
-                          snapResult.similarPracticeQuestion.correctIndex === idx;
+                  {snapResult.similarPracticeQuestion && (
+                    <div className={`p-3.5 rounded-xl border border-[#FC4C01]/30 space-y-2.5 ${surfaceElevated}`}>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold uppercase tracking-wider text-[#FC4C01]">
+                          1 Similar Practice Question
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            StudyLoopStore.addCardsToRecall([
+                              {
+                                type: 'quiz',
+                                front: snapResult.similarPracticeQuestion!.question,
+                                back:
+                                  snapResult.similarPracticeQuestion!.options[
+                                    snapResult.similarPracticeQuestion!.correctIndex
+                                  ] || snapResult.similarPracticeQuestion!.explanation,
+                                options: snapResult.similarPracticeQuestion!.options,
+                                correctIndex: snapResult.similarPracticeQuestion!.correctIndex,
+                                explanation: snapResult.similarPracticeQuestion!.explanation,
+                                subject: snapResult.conceptBehindIt?.subject || 'STEM',
+                                chapter: snapResult.conceptBehindIt?.chapter || 'Practice',
+                              },
+                            ])
+                          }
+                          className="text-xs font-semibold text-[#FC4C01] hover:underline cursor-pointer"
+                        >
+                          + Add to Recall
+                        </button>
+                      </div>
+                      <p className={`text-xs sm:text-sm font-semibold ${textPrimary}`}>
+                        {snapResult.similarPracticeQuestion.question}
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {snapResult.similarPracticeQuestion.options.map((opt, idx) => {
+                          const isPicked = snapPracticeAnswer === idx;
+                          const isRight =
+                            snapResult.similarPracticeQuestion!.correctIndex === idx;
                         let cls = isDark
                           ? 'bg-white/[0.03] border-white/10 text-neutral-200'
                           : 'bg-[#f8f8fa] border-black/10 text-neutral-800';
@@ -2050,15 +2046,16 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                         );
                       })}
                     </div>
-                    {snapPracticeAnswer !== null && (
-                      <div className={`text-xs p-2.5 rounded-lg border ${surfaceInner}`}>
-                        <strong className="text-[#FC4C01]">Explanation:</strong>{' '}
-                        <span className={textPrimary}>
-                          {snapResult.similarPracticeQuestion.explanation}
-                        </span>
-                      </div>
-                    )}
-                  </div>
+                      {snapPracticeAnswer !== null && (
+                        <div className={`text-xs p-2.5 rounded-lg border ${surfaceInner}`}>
+                          <strong className="text-[#FC4C01]">Explanation:</strong>{' '}
+                          <span className={textPrimary}>
+                            {snapResult.similarPracticeQuestion.explanation}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

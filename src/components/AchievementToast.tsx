@@ -24,12 +24,12 @@ export const AchievementToast: React.FC<AchievementToastProps> = ({ isDark }) =>
   const [queue, setQueue] = useState<AchievementUnlockPayload[]>([]);
   const [isPaused, setIsPaused] = useState<boolean>(false);
   const [claimedIds, setClaimedIds] = useState<Set<string>>(() => new Set());
-  const [isGuest, setIsGuest] = useState<boolean>(() => UserAccountStore.isGuestUser());
+  const [isGuest, setIsGuest] = useState<boolean>(() => UserAccountStore.isGuest());
 
   const activeToast = queue[0] || null;
 
   const syncAccountState = useCallback(() => {
-    setIsGuest(UserAccountStore.isGuestUser());
+    setIsGuest(UserAccountStore.isGuest());
   }, []);
 
   useEffect(() => {
