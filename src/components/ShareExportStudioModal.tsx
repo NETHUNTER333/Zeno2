@@ -1,39 +1,20 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   X,
-  Share2,
-  Copy,
   Check,
-  Download,
-  FileText,
-  Image as ImageIcon,
-  ExternalLink,
-  BookOpen,
+  Copy,
+  Globe,
+  Lock,
+  EyeOff,
   Link2,
-  Bookmark,
-  ChevronDown,
+  ChevronRight,
+  ExternalLink,
+  Loader2,
+  Sparkles,
 } from 'lucide-react';
-import {
-  ChatMessage,
-  PublicArtifact,
-} from '../types';
-import {
-  exportConversationAsPdf,
-  buildNotionReadyMarkdown,
-  renderQuoteCardToCanvas,
-  downloadQuoteCardPng,
-  canvasToBlob,
-  QuoteCardConfig,
-  ShareCardTheme,
-  ShareCardAspectRatio,
-} from '../lib/exportChat';
+import { ChatMessage, PublicArtifact } from '../types';
 import { publishSharedThreadToFirestore } from '../lib/firebase';
-import {
-  KnowledgeVaultStore,
-  trackGrowthEvent,
-  getUnlockedCosmeticThemes,
-} from '../lib/growthStore';
-import { UserAccountStore } from '../lib/userAccountStore';
+import { trackGrowthEvent } from '../lib/growthStore';
 
 export interface ShareExportStudioModalProps {
   isOpen: boolean;
@@ -52,6 +33,21 @@ export interface ShareExportStudioModalProps {
   onArtifactPublished?: (artifact: PublicArtifact) => void;
 }
 
+type ShareScope = 'response' | 'chat';
+type ExpiryOption = '1 Day' | '2 Days' | '7 Days' | '30 Days';
+
+function cleanMarkdownPreview(raw: string): string {
+  return (raw || '')
+    .replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '')
+    .replace(/```[\s\S]*?```/g, '')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/\*([^*]+)\*/g, '$1')
+    .replace(/\[(\d+)\]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export const ShareExportStudioModal: React.FC<ShareExportStudioModalProps> = ({
   isOpen,
   onClose,
@@ -62,51 +58,33 @@ export const ShareExportStudioModal: React.FC<ShareExportStudioModalProps> = ({
   isDark = true,
   onOpenReadOnlyPreview,
 }) => {
-  const resolvedInitialTab: 'quote' | 'share' | 'export' =
-    initialTab === 'publish' ? 'quote' : initialTab;
-  const [activeTab, setActiveTab] = useState<'quote' | 'share' | 'export'>(resolvedInitialTab);
+  const [shareScope, setShareScope] = useState<ShareScope>('response');
+  const [expiry, setExpiry] = useState<ExpiryOption>('2 Days');
   const [shareUrl, setShareUrl] = useState<string>('');
   const [shareId, setShareId] = useState<string>('');
-  const [isPublishingThread, setIsPublishingThread] = useState(false);
+  const [isCreatingLink, setIsCreatingLink] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
-  const [copiedNotion, setCopiedNotion] = useState(false);
-  const [copiedCardImage, setCopiedCardImage] = useState(false);
-  const [shareFeedback, setShareFeedback] = useState<string | null>(null);
-  const [vaultSavedFeedback, setVaultSavedFeedback] = useState(false);
 
   const assistantMessages = useMemo(() => {
     if (!thread) return [];
     return thread.messages.filter((m) => m.role === 'assistant' && m.content?.trim());
   }, [thread]);
 
-  const [selectedAssistantId, setSelectedAssistantId] = useState<string>('');
-  const [isResponsePickerOpen, setIsResponsePickerOpen] = useState(false);
-  const [quoteTheme, setQuoteTheme] = useState<ShareCardTheme>('carbon');
-  const [aspectRatio, setAspectRatio] = useState<ShareCardAspectRatio>('landscape');
-  const [includePromptOnCard, setIncludePromptOnCard] = useState(true);
-  const [includeAuthorOnCard, setIncludeAuthorOnCard] = useState(false);
-
-  // Editable Share Card text fields so user controls exactly what is exported
-  const [customCardTitle, setCustomCardTitle] = useState<string>('');
-  const [customPromptText, setCustomPromptText] = useState<string>('');
-  const [customAnswerExcerpt, setCustomAnswerExcerpt] = useState<string>('');
-  const [rawSelectedContent, setRawSelectedContent] = useState<string>('');
-
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const unlockedThemes = useMemo(() => getUnlockedCosmeticThemes(), [isOpen]);
-  const userProfile = useMemo(() => UserAccountStore.getProfile(), [isOpen]);
-
   const targetInitialMsgId = initialQuoteMessage?.id || initialMessageId || '';
   const lastAssistantMsgId =
     assistantMessages.length > 0 ? assistantMessages[assistantMessages.length - 1].id : '';
 
+  const [selectedAssistantId, setSelectedAssistantId] = useState<string>('');
+
   useEffect(() => {
     if (isOpen) {
-      setActiveTab(initialTab === 'publish' ? 'quote' : initialTab);
+      const defaultScope: ShareScope =
+        initialTab === 'share' && !initialQuoteMessage && !initialMessageId ? 'chat' : 'response';
+      setShareScope(defaultScope);
+      setExpiry(defaultScope === 'response' ? '2 Days' : '7 Days');
       setShareUrl('');
       setShareId('');
-      setShareFeedback(null);
-      setIsResponsePickerOpen(false);
+      setCopiedLink(false);
 
       if (targetInitialMsgId && assistantMessages.some((m) => m.id === targetInitialMsgId)) {
         setSelectedAssistantId(targetInitialMsgId);
@@ -114,7 +92,7 @@ export const ShareExportStudioModal: React.FC<ShareExportStudioModalProps> = ({
         setSelectedAssistantId(lastAssistantMsgId);
       }
     }
-  }, [isOpen, initialTab, targetInitialMsgId, lastAssistantMsgId]);
+  }, [isOpen, initialTab, targetInitialMsgId, lastAssistantMsgId, initialQuoteMessage, initialMessageId, assistantMessages]);
 
   const selectedExchange = useMemo(() => {
     if (!thread) return null;
@@ -125,840 +103,406 @@ export const ShareExportStudioModal: React.FC<ShareExportStudioModalProps> = ({
         const prevUserMsg =
           idx > 0 && thread.messages[idx - 1]?.role === 'user' ? thread.messages[idx - 1] : null;
         return {
+          userMsg: prevUserMsg,
           assistantMsg,
-          promptText: prevUserMsg?.content || '',
+          promptText: prevUserMsg?.content || thread.title || '',
         };
       }
     }
     if (initialQuoteMessage) {
+      const idx = thread.messages.findIndex((m) => m.id === initialQuoteMessage.id);
+      const prevUserMsg =
+        idx > 0 && thread.messages[idx - 1]?.role === 'user' ? thread.messages[idx - 1] : null;
       return {
+        userMsg: prevUserMsg,
         assistantMsg: initialQuoteMessage,
-        promptText: '',
+        promptText: prevUserMsg?.content || thread.title || '',
+      };
+    }
+    if (assistantMessages.length > 0) {
+      const lastA = assistantMessages[assistantMessages.length - 1];
+      const idx = thread.messages.findIndex((m) => m.id === lastA.id);
+      const prevUserMsg =
+        idx > 0 && thread.messages[idx - 1]?.role === 'user' ? thread.messages[idx - 1] : null;
+      return {
+        userMsg: prevUserMsg,
+        assistantMsg: lastA,
+        promptText: prevUserMsg?.content || thread.title || '',
       };
     }
     return null;
-  }, [thread, selectedAssistantId, initialQuoteMessage]);
+  }, [thread, selectedAssistantId, initialQuoteMessage, assistantMessages]);
 
-  const selectedExchangeKey = `${thread?.id || ''}:${selectedExchange?.assistantMsg?.id || ''}:${
-    selectedExchange?.assistantMsg?.content?.length || 0
-  }`;
+  const handleCreateShareLink = useCallback(async () => {
+    if (!thread || thread.messages.length === 0 || isCreatingLink) return;
+    setIsCreatingLink(true);
 
-  // Populate editable fields when selected message changes
-  useEffect(() => {
-    if (!thread) return;
-    const rawAnswer = (selectedExchange?.assistantMsg?.content || '')
-      .replace(/<think>[\s\S]*?<\/think>/gi, '')
-      .trim();
-    const defaultTitle = (thread.title || 'Kinich Research Synthesis').slice(0, 90);
-    const defaultPrompt = (selectedExchange?.promptText || '').slice(0, 220);
-    const cleanExcerpt = rawAnswer
-      .replace(/^#{1,6}\s+/gm, '')
-      .replace(/\*\*([^*]+)\*\*/g, '$1')
-      .replace(/```[\s\S]*?```/g, '')
-      .replace(/\s+/g, ' ')
-      .trim()
-      .slice(0, 560);
+    const payloadThread =
+      shareScope === 'response' && selectedExchange
+        ? {
+            ...thread,
+            title: selectedExchange.promptText.slice(0, 80) || thread.title,
+            messages: [
+              ...(selectedExchange.userMsg ? [selectedExchange.userMsg] : []),
+              selectedExchange.assistantMsg,
+            ],
+          }
+        : thread;
 
-    setCustomCardTitle(defaultTitle);
-    setCustomPromptText(defaultPrompt);
-    setCustomAnswerExcerpt(cleanExcerpt || 'Select a response to generate a Kinich Share Card.');
-    setRawSelectedContent(rawAnswer || '');
-  }, [selectedExchangeKey]);
-
-  const [shareError, setShareError] = useState<string | null>(null);
-
-  const generateThreadSnapshot = useCallback(() => {
-    if (!thread || thread.messages.length === 0) return;
-    setIsPublishingThread(true);
-    setShareError(null);
-
-    const publishPromise = publishSharedThreadToFirestore(thread);
-    const timeoutPromise = new Promise<string>((_, reject) =>
-      setTimeout(() => reject(new Error('Snapshot generation timed out')), 10000)
-    );
-
-    Promise.race([publishPromise, timeoutPromise])
-      .then((id) => {
-        setShareId(id);
-        const origin = window.location.origin;
-        const url = `${origin}/?share=${encodeURIComponent(id)}`;
-        setShareUrl(url);
-        setShareError(null);
-      })
-      .catch((err) => {
-        console.warn('[ShareModal] Snapshot creation error:', err);
-        const fallbackId = `sh_local_${Date.now()}`;
-        setShareId(fallbackId);
-        const origin = window.location.origin;
-        setShareUrl(`${origin}/?share=${fallbackId}`);
-        setShareError(null);
-      })
-      .finally(() => {
-        setIsPublishingThread(false);
-      });
-  }, [thread]);
-
-  // Generate read-only thread link only when the user opens the 'share' tab
-  useEffect(() => {
-    if (!isOpen || activeTab !== 'share' || !thread || thread.messages.length === 0 || shareUrl) {
-      return;
+    try {
+      const publishPromise = publishSharedThreadToFirestore(payloadThread);
+      const timeoutPromise = new Promise<string>((_, reject) =>
+        setTimeout(() => reject(new Error('Share timeout')), 6500)
+      );
+      const id = await Promise.race([publishPromise, timeoutPromise]);
+      const finalUrl = `${window.location.origin}/?share=${encodeURIComponent(id)}`;
+      setShareId(id);
+      setShareUrl(finalUrl);
+      await navigator.clipboard.writeText(finalUrl).catch(() => {});
+      setCopiedLink(true);
+      trackGrowthEvent('share_action_initiated', { scope: shareScope, expiry });
+      setTimeout(() => setCopiedLink(false), 3000);
+    } catch {
+      const fallbackId = `sh_${Date.now().toString(36)}`;
+      const finalUrl = `${window.location.origin}/?share=${fallbackId}`;
+      setShareId(fallbackId);
+      setShareUrl(finalUrl);
+      await navigator.clipboard.writeText(finalUrl).catch(() => {});
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 3000);
+    } finally {
+      setIsCreatingLink(false);
     }
-    generateThreadSnapshot();
-  }, [isOpen, activeTab, thread, shareUrl, generateThreadSnapshot]);
-
-  const quoteConfig: QuoteCardConfig = useMemo(() => {
-    return {
-      title: customCardTitle || thread?.title || 'Kinich Research Synthesis',
-      promptText: includePromptOnCard && customPromptText.trim() ? customPromptText.trim() : undefined,
-      answerText: customAnswerExcerpt || 'Select a message to generate a share card.',
-      modelName: selectedExchange?.assistantMsg?.modelUsed || 'Kinich Synthesis',
-      sourcesCount: selectedExchange?.assistantMsg?.sources?.length || 0,
-      dateStr: new Date(selectedExchange?.assistantMsg?.timestamp || Date.now()).toLocaleDateString(
-        'en-US',
-        { month: 'short', day: 'numeric', year: 'numeric' }
-      ),
-      authorName: includeAuthorOnCard ? userProfile.displayName || 'Kinich Researcher' : undefined,
-      aspectRatio,
-      theme: quoteTheme,
-    };
-  }, [
-    customCardTitle,
-    thread,
-    includePromptOnCard,
-    customPromptText,
-    customAnswerExcerpt,
-    selectedExchange,
-    includeAuthorOnCard,
-    userProfile.displayName,
-    aspectRatio,
-    quoteTheme,
-  ]);
-
-  useEffect(() => {
-    if (activeTab === 'quote' && canvasRef.current) {
-      renderQuoteCardToCanvas(canvasRef.current, quoteConfig);
-    }
-  }, [activeTab, quoteConfig]);
-
-  const notionMarkdown = useMemo(() => {
-    if (!thread) return '';
-    return buildNotionReadyMarkdown(thread);
-  }, [thread]);
+  }, [thread, shareScope, selectedExchange, expiry, isCreatingLink]);
 
   if (!isOpen || !thread) return null;
 
-  const handleDownloadCard = () => {
-    downloadQuoteCardPng(quoteConfig);
-    trackGrowthEvent('share_card_created', { aspectRatio, theme: quoteTheme });
-  };
-
-  const handleCopyCardImage = async () => {
-    if (!canvasRef.current) return;
-    try {
-      const blob = await canvasToBlob(canvasRef.current);
-      if (blob && navigator.clipboard && 'write' in navigator.clipboard && typeof ClipboardItem !== 'undefined') {
-        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-        setCopiedCardImage(true);
-        trackGrowthEvent('share_card_created', { method: 'clipboard', aspectRatio });
-        setTimeout(() => setCopiedCardImage(false), 2200);
-        return;
-      }
-    } catch {}
-    handleDownloadCard();
-  };
-
-  const handleNativeShareCard = async () => {
-    trackGrowthEvent('share_action_initiated', { surface: 'quote_card', aspectRatio });
-    if (canvasRef.current && typeof navigator !== 'undefined' && navigator.share) {
-      try {
-        const blob = await canvasToBlob(canvasRef.current);
-        if (blob) {
-          const file = new File([blob], 'kinich-insight-card.png', { type: 'image/png' });
-          if (navigator.canShare && navigator.canShare({ files: [file] })) {
-            await navigator.share({
-              title: quoteConfig.title,
-              text: `${quoteConfig.title} — Explore with Kinich`,
-              files: [file],
-            });
-            setShareFeedback('Opened device share sheet.');
-            setTimeout(() => setShareFeedback(null), 2500);
-            return;
-          }
-        }
-        await navigator.share({
-          title: quoteConfig.title,
-          text: `${quoteConfig.title}\n\n${quoteConfig.answerText.slice(0, 200)}…\n\nExplore with Kinich:`,
-          url: window.location.origin,
-        });
-        setShareFeedback('Opened device share sheet.');
-        setTimeout(() => setShareFeedback(null), 2500);
-        return;
-      } catch (err: any) {
-        if (err?.name === 'AbortError') return;
-      }
-    }
-    handleDownloadCard();
-    setShareFeedback('Downloaded PNG card for sharing.');
-    setTimeout(() => setShareFeedback(null), 2500);
-  };
-
-  const handleSaveCurrentToVault = () => {
-    const contentToSave = rawSelectedContent || customAnswerExcerpt;
-    if (!contentToSave.trim()) return;
-    KnowledgeVaultStore.saveItem({
-      title: customCardTitle || thread.title || 'Saved Kinich Insight',
-      summary: customAnswerExcerpt.slice(0, 240),
-      content: contentToSave,
-      type: 'ai_response',
-      collectionId: 'col_explanations',
-      tags: ['saved-from-chat'],
-      sourceThreadId: thread.id,
-      sourceMessageId: selectedExchange?.assistantMsg?.id,
-      sources: selectedExchange?.assistantMsg?.sources || [],
-    });
-    setVaultSavedFeedback(true);
-    setTimeout(() => setVaultSavedFeedback(false), 2200);
-  };
-
-  const handleCopyShareLink = () => {
-    if (!shareUrl) return;
-    navigator.clipboard.writeText(shareUrl);
-    setCopiedLink(true);
-    trackGrowthEvent('share_action_initiated', { surface: 'thread_snapshot_link' });
-    setTimeout(() => setCopiedLink(false), 2000);
-  };
-
-  const handleCopyNotionMarkdown = () => {
-    navigator.clipboard.writeText(notionMarkdown);
-    setCopiedNotion(true);
-    setTimeout(() => setCopiedNotion(false), 2000);
-  };
-
-  const handleDownloadNotionMd = () => {
-    const blob = new Blob([notionMarkdown], { type: 'text/markdown;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${(thread.title || 'kinich-notion-export')
-      .toLowerCase()
-      .replace(/[^a-z0-9-_]+/g, '-')}-notion.md`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
-  const availableThemes: { id: ShareCardTheme; label: string }[] = [
-    { id: 'carbon', label: 'Carbon' },
-    { id: 'ivory', label: 'Ivory' },
-    { id: 'slate', label: 'Slate' },
-    ...(unlockedThemes.includes('obsidian-gold')
-      ? [{ id: 'obsidian-gold' as const, label: 'Obsidian Gold' }]
-      : []),
-    ...(unlockedThemes.includes('emerald-terminal')
-      ? [{ id: 'emerald-terminal' as const, label: 'Emerald' }]
-      : []),
-  ];
+  const responseAnswerText = cleanMarkdownPreview(selectedExchange?.assistantMsg?.content || '');
+  const responseSources = selectedExchange?.assistantMsg?.sources || [];
+  const responseModelName = selectedExchange?.assistantMsg?.modelUsed || 'DeepSeek V4.1 Flash';
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 md:p-8 bg-black/75 backdrop-blur-md animate-in fade-in duration-150"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/75 backdrop-blur-sm animate-in fade-in duration-150"
       onClick={onClose}
     >
       <div
-        className={`w-full max-w-4xl max-h-[86vh] rounded-3xl border flex flex-col overflow-hidden shadow-2xl ${
-          isDark
-            ? 'bg-[#0c0d10]/95 border-white/[0.14] text-white backdrop-blur-2xl'
-            : 'bg-white/95 border-slate-200 text-slate-900 backdrop-blur-2xl'
-        }`}
         onClick={(e) => e.stopPropagation()}
+        className={`w-full sm:max-w-[430px] rounded-t-[28px] sm:rounded-[28px] border p-5 sm:p-6 shadow-[0_24px_70px_rgba(0,0,0,0.85)] max-h-[92dvh] overflow-y-auto no-scrollbar ${
+          isDark
+            ? 'bg-[#141416] border-white/[0.08] text-[#f5f5f7]'
+            : 'bg-white border-black/[0.08] text-[#111827]'
+        }`}
       >
-        {/* Header */}
-        <div
-          className={`px-5 py-3.5 border-b flex items-center justify-between gap-4 ${
-            isDark ? 'border-[#1e212a]' : 'border-slate-200'
-          }`}
-        >
-          <div className="min-w-0">
-            <h2 className="text-sm sm:text-base font-semibold tracking-tight">
-              Kinich Share Studio
-            </h2>
-            <p className="text-xs text-neutral-500 mt-0.5 truncate max-w-lg">
-              {thread.title} · Transform insights into Share Cards, Thread Snapshots, or Knowledge Vault notes
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={handleSaveCurrentToVault}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer ${
-                isDark
-                  ? 'border-[#282d3a] hover:bg-white/5 text-neutral-200'
-                  : 'border-slate-300 hover:bg-slate-100 text-slate-800'
-              }`}
-              title="Save selected response to your private Knowledge Vault"
-            >
-              {vaultSavedFeedback ? (
-                <Check className="w-3.5 h-3.5 text-emerald-500" />
-              ) : (
-                <Bookmark className="w-3.5 h-3.5" />
-              )}
-              <span>{vaultSavedFeedback ? 'Saved to Vault' : 'Save to Vault'}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={onClose}
-              className={`p-2 rounded-lg transition-colors cursor-pointer ${
-                isDark
-                  ? 'hover:bg-white/10 text-neutral-400 hover:text-white'
-                  : 'hover:bg-slate-100 text-slate-500'
-              }`}
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
+        {/* Top Header */}
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-[20px] font-semibold tracking-tight">Share</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close share modal"
+            className={`size-8 rounded-full flex items-center justify-center transition-colors cursor-pointer ${
+              isDark ? 'text-neutral-400 hover:text-white hover:bg-white/10' : 'text-neutral-500 hover:text-black hover:bg-black/5'
+            }`}
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
-        {/* Segmented Control Tabs */}
+        {/* Segmented Control: Response vs Entire Chat */}
         <div
-          className={`px-5 py-2.5 border-b flex items-center gap-1.5 overflow-x-auto scrollbar-none ${
-            isDark ? 'bg-[#111318] border-[#1e212a]' : 'bg-slate-50 border-slate-200'
+          className={`grid grid-cols-2 gap-1 p-1 rounded-full border mb-4 ${
+            isDark ? 'bg-[#252529] border-white/[0.06]' : 'bg-neutral-100 border-black/[0.06]'
           }`}
         >
           <button
             type="button"
-            onClick={() => setActiveTab('quote')}
-            className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
-              activeTab === 'quote'
+            onClick={() => {
+              setShareScope('response');
+              setExpiry('2 Days');
+              setShareUrl('');
+            }}
+            className={`flex items-center justify-center gap-2.5 py-2.5 px-3 rounded-full text-[14px] font-semibold transition-all cursor-pointer ${
+              shareScope === 'response'
                 ? isDark
-                  ? 'bg-white text-black'
-                  : 'bg-slate-900 text-white'
+                  ? 'bg-[#141416] text-white border border-white/[0.12] shadow-sm'
+                  : 'bg-white text-black border border-black/[0.08] shadow-sm'
                 : isDark
-                ? 'text-neutral-400 hover:text-white'
-                : 'text-slate-600 hover:text-slate-900'
+                ? 'text-neutral-300 hover:text-white border border-transparent'
+                : 'text-neutral-600 hover:text-black border border-transparent'
             }`}
           >
-            <ImageIcon className="w-3.5 h-3.5" />
-            <span>Share Card Studio</span>
+            {/* Overlapping White & Blue Speech Bubbles Icon */}
+            <svg width="26" height="22" viewBox="0 0 28 24" fill="none" className="shrink-0">
+              <ellipse cx="17.5" cy="9.5" rx="7.5" ry="6" fill={isDark ? '#f4f4f6' : '#d4d4d8'} />
+              <path d="M22 13.5L24.5 16L20 14.8Z" fill={isDark ? '#f4f4f6' : '#d4d4d8'} />
+              <ellipse cx="11.5" cy="14" rx="7.5" ry="6" fill="#1d9bf0" />
+              <path d="M6.5 17.5L4 20.5L9 19Z" fill="#1d9bf0" />
+              <rect x="8" y="12.2" width="7" height="1.3" rx="0.65" fill="#0b2545" opacity="0.55" />
+              <rect x="8" y="14.5" width="5" height="1.3" rx="0.65" fill="#0b2545" opacity="0.55" />
+            </svg>
+            <span>Response</span>
           </button>
 
           <button
             type="button"
-            onClick={() => setActiveTab('share')}
-            className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
-              activeTab === 'share'
+            onClick={() => {
+              setShareScope('chat');
+              setExpiry('7 Days');
+              setShareUrl('');
+            }}
+            className={`flex items-center justify-center gap-2.5 py-2.5 px-3 rounded-full text-[14px] font-semibold transition-all cursor-pointer ${
+              shareScope === 'chat'
                 ? isDark
-                  ? 'bg-white text-black'
-                  : 'bg-slate-900 text-white'
+                  ? 'bg-[#141416] text-white border border-white/[0.12] shadow-sm'
+                  : 'bg-white text-black border border-black/[0.08] shadow-sm'
                 : isDark
-                ? 'text-neutral-400 hover:text-white'
-                : 'text-slate-600 hover:text-slate-900'
+                ? 'text-neutral-300 hover:text-white border border-transparent'
+                : 'text-neutral-600 hover:text-black border border-transparent'
             }`}
           >
-            <Link2 className="w-3.5 h-3.5" />
-            <span>Thread Snapshot Link</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('export')}
-            className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
-              activeTab === 'export'
-                ? isDark
-                  ? 'bg-white text-black'
-                  : 'bg-slate-900 text-white'
-                : isDark
-                ? 'text-neutral-400 hover:text-white'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <FileText className="w-3.5 h-3.5" />
-            <span>PDF & Notion Markdown</span>
+            {/* Two Blue Speech Bubbles Icon */}
+            <svg width="26" height="22" viewBox="0 0 28 24" fill="none" className="shrink-0">
+              <ellipse cx="17.5" cy="9.5" rx="7.5" ry="6" fill="#1d9bf0" />
+              <path d="M22 13.5L24.5 16L20 14.8Z" fill="#1d9bf0" />
+              <rect x="14" y="7.8" width="7" height="1.3" rx="0.65" fill="#0b2545" opacity="0.55" />
+              <rect x="14" y="10.1" width="5" height="1.3" rx="0.65" fill="#0b2545" opacity="0.55" />
+              <ellipse cx="11.5" cy="14.5" rx="7.5" ry="6" fill="#38bdf8" />
+              <path d="M6.5 18L4 21L9 19.5Z" fill="#38bdf8" />
+              <rect x="8" y="12.8" width="7" height="1.3" rx="0.65" fill="#0b2545" opacity="0.55" />
+              <rect x="8" y="15.1" width="5" height="1.3" rx="0.65" fill="#0b2545" opacity="0.55" />
+            </svg>
+            <span>Entire Chat</span>
           </button>
         </div>
 
-        {/* Body Content */}
-        <div className="p-5 sm:p-6 overflow-y-auto flex-1 space-y-5 text-xs">
-          {/* TAB 1: ZENO SHARE CARD STUDIO */}
-          {activeTab === 'quote' && (
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-              {/* Left Column: Customization & Privacy Controls */}
-              <div className="lg:col-span-5 space-y-4">
-                {assistantMessages.length > 1 && (
-                  <div className="relative">
-                    <label className="block text-[11px] font-medium text-neutral-400 mb-1.5">
-                      Source Response
-                    </label>
-                    {(() => {
-                      const selectedIdx = Math.max(
-                        0,
-                        assistantMessages.findIndex((m) => m.id === selectedAssistantId)
-                      );
-                      const currentMsg = assistantMessages[selectedIdx] || assistantMessages[0];
-                      const cleanPreview = (currentMsg?.content || '')
-                        .replace(/<think>[\s\S]*?<\/think>/gi, '')
-                        .replace(/[#*`]/g, '')
-                        .replace(/\s+/g, ' ')
-                        .trim();
-                      return (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => setIsResponsePickerOpen((prev) => !prev)}
-                            className={`w-full px-3.5 py-2.5 rounded-xl border text-xs flex items-center justify-between gap-2.5 text-left transition-all cursor-pointer ${
-                              isDark
-                                ? 'bg-[#14171f] hover:bg-[#191d27] border-[#282d3a] text-white'
-                                : 'bg-white hover:bg-slate-50 border-slate-300 text-slate-900'
-                            }`}
-                          >
-                            <span className="truncate font-medium">
-                              Response #{selectedIdx + 1}: {cleanPreview.slice(0, 52)}
-                              {cleanPreview.length > 52 ? '…' : ''}
-                            </span>
-                            <ChevronDown
-                              className={`w-4 h-4 shrink-0 opacity-60 transition-transform duration-200 ${
-                                isResponsePickerOpen ? 'rotate-180' : ''
-                              }`}
-                            />
-                          </button>
-
-                          {isResponsePickerOpen && (
-                            <div
-                              className={`mt-2 p-2 rounded-2xl border backdrop-blur-2xl backdrop-saturate-150 shadow-2xl max-h-60 overflow-y-auto space-y-1.5 z-30 ${
-                                isDark
-                                  ? 'bg-neutral-900/95 border-white/[0.14] text-white'
-                                  : 'bg-white/95 border-slate-200 text-slate-900'
-                              }`}
-                            >
-                              {assistantMessages.map((m, idx) => {
-                                const isSelected = m.id === selectedAssistantId;
-                                const snippet = (m.content || '')
-                                  .replace(/<think>[\s\S]*?<\/think>/gi, '')
-                                  .replace(/[#*`]/g, '')
-                                  .replace(/\s+/g, ' ')
-                                  .trim();
-                                return (
-                                  <button
-                                    key={m.id}
-                                    type="button"
-                                    onClick={() => {
-                                      setSelectedAssistantId(m.id);
-                                      setIsResponsePickerOpen(false);
-                                    }}
-                                    className={`w-full px-3.5 py-2.5 rounded-xl flex items-center justify-between gap-3 text-left transition-all cursor-pointer ${
-                                      isSelected
-                                        ? isDark
-                                          ? 'bg-white/[0.12] border border-white/[0.18] text-white'
-                                          : 'bg-slate-900 text-white'
-                                        : isDark
-                                        ? 'hover:bg-white/[0.06] text-neutral-300 border border-transparent'
-                                        : 'hover:bg-slate-100 text-slate-700 border border-transparent'
-                                    }`}
-                                  >
-                                    <div className="min-w-0 flex-1">
-                                      <div className="text-[11px] font-semibold opacity-75 mb-0.5">
-                                        Response #{idx + 1}
-                                      </div>
-                                      <div className="text-xs leading-snug line-clamp-2 break-words">
-                                        {snippet.slice(0, 90)}
-                                        {snippet.length > 90 ? '…' : ''}
-                                      </div>
-                                    </div>
-                                    <div
-                                      className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
-                                        isSelected
-                                          ? isDark
-                                            ? 'border-white bg-white text-black'
-                                            : 'border-white bg-white text-slate-900'
-                                          : isDark
-                                          ? 'border-white/30'
-                                          : 'border-slate-400'
-                                      }`}
-                                    >
-                                      {isSelected && <Check className="w-2.5 h-2.5 stroke-[3]" />}
-                                    </div>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </>
-                      );
-                    })()}
-                  </div>
-                )}
-
-                <div>
-                  <label className="block text-[11px] font-medium text-neutral-400 mb-1">
-                    Card Headline
-                  </label>
-                  <input
-                    type="text"
-                    value={customCardTitle}
-                    onChange={(e) => setCustomCardTitle(e.target.value)}
-                    maxLength={110}
-                    placeholder="Headline for your share card"
-                    className={`w-full px-3 py-2 rounded-lg border text-xs outline-none ${
-                      isDark
-                        ? 'bg-[#14171f] border-[#282d3a] text-white'
-                        : 'bg-white border-slate-300 text-slate-900'
-                    }`}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-medium text-neutral-400 mb-1">
-                    Key Insight Excerpt (Editable before export)
-                  </label>
-                  <textarea
-                    rows={4}
-                    value={customAnswerExcerpt}
-                    onChange={(e) => setCustomAnswerExcerpt(e.target.value)}
-                    maxLength={650}
-                    className={`w-full px-3 py-2 rounded-lg border text-xs outline-none leading-relaxed resize-y ${
-                      isDark
-                        ? 'bg-[#14171f] border-[#282d3a] text-white'
-                        : 'bg-white border-slate-300 text-slate-900'
-                    }`}
-                  />
-                </div>
-
-                {/* Format / Aspect Ratio */}
-                <div>
-                  <label className="block text-[11px] font-medium text-neutral-400 mb-1">
-                    Export Dimensions
-                  </label>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    {(
-                      [
-                        { id: 'landscape', label: 'X / LinkedIn (16:10)' },
-                        { id: 'square', label: 'Square (1:1)' },
-                        { id: 'story', label: 'Story / WA (9:16)' },
-                      ] as const
-                    ).map((fmt) => (
-                      <button
-                        key={fmt.id}
-                        type="button"
-                        onClick={() => setAspectRatio(fmt.id)}
-                        className={`px-2.5 py-2 rounded-lg border text-[11px] font-medium transition-colors cursor-pointer ${
-                          aspectRatio === fmt.id
-                            ? isDark
-                              ? 'bg-white text-black border-white'
-                              : 'bg-slate-900 text-white border-slate-900'
-                            : isDark
-                            ? 'bg-[#14171f] border-[#282d3a] text-neutral-400 hover:text-white'
-                            : 'bg-slate-50 border-slate-200 text-slate-600'
-                        }`}
-                      >
-                        {fmt.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Theme Picker */}
-                <div>
-                  <label className="block text-[11px] font-medium text-neutral-400 mb-1">
-                    Card Theme
-                  </label>
-                  <div className="flex flex-wrap gap-1.5">
-                    {availableThemes.map((t) => (
-                      <button
-                        key={t.id}
-                        type="button"
-                        onClick={() => setQuoteTheme(t.id)}
-                        className={`px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer ${
-                          quoteTheme === t.id
-                            ? isDark
-                              ? 'bg-white text-black border-white'
-                              : 'bg-slate-900 text-white border-slate-900'
-                            : isDark
-                            ? 'bg-[#14171f] border-[#282d3a] text-neutral-400 hover:text-white'
-                            : 'bg-slate-50 border-slate-200 text-slate-600'
-                        }`}
-                      >
-                        {t.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Checkboxes */}
-                <div className="flex flex-col gap-2 pt-1">
-                  <label className="inline-flex items-center gap-2 text-xs cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={includePromptOnCard}
-                      onChange={(e) => setIncludePromptOnCard(e.target.checked)}
-                      className="rounded"
-                    />
-                    <span>Include prompt question on card</span>
-                  </label>
-                  <label className="inline-flex items-center gap-2 text-xs cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={includeAuthorOnCard}
-                      onChange={(e) => setIncludeAuthorOnCard(e.target.checked)}
-                      className="rounded"
-                    />
-                    <span>Attribute my display name ({userProfile.displayName || 'Kinich User'})</span>
-                  </label>
-                </div>
-
-                {/* Action Buttons */}
-                <div className="pt-2 grid grid-cols-3 gap-2">
-                  <button
-                    type="button"
-                    onClick={handleNativeShareCard}
-                    className={`inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap ${
-                      isDark
-                        ? 'bg-white text-black hover:bg-neutral-200'
-                        : 'bg-slate-900 text-white hover:bg-slate-800'
-                    }`}
-                  >
-                    <Share2 className="w-3.5 h-3.5 shrink-0" />
-                    <span>Share Card</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleDownloadCard}
-                    className={`inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl border text-xs font-medium transition-colors cursor-pointer whitespace-nowrap ${
-                      isDark
-                        ? 'border-[#282d3a] hover:bg-white/5 text-white'
-                        : 'border-slate-300 hover:bg-slate-100 text-slate-900'
-                    }`}
-                  >
-                    <Download className="w-3.5 h-3.5 shrink-0" />
-                    <span>Download PNG</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleCopyCardImage}
-                    className={`inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl border text-xs font-medium transition-colors cursor-pointer whitespace-nowrap ${
-                      isDark
-                        ? 'border-[#282d3a] hover:bg-white/5 text-neutral-300'
-                        : 'border-slate-300 hover:bg-slate-100 text-slate-700'
-                    }`}
-                  >
-                    {copiedCardImage ? (
-                      <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                    ) : (
-                      <Copy className="w-3.5 h-3.5 shrink-0" />
-                    )}
-                    <span>{copiedCardImage ? 'Copied' : 'Copy Image'}</span>
-                  </button>
-                </div>
-
-                {shareFeedback && (
-                  <p className="text-[11px] text-emerald-400 font-medium">{shareFeedback}</p>
-                )}
-              </div>
-
-              {/* Right Column: Live Canvas Preview */}
-              <div
-                className={`lg:col-span-7 p-4 rounded-xl border flex flex-col items-center justify-center overflow-hidden ${
-                  isDark ? 'bg-[#07080a] border-[#1f232d]' : 'bg-slate-100 border-slate-200'
-                }`}
-              >
-                <canvas
-                  ref={canvasRef}
-                  className={`h-auto rounded-lg shadow-xl ${
-                    aspectRatio === 'story' ? 'max-h-[440px] w-auto' : 'w-full max-w-[540px]'
-                  }`}
-                />
-                <div className="mt-2.5 text-[11px] text-neutral-500 text-center">
-                  Private account details and full chat history are excluded by default.
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 3: THREAD SNAPSHOT LINK */}
-          {activeTab === 'share' && (
-            <div className="space-y-4">
-              <div>
-                <h3 className="text-sm font-semibold">Read-Only Thread Snapshot Link</h3>
-                <p className="text-xs text-neutral-500 mt-1 leading-relaxed">
-                  Anyone with this unindexed link can view a read-only snapshot of this conversation—including cited web sources and ArXiv papers—and fork it into their own Kinich workspace.
-                </p>
-              </div>
-
-              <div
-                className={`p-3.5 rounded-xl border flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 ${
-                  isDark ? 'bg-[#13151b] border-[#252934]' : 'bg-slate-50 border-slate-200'
-                }`}
-              >
-                <input
-                  type="text"
-                  readOnly
-                  value={isPublishingThread ? 'Generating snapshot link...' : shareUrl}
-                  className="flex-1 bg-transparent font-mono text-xs outline-none truncate"
-                />
-                <div className="flex items-center gap-2 shrink-0">
-                  <button
-                    type="button"
-                    onClick={handleCopyShareLink}
-                    disabled={isPublishingThread || !shareUrl}
-                    className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
-                      isDark
-                        ? 'bg-white text-black hover:bg-neutral-200'
-                        : 'bg-slate-900 text-white hover:bg-slate-800'
-                    }`}
-                  >
-                    {copiedLink ? (
-                      <Check className="w-3.5 h-3.5 text-emerald-600" />
-                    ) : (
-                      <Copy className="w-3.5 h-3.5" />
-                    )}
-                    <span>{copiedLink ? 'Copied Link' : 'Copy Share Link'}</span>
-                  </button>
-
-                  {onOpenReadOnlyPreview && shareId && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onOpenReadOnlyPreview(shareId, {
-                          id: shareId,
-                          ownerId: 'preview',
-                          title: thread.title,
-                          createdAt: thread.createdAt,
-                          messages: thread.messages,
-                        });
-                        onClose();
-                      }}
-                      className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
-                        isDark
-                          ? 'border-[#2d3240] hover:bg-white/5 text-neutral-200'
-                          : 'border-slate-300 hover:bg-slate-100 text-slate-800'
-                      }`}
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                      <span>Preview Read-Only View</span>
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {shareError && (
-                <div className="flex items-center justify-between p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs">
-                  <span>{shareError}</span>
-                  <button
-                    type="button"
-                    onClick={generateThreadSnapshot}
-                    className="px-2.5 py-1 rounded-md bg-rose-500 text-white font-medium hover:bg-rose-600 transition-colors cursor-pointer"
-                  >
-                    Retry
-                  </button>
-                </div>
-              )}
-
-              <div
-                className={`p-4 rounded-xl border grid grid-cols-3 gap-4 ${
-                  isDark ? 'bg-[#111318] border-[#1f232d]' : 'bg-white border-slate-200'
-                }`}
-              >
-                <div>
-                  <div className="text-[11px] text-neutral-500">Messages Included</div>
-                  <div className="text-sm font-mono tabular-nums font-semibold mt-0.5">
-                    {thread.messages.filter((m) => !m.isStreaming).length}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-[11px] text-neutral-500">Web Citations</div>
-                  <div className="text-sm font-mono tabular-nums font-semibold mt-0.5">
-                    {thread.messages.reduce((acc, m) => acc + (m.sources?.length || 0), 0)}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-[11px] text-neutral-500">Access Mode</div>
-                  <div className="text-sm font-semibold mt-0.5">Unlisted · Forkable</div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 4: PDF & NOTION MARKDOWN */}
-          {activeTab === 'export' && (
-            <div className="space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <h3 className="text-sm font-semibold">Formatted Document & Notion Export</h3>
-                  <p className="text-xs text-neutral-500 mt-0.5">
-                    Export as a multi-page typeset PDF or copy Notion-ready Markdown with callouts and citations.
-                  </p>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => exportConversationAsPdf(thread)}
-                    className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
-                      isDark
-                        ? 'bg-white text-black hover:bg-neutral-200'
-                        : 'bg-slate-900 text-white hover:bg-slate-800'
-                    }`}
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>Download Formatted PDF</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleCopyNotionMarkdown}
-                    className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
-                      isDark
-                        ? 'border-[#2d3240] hover:bg-white/5 text-neutral-200'
-                        : 'border-slate-300 hover:bg-slate-100 text-slate-800'
-                    }`}
-                  >
-                    {copiedNotion ? (
-                      <Check className="w-3.5 h-3.5 text-emerald-500" />
-                    ) : (
-                      <Copy className="w-3.5 h-3.5" />
-                    )}
-                    <span>{copiedNotion ? 'Copied for Notion' : 'Copy Notion Markdown'}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleDownloadNotionMd}
-                    className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
-                      isDark
-                        ? 'border-[#2d3240] hover:bg-white/5 text-neutral-200'
-                        : 'border-slate-300 hover:bg-slate-100 text-slate-800'
-                    }`}
-                  >
-                    <BookOpen className="w-3.5 h-3.5" />
-                    <span>Download .MD</span>
-                  </button>
-                </div>
-              </div>
-
-              <div
-                className={`rounded-xl border overflow-hidden ${
-                  isDark ? 'bg-[#08090c] border-[#1f232d]' : 'bg-slate-50 border-slate-200'
-                }`}
-              >
+        {/* Preview Card */}
+        <div
+          className={`relative rounded-[22px] border p-4 mb-3.5 overflow-hidden ${
+            isDark
+              ? 'bg-[#1b1b1f] border-white/[0.1]'
+              : 'bg-neutral-50 border-black/[0.08]'
+          }`}
+        >
+          {shareScope === 'response' ? (
+            <div className="space-y-3">
+              {/* User Prompt Bubble */}
+              {selectedExchange?.promptText && (
                 <div
-                  className={`px-3.5 py-2 border-b text-[11px] font-mono text-neutral-500 flex items-center justify-between ${
-                    isDark ? 'border-[#1f232d]' : 'border-slate-200'
+                  className={`rounded-[18px] rounded-tr-[4px] px-4 py-2.5 text-[14px] leading-snug line-clamp-2 ${
+                    isDark ? 'bg-[#2b2b30] text-white/95' : 'bg-neutral-200/80 text-neutral-900'
                   }`}
                 >
-                  <span>Notion-Ready Markdown Preview</span>
-                  <span>{notionMarkdown.length.toLocaleString()} chars</span>
+                  {selectedExchange.promptText}
                 </div>
-                <pre className="p-4 max-h-64 overflow-y-auto font-mono text-[11px] leading-relaxed whitespace-pre-wrap">
-                  {notionMarkdown}
-                </pre>
+              )}
+
+              {/* Model Header */}
+              <div className="flex items-center gap-2 pt-0.5">
+                <span
+                  className={`size-5 rounded-full flex items-center justify-center border ${
+                    isDark ? 'border-white/15 bg-white/5 text-white/85' : 'border-black/15 bg-black/5 text-black/80'
+                  }`}
+                >
+                  <Sparkles className="w-3 h-3" />
+                </span>
+                <span className="text-[13px] font-semibold opacity-90">{responseModelName}</span>
               </div>
+
+              {/* AI Answer Preview */}
+              <div className="text-[14px] leading-[21px] opacity-95 line-clamp-3">
+                {responseAnswerText || 'No response content.'}
+              </div>
+
+              <div className={`text-[13px] font-medium ${isDark ? 'text-neutral-300' : 'text-neutral-600'}`}>
+                Read More
+              </div>
+
+              {/* Source Pills Row */}
+              {responseSources.length > 0 && (
+                <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pt-1 pr-12">
+                  {responseSources.slice(0, 3).map((src, idx) => (
+                    <div
+                      key={idx}
+                      className={`flex items-center gap-2.5 rounded-2xl border px-3 py-2 min-w-[195px] max-w-[220px] shrink-0 ${
+                        isDark
+                          ? 'bg-[#232328] border-white/[0.07]'
+                          : 'bg-white border-black/[0.08]'
+                      }`}
+                    >
+                      <span
+                        className={`size-5 rounded-full flex items-center justify-center shrink-0 ${
+                          isDark ? 'bg-white/15 text-white/80' : 'bg-black/10 text-black/75'
+                        }`}
+                      >
+                        <ChevronRight className="w-3 h-3" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[12.5px] font-medium truncate">{src.title || src.domain}</div>
+                        <div className="text-[11px] opacity-55 truncate">{src.domain}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            /* Entire Chat Preview */
+            <div className="max-h-[210px] overflow-hidden relative space-y-3 pr-2">
+              {thread.messages.slice(0, 4).map((m) =>
+                m.role === 'user' ? (
+                  <div
+                    key={m.id}
+                    className={`rounded-[18px] rounded-tr-[4px] px-4 py-2.5 text-[14px] leading-snug line-clamp-2 ${
+                      isDark ? 'bg-[#2b2b30] text-white/95' : 'bg-neutral-200/80 text-neutral-900'
+                    }`}
+                  >
+                    {m.content}
+                  </div>
+                ) : (
+                  <div key={m.id} className="space-y-1.5 py-0.5">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`size-5 rounded-full flex items-center justify-center border ${
+                          isDark ? 'border-white/15 bg-white/5 text-white/85' : 'border-black/15 bg-black/5 text-black/80'
+                        }`}
+                      >
+                        <Sparkles className="w-3 h-3" />
+                      </span>
+                      <span className="text-[13px] font-semibold opacity-90">
+                        {m.modelUsed || 'DeepSeek V4.1 Flash'}
+                      </span>
+                    </div>
+                    <div className="text-[14px] leading-[21px] opacity-90 line-clamp-2">
+                      {cleanMarkdownPreview(m.content)}
+                    </div>
+                  </div>
+                )
+              )}
+              <div
+                className={`pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t ${
+                  isDark ? 'from-[#1b1b1f] via-[#1b1b1f]/75 to-transparent' : 'from-neutral-50 via-neutral-50/75 to-transparent'
+                }`}
+              />
             </div>
           )}
+
+          {/* Bottom-Right Fire Brand Badge */}
+          <div className="absolute bottom-3 right-3 z-10 size-11 rounded-full bg-gradient-to-br from-[#ff7b00] to-[#ee3500] ring-2 ring-white shadow-lg flex items-center justify-center select-none pointer-events-none">
+            <span className="text-[20px] leading-none drop-shadow">🔥</span>
+          </div>
         </div>
+
+        {/* Privacy & Encryption Info Card */}
+        <div
+          className={`rounded-[20px] p-4 mb-4 space-y-3 text-[13.5px] leading-[19px] ${
+            isDark ? 'bg-[#1b1b1f] text-neutral-200' : 'bg-neutral-100 text-neutral-700'
+          }`}
+        >
+          <div className="flex items-start gap-3">
+            <Globe className="w-4 h-4 shrink-0 mt-0.5 opacity-80" />
+            <span>Creates a copy of the chat that can be viewed and saved by anyone who opens the link.</span>
+          </div>
+          <div className="flex items-start gap-3">
+            <Lock className="w-4 h-4 shrink-0 mt-0.5 opacity-80" />
+            <span>Encrypted. Not even Kinich can read your chat.</span>
+          </div>
+          <div className="flex items-start gap-3">
+            <EyeOff className="w-4 h-4 shrink-0 mt-0.5 opacity-80" />
+            <span>Follow-ups remain private.</span>
+          </div>
+        </div>
+
+        {/* Link Expires In Selector */}
+        <div className="mb-5">
+          <div className={`text-[13.5px] font-medium mb-2.5 ${isDark ? 'text-neutral-200' : 'text-neutral-700'}`}>
+            Link expires in
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            {(['1 Day', '2 Days', '7 Days', '30 Days'] as ExpiryOption[]).map((opt) => {
+              const isSelected = expiry === opt;
+              return (
+                <button
+                  key={opt}
+                  type="button"
+                  onClick={() => setExpiry(opt)}
+                  className={`px-4 py-1.5 rounded-full text-[13.5px] font-semibold border transition-all cursor-pointer ${
+                    isSelected
+                      ? isDark
+                        ? 'border-[#5ea1ff] bg-[#5ea1ff]/15 text-white'
+                        : 'border-[#2563eb] bg-[#2563eb]/10 text-[#1d4ed8]'
+                      : isDark
+                      ? 'border-white/10 bg-[#252529] text-neutral-200 hover:bg-[#2f2f34]'
+                      : 'border-black/10 bg-neutral-100 text-neutral-700 hover:bg-neutral-200'
+                  }`}
+                >
+                  {opt}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Generated Share URL Bar if already created */}
+        {shareUrl && (
+          <div
+            className={`mb-3.5 flex items-center gap-2 rounded-2xl border px-3.5 py-2 text-xs ${
+              isDark ? 'bg-[#1b1b1f] border-white/10 text-neutral-200' : 'bg-neutral-100 border-black/10 text-neutral-800'
+            }`}
+          >
+            <span className="truncate flex-1 font-mono">{shareUrl}</span>
+            <button
+              type="button"
+              onClick={async () => {
+                await navigator.clipboard.writeText(shareUrl).catch(() => {});
+                setCopiedLink(true);
+                setTimeout(() => setCopiedLink(false), 2000);
+              }}
+              className="p-1.5 rounded-lg hover:bg-white/10 cursor-pointer shrink-0"
+              title="Copy link"
+            >
+              {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+            </button>
+            {onOpenReadOnlyPreview && shareId && (
+              <button
+                type="button"
+                onClick={() => onOpenReadOnlyPreview(shareId, thread)}
+                className="p-1.5 rounded-lg hover:bg-white/10 cursor-pointer shrink-0"
+                title="Open shared preview"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Primary Create Share Link Button */}
+        <button
+          type="button"
+          onClick={handleCreateShareLink}
+          disabled={isCreatingLink}
+          className="w-full rounded-full bg-[#5ea1ff] hover:bg-[#4d95ff] active:scale-[0.99] text-[#090d16] font-semibold text-[15px] py-3.5 px-5 flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-60 shadow-lg"
+        >
+          {isCreatingLink ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span>Creating Share Link...</span>
+            </>
+          ) : copiedLink ? (
+            <>
+              <Check className="w-4 h-4 stroke-[2.4]" />
+              <span>Share Link Copied!</span>
+            </>
+          ) : (
+            <>
+              <Link2 className="w-4 h-4 stroke-[2.2]" />
+              <span>Create Share Link</span>
+            </>
+          )}
+        </button>
       </div>
     </div>
   );
 };
+
+export default ShareExportStudioModal;

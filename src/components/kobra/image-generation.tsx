@@ -1,270 +1,493 @@
-import React, { useState } from 'react';
-import {
-  Image as ImageIcon,
-  Download,
-  RefreshCw,
-  Maximize2,
-  X,
-  Check,
-  Copy,
-  Sliders,
-} from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Check, Copy, Download, RefreshCw, X } from 'lucide-react';
 
-export interface ImageGenerationCardProps {
-  prompt: string;
-  initialAspectRatio?: '1:1' | '16:9' | '9:16';
+export interface ImageGenerationProps {
+  src?: string;
+  alt?: string;
+  prompt?: string;
+  resolution?: string;
+  progress?: number;
+  step?: string;
+  className?: string;
+  initialAspectRatio?: '1:1' | '16:9' | '9:16' | '3:2';
   isDark?: boolean;
   fallbackImages?: { imageUrl: string; title?: string }[];
 }
 
+export type ImageGenerationCardProps = ImageGenerationProps;
+
+/**
+ * Detects when a user prompt is asking to generate/create/draw an AI image
+ * rather than searching the web.
+ */
 export function detectImageGenerationIntent(query: string): string | null {
   if (!query) return null;
   const cleanQ = query.trim();
-  // Never trigger AI image generation when the user is asking to fetch/show/find real web images
-  if (/\b(fetch|fentch|featch|fetech|search|find|show|get|lookup|browse)\b/i.test(cleanQ)) {
-    return null;
+
+  // Explicit creation / generation / drawing patterns
+  const patterns: RegExp[] = [
+    /^(?:please\s+|can\s+you\s+|could\s+you\s+|yo\s+|hey\s+|bro\s+)*(?:generate|create|make|render|design|paint|illustrate|produce|craft)\s+(?:me\s+)?(?:an?\s+|some\s+|the\s+)?(?:ai\s+|new\s+|cool\s+|realistic\s+|hd\s+|4k\s+|cinematic\s+)?(?:image|picture|photo|photograph|illustration|artwork|art|wallpaper|poster|logo|avatar|icon|drawing|sketch|painting|portrait|concept\s+art|scene|visual|graphic|banner|thumbnail)s?\s*(?:of|for|showing|with|featuring|depicting|about|:|-)?\s*(.+)/i,
+    /^(?:please\s+|can\s+you\s+|could\s+you\s+|yo\s+|hey\s+|bro\s+)*(?:draw|paint|sketch|illustrate|imagine)\s+(?:me\s+)?(?:an?\s+)?(.+)/i,
+    /\b(?:generate|create|make)\s+(?:me\s+)?(?:an?\s+)(?:ai\s+)?(?:image|picture|photo|wallpaper|illustration|artwork|poster|logo)\s+(?:of|for|showing|with|depicting)\s+(.+)/i,
+  ];
+
+  for (const regex of patterns) {
+    const match = cleanQ.match(regex);
+    if (match && match[1]) {
+      const extracted = match[1]
+        .replace(/\b(?:please|pls|plz|bro|broo+|ok|okay|right\s+now|for\s+me)\s*$/i, '')
+        .trim();
+      if (extracted.length >= 2) {
+        return extracted;
+      }
+    }
   }
-  const match = cleanQ.match(
-    /\b(?:generate|create|draw|render|design|paint|illustrate)\s+(?:an?\s+)?(?:ai\s+)?(?:image|picture|photo|illustration|artwork|wallpaper|poster|logo|concept art)\s+(?:of\s+|showing\s+|for\s+)?(.+)/i
-  );
-  if (match && match[1]) {
-    return match[1].trim();
-  }
+
   return null;
 }
 
-export const ImageGenerationCard: React.FC<ImageGenerationCardProps> = ({
-  prompt: initialPrompt,
-  initialAspectRatio = '16:9',
+function getStepLabel(progress: number, customStep?: string): string {
+  if (customStep) return customStep;
+  if (progress < 28) return 'Composing scene';
+  if (progress < 62) return 'Shaping forms';
+  if (progress < 88) return 'Refining details';
+  return 'Finishing image';
+}
+
+const DOT_DELAYS = [
+  '-1.2s',
+  '-0.96s',
+  '-0.72s',
+  '-0.96s',
+  '-0.72s',
+  '-0.48s',
+  '-0.72s',
+  '-0.48s',
+  '-0.24s',
+];
+
+/**
+ * @kobra/image-generation
+ * A canvas forming dynamically while an AI image is generated.
+ */
+export const ImageGeneration: React.FC<ImageGenerationProps> = ({
+  src,
+  alt,
+  prompt: initialPrompt = '',
+  resolution = '1536 × 1024',
+  progress: controlledProgress,
+  step: controlledStep,
+  className = '',
+  initialAspectRatio = '3:2',
   isDark = true,
-  fallbackImages = [],
 }) => {
-  const [prompt, setPrompt] = useState(initialPrompt);
-  const [aspectRatio, setAspectRatio] = useState<'1:1' | '16:9' | '9:16'>(initialAspectRatio);
-  const [stylePreset, setStylePreset] = useState<'Photorealistic' | 'Monochrome Editorial' | 'Cinematic' | 'Architectural'>('Photorealistic');
-  const [seed, setSeed] = useState<number>(() => Math.floor(Math.random() * 9000) + 1000);
-  const [isLoading, setIsLoading] = useState(false);
+  const effectivePrompt = (initialPrompt || alt || 'Cinematic landscape at golden hour').trim();
+  const [seed, setSeed] = useState<number>(() => Math.floor(Math.random() * 89999) + 10000);
+  const [phase, setPhase] = useState<'forming' | 'revealing' | 'ready'>('forming');
+  const [internalProgress, setInternalProgress] = useState<number>(0);
+  const [copied, setCopied] = useState(false);
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
-  const [copiedPrompt, setCopiedPrompt] = useState(false);
-  const [imgError, setImgError] = useState(false);
+  const [fallbackAttempt, setFallbackAttempt] = useState(0);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const dimensions =
-    aspectRatio === '1:1'
-      ? { w: 1024, h: 1024 }
-      : aspectRatio === '9:16'
-      ? { w: 768, h: 1344 }
-      : { w: 1280, h: 720 };
+    initialAspectRatio === '1:1'
+      ? { w: 1024, h: 1024, ratio: 1, label: '1024 × 1024' }
+      : initialAspectRatio === '9:16'
+      ? { w: 768, h: 1152, ratio: 2 / 3, label: '1024 × 1536' }
+      : initialAspectRatio === '16:9'
+      ? { w: 1280, h: 720, ratio: 16 / 9, label: '1536 × 864' }
+      : { w: 1152, h: 768, ratio: 1.5, label: resolution || '1536 × 1024' };
 
-  const fullPrompt = `${prompt}, ${stylePreset.toLowerCase()} style, high detail, masterpiece`;
-  const generatedUrl =
-    !imgError
-      ? `https://image.pollinations.ai/prompt/${encodeURIComponent(
-          fullPrompt
-        )}?width=${dimensions.w}&height=${dimensions.h}&seed=${seed}&nologo=true`
-      : fallbackImages[0]?.imageUrl || '';
-
-  const handleRegenerate = () => {
-    setImgError(false);
-    setIsLoading(true);
-    setSeed((prev) => prev + 137);
+  const buildImageUrl = () => {
+    if (src) return src;
+    return `/api/media/generate-image?prompt=${encodeURIComponent(
+      effectivePrompt
+    )}&width=${dimensions.w}&height=${dimensions.h}&seed=${seed}${
+      fallbackAttempt > 0 ? '&fallback=1' : ''
+    }`;
   };
 
-  const handleCopyPrompt = () => {
-    navigator.clipboard.writeText(fullPrompt);
-    setCopiedPrompt(true);
-    setTimeout(() => setCopiedPrompt(false), 2000);
+  const imageUrl = buildImageUrl();
+  const displayProgress =
+    typeof controlledProgress === 'number' ? controlledProgress : internalProgress;
+  const currentStepText = getStepLabel(displayProgress, controlledStep);
+
+  // Smooth autonomous progress counter while in forming phase
+  useEffect(() => {
+    if (phase === 'ready') {
+      setInternalProgress(100);
+      return;
+    }
+    setInternalProgress(6);
+    const interval = window.setInterval(() => {
+      setInternalProgress((prev) => {
+        if (prev >= 92) return prev;
+        const stepInc = prev < 40 ? 4.5 : prev < 75 ? 2.4 : 0.8;
+        return Math.min(92, Number((prev + stepInc).toFixed(1)));
+      });
+    }, 180);
+    return () => window.clearInterval(interval);
+  }, [phase, seed, fallbackAttempt]);
+
+  // Subtle ambient generative canvas trails while forming
+  useEffect(() => {
+    if (phase === 'ready') return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    let animId = 0;
+    let t = 0;
+    const w = (canvas.width = 320);
+    const h = (canvas.height = 214);
+
+    const blobs = [
+      { x: w * 0.3, y: h * 0.4, r: 72, vx: 0.45, vy: 0.32, hue: 215 },
+      { x: w * 0.7, y: h * 0.6, r: 84, vx: -0.38, vy: 0.41, hue: 265 },
+      { x: w * 0.5, y: h * 0.5, r: 64, vx: 0.3, vy: -0.35, hue: 190 },
+    ];
+
+    const render = () => {
+      t += 0.02;
+      ctx.clearRect(0, 0, w, h);
+      for (const b of blobs) {
+        b.x += Math.sin(t + b.hue) * b.vx;
+        b.y += Math.cos(t + b.hue) * b.vy;
+        const grad = ctx.createRadialGradient(b.x, b.y, 2, b.x, b.y, b.r);
+        if (isDark) {
+          grad.addColorStop(0, `hsla(${b.hue}, 70%, 65%, 0.16)`);
+          grad.addColorStop(1, 'hsla(0, 0%, 0%, 0)');
+        } else {
+          grad.addColorStop(0, `hsla(${b.hue}, 65%, 55%, 0.14)`);
+          grad.addColorStop(1, 'hsla(0, 0%, 100%, 0)');
+        }
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      animId = window.requestAnimationFrame(render);
+    };
+
+    animId = window.requestAnimationFrame(render);
+    return () => window.cancelAnimationFrame(animId);
+  }, [phase, isDark]);
+
+  const handleImageLoaded = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    // Verify the loaded image is not a yellow Pollinations rate-limit banner
+    if (fallbackAttempt === 0) {
+      try {
+        const imgEl = e.currentTarget;
+        const off = document.createElement('canvas');
+        off.width = 16;
+        off.height = 16;
+        const c = off.getContext('2d');
+        if (c) {
+          c.drawImage(imgEl, 0, 0, 16, 16);
+          const d = c.getImageData(0, 0, 16, 16).data;
+          let yellowCount = 0;
+          for (let i = 0; i < d.length; i += 4) {
+            const r = d[i];
+            const g = d[i + 1];
+            const b = d[i + 2];
+            if (r > 218 && g > 178 && g < 225 && b > 40 && b < 110) {
+              yellowCount++;
+            }
+          }
+          if (yellowCount > 150) {
+            setFallbackAttempt(1);
+            return;
+          }
+        }
+      } catch {
+        // Proceed if canvas read is restricted
+      }
+    }
+
+    setInternalProgress(100);
+    setPhase('revealing');
+    window.setTimeout(() => {
+      setPhase('ready');
+    }, 320);
   };
+
+  const handleImageError = () => {
+    if (fallbackAttempt < 1) {
+      setFallbackAttempt((prev) => prev + 1);
+    } else {
+      setPhase('ready');
+    }
+  };
+
+  const handleRegenerate = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setPhase('forming');
+    setInternalProgress(0);
+    setFallbackAttempt(0);
+    setSeed((prev) => prev + Math.floor(Math.random() * 900) + 101);
+  };
+
+  const handleCopy = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const fullUrl = imageUrl.startsWith('/') ? `${window.location.origin}${imageUrl}` : imageUrl;
+      await navigator.clipboard.writeText(fullUrl);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      // ignore clipboard errors
+    }
+  };
+
+  const isReady = phase === 'ready';
+  const cloudGrow = Math.min(1, 0.65 + (displayProgress / 100) * 0.35);
 
   return (
-    <div
-      data-slot="kobra-image-generation"
-      className={`my-3.5 rounded-3xl border p-4 sm:p-5 transition-all ${
-        isDark
-          ? 'bg-[#141418] border-white/[0.12] text-white shadow-[0_16px_40px_rgba(0,0,0,0.55)]'
-          : 'bg-white border-black/[0.1] text-[#18181b] shadow-[0_12px_32px_rgba(0,0,0,0.07)]'
-      }`}
-    >
-      {/* Header */}
-      <div className="flex items-center justify-between gap-3 mb-4">
-        <div className="flex items-center gap-3 min-w-0">
-          <div
-            className={`size-10 rounded-2xl border flex items-center justify-center shrink-0 ${
-              isDark
-                ? 'bg-white/[0.06] border-white/15 text-white'
-                : 'bg-[#f4f4f5] border-black/10 text-[#18181b]'
-            }`}
-          >
-            <ImageIcon className="w-4 h-4" />
-          </div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="font-semibold text-sm sm:text-base">Image Generation Studio</span>
-              <span
-                className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono uppercase border ${
-                  isDark
-                    ? 'bg-white/[0.06] border-white/15 text-white/80'
-                    : 'bg-[#f4f4f5] border-black/10 text-[#18181b]'
-                }`}
-              >
-                {aspectRatio}
-              </span>
-            </div>
-            <p className="text-xs opacity-65 truncate mt-0.5">{prompt}</p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-1.5 shrink-0">
-          <button
-            type="button"
-            onClick={handleCopyPrompt}
-            className={`size-8 rounded-full border flex items-center justify-center transition-colors cursor-pointer ${
-              isDark
-                ? 'bg-white/[0.05] border-white/10 hover:bg-white/12'
-                : 'bg-[#f4f4f5] border-black/10 hover:bg-neutral-200'
-            }`}
-            title="Copy prompt"
-          >
-            {copiedPrompt ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-          </button>
-          <button
-            type="button"
-            onClick={handleRegenerate}
-            className={`px-3 py-1.5 rounded-full border text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
-              isDark
-                ? 'bg-white text-black border-white hover:bg-neutral-200'
-                : 'bg-[#18181b] text-white border-[#18181b] hover:bg-neutral-800'
-            }`}
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-            <span>Regenerate</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Controls Bar: Aspect Ratio & Style Presets */}
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-3.5">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <Sliders className="w-3.5 h-3.5 opacity-60 mr-1" />
-          {(['Photorealistic', 'Monochrome Editorial', 'Cinematic', 'Architectural'] as const).map(
-            (st) => (
-              <button
-                key={st}
-                type="button"
-                onClick={() => {
-                  setStylePreset(st);
-                  setIsLoading(true);
-                }}
-                className={`px-3 py-1 rounded-full text-[11px] font-semibold border transition-all cursor-pointer ${
-                  stylePreset === st
-                    ? isDark
-                      ? 'bg-white text-black border-white'
-                      : 'bg-[#18181b] text-white border-[#18181b]'
-                    : isDark
-                    ? 'bg-white/[0.04] border-white/10 text-neutral-300 hover:bg-white/10'
-                    : 'bg-[#f4f4f5] border-black/10 text-neutral-700 hover:bg-neutral-200'
-                }`}
-              >
-                {st}
-              </button>
-            )
-          )}
-        </div>
-
-        <div className="flex items-center gap-1">
-          {(['16:9', '1:1', '9:16'] as const).map((ratio) => (
-            <button
-              key={ratio}
-              type="button"
-              onClick={() => {
-                setAspectRatio(ratio);
-                setIsLoading(true);
-              }}
-              className={`px-2.5 py-1 rounded-full text-[11px] font-mono border transition-all cursor-pointer ${
-                aspectRatio === ratio
-                  ? isDark
-                    ? 'bg-white text-black border-white font-bold'
-                    : 'bg-[#18181b] text-white border-[#18181b] font-bold'
-                  : isDark
-                  ? 'bg-white/[0.04] border-white/10 text-neutral-400'
-                  : 'bg-[#f4f4f5] border-black/10 text-neutral-600'
-              }`}
-            >
-              {ratio}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Image Viewport */}
-      {generatedUrl && (
-        <div
-          className={`relative rounded-2xl overflow-hidden border flex items-center justify-center ${
-            aspectRatio === '1:1'
-              ? 'aspect-square max-h-[420px]'
-              : aspectRatio === '9:16'
-              ? 'aspect-[9/16] max-h-[460px]'
-              : 'aspect-video max-h-[400px]'
-          } w-full mx-auto ${
-            isDark ? 'bg-[#0b0b0e] border-white/10' : 'bg-[#f4f4f5] border-black/10'
+    <>
+      <div
+        data-slot="image-generation"
+        data-phase={phase}
+        style={
+          {
+            aspectRatio: String(dimensions.ratio),
+            '--cloud-grow': cloudGrow,
+            '--image-progress': displayProgress / 100,
+          } as React.CSSProperties
+        }
+        className={`group/image-generation relative my-2.5 w-full max-w-md min-w-0 overflow-hidden rounded-2xl outline-1 -outline-offset-1 transition-all duration-500 ease-out select-none ${
+          isDark
+            ? 'bg-[#141416] outline-white/10 shadow-[0_12px_34px_rgba(0,0,0,0.5)]'
+            : 'bg-[#f4f4f5] outline-black/10 shadow-[0_10px_28px_rgba(0,0,0,0.08)]'
+        } ${className}`}
+      >
+        <button
+          type="button"
+          data-slot="lightbox-photo"
+          aria-label={`Open ${alt || effectivePrompt}`}
+          disabled={!isReady}
+          onClick={() => isReady && setIsLightboxOpen(true)}
+          className={`block rounded-[inherit] outline-none absolute inset-0 size-full overflow-hidden ${
+            isReady ? 'cursor-zoom-in' : 'cursor-default'
           }`}
         >
-          <img
-            src={generatedUrl}
-            alt={prompt}
-            onLoad={() => setIsLoading(false)}
-            onError={() => {
-              setIsLoading(false);
-              setImgError(true);
-            }}
-            className="w-full h-full object-cover cursor-pointer"
-            onClick={() => setIsLightboxOpen(true)}
+          {/* Forming generative canvas trails */}
+          <canvas
+            ref={canvasRef}
+            aria-hidden="true"
+            className={`image-generation-trails absolute inset-0 size-full transition-opacity duration-700 ${
+              isReady ? 'opacity-0' : 'opacity-100'
+            }`}
           />
 
-          <div className="absolute bottom-3 right-3 flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setIsLightboxOpen(true)}
-              className="px-3 py-1.5 rounded-full bg-black/80 hover:bg-black text-white border border-white/15 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
-            >
-              <Maximize2 className="w-3.5 h-3.5" />
-              <span>Inspect</span>
-            </button>
-            <a
-              href={generatedUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              download="kinich-generated.jpg"
-              className="px-3 py-1.5 rounded-full bg-white text-black hover:bg-neutral-200 text-xs font-semibold inline-flex items-center gap-1.5 !no-underline cursor-pointer"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Download</span>
-            </a>
+          {/* Kobra radial dot matrix & forming cloud layers */}
+          <div
+            style={{ opacity: isReady ? 0 : 1 }}
+            className="absolute inset-0 transition-opacity duration-500 ease-out pointer-events-none"
+          >
+            <span
+              aria-hidden="true"
+              className="absolute inset-0.5 bg-[radial-gradient(circle,currentColor_0.75px,transparent_1.2px)] bg-[length:8px_8px] opacity-10"
+            />
+            <span
+              aria-hidden="true"
+              style={{
+                backgroundImage:
+                  'radial-gradient(circle, currentColor 1px, transparent 1.5px)',
+                backgroundSize: '8px 8px',
+                maskImage:
+                  'radial-gradient(ellipse at center, #000 22%, rgba(0,0,0,0.8) 34%, rgba(0,0,0,0.45) 46%, rgba(0,0,0,0.15) 56%, transparent 68%)',
+                WebkitMaskImage:
+                  'radial-gradient(ellipse at center, #000 22%, rgba(0,0,0,0.8) 34%, rgba(0,0,0,0.45) 46%, rgba(0,0,0,0.15) 56%, transparent 68%)',
+              }}
+              className={`image-generation-cloud absolute inset-0.5 animate-pulse ${
+                isDark ? 'text-white/35' : 'text-black/30'
+              }`}
+            />
+            <span
+              aria-hidden="true"
+              style={{
+                backgroundImage:
+                  'radial-gradient(circle, currentColor 1.45px, transparent 2px)',
+                backgroundSize: '8px 8px',
+                maskImage:
+                  'radial-gradient(ellipse at center, #000 15%, rgba(0,0,0,0.78) 24%, rgba(0,0,0,0.42) 33%, transparent 48%)',
+                WebkitMaskImage:
+                  'radial-gradient(ellipse at center, #000 15%, rgba(0,0,0,0.78) 24%, rgba(0,0,0,0.42) 33%, transparent 48%)',
+              }}
+              className={`image-generation-cloud absolute inset-0.5 ${
+                isDark ? 'text-white/50' : 'text-black/45'
+              }`}
+            />
           </div>
-        </div>
-      )}
 
-      {isLightboxOpen && generatedUrl && (
+          {/* Single generated picture element (prevents double-request rate limiting) */}
+          <img
+            key={`${imageUrl}-${seed}-${fallbackAttempt}`}
+            src={imageUrl}
+            alt={alt || effectivePrompt}
+            crossOrigin="anonymous"
+            onLoad={handleImageLoaded}
+            onError={handleImageError}
+            className={`image-generation-picture absolute inset-0 size-full object-cover transition-all duration-700 ease-out ${
+              phase === 'forming'
+                ? 'opacity-0 scale-[1.04] blur-xl'
+                : phase === 'revealing'
+                ? 'opacity-90 scale-[1.01] blur-xs'
+                : 'opacity-100 scale-100 blur-0'
+            }`}
+          />
+        </button>
+
+        {/* Centered Kobra 3x3 Dot Matrix + Step Pill while forming */}
         <div
-          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
+          aria-hidden="true"
+          className={`pointer-events-none absolute inset-0 grid place-items-center transition-opacity duration-300 ${
+            isReady ? 'opacity-0' : 'opacity-100'
+          }`}
+        >
+          <span
+            className={`image-generation-chrome flex items-center gap-2 rounded-full py-1.5 ps-2.5 pe-3 text-xs font-medium backdrop-blur-[6px] border ${
+              isDark
+                ? 'bg-black/65 text-white/90 border-white/10'
+                : 'bg-white/75 text-zinc-900 border-black/10'
+            }`}
+          >
+            <span aria-hidden="true" className="grid grid-cols-3 gap-[2px]">
+              {DOT_DELAYS.map((delay, idx) => (
+                <span
+                  key={idx}
+                  style={{ animationDelay: delay }}
+                  className="image-generation-dot size-[3px] rounded-full bg-current animate-ping"
+                />
+              ))}
+            </span>
+            <span dir="auto" className="flex">
+              <span>{currentStepText}</span>
+            </span>
+          </span>
+        </div>
+
+        {/* Bottom Progress Bar while forming */}
+        <div
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round(displayProgress)}
+          aria-valuetext={currentStepText}
+          aria-label="Generation progress"
+          className={`image-generation-chrome pointer-events-none absolute inset-x-3 bottom-3 h-1 overflow-hidden rounded-full backdrop-blur-[4px] transition-opacity duration-300 ${
+            isDark ? 'bg-white/15' : 'bg-black/15'
+          } ${isReady ? 'opacity-0' : 'opacity-100'}`}
+        >
+          <span
+            style={{ width: `${Math.max(4, Math.min(100, displayProgress))}%` }}
+            className={`image-generation-progress block h-full rounded-full transition-[width] duration-200 ease-out ${
+              isDark ? 'bg-white/80' : 'bg-zinc-900/80'
+            }`}
+          />
+        </div>
+
+        {/* Top-left Resolution Badge (shown on hover/ready) */}
+        <span
+          className={`image-generation-badge pointer-events-none absolute start-2.5 top-2.5 transition-opacity duration-200 ${
+            isReady
+              ? 'opacity-0 group-hover/image-generation:opacity-100'
+              : 'opacity-0'
+          }`}
+        >
+          <span
+            className={`flex h-7 items-center rounded-full text-[11px] backdrop-blur-[6px] px-2.5 font-mono border ${
+              isDark
+                ? 'bg-black/65 text-neutral-300 border-white/10'
+                : 'bg-white/75 text-neutral-700 border-black/10'
+            }`}
+          >
+            {dimensions.label}
+          </span>
+        </span>
+
+        {/* Top-right Action Buttons (Copy, Regenerate, Download) */}
+        <div
+          className={`image-generation-actions absolute end-2.5 top-2.5 flex gap-1.5 transition-opacity duration-200 ${
+            isReady
+              ? 'opacity-100 sm:opacity-0 sm:group-hover/image-generation:opacity-100'
+              : 'opacity-0 pointer-events-none'
+          }`}
+        >
+          <button
+            type="button"
+            aria-label="Copy the image link"
+            onClick={handleCopy}
+            className={`flex items-center rounded-full text-xs backdrop-blur-[6px] relative size-7 justify-center outline-none transition-all duration-150 cursor-pointer border active:scale-95 ${
+              isDark
+                ? 'bg-black/65 text-neutral-300 hover:text-white border-white/10'
+                : 'bg-white/75 text-neutral-700 hover:text-black border-black/10'
+            }`}
+          >
+            {copied ? (
+              <Check className="w-3.5 h-3.5 text-emerald-400" />
+            ) : (
+              <Copy className="w-3.5 h-3.5" />
+            )}
+          </button>
+
+          <button
+            type="button"
+            aria-label="Regenerate image"
+            onClick={handleRegenerate}
+            className={`flex items-center rounded-full text-xs backdrop-blur-[6px] relative size-7 justify-center outline-none transition-all duration-150 cursor-pointer border active:scale-95 ${
+              isDark
+                ? 'bg-black/65 text-neutral-300 hover:text-white border-white/10'
+                : 'bg-white/75 text-neutral-700 hover:text-black border-black/10'
+            }`}
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+          </button>
+
+          <a
+            href={imageUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            download="generated-image.jpg"
+            aria-label="Download the image"
+            onClick={(e) => e.stopPropagation()}
+            className={`flex items-center rounded-full text-xs backdrop-blur-[6px] relative size-7 justify-center outline-none transition-all duration-150 cursor-pointer border active:scale-95 !no-underline ${
+              isDark
+                ? 'bg-black/65 text-neutral-300 hover:text-white border-white/10'
+                : 'bg-white/75 text-neutral-700 hover:text-black border-black/10'
+            }`}
+          >
+            <Download className="w-3.5 h-3.5" />
+          </a>
+        </div>
+      </div>
+
+      {/* Fullscreen Lightbox */}
+      {isLightboxOpen && isReady && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-150"
           onClick={() => setIsLightboxOpen(false)}
         >
           <button
             type="button"
             onClick={() => setIsLightboxOpen(false)}
-            className="fixed top-5 right-5 size-10 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center cursor-pointer"
+            className="fixed top-5 right-5 size-9 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center cursor-pointer"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
           <img
-            src={generatedUrl}
-            alt={prompt}
-            className="max-w-full max-h-[88vh] rounded-2xl object-contain border border-white/15"
+            src={imageUrl}
+            alt={alt || effectivePrompt}
+            className="max-w-full max-h-[88vh] rounded-2xl object-contain border border-white/15 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           />
         </div>
       )}
-    </div>
+    </>
   );
 };
 
-export default ImageGenerationCard;
+export const ImageGenerationCard = ImageGeneration;
+export default ImageGeneration;

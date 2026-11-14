@@ -565,47 +565,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         },
       });
 
-      items.push({
-        id: 'action-side-tasks',
-        label: 'Side Chat & Subtasks',
-        sublabel: 'Run several tasks at once without interrupting',
-        icon: <Layers className="w-3.5 h-3.5 text-sky-500" />,
-        onClick: () => {
-          window.dispatchEvent(new CustomEvent('kinich-open-side-chat'));
-          if (window.innerWidth < 768) onClose();
-        },
-      });
-
-      items.push({
-        id: 'action-streaks-badges',
-        label: 'Streaks & Badges',
-        sublabel: `${dailyStreak.currentStreak}d streak · ${unlockedBadgesCount}/${evaluatedBadges.length} badges`,
-        icon: <Award className="w-3.5 h-3.5 text-amber-500" />,
-        onClick: () => {
-          openStreakCenter('badges');
-        },
-      });
-
-      items.push({
-        id: 'action-pricing',
-        label: 'Plans & Pricing',
-        sublabel: (() => {
-          const c = localStorage.getItem('kinich_billing_country') || 'US';
-          return c === 'IN' ? 'Spark (₹99/mo) · Fire (₹249/mo)' : 'Spark ($3/mo) · Fire ($7/mo)';
-        })(),
-        icon: <Zap className="w-3.5 h-3.5 text-emerald-500" />,
-        onClick: () => {
-          if (onOpenPricing) {
-            onOpenPricing(undefined);
-          } else if (typeof window !== 'undefined') {
-            window.dispatchEvent(
-              new CustomEvent('kinich-open-pricing', { detail: {} })
-            );
-          }
-          if (window.innerWidth < 768) onClose();
-        },
-      });
-
       if (onOpenGrowthHub) {
         items.push({
           id: 'action-discover',
@@ -618,42 +577,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
           },
         });
         items.push({
-          id: 'action-vault',
-          label: 'The Vault',
-          sublabel: UserAccountStore.isGuest()
-            ? 'Sign in to save'
-            : `${vaultItems.length} saved`,
-          icon: <Bookmark className="w-3.5 h-3.5 text-[#FC4C01]" />,
-          onClick: () => {
-            if (UserAccountStore.isGuest()) {
-              window.dispatchEvent(
-                new CustomEvent('kinich-open-auth', {
-                  detail: { reason: 'Sign in to keep this in your Vault' },
-                })
-              );
-            } else {
-              onOpenGrowthHub('vault');
-            }
-            if (window.innerWidth < 768) onClose();
-          },
-        });
-        items.push({
           id: 'action-passes',
-          label: 'Kinich Passes & Leaderboard',
-          sublabel: 'Elite Referrer ranks & Top Contributors',
+          label: 'Referrals',
+          sublabel: 'Invite friends & unlock free rewards',
           icon: <Trophy className="w-3.5 h-3.5 text-yellow-500" />,
           onClick: () => {
             onOpenGrowthHub('passes');
-            if (window.innerWidth < 768) onClose();
-          },
-        });
-        items.push({
-          id: 'action-feedback',
-          label: 'Send Feedback',
-          sublabel: 'Feature requests & bug reports',
-          icon: <MessageSquarePlus className="w-3.5 h-3.5 text-blue-500" />,
-          onClick: () => {
-            onOpenGrowthHub('feedback');
             if (window.innerWidth < 768) onClose();
           },
         });

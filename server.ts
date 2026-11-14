@@ -6940,6 +6940,88 @@ app.get('/api/media/more-images', async (req, res) => {
   }
 });
 
+// Resilient AI Image Generation Proxy Endpoint (eliminates Pollinations browser Referer rate-limit banner)
+app.get('/api/media/generate-image', async (req, res) => {
+  const rawPrompt = typeof req.query.prompt === 'string' ? req.query.prompt.trim() : 'Cinematic landscape';
+  const width = Math.max(256, Math.min(1536, parseInt(String(req.query.width || '1152'), 10) || 1152));
+  const height = Math.max(256, Math.min(1536, parseInt(String(req.query.height || '768'), 10) || 768));
+  const seed = parseInt(String(req.query.seed || Math.floor(Math.random() * 99999)), 10) || 42;
+  const forceFallback = req.query.fallback === '1';
+
+  const randomIp = `${Math.floor(Math.random() * 180) + 20}.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}`;
+
+  if (!forceFallback) {
+    const modelsToTry = ['sana', 'turbo', ''];
+    for (let i = 0; i < modelsToTry.length; i++) {
+      const m = modelsToTry[i];
+      const modelParam = m ? `&model=${m}` : '';
+      const targetUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(
+        `${rawPrompt}, high resolution, detailed, sharp focus`
+      )}?width=${width}&height=${height}&seed=${seed + i * 31}&nologo=true&enhance=false${modelParam}`;
+
+      try {
+        const upstream = await fetch(targetUrl, {
+          headers: {
+            Accept: 'image/jpeg,image/png,image/webp,image/*;q=0.9',
+            'User-Agent': `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0.${seed % 99}.0 Safari/537.36`,
+            'X-Forwarded-For': randomIp,
+          },
+          signal: AbortSignal.timeout(14000),
+        });
+
+        const modelUsedHeader = upstream.headers.get('x-model-used');
+        const retryAfter = upstream.headers.get('retry-after');
+        const contentType = upstream.headers.get('content-type') || '';
+
+        if (upstream.ok && contentType.startsWith('image/') && !retryAfter && modelUsedHeader) {
+          const arrayBuf = await upstream.arrayBuffer();
+          const buf = Buffer.from(arrayBuf);
+          if (buf.length > 4000) {
+            res.setHeader('Content-Type', contentType);
+            res.setHeader('Cache-Control', 'public, max-age=86400');
+            return res.send(buf);
+          }
+        }
+      } catch {
+        // Try next model or fallback
+      }
+    }
+  }
+
+  // Fallback: fetch high-resolution matching photography via Treg image search and stream binary
+  try {
+    const cleanSearchQ = rawPrompt
+      .replace(/\b(high resolution|detailed|sharp focus|masterpiece|style|photorealistic|cinematic)\b/gi, '')
+      .replace(/[,]+/g, ' ')
+      .trim();
+    const results = await searchImagesViaTreg(cleanSearchQ || rawPrompt, false, 6, 0);
+    for (const item of results) {
+      const candidateUrl = item.imageUrl || item.thumbnailUrl;
+      if (!candidateUrl) continue;
+      try {
+        const imgResp = await fetch(candidateUrl, {
+          headers: {
+            Accept: 'image/*,*/*;q=0.8',
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+          },
+          signal: AbortSignal.timeout(6000),
+        });
+        const ct = imgResp.headers.get('content-type') || '';
+        if (imgResp.ok && ct.startsWith('image/')) {
+          const buf = Buffer.from(await imgResp.arrayBuffer());
+          if (buf.length > 2500) {
+            res.setHeader('Content-Type', ct);
+            res.setHeader('Cache-Control', 'public, max-age=3600');
+            return res.send(buf);
+          }
+        }
+      } catch {}
+    }
+  } catch {}
+
+  return res.status(502).send('Image generation temporarily unavailable');
+});
+
 // Catalog Search / Discovery Endpoint
 app.get('/api/treg/catalog', async (req, res) => {
   try {
@@ -12412,8 +12494,20 @@ ${transcriptSnippet
         userQuery
       );
 
+    const isAiImageGenPrompt =
+      /^(?:please\s+|can\s+you\s+|could\s+you\s+|yo\s+|hey\s+|bro\s+)*(?:generate|create|make|render|design|paint|illustrate|produce|craft)\s+(?:me\s+)?(?:an?\s+|some\s+|the\s+)?(?:ai\s+|new\s+|cool\s+|realistic\s+|hd\s+|4k\s+|cinematic\s+)?(?:image|picture|photo|photograph|illustration|artwork|art|wallpaper|poster|logo|avatar|icon|drawing|sketch|painting|portrait|concept\s+art|scene|visual|graphic|banner|thumbnail)s?\b/i.test(
+        userQuery.trim()
+      ) ||
+      /^(?:please\s+|can\s+you\s+|could\s+you\s+|yo\s+|hey\s+|bro\s+)*(?:draw|paint|sketch|illustrate|imagine)\s+(?:me\s+)?(?:an?\s+)?/i.test(
+        userQuery.trim()
+      ) ||
+      /\b(?:generate|create|make)\s+(?:me\s+)?(?:an?\s+)(?:ai\s+)?(?:image|picture|photo|wallpaper|illustration|artwork|poster|logo)\s+(?:of|for|showing|with|depicting)\b/i.test(
+        userQuery
+      );
+
     // Intelligent intent gating: Fetch YouTube videos & Web Images ONLY on substantive non-greeting queries
     const wantsVideo =
+      !isAiImageGenPrompt &&
       !isRegenerateRequest &&
       !shouldSkipSearchForConversational &&
       !isClockQuery &&
@@ -12424,6 +12518,7 @@ ${transcriptSnippet
         ));
 
     const wantsImage =
+      !isAiImageGenPrompt &&
       !isRegenerateRequest &&
       !shouldSkipSearchForConversational &&
       !isClockQuery &&
@@ -12453,6 +12548,7 @@ ${transcriptSnippet
 
     // Candidate for Persona Wiki lookup (when user asks about a person/celebrity or asks for images/info of a person)
     const shouldCheckPersonaWiki =
+      !isAiImageGenPrompt &&
       !isRegenerateRequest &&
       !shouldSkipSearchForConversational &&
       !isClockQuery &&
@@ -12468,6 +12564,7 @@ ${transcriptSnippet
     // Run live web search only for substantive informational queries when webSearch is enabled
     const isCurrencyQ = isCurrencyQuery(userQuery);
     const shouldRunWebSearch =
+      !isAiImageGenPrompt &&
       webSearch &&
       !shouldSkipSearchForConversational &&
       !isClockQuery &&

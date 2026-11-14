@@ -653,6 +653,7 @@ export interface ServerDailyQuotaRecord {
   pdfStudyUsed: number;
   tokensUsed: number;
   updatedAt: number;
+  windowStartAt?: number;
 }
 
 export interface ServerDailyQuotaSnapshot extends ServerDailyQuotaRecord {
@@ -661,6 +662,8 @@ export interface ServerDailyQuotaSnapshot extends ServerDailyQuotaRecord {
   authoritativePlan?: boolean;
   billingStatus?: string;
 }
+
+const FREE_QUOTA_WINDOW_MS = 5 * 60 * 60 * 1000; // 5 hours rolling reset for free models
 
 const QUOTA_LEDGER_FILE = path.resolve(process.cwd(), '.insta', 'zeno_quota_ledger.json');
 const quotaRecordsByPrincipal = new Map<string, ServerDailyQuotaRecord>();
@@ -765,6 +768,7 @@ function getOrInitDailyQuotaRecord(req: Request): ServerDailyQuotaRecord {
   const clientIp = resolveTrustedClientIp(req);
   const principalKey = uid ? `uid:${uid}` : `ip:${clientIp}`;
   const today = getUtcDateKey();
+  const nowMs = Date.now();
 
   let savedPlan = planByPrincipal.get(principalKey) ||
     (uid && clientIp ? planByPrincipal.get(`ip:${clientIp}`) : undefined) || {
@@ -789,7 +793,13 @@ function getOrInitDailyQuotaRecord(req: Request): ServerDailyQuotaRecord {
   }
 
   let record = quotaRecordsByPrincipal.get(principalKey);
-  if (!record || record.quotaDate !== today) {
+  const isFree5hExpired =
+    record &&
+    savedPlan.plan === 'free' &&
+    typeof record.windowStartAt === 'number' &&
+    nowMs - record.windowStartAt >= FREE_QUOTA_WINDOW_MS;
+
+  if (!record || record.quotaDate !== today || isFree5hExpired) {
     record = {
       quotaDate: today,
       principalKey,
@@ -802,18 +812,27 @@ function getOrInitDailyQuotaRecord(req: Request): ServerDailyQuotaRecord {
       deepResearchUsed: 0,
       pdfStudyUsed: 0,
       tokensUsed: 0,
-      updatedAt: Date.now(),
+      updatedAt: nowMs,
+      windowStartAt: nowMs,
     };
   } else {
     record.plan = savedPlan.plan;
     record.billingCycle = savedPlan.billingCycle;
+    if (!record.windowStartAt) {
+      record.windowStartAt = nowMs;
+    }
   }
 
   // If authenticated user also had anonymous usage from the same IP today, merge via Math.max
   // so signing in or clearing localStorage cannot reset prior usage from the same session
   if (uid && clientIp && clientIp !== 'unknown') {
     const ipRecord = quotaRecordsByPrincipal.get(`ip:${clientIp}`);
-    if (ipRecord && ipRecord.quotaDate === today) {
+    const ipExpired =
+      ipRecord &&
+      savedPlan.plan === 'free' &&
+      typeof ipRecord.windowStartAt === 'number' &&
+      nowMs - ipRecord.windowStartAt >= FREE_QUOTA_WINDOW_MS;
+    if (ipRecord && ipRecord.quotaDate === today && !ipExpired) {
       record.messagesUsed = Math.max(record.messagesUsed, ipRecord.messagesUsed);
       record.filesUploaded = Math.max(record.filesUploaded, ipRecord.filesUploaded);
       record.searchesUsed = Math.max(record.searchesUsed, ipRecord.searchesUsed);
@@ -842,10 +861,14 @@ export function getServerQuotaSnapshot(req: Request): ServerDailyQuotaSnapshot {
       }
     } catch {}
   }
+  const resetAtIso =
+    rec.plan === 'free'
+      ? new Date((rec.windowStartAt || Date.now()) + FREE_QUOTA_WINDOW_MS).toISOString()
+      : getNextUtcMidnightIso();
   return {
     ...rec,
     limits,
-    resetAtIso: getNextUtcMidnightIso(),
+    resetAtIso,
     authoritativePlan,
     billingStatus,
   };

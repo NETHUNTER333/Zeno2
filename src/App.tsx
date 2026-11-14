@@ -21,7 +21,13 @@ import {
   VaultThreadType,
 } from './types';
 import { GrokLogo } from './components/GrokLogo';
-import { ChatInput, ChatHistoryItem, ChatHistoryMessageItem, MessageScroller } from './components/kobra';
+import {
+  ChatInput,
+  ChatHistoryItem,
+  ChatHistoryMessageItem,
+  MessageScroller,
+  detectImageGenerationIntent,
+} from './components/kobra';
 import {
   GROK_MODELS,
   ModelOption,
@@ -652,11 +658,6 @@ export default function App() {
     if (typeof window !== 'undefined') {
       const p = window.location.pathname;
       const lower = p.toLowerCase();
-      if (lower === '/vault' || lower.startsWith('/vault/')) {
-        const parts = p.split('/').filter(Boolean);
-        const tid = parts.length > 1 ? decodeURIComponent(parts[1]) : null;
-        return { isOpen: true, initialTab: 'vault', initialThreadId: tid };
-      }
       if (lower === '/discover' || lower.startsWith('/discover/')) {
         return { isOpen: true, initialTab: 'discover', initialThreadId: null };
       }
@@ -666,7 +667,7 @@ export default function App() {
   const [guestAuthModal, setGuestAuthModal] = useState<{
     isOpen: boolean;
     reason: string;
-  }>({ isOpen: false, reason: 'Sign in to keep this in your Vault' });
+  }>({ isOpen: false, reason: 'Sign in to Kinich' });
   const [guestAuthEmail, setGuestAuthEmail] = useState('');
   const [guestAuthPassword, setGuestAuthPassword] = useState('');
   const [guestAuthBusy, setGuestAuthBusy] = useState(false);
@@ -705,6 +706,10 @@ export default function App() {
         window.location.pathname.toLowerCase().startsWith('/pricing/'));
     return { isOpen: isPricingRoute, highlightPlan: undefined, limitReason: null };
   });
+  const [quotaLimitModalOpen, setQuotaLimitModalOpen] = useState(false);
+  const [freeQuotaWindow, setFreeQuotaWindow] = useState(() =>
+    UserAccountStore.getFreeQuotaWindowInfo()
+  );
   const [sharedBannerId, setSharedBannerId] = useState<string | null>(null);
 
   const [isSignedIn, setIsSignedIn] = useState(() => {
@@ -937,12 +942,11 @@ export default function App() {
         navigateRoute(targetPath);
       }
     };
-    const onOpenVaultEvent = (e: Event) => {
-      const detail = (e as CustomEvent)?.detail || {};
+    const onOpenVaultEvent = () => {
       setGrowthHubState({
         isOpen: true,
-        initialTab: 'vault',
-        initialThreadId: detail.threadId || null,
+        initialTab: 'discover',
+        initialThreadId: null,
       });
     };
     const onOpenAuthEvent = (e: Event) => {
@@ -951,7 +955,7 @@ export default function App() {
       setShowEmailFormInModal(false);
       setGuestAuthModal({
         isOpen: true,
-        reason: detail.reason || detail.message || 'Sign in to keep this in your Vault',
+        reason: detail.reason || detail.message || 'Sign in to Kinich',
       });
     };
     const onOpenSideChat = () => setIsSideChatOpen(true);
@@ -1103,6 +1107,7 @@ export default function App() {
     const handleAccountSync = () => {
       setUserProfile(UserAccountStore.getProfile());
       setUserSub(UserAccountStore.getSubscription());
+      setFreeQuotaWindow(UserAccountStore.getFreeQuotaWindowInfo());
       try {
         const p = typeof window !== 'undefined' ? window.location.pathname.toLowerCase() : '/';
         if (p === '/snap-solve' || p.startsWith('/snap-solve/')) {
@@ -1627,15 +1632,20 @@ export default function App() {
     // Automatically detect and persist home city if user states where they live (e.g. "I live in Ramagundam, Telangana")
     detectAndSaveHomeCityFromText(query);
 
-    // 1. Check daily prompt/message limit and file upload limit
+    // 1. Check 5-hour free model / daily prompt limit and file upload limit
     const currentUsage = UserAccountStore.getUsage();
     const currentPlanNorm = UserAccountStore.getNormalizedPlan();
     if (currentUsage.messagesUsed >= currentUsage.messageLimit) {
-      setPricingModalState({
-        isOpen: true,
-        highlightPlan: currentPlanNorm === 'free' ? 'spark' : 'fire',
-        limitReason: `Daily message limit reached (${currentUsage.messagesUsed}/${currentUsage.messageLimit} prompts used). Upgrade to Spark ($3/mo) for 1,500 messages/day or Fire ($7/mo) for 5,000 messages/day.`,
-      });
+      setFreeQuotaWindow(UserAccountStore.getFreeQuotaWindowInfo());
+      if (currentPlanNorm === 'free') {
+        setQuotaLimitModalOpen(true);
+      } else {
+        setPricingModalState({
+          isOpen: true,
+          highlightPlan: 'fire',
+          limitReason: `Daily message limit reached (${currentUsage.messagesUsed}/${currentUsage.messageLimit} prompts used). Upgrade to Fire ($7/mo) for 5,000 messages/day.`,
+        });
+      }
       return;
     }
 
@@ -1679,37 +1689,6 @@ export default function App() {
     const isCasualOrGreeting =
       /^[\p{Extended_Pictographic}\p{Emoji}\s\u200d\ufe0f👋✋✌️🙌🤝✨💌🎉❤️]+$/u.test(query.trim()) ||
       /^(hi+|hey+|hello+|yo+|sup|wassup|whats up|howdy|greetings|good (morning|afternoon|evening|night)|how are you|thanks|thank you|thx|ty|ok|okay|k|cool|nice|great|awesome|got it|wave|hand wave|waving|bye|cya)$/i.test(query.trim().toLowerCase());
-
-    // Auto-capture as a Vault Study Thread for signed-in users (Deduplicated, 5-10 key points, IST timestamp, agent comments)
-    if (!UserAccountStore.isGuest() && !isCasualOrGreeting) {
-      let detectedType: VaultThreadType = 'text';
-      let detectedUrl: string | undefined = undefined;
-
-      const ytMatch = query.match(
-        /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/i
-      );
-      const urlMatch = query.match(/https?:\/\/[^\s]+/i);
-
-      if (hasImageAtt) {
-        detectedType = 'image';
-      } else if (attachments.some((a) => a?.type?.includes('pdf') || a?.name?.endsWith('.pdf'))) {
-        detectedType = 'pdf';
-      } else if (ytMatch) {
-        detectedType = 'youtube';
-        detectedUrl = ytMatch[0];
-      } else if (urlMatch) {
-        detectedType = 'web_link';
-        detectedUrl = urlMatch[0];
-      } else {
-        detectedType = 'text';
-      }
-
-      VaultThreadStore.autoCapture({
-        content: query,
-        inputType: detectedType,
-        sourceUrl: detectedUrl,
-      }).catch(() => {});
-    }
 
     const allPriorMessages = activeThread ? activeThread.messages : [];
 
@@ -1806,6 +1785,8 @@ export default function App() {
       ? 'search'
       : 'thinking';
 
+    const imageGenPrompt = !hasAnyAtt ? detectImageGenerationIntent(query) : null;
+
     let currentThreadId = activeThreadId;
 
     const userMessage: ChatMessageType = {
@@ -1815,6 +1796,41 @@ export default function App() {
       timestamp: Date.now(),
       attachments: attachments.length > 0 ? attachments : undefined,
     };
+
+    if (imageGenPrompt) {
+      const imageAssistantMsg: ChatMessageType = {
+        id: `assistant-${Date.now()}`,
+        role: 'assistant',
+        content: `\`\`\`image-generation\n${imageGenPrompt}\n\`\`\``,
+        timestamp: Date.now(),
+        isStreaming: false,
+        modelUsed: activeModel.name,
+        searchQueries: [query],
+      };
+
+      if (!currentThreadId) {
+        currentThreadId = `thread-${Date.now()}`;
+        const newTitle = query.slice(0, 36) + (query.length > 36 ? '...' : '');
+        const newThread: SavedThread = {
+          id: currentThreadId,
+          title: newTitle,
+          createdAt: Date.now(),
+          messages: [userMessage, imageAssistantMsg],
+        };
+        setThreads((prev) => [newThread, ...prev]);
+        setActiveThreadId(currentThreadId);
+      } else {
+        setThreads((prev) =>
+          prev.map((t) =>
+            t.id === currentThreadId
+              ? { ...t, messages: [...t.messages, userMessage, imageAssistantMsg] }
+              : t
+          )
+        );
+      }
+      UserAccountStore.recordUsage(250, 0, 1, 1, 0);
+      return;
+    }
 
     const streamingMessage: ChatMessageType = {
       id: `assistant-${Date.now()}`,
@@ -2006,11 +2022,19 @@ export default function App() {
           typeof data?.code === 'string' &&
           data.code.startsWith('quota/')
         ) {
-          setPricingModalState({
-            isOpen: true,
-            highlightPlan: data.requiredTier === 'fire' ? 'fire' : 'spark',
-            limitReason: data.error || 'Daily plan limit reached. Upgrade to continue.',
-          });
+          if (
+            data.code === 'quota/messages_exceeded' &&
+            UserAccountStore.getNormalizedPlan() === 'free'
+          ) {
+            setFreeQuotaWindow(UserAccountStore.getFreeQuotaWindowInfo());
+            setQuotaLimitModalOpen(true);
+          } else {
+            setPricingModalState({
+              isOpen: true,
+              highlightPlan: data.requiredTier === 'fire' ? 'fire' : 'spark',
+              limitReason: data.error || 'Daily plan limit reached. Upgrade to continue.',
+            });
+          }
         }
         throw new Error(data.error || 'Failed to generate response');
       }
@@ -2029,6 +2053,7 @@ export default function App() {
           attachments ? attachments.length : 0
         );
       }
+      setFreeQuotaWindow(UserAccountStore.getFreeQuotaWindowInfo());
 
       // Track uploaded file attachments in workspace library
       if (attachments && attachments.length > 0) {
@@ -2220,6 +2245,43 @@ export default function App() {
     if (contextMessages.length === 0) return;
 
     const currentThreadId = activeThreadId;
+    const lastUserInContextPre = [...contextMessages].reverse().find((m) => m.role === 'user');
+    const regenQueryPre = lastUserInContextPre ? stripInjectedClockNote(lastUserInContextPre.content) : '';
+    const regenImagePrompt = detectImageGenerationIntent(regenQueryPre);
+
+    if (regenImagePrompt) {
+      setThreads((prev) =>
+        prev.map((t) =>
+          t.id === currentThreadId
+            ? {
+                ...t,
+                messages: t.messages.map((m) =>
+                  m.id === assistantMsgId
+                    ? {
+                        ...m,
+                        id: `assistant-${Date.now()}`,
+                        content: `\`\`\`image-generation\n${regenImagePrompt}\n\`\`\``,
+                        isStreaming: false,
+                        sources: undefined,
+                        images: undefined,
+                        personaWiki: undefined,
+                        videos: undefined,
+                        arxivPapers: undefined,
+                        githubRepos: undefined,
+                        xPosts: undefined,
+                        searchQueries: [regenQueryPre],
+                        toolsUsed: undefined,
+                        timing: undefined,
+                        modelUsed: targetModel.name,
+                      }
+                    : m
+                ),
+              }
+            : t
+        )
+      );
+      return;
+    }
 
     // Set existing assistant message to streaming state in-place, clearing any previous media/gallery
     setThreads((prev) =>
@@ -2387,6 +2449,39 @@ export default function App() {
 
     const contextMessages = [...activeThread.messages.slice(0, userIdx), updatedUserMsg];
     const currentThreadId = activeThreadId;
+    const editImagePrompt = detectImageGenerationIntent(query);
+
+    if (editImagePrompt) {
+      setThreads((prev) =>
+        prev.map((t) => {
+          if (t.id !== currentThreadId) return t;
+          const newMessages = [...t.messages];
+          newMessages[userIdx] = updatedUserMsg;
+          const imgMsg: ChatMessageType = {
+            id: `assistant-${Date.now()}`,
+            role: 'assistant',
+            content: `\`\`\`image-generation\n${editImagePrompt}\n\`\`\``,
+            timestamp: Date.now(),
+            isStreaming: false,
+            sources: undefined,
+            images: undefined,
+            personaWiki: undefined,
+            videos: undefined,
+            arxivPapers: undefined,
+            githubRepos: undefined,
+            xPosts: undefined,
+            searchQueries: [query],
+          };
+          if (nextMsg && nextMsg.role === 'assistant') {
+            newMessages[userIdx + 1] = imgMsg;
+          } else {
+            newMessages.splice(userIdx + 1, 0, imgMsg);
+          }
+          return { ...t, messages: newMessages };
+        })
+      );
+      return;
+    }
 
     setThreads((prev) =>
       prev.map((t) => {
@@ -2776,13 +2871,74 @@ export default function App() {
               {isThreadEmpty ? (
                 /* Empty State: Center logo, Smart Continuation strip, and prompt input anchored at bottom */
                 <div className="flex-1 min-w-0 flex flex-col items-center justify-between px-3 sm:px-4 w-full overflow-y-auto pt-14 sm:pt-16 pb-[max(1rem,env(safe-area-inset-bottom))] sm:pb-8">
-                  {/* Center Area: Clean spacer */}
-                  <div className="flex-1 my-auto" />
+                  {/* Center Area: Clean spacer or exhausted quota fire greeting */}
+                  <div className="flex-1 my-auto flex items-center justify-center">
+                    {freeQuotaWindow.isExhausted && (
+                      <div className="flex items-center justify-center gap-3 px-4 py-6 select-none animate-in fade-in duration-200">
+                        <span className="text-[28px] leading-none drop-shadow-sm" role="img" aria-label="Fire">
+                          🔥
+                        </span>
+                        <span
+                          className={`text-[21px] sm:text-[23px] font-semibold tracking-[-0.02em] ${
+                            isDark ? 'text-white' : 'text-[#111827]'
+                          }`}
+                        >
+                          Hi, please come back later.
+                        </span>
+                      </div>
+                    )}
+                  </div>
 
                   {/* Bottom Anchored Area: Prompt Input */}
                   <div className="w-full max-w-3xl flex flex-col items-center mt-auto">
+                    {freeQuotaWindow.isExhausted && (
+                      <div
+                        className={`w-[calc(100%-16px)] sm:w-[calc(100%-24px)] -mb-3 pb-5 pt-3 px-4 rounded-t-[20px] border border-b-0 flex items-start gap-2.5 text-[13.5px] leading-[1.45] transition-all ${
+                          isDark
+                            ? 'bg-[#1a1b20] border-white/[0.08] text-[#9ca3af]'
+                            : 'bg-[#f4f5f7] border-black/[0.05] text-[#525866]'
+                        }`}
+                      >
+                        <svg
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          className="w-[17px] h-[17px] shrink-0 mt-[2px] opacity-80"
+                        >
+                          <circle cx="12" cy="12" r="10" />
+                          <path d="M12 16v-4" />
+                          <path d="M12 8h.01" />
+                        </svg>
+                        <div>
+                          <span>
+                            You’ve used up your quota for now. It resets at{' '}
+                            {freeQuotaWindow.resetTimeFormatted}.{' '}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setPricingModalState({
+                                isOpen: true,
+                                highlightPlan: 'spark',
+                                limitReason: `Free 5-hour quota reached. Resets at ${freeQuotaWindow.resetTimeFormatted}, or upgrade to Spark ($3/mo) for 1,500 messages/day.`,
+                              })
+                            }
+                            className={`font-medium underline underline-offset-2 cursor-pointer ${
+                              isDark
+                                ? 'text-[#60a5fa] hover:text-[#93c5fd]'
+                                : 'text-[#2546c8] hover:text-[#1d4ed8]'
+                            }`}
+                          >
+                            Learn more
+                          </button>
+                        </div>
+                      </div>
+                    )}
                     {/* ChatInput (@kobra/chat-input with @kobra/chat-history & upward model selector) */}
-                    <div className="w-full">
+                    <div className="w-full relative z-10">
                       <ChatInput
                         onSend={handleSend}
                         onCancel={handleCancel}
@@ -2899,9 +3055,6 @@ export default function App() {
                               quoteMessage: targetMsg,
                             })
                           }
-                          onOpenKnowledgeVault={() =>
-                            setGrowthHubState({ isOpen: true, initialTab: 'vault' })
-                          }
                           theme={theme}
                           nsfwMode={nsfwMode}
                         />
@@ -2919,8 +3072,55 @@ export default function App() {
 
                   {/* Absolute Floating Bottom Composer with no opaque background scrim */}
                   <div className="absolute bottom-0 inset-x-0 px-3 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:p-4 pointer-events-none z-20">
-                    <div className="max-w-3xl mx-auto w-full pointer-events-auto">
-                      <ChatInput
+                    <div className="max-w-3xl mx-auto w-full pointer-events-auto flex flex-col items-center">
+                      {freeQuotaWindow.isExhausted && (
+                        <div
+                          className={`w-[calc(100%-16px)] sm:w-[calc(100%-24px)] -mb-3 pb-5 pt-3 px-4 rounded-t-[20px] border border-b-0 flex items-start gap-2.5 text-[13.5px] leading-[1.45] transition-all ${
+                            isDark
+                              ? 'bg-[#1a1b20] border-white/[0.08] text-[#9ca3af]'
+                              : 'bg-[#f4f5f7] border-black/[0.05] text-[#525866]'
+                          }`}
+                        >
+                          <svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.8"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            className="w-[17px] h-[17px] shrink-0 mt-[2px] opacity-80"
+                          >
+                            <circle cx="12" cy="12" r="10" />
+                            <path d="M12 16v-4" />
+                            <path d="M12 8h.01" />
+                          </svg>
+                          <div>
+                            <span>
+                              You’ve used up your quota for now. It resets at{' '}
+                              {freeQuotaWindow.resetTimeFormatted}.{' '}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setPricingModalState({
+                                  isOpen: true,
+                                  highlightPlan: 'spark',
+                                  limitReason: `Free 5-hour quota reached. Resets at ${freeQuotaWindow.resetTimeFormatted}, or upgrade to Spark ($3/mo) for 1,500 messages/day.`,
+                                })
+                              }
+                              className={`font-medium underline underline-offset-2 cursor-pointer ${
+                                isDark
+                                  ? 'text-[#60a5fa] hover:text-[#93c5fd]'
+                                  : 'text-[#2546c8] hover:text-[#1d4ed8]'
+                              }`}
+                            >
+                              Learn more
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      <div className="w-full relative z-10">
+                        <ChatInput
                         onSend={handleSend}
                         onCancel={handleCancel}
                         isRunning={isRunning}
@@ -2959,6 +3159,7 @@ export default function App() {
                           });
                         }}
                       />
+                      </div>
 
                       <div
                         className={`mt-1.5 flex items-center justify-center text-[10px] pointer-events-auto ${
@@ -3180,6 +3381,105 @@ export default function App() {
                 isDark={isDark}
               />
             </Suspense>
+          )}
+
+          {/* 5-Hour Free Model Quota Limit Reached Modal with 🔥 Fire Illustration */}
+          {quotaLimitModalOpen && (
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="quota-limit-modal-title"
+              className="fixed inset-0 z-[140] flex items-center justify-center bg-black/50 backdrop-blur-[2px] p-4 animate-in fade-in duration-150"
+              onClick={() => setQuotaLimitModalOpen(false)}
+            >
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className={`w-full max-w-[340px] rounded-[28px] px-6 pt-5 pb-6 shadow-[0_24px_64px_rgba(0,0,0,0.35)] relative flex flex-col items-center text-center transition-all ${
+                  isDark
+                    ? 'bg-[#1c1d22] text-white border border-white/[0.08]'
+                    : 'bg-white text-[#111827]'
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => setQuotaLimitModalOpen(false)}
+                  className={`absolute top-4 right-4 p-1.5 rounded-full transition-opacity cursor-pointer ${
+                    isDark ? 'text-neutral-400 hover:text-white' : 'text-[#374151] hover:text-black'
+                  }`}
+                  aria-label="Close quota limit modal"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="w-5 h-5"
+                  >
+                    <path d="M18 6 6 18" />
+                    <path d="m6 6 12 12" />
+                  </svg>
+                </button>
+
+                {/* Fire 🔥 Picture / Illustration in place of the whale */}
+                <div className="mt-4 mb-5 flex flex-col items-center justify-center relative select-none">
+                  <div className="relative w-28 h-24 flex items-center justify-center">
+                    <div className="absolute inset-x-3 bottom-1 h-4 rounded-full bg-gradient-to-r from-[#ff6a00]/25 via-[#ff2a00]/35 to-[#ff9900]/25 blur-md" />
+                    <span
+                      className="text-[68px] leading-none drop-shadow-[0_10px_20px_rgba(252,76,1,0.45)]"
+                      role="img"
+                      aria-label="Fire"
+                    >
+                      🔥
+                    </span>
+                  </div>
+                  <div className="w-28 h-[2px] rounded-full bg-gradient-to-r from-transparent via-[#fc4c01]/50 to-transparent -mt-1" />
+                </div>
+
+                <h3
+                  id="quota-limit-modal-title"
+                  className="text-[18px] font-bold tracking-[-0.015em] mb-2.5"
+                >
+                  Quota limit reached
+                </h3>
+
+                <p
+                  className={`text-[14px] leading-[1.5] max-w-[270px] ${
+                    isDark ? 'text-[#d1d5db]' : 'text-[#374151]'
+                  }`}
+                >
+                  You’ve reached today’s usage limit. Your quota will reset at{' '}
+                  {freeQuotaWindow.resetTimeFormatted}.{' '}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQuotaLimitModalOpen(false);
+                      setPricingModalState({
+                        isOpen: true,
+                        highlightPlan: 'spark',
+                        limitReason: `Free 5-hour quota reached. Resets at ${freeQuotaWindow.resetTimeFormatted}, or upgrade to Spark ($3/mo) for 1,500 messages/day.`,
+                      });
+                    }}
+                    className={`font-medium underline underline-offset-2 cursor-pointer ${
+                      isDark
+                        ? 'text-[#60a5fa] hover:text-[#93c5fd]'
+                        : 'text-[#2546c8] hover:text-[#1d4ed8]'
+                    }`}
+                  >
+                    Learn more
+                  </button>
+                </p>
+
+                <button
+                  type="button"
+                  onClick={() => setQuotaLimitModalOpen(false)}
+                  className="w-full mt-6 py-3 rounded-full bg-[#2b5bf7] hover:bg-[#1e4ae8] active:scale-[0.99] text-white text-[15px] font-semibold tracking-[-0.01em] transition-all cursor-pointer shadow-[0_6px_20px_rgba(43,91,247,0.3)]"
+                >
+                  Got it
+                </button>
+              </div>
+            </div>
           )}
 
           {/* Dodo Payments Checkout Return Handler (/billing/return) — Polls /api/billing/me, NEVER grants access from URL */}

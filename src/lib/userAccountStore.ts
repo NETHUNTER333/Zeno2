@@ -1007,10 +1007,27 @@ export const UserAccountStore = {
       }
     >(STORAGE_KEYS.USAGE, DEFAULT_USAGE);
 
-    // On Free Tier, strictly enforce the starter daily limits (5 prompts, 3 uploads, 5 searches, 3 deep research, 5 PDF study)
-    // so legacy localStorage bonuses or Math.max(999999) bugs never show Unlimited or 625/133 on Free Tier.
+    // On Free Tier, enforce a 5-hour rolling reset window
     const isFree = currentPlan === 'free';
-    const isFire = currentPlan === 'fire';
+    if (isFree) {
+      try {
+        const rawWindow = Number(localStorage.getItem('kinich_free_5h_window_v1') || 0);
+        const now = Date.now();
+        const fiveHoursMs = 5 * 60 * 60 * 1000;
+        if (rawWindow > 0 && now >= rawWindow + fiveHoursMs) {
+          raw.messagesUsed = 0;
+          raw.filesUploaded = 0;
+          raw.searchesUsed = 0;
+          raw.deepResearchUsed = 0;
+          raw.pdfStudyUsed = 0;
+          localStorage.removeItem('kinich_free_5h_window_v1');
+          saveToStorage(STORAGE_KEYS.USAGE, raw);
+        } else if (!rawWindow && Number(raw.messagesUsed || 0) > 0) {
+          localStorage.setItem('kinich_free_5h_window_v1', String(now));
+        }
+      } catch {}
+    }
+
     const bonusMsgs = isFree ? 0 : Number(raw.bonusMessagesGranted || 0);
     const bonusUploads = isFree ? 0 : Number(raw.bonusUploadsGranted || 0);
     const bonusQuizzes = isFree ? 0 : Number(raw.bonusQuizzesGranted || 0);
@@ -1037,6 +1054,40 @@ export const UserAccountStore = {
       pdfStudyLimit: limits.pdfStudyLimit + bonusQuizzes,
       toolLimit: limits.toolLimit,
       storageBytesLimit: limits.storageBytesLimit,
+    };
+  },
+
+  getFreeQuotaWindowInfo(): {
+    windowStartAt: number;
+    resetAtMs: number;
+    resetTimeFormatted: string;
+    isExhausted: boolean;
+  } {
+    const usage = this.getUsage();
+    const plan = this.getNormalizedPlan();
+    const fiveHoursMs = 5 * 60 * 60 * 1000;
+    const now = Date.now();
+    let windowStartAt = now;
+    try {
+      const rawStart = Number(localStorage.getItem('kinich_free_5h_window_v1') || 0);
+      if (rawStart > 0 && now < rawStart + fiveHoursMs) {
+        windowStartAt = rawStart;
+      } else if (usage.messagesUsed > 0) {
+        localStorage.setItem('kinich_free_5h_window_v1', String(now));
+        windowStartAt = now;
+      }
+    } catch {}
+    const resetAtMs = windowStartAt + fiveHoursMs;
+    const resetTimeFormatted = new Date(resetAtMs).toLocaleTimeString([], {
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+    const isExhausted = plan === 'free' && usage.messagesUsed >= usage.messageLimit;
+    return {
+      windowStartAt,
+      resetAtMs,
+      resetTimeFormatted,
+      isExhausted,
     };
   },
 
@@ -1101,6 +1152,18 @@ export const UserAccountStore = {
       storageBytesLimit: limits.storageBytesLimit,
       resetDate: snapshot.resetAtUtc ? 'Resets 00:00 UTC' : local.resetDate || 'Resets 00:00 UTC',
     };
+
+    if (effectivePlan === 'free' && merged.messagesUsed > 0) {
+      try {
+        if (!localStorage.getItem('kinich_free_5h_window_v1')) {
+          const serverStart = Number(snapshot.windowStartAt || 0);
+          localStorage.setItem(
+            'kinich_free_5h_window_v1',
+            String(serverStart > 0 ? serverStart : Date.now())
+          );
+        }
+      } catch {}
+    }
 
     saveToStorage(STORAGE_KEYS.USAGE, merged);
     this.emitChange();
@@ -1203,6 +1266,13 @@ export const UserAccountStore = {
     usage.toolsUsed += tools;
     usage.messagesUsed += messages;
     usage.filesUploaded += files;
+    if (this.getNormalizedPlan() === 'free' && usage.messagesUsed > 0) {
+      try {
+        if (!localStorage.getItem('kinich_free_5h_window_v1')) {
+          localStorage.setItem('kinich_free_5h_window_v1', String(Date.now()));
+        }
+      } catch {}
+    }
     saveToStorage(STORAGE_KEYS.USAGE, usage);
     this.recordDailyInteraction(false);
     this.emitChange();

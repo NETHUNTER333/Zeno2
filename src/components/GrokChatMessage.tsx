@@ -38,6 +38,8 @@ import {
   Bot,
   Link2,
   FolderOpen,
+  MessageSquare,
+  GitFork,
 } from 'lucide-react';
 import { openKinichReportModal } from './LegalAndInfoPages';
 import ReactMarkdown from 'react-markdown';
@@ -232,7 +234,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
   );
   const [isEditing, setIsEditing] = useState(false);
   const [editDraft, setEditDraft] = useState(message.content);
-  const [isUserMsgExpanded, setIsUserMsgExpanded] = useState(false);
+  const [isUserMsgExpanded, setIsUserMsgExpanded] = useState(true);
   const [isAssistantMsgExpanded, setIsAssistantMsgExpanded] = useState(true);
   const [activeVideoIndex, setActiveVideoIndex] = useState<number | null>(null);
   const [videoPlayerMode, setVideoPlayerMode] = useState<'embed' | 'mp4'>('embed');
@@ -286,6 +288,8 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
       setResolvedVideos({});
     }
   }, [message.videos]);
+
+
 
   const handleLoadMoreImages = async () => {
     if (isLoadingMoreImages) return;
@@ -405,6 +409,18 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
   const [savedToVault, setSavedToVault] = useState(false);
   const [showActionsOnTap, setShowActionsOnTap] = useState(false);
 
+  useEffect(() => {
+    if (!showActionsOnTap) return;
+    const handleOutsideClick = (e: MouseEvent) => {
+      const el = document.getElementById(`msg-${message.id}`);
+      if (el && !el.contains(e.target as Node)) {
+        setShowActionsOnTap(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [showActionsOnTap, message.id]);
+
   // Highlight & Save Segment to Knowledge Vault state
   const messageContentRef = React.useRef<HTMLDivElement>(null);
   const collectionDropdownRef = React.useRef<HTMLDivElement>(null);
@@ -523,7 +539,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
     try {
       window.getSelection()?.removeAllRanges();
     } catch {}
-    setTimeout(() => setSegmentSavedToast(false), 2400);
+    setTimeout(() => setSegmentSavedToast(false), 1000);
   };
 
   const handleToggleParagraphHighlight = (segmentText: string) => {
@@ -823,15 +839,583 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
     }
   };
 
+  const longPressTimerRef = React.useRef<NodeJS.Timeout | null>(null);
+  const singleTapTimerRef = React.useRef<NodeJS.Timeout | null>(null);
+  const lastTapTimeRef = React.useRef<number>(0);
+  const touchMovedRef = React.useRef<boolean>(false);
+  const longPressTriggeredRef = React.useRef<boolean>(false);
+
+  useEffect(() => {
+    return () => {
+      if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+      if (singleTapTimerRef.current) clearTimeout(singleTapTimerRef.current);
+    };
+  }, []);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if ((e.target as HTMLElement).closest('button, a, input, textarea, iframe, video, [role="button"]')) {
+      return;
+    }
+    touchMovedRef.current = false;
+    longPressTriggeredRef.current = false;
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+    }
+    longPressTimerRef.current = setTimeout(() => {
+      if (!touchMovedRef.current) {
+        longPressTriggeredRef.current = true;
+        if (singleTapTimerRef.current) {
+          clearTimeout(singleTapTimerRef.current);
+          singleTapTimerRef.current = null;
+        }
+        setShowActionsOnTap(true);
+      }
+    }, 420);
+  };
+
+  const handleTouchMove = () => {
+    touchMovedRef.current = true;
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const handleMessageTap = (e: React.MouseEvent) => {
+    if (longPressTriggeredRef.current) {
+      longPressTriggeredRef.current = false;
+      return;
+    }
+    if ((e.target as HTMLElement).closest('button, a, input, textarea, iframe, video, [role="button"]')) {
+      return;
+    }
+    const sel = typeof window !== 'undefined' ? window.getSelection()?.toString().trim() : '';
+    if (sel && sel.length > 0) {
+      return;
+    }
+
+    const now = Date.now();
+    const timeSinceLastTap = now - lastTapTimeRef.current;
+
+    // Double-tap detected: cancel pending single-tap popup and toggle message collapse/expand cleanly
+    if (timeSinceLastTap > 0 && timeSinceLastTap < 280) {
+      if (singleTapTimerRef.current) {
+        clearTimeout(singleTapTimerRef.current);
+        singleTapTimerRef.current = null;
+      }
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+      lastTapTimeRef.current = 0;
+      setShowActionsOnTap(false);
+      try {
+        window.getSelection()?.removeAllRanges();
+      } catch {}
+
+      if (isUser) {
+        setIsUserMsgExpanded((prev) => !prev);
+      } else if (!message.isStreaming) {
+        setIsAssistantMsgExpanded((prev) => !prev);
+      }
+      return;
+    }
+
+    lastTapTimeRef.current = now;
+
+    // If popup menu is already open, close it immediately without delay
+    if (showActionsOnTap) {
+      if (singleTapTimerRef.current) {
+        clearTimeout(singleTapTimerRef.current);
+        singleTapTimerRef.current = null;
+      }
+      setShowActionsOnTap(false);
+      return;
+    }
+
+    // Wait briefly to confirm it is not a double-tap before opening popup menu
+    if (singleTapTimerRef.current) {
+      clearTimeout(singleTapTimerRef.current);
+    }
+    singleTapTimerRef.current = setTimeout(() => {
+      singleTapTimerRef.current = null;
+      setShowActionsOnTap(true);
+    }, 240);
+  };
+
+  const markdownRenderedElement = useMemo(
+    () => (
+      <StreamingText
+        isStreaming={message.isStreaming}
+        durationSec={message.timing?.totalSec}
+        isDark={isDark}
+      >
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: true }]]}
+          rehypePlugins={[rehypeRaw, rehypeKatex]}
+          components={{
+            p: ({ node, children, ...props }) => (
+              <p
+                className="ds-markdown-paragraph my-3 sm:my-3.5 first:mt-0 last:mb-0 leading-[24px] sm:leading-[26px] tracking-normal [word-spacing:normal]"
+                {...props}
+              >
+                {children}
+              </p>
+            ),
+            h1: ({ node, children, ...props }) => (
+              <h1
+                className="mt-6 first:mt-0 mb-3 text-[20px] sm:text-[22px] font-bold leading-[28px] sm:leading-[30px] tracking-normal"
+                {...props}
+              >
+                {children}
+              </h1>
+            ),
+            h2: ({ node, children, ...props }) => (
+              <h2
+                className="mt-5.5 first:mt-0 mb-2.5 text-[18px] sm:text-[19.5px] font-bold leading-[26px] sm:leading-[28px] tracking-normal"
+                {...props}
+              >
+                {children}
+              </h2>
+            ),
+            h3: ({ node, children, ...props }) => (
+              <h3
+                className="mt-5 first:mt-0 mb-2 text-[16.5px] sm:text-[17.5px] font-bold leading-[24px] sm:leading-[26px] tracking-normal"
+                {...props}
+              >
+                {children}
+              </h3>
+            ),
+            h4: ({ node, children, ...props }) => (
+              <h4
+                className="mt-3.5 first:mt-0 mb-2 text-[15px] sm:text-[15.5px] font-semibold leading-[24px] sm:leading-[26px] tracking-normal"
+                {...props}
+              >
+                {children}
+              </h4>
+            ),
+            ul: ({ node, children, ...props }) => (
+              <ul
+                className="my-3 first:mt-0 last:mb-0 pl-[18px] list-disc space-y-1.5 leading-[24px] sm:leading-[26px] tracking-normal"
+                {...props}
+              >
+                {children}
+              </ul>
+            ),
+            ol: ({ node, children, ...props }) => (
+              <ol
+                className="my-3 first:mt-0 last:mb-0 pl-[18px] list-decimal space-y-1.5 leading-[24px] sm:leading-[26px] tracking-normal"
+                {...props}
+              >
+                {children}
+              </ol>
+            ),
+            li: ({ node, children, ...props }) => (
+              <li
+                className="pl-0 leading-[24px] sm:leading-[26px] tracking-normal [word-spacing:normal] [&>p]:my-1.5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
+                {...props}
+              >
+                {children}
+              </li>
+            ),
+            blockquote: ({ node, children, ...props }) => (
+              <blockquote
+                className={`mt-3.5 mb-0 pl-[14px] border-l-2 leading-[24px] sm:leading-[26px] tracking-normal not-italic ${
+                  isDark ? 'border-[#81858c] text-[#cfd3d6]' : 'border-[#adb2b8] text-[#61666b]'
+                }`}
+                {...props}
+              >
+                {children}
+              </blockquote>
+            ),
+            strong: ({ node, children, ...props }) => (
+              <strong
+                className={`font-semibold tracking-normal ${
+                  isDark ? 'text-white' : 'text-[#0f1115]'
+                }`}
+                {...props}
+              >
+                {children}
+              </strong>
+            ),
+            hr: ({ node, ...props }) => (
+              <hr
+                className={`my-6 border-0 border-t ${
+                  isDark ? 'border-white/[0.12]' : 'border-black/[0.1]'
+                }`}
+                {...props}
+              />
+            ),
+            table: ({ node, children, ...props }) => (
+              <div
+                className={`my-5 w-full max-w-full min-w-0 overflow-x-auto rounded-xl border [-webkit-overflow-scrolling:touch] ${
+                  isDark
+                    ? 'border-zinc-800 bg-zinc-950/50'
+                    : 'border-zinc-200 bg-white'
+                }`}
+              >
+                <table
+                  className="w-full min-w-max border-collapse text-left text-[0.84rem] leading-[1.6] tracking-[0.008em]"
+                  {...props}
+                >
+                  {children}
+                </table>
+              </div>
+            ),
+            tbody: ({ node, children, ...props }) => (
+              <tbody className="[&>tr:last-child>td]:border-b-0" {...props}>
+                {children}
+              </tbody>
+            ),
+            th: ({ node, children, ...props }) => (
+              <th
+                className={`px-3.5 py-2.5 font-semibold whitespace-nowrap border-b ${
+                  isDark
+                    ? 'bg-zinc-900/80 text-white border-zinc-800'
+                    : 'bg-zinc-50 text-zinc-950 border-zinc-200'
+                }`}
+                {...props}
+              >
+                {children}
+              </th>
+            ),
+            td: ({ node, children, ...props }) => (
+              <td
+                className={`px-3.5 py-2.5 align-top border-b ${
+                  isDark
+                    ? 'text-zinc-200 border-zinc-800/80'
+                    : 'text-zinc-800 border-zinc-200/80'
+                }`}
+                {...props}
+              >
+                {children}
+              </td>
+            ),
+            a: ({ node, href, children, ...props }) => {
+              const flatText = React.Children.toArray(children)
+                .map((c) => (typeof c === 'string' || typeof c === 'number' ? String(c) : ''))
+                .join('')
+                .trim();
+              const hrefCiteMatch = href ? href.match(/^#cite-(\d+)$/) : null;
+              const textCiteMatch = flatText.match(/^\[?(\d{1,2})\]?$/);
+              const citeMatch = hrefCiteMatch || textCiteMatch;
+
+              const allAvailableSources =
+                orderedMessageSources && orderedMessageSources.length > 0
+                  ? orderedMessageSources
+                  : (message.arxivPapers || []).map((p, idx) => ({
+                      title: p.title,
+                      url: p.pdfUrl || (p as any).absUrl || (p as any).link || '',
+                      domain: 'arxiv.org',
+                      snippet: p.summary,
+                      position: idx + 1,
+                    }));
+
+              if (citeMatch) {
+                const num = parseInt(citeMatch[1], 10);
+                if (allAvailableSources.length > 0) {
+                  const src =
+                    allAvailableSources.find((s, idx) => (s.position || idx + 1) === num) ||
+                    allAvailableSources[num - 1] ||
+                    allAvailableSources.find((s) => s.url === href) ||
+                    allAvailableSources[(num - 1) % allAvailableSources.length];
+                  if (src) {
+                    return (
+                      <WebSearchCitation
+                        source={src}
+                        index={num}
+                        messageId={message.id}
+                        isDark={isDark}
+                        onOpenModal={(s) => setSelectedCitation(s)}
+                      />
+                    );
+                  }
+                }
+                return <InlineCitation index={num} messageId={message.id} isDark={isDark} />;
+              }
+
+              if (href && allAvailableSources.length > 0) {
+                const matchedIdx = allAvailableSources.findIndex(
+                  (s, idx) => s.url === href || href === `#cite-${s.position || idx + 1}`
+                );
+                if (matchedIdx !== -1) {
+                  const matched = allAvailableSources[matchedIdx];
+                  return (
+                    <WebSearchCitation
+                      source={matched}
+                      index={matched.position || matchedIdx + 1}
+                      messageId={message.id}
+                      isDark={isDark}
+                      onOpenModal={(s) => setSelectedCitation(s)}
+                    />
+                  );
+                }
+              }
+
+              return (
+                <a
+                  {...props}
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline underline-offset-4 font-normal hover:opacity-80"
+                >
+                  {children}
+                </a>
+              );
+            },
+            img: ({ node, ...props }) => (
+              <img
+                {...props}
+                loading="lazy"
+                className={`rounded-2xl my-3 max-w-full max-h-[420px] object-cover border shadow-md ${
+                  isDark ? 'border-[#1f1f1f]' : 'border-[#e5e5e5]'
+                }`}
+              />
+            ),
+            iframe: ({ node, ...props }) => (
+              <div
+                className={`aspect-video w-full max-w-2xl my-4 rounded-2xl overflow-hidden border shadow-xl ${
+                  isDark ? 'border-[#1f1f1f] bg-[#0a0a0a]' : 'border-[#e5e5e5] bg-[#fafafa]'
+                }`}
+              >
+                <iframe
+                  {...props}
+                  className="w-full h-full border-0"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                />
+              </div>
+            ),
+            pre: ({ node, children, ...props }) => {
+              const child = React.Children.toArray(children)[0] as React.ReactElement<any>;
+              const childClassName = child?.props?.className || '';
+              const childContent = String(child?.props?.children || '').trim();
+
+              if (
+                childClassName.includes('language-plan') ||
+                childClassName.includes('language-checklist') ||
+                childClassName.includes('language-todo') ||
+                childClassName.includes('language-action-plan')
+              ) {
+                const lines = childContent.split('\n').filter(Boolean);
+                const titleLine = lines[0]?.replace(/^[#*-]\s*/, '') || 'Action Plan';
+                const taskLines = lines.slice(1);
+                const tasks = taskLines.map((line, i) => {
+                  const isDone = /^\s*-\s*\[x\]/i.test(line);
+                  const cleanText = line.replace(/^\s*-\s*\[[ x]\]\s*/i, '').replace(/^[*-]\s*/, '');
+                  return { id: `task-${i}`, text: cleanText, done: isDone };
+                });
+                return (
+                  <PlanCard
+                    type="plan"
+                    title={titleLine}
+                    tasks={tasks.length > 0 ? tasks : [{ id: '1', text: titleLine, done: false }]}
+                    isDark={isDark}
+                  />
+                );
+              }
+
+              if (childClassName.includes('language-poll')) {
+                const lines = childContent.split('\n').filter(Boolean);
+                const titleLine = lines[0]?.replace(/^[#*-]\s*/, '') || 'Live Poll';
+                const optLines = lines.slice(1).map((l) => l.replace(/^[0-9.*-]+\s*/, '').trim()).filter(Boolean);
+                const tasks = optLines.map((opt, i) => ({
+                  id: `opt-${i}`,
+                  text: opt,
+                  done: false,
+                  votes: Math.max(3, 30 - i * 7),
+                }));
+                return (
+                  <PlanCard
+                    type="poll"
+                    title={titleLine}
+                    badge="Live Poll"
+                    tasks={
+                      tasks.length > 0
+                        ? tasks
+                        : [
+                            { id: '1', text: 'Agree / Strongly in favor', done: false, votes: 24 },
+                            { id: '2', text: 'Neutral / Exploring options', done: false, votes: 14 },
+                            { id: '3', text: 'Disagree / Prefer alternative', done: false, votes: 6 },
+                          ]
+                    }
+                    isDark={isDark}
+                  />
+                );
+              }
+
+              if (
+                childClassName.includes('language-question') ||
+                childClassName.includes('language-faq') ||
+                childClassName.includes('language-quiz')
+              ) {
+                const lines = childContent.split('\n').filter(Boolean);
+                const qTitle = lines[0]?.replace(/^[#?*-]\s*/, '') || 'Related Questions';
+                const optLines = lines.slice(1).map((l) => l.replace(/^[0-9.*-]+\s*/, '').trim()).filter(Boolean);
+                return (
+                  <QuestionCard
+                    question={qTitle}
+                    options={
+                      optLines.length > 0
+                        ? optLines
+                        : [
+                            'Explain this in greater technical depth',
+                            'What are the primary real-world use cases?',
+                            'Show a complete working code example',
+                          ]
+                    }
+                    onSelectOption={onAskKinich}
+                    isDark={isDark}
+                  />
+                );
+              }
+
+              if (childClassName.includes('language-weather')) {
+                return (
+                  <WeatherCard
+                    locationQuery={childContent.split('\n')[0]?.trim() || 'New York'}
+                    isDark={isDark}
+                  />
+                );
+              }
+
+              if (
+                childClassName.includes('language-image-gen') ||
+                childClassName.includes('language-image-generation')
+              ) {
+                return (
+                  <ImageGenerationCard
+                    prompt={childContent.split('\n')[0]?.trim() || 'Minimalist architectural space'}
+                    isDark={isDark}
+                    fallbackImages={message.images}
+                  />
+                );
+              }
+
+              if (
+                childClassName.includes('language-mermaid') ||
+                childClassName.includes('mermaid') ||
+                childContent.startsWith('graph ') ||
+                childContent.startsWith('graph TD') ||
+                childContent.startsWith('flowchart ') ||
+                childContent.startsWith('sequenceDiagram') ||
+                childContent.startsWith('classDiagram') ||
+                childContent.startsWith('stateDiagram') ||
+                childContent.startsWith('erDiagram') ||
+                childContent.startsWith('gantt')
+              ) {
+                return (
+                  <Suspense fallback={<CodeBlockSkeleton isDark={isDark} />}>
+                    <PeleDiagram code={childContent} isDark={isDark} />
+                  </Suspense>
+                );
+              }
+
+              const isCustomBlock =
+                childClassName.includes('svg-render') ||
+                childClassName.includes('language-svg') ||
+                childClassName.includes('generative-ui') ||
+                childClassName.includes('open-generative-ui') ||
+                childClassName.includes('a2ui') ||
+                (childContent.startsWith('<svg') && childContent.endsWith('</svg>'));
+
+              if (isCustomBlock) {
+                return <>{children}</>;
+              }
+              const matchLang = /language-([\w+-]+)/.exec(childClassName || '');
+              const lang = matchLang ? matchLang[1] : '';
+              return (
+                <TerminalCodeBlock
+                  language={lang}
+                  code={childContent}
+                  isDark={isDark}
+                />
+              );
+            },
+            code: ({ node, className, children, ...props }) => {
+              const strContent = String(children || '').replace(/\n$/, '');
+              const trimmed = strContent.trim();
+              const isInline = !className && typeof children === 'string' && !children.includes('\n');
+
+              if (isInline) {
+                return (
+                  <code
+                    className={`px-1.5 py-0.5 rounded text-xs font-mono ${
+                      isDark ? 'bg-[#111111] text-[#ededed]' : 'bg-[#f5f5f5] text-[#000000]'
+                    }`}
+                    {...props}
+                  >
+                    {children}
+                  </code>
+                );
+              }
+
+              if (
+                className?.includes('svg-render') ||
+                className?.includes('language-svg') ||
+                (trimmed.startsWith('<svg') && trimmed.endsWith('</svg>'))
+              ) {
+                return (
+                  <div
+                    className={`my-4 p-4 rounded-2xl border overflow-x-auto ${
+                      isDark ? 'bg-[#0a0a0a] border-[#1f1f1f]' : 'bg-[#ffffff] border-[#e5e5e5]'
+                    }`}
+                    dangerouslySetInnerHTML={{ __html: trimmed }}
+                  />
+                );
+              }
+
+              const isGenUi =
+                className?.includes('generative-ui') ||
+                className?.includes('open-generative-ui') ||
+                className?.includes('a2ui');
+
+              if (isGenUi) {
+                return <GenerativeUiViewer code={strContent} title="Interactive Component" />;
+              }
+
+              return (
+                <code className={className} {...props}>
+                  {children}
+                </code>
+              );
+            },
+          }}
+        >
+          {processedContent}
+        </ReactMarkdown>
+      </StreamingText>
+    ),
+    [
+      processedContent,
+      isDark,
+      message.id,
+      message.isStreaming,
+      message.timing?.totalSec,
+      orderedMessageSources,
+      message.arxivPapers,
+      message.images,
+      onAskKinich,
+    ]
+  );
+
   return (
     <div
       id={`msg-${message.id}`}
       data-message-id={message.id}
-      className="group/msg py-1 px-2 sm:px-4 md:px-0 max-w-3xl mx-auto w-full min-w-0 overflow-hidden rounded-2xl"
+      className="relative group/msg py-1.5 px-2 sm:px-4 md:px-0 max-w-3xl mx-auto w-full min-w-0 rounded-2xl"
     >
       {/* User Message Layout */}
       {isUser ? (
-        <div className="flex flex-col items-end w-full min-w-0">
+        <div className="relative flex flex-col items-end w-full min-w-0">
           {/* Attached Images & Files on Sent User Message */}
           {message.attachments && message.attachments.length > 0 && (
             <div className="flex flex-wrap items-center justify-end gap-2 mb-2 max-w-full sm:max-w-2xl">
@@ -1030,125 +1614,136 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
               </div>
             </div>
           ) : (
-            <div className="flex flex-col items-end w-full max-w-[90%] sm:max-w-[78%] min-w-0">
+            <div className="relative flex flex-col items-end w-full max-w-[90%] sm:max-w-[78%] min-w-0">
               {(() => {
                 const rawUserText = message.content || '';
-                const lineCount = rawUserText.split('\n').length;
-                const isLongUserMessage = rawUserText.length > 360 || lineCount > 8;
                 return (
                   <div
-                    className={`text-[14.5px] sm:text-[15px] leading-[24px] tracking-normal [word-spacing:normal] font-normal px-4 py-2.5 rounded-[22px] backdrop-blur-2xl backdrop-saturate-150 border w-fit max-w-full min-w-0 overflow-hidden whitespace-pre-wrap break-words [overflow-wrap:anywhere] [word-break:break-word] ${
+                    onTouchStart={handleTouchStart}
+                    onTouchMove={handleTouchMove}
+                    onTouchEnd={handleTouchEnd}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      setShowActionsOnTap(true);
+                    }}
+                    onClick={handleMessageTap}
+                    className={`cursor-pointer select-text text-[14.5px] sm:text-[15px] leading-[24px] tracking-normal [word-spacing:normal] font-normal px-4 py-2.5 rounded-[22px] backdrop-blur-2xl backdrop-saturate-150 border w-fit max-w-full min-w-0 overflow-hidden whitespace-pre-wrap break-words [overflow-wrap:anywhere] [word-break:break-word] ${
                       isDark
-                        ? 'bg-neutral-900/55 border-white/[0.15] text-[#f9fafb] shadow-[0_8px_28px_rgba(0,0,0,0.45)]'
-                        : 'bg-white/75 border-black/[0.08] text-[#0f1115] shadow-[0_8px_24px_rgba(0,0,0,0.06)]'
+                        ? 'bg-[#2c2c2e] border-white/[0.08] text-[#f9fafb]'
+                        : 'bg-[#f4f4f5] border-black/[0.06] text-[#0f1115]'
                     }`}
                   >
                     <div
                       style={{
-                        maxHeight: isLongUserMessage && !isUserMsgExpanded ? '132px' : 'none',
+                        maxHeight: !isUserMsgExpanded ? '72px' : 'none',
                         overflow: 'hidden',
-                        transition: 'max-height 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+                        transition: 'max-height 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
                       }}
                       className="relative"
                     >
                       <div>{rawUserText}</div>
-                      {isLongUserMessage && !isUserMsgExpanded && (
+                      {!isUserMsgExpanded && (
                         <div
-                          className={`pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t ${
-                            isDark ? 'from-neutral-900/90 to-transparent' : 'from-white/90 to-transparent'
+                          className={`pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t ${
+                            isDark ? 'from-[#2c2c2e] to-transparent' : 'from-[#f4f4f5] to-transparent'
                           }`}
                         />
                       )}
                     </div>
-                    {isLongUserMessage && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setIsUserMsgExpanded((prev) => !prev);
-                        }}
-                        data-testid="toggle-user-message-expand"
-                        className={`mt-2 inline-flex items-center gap-1.5 text-[11.5px] font-medium px-2.5 py-1 rounded-full border transition-colors duration-200 cursor-pointer ${
-                          isDark
-                            ? 'bg-white/[0.07] hover:bg-white/[0.13] border-white/[0.14] text-neutral-200'
-                            : 'bg-black/[0.04] hover:bg-black/[0.08] border-black/[0.1] text-neutral-700'
-                        }`}
-                      >
-                        <ChevronDown
-                          className={`w-3.5 h-3.5 transition-transform duration-200 ease-out ${
-                            isUserMsgExpanded ? 'rotate-180' : 'rotate-0'
-                          }`}
-                        />
-                        <span>
-                          {isUserMsgExpanded
-                            ? 'Show less'
-                            : `Show full prompt (${rawUserText.length.toLocaleString()} chars)`}
-                        </span>
-                      </button>
-                    )}
                   </div>
                 );
               })()}
 
-              {/* Copy and Edit Buttons Directly Under Sent User Message (Hidden until hover or tap) */}
-              <div
-                className={`items-center justify-end gap-1 px-0.5 transition-opacity duration-150 ${
-                  showActionsOnTap || copied
-                    ? 'mt-1 flex opacity-100'
-                    : 'hidden group-hover/msg:mt-1 group-hover/msg:flex group-hover/msg:opacity-100'
-                }`}
-              >
-                <button
-                  type="button"
-                  onClick={copyText}
-                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border backdrop-blur-2xl backdrop-saturate-150 text-[10.5px] font-medium transition-all cursor-pointer ${
+              {/* DeepSeek App Vertical Context Menu Popup on Tap / Long-Press */}
+              {showActionsOnTap && (
+                <div
+                  onClick={(e) => e.stopPropagation()}
+                  className={`absolute right-0 top-full mt-1 z-50 w-[124px] rounded-[10px] border overflow-hidden shadow-[0_8px_28px_rgba(0,0,0,0.65)] divide-y animate-in fade-in zoom-in-95 duration-150 ${
                     isDark
-                      ? 'bg-neutral-900/50 hover:bg-neutral-800/70 border-white/[0.14] text-white/75 hover:text-white'
-                      : 'bg-white/70 hover:bg-white/95 border-black/[0.08] text-[#525252] hover:text-black'
+                      ? 'bg-[#2c2c2e] border-white/[0.08] divide-white/[0.07] text-[#f5f5f7]'
+                      : 'bg-white border-black/[0.08] divide-black/[0.06] text-[#1d1d1f]'
                   }`}
-                  title="Copy message"
                 >
-                  {copied ? (
-                    <>
-                      <Check className="w-2.5 h-2.5 text-emerald-500" />
-                      <span className="text-emerald-500">Copied</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-2.5 h-2.5" />
-                      <span>Copy</span>
-                    </>
-                  )}
-                </button>
-
-                {onEdit && (
                   <button
                     type="button"
-                    onClick={() => {
-                      setEditDraft(message.content);
-                      setIsEditing(true);
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      copyText();
+                      setShowActionsOnTap(false);
                     }}
-                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border backdrop-blur-2xl backdrop-saturate-150 text-[10.5px] font-medium transition-all cursor-pointer ${
-                      isDark
-                        ? 'bg-neutral-900/50 hover:bg-neutral-800/70 border-white/[0.14] text-white/75 hover:text-white'
-                        : 'bg-white/70 hover:bg-white/95 border-black/[0.08] text-[#525252] hover:text-black'
+                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-[11.5px] leading-tight font-normal transition-colors cursor-pointer text-left ${
+                      isDark ? 'hover:bg-white/[0.08] active:bg-white/[0.12]' : 'hover:bg-black/[0.04] active:bg-black/[0.08]'
                     }`}
-                    title="Edit message"
                   >
-                    <Pencil className="w-2.5 h-2.5" />
-                    <span>Edit</span>
+                    {copied ? (
+                      <Check className="w-[13px] h-[13px] text-emerald-400 stroke-[1.75] shrink-0" />
+                    ) : (
+                      <Copy className="w-[13px] h-[13px] opacity-90 stroke-[1.75] shrink-0" />
+                    )}
+                    <span>{copied ? 'Copied' : 'Copy'}</span>
                   </button>
-                )}
-              </div>
+                  {onEdit && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditDraft(message.content);
+                        setIsEditing(true);
+                        setShowActionsOnTap(false);
+                      }}
+                      className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-[11.5px] leading-tight font-normal transition-colors cursor-pointer text-left ${
+                        isDark ? 'hover:bg-white/[0.08] active:bg-white/[0.12]' : 'hover:bg-black/[0.04] active:bg-black/[0.08]'
+                      }`}
+                    >
+                      <Pencil className="w-[13px] h-[13px] opacity-90 stroke-[1.75] shrink-0" />
+                      <span>Edit</span>
+                    </button>
+                  )}
+                  {onAskKinich && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onAskKinich(`Regarding my prompt: "${message.content.slice(0, 200)}" — `);
+                          setShowActionsOnTap(false);
+                        }}
+                        className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-[11.5px] leading-tight font-normal transition-colors cursor-pointer text-left ${
+                          isDark ? 'hover:bg-white/[0.08] active:bg-white/[0.12]' : 'hover:bg-black/[0.04] active:bg-black/[0.08]'
+                        }`}
+                      >
+                        <MessageSquare className="w-[13px] h-[13px] opacity-90 stroke-[1.75] shrink-0" />
+                        <span>Reply</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onAskKinich(`Scope and analyze further based on prompt: "${message.content.slice(0, 200)}"`);
+                          setShowActionsOnTap(false);
+                        }}
+                        className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-[11.5px] leading-tight font-normal transition-colors cursor-pointer text-left ${
+                          isDark ? 'hover:bg-white/[0.08] active:bg-white/[0.12]' : 'hover:bg-black/[0.04] active:bg-black/[0.08]'
+                        }`}
+                      >
+                        <GitFork className="w-[13px] h-[13px] opacity-90 stroke-[1.75] shrink-0" />
+                        <span>Scope</span>
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>
       ) : (
         /* Assistant Message Layout */
-        <div className="w-full">
+        <div className="relative w-full">
           {/* Live Rare UI WebSearch Component showing actual sites being searched in real-time */}
-          {((orderedMessageSources && orderedMessageSources.length > 0) ||
-            (message.isStreaming && !cleanedContent && message.loadingMode === 'search')) && (
+          {!detectImageGenerationIntent(message.searchQueries?.[0] || '') &&
+            !/```image-gen/i.test(message.content || '') &&
+            ((orderedMessageSources && orderedMessageSources.length > 0) ||
+              (message.isStreaming && !cleanedContent && message.loadingMode === 'search')) && (
             <WebSearch
               messageId={message.id}
               sources={(orderedMessageSources || []).map((s, idx) => ({
@@ -1182,22 +1777,22 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
           })()}
 
           {/* @kobra/image-generation: Intelligently triggered when query requests image generation */}
-          {!message.isStreaming &&
-            (() => {
-              const imgPrompt = detectImageGenerationIntent(message.searchQueries?.[0] || '');
-              if (!imgPrompt) return null;
-              return (
-                <ImageGenerationCard
-                  prompt={imgPrompt}
-                  isDark={isDark}
-                  fallbackImages={message.images}
-                />
-              );
-            })()}
+          {(() => {
+            if (/```image-gen/i.test(message.content || '')) return null;
+            const imgPrompt = detectImageGenerationIntent(message.searchQueries?.[0] || '');
+            if (!imgPrompt) return null;
+            return (
+              <ImageGenerationCard
+                prompt={imgPrompt}
+                isDark={isDark}
+              />
+            );
+          })()}
 
           {/* Compact ThinkingOrb Loading Pill on Left Side - only for general casual replies (no web search) */}
           {message.isStreaming &&
             !cleanedContent &&
+            !detectImageGenerationIntent(message.searchQueries?.[0] || '') &&
             message.loadingMode !== 'search' &&
             (!orderedMessageSources || orderedMessageSources.length === 0) && (
               <div className="my-2.5 flex items-center justify-start">
@@ -1230,7 +1825,10 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
             )}
 
           {/* Persona Wiki Interactive Profile Card (Athletes, Celebrities, Politicians, Public Figures on any scale) */}
-          {!message.isStreaming && message.personaWiki && (
+          {!message.isStreaming &&
+            !detectImageGenerationIntent(message.searchQueries?.[0] || '') &&
+            !/```image-gen/i.test(message.content || '') &&
+            message.personaWiki && (
             <PersonaWikiCard
               persona={message.personaWiki}
               isDark={isDark}
@@ -1239,7 +1837,10 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
           )}
 
           {/* Collapsible Interactive Web Image Gallery (4 initial images + Load More) */}
-          {!message.isStreaming && displayedImages.length > 0 && (
+          {!message.isStreaming &&
+            !detectImageGenerationIntent(message.searchQueries?.[0] || '') &&
+            !/```image-gen/i.test(message.content || '') &&
+            displayedImages.length > 0 && (
             <div className={`my-2.5 ${isImageGalleryExpanded ? `pb-3 border-b ${isDark ? 'border-[#1f1f1f]' : 'border-[#e5e5e5]'}` : ''}`}>
               <div className="flex items-center justify-between gap-2">
                 <button
@@ -1388,17 +1989,6 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                     “{selectedSegmentText}”
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => handleSaveSegmentToVault(selectedSegmentText)}
-                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors cursor-pointer ${
-                        isDark
-                          ? 'bg-white text-black hover:bg-neutral-200'
-                          : 'bg-black text-white hover:bg-neutral-800'
-                      }`}
-                    >
-                      <span>Save</span>
-                    </button>
                     {onAskKinich && (
                       <button
                         type="button"
@@ -1593,507 +2183,41 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
 
           <div
             style={{
-              maxHeight: isLongAssistantMessage && !isAssistantMsgExpanded ? '260px' : 'none',
+              maxHeight: !message.isStreaming && !isAssistantMsgExpanded ? '140px' : 'none',
               overflow: 'hidden',
-              transition: 'max-height 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+              transition: 'max-height 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
             }}
             className="relative"
           >
             <div
               ref={messageContentRef}
+              onTouchStart={handleTouchStart}
+              onTouchMove={handleTouchMove}
               onMouseUp={handleCaptureTextSelection}
-              onTouchEnd={() => setTimeout(handleCaptureTextSelection, 60)}
+              onTouchEnd={() => {
+                handleTouchEnd();
+                setTimeout(handleCaptureTextSelection, 60);
+              }}
+              onContextMenu={(e) => {
+                if ((e.target as HTMLElement).closest('button, a, input, textarea, iframe, video, [role="button"]')) {
+                  return;
+                }
+                e.preventDefault();
+                setShowActionsOnTap(true);
+              }}
+              onClick={handleMessageTap}
               className="prose-grok ds-markdown max-w-none my-0 text-[14.5px] sm:text-[15.5px] leading-[24px] sm:leading-[26px] tracking-normal [word-spacing:normal]"
             >
-              <StreamingText
-                isStreaming={message.isStreaming}
-                durationSec={message.timing?.totalSec}
-                isDark={isDark}
-              >
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: true }]]}
-                  rehypePlugins={[rehypeRaw, rehypeKatex]}
-                components={{
-                  p: ({ node, children, ...props }) => (
-                    <p
-                      className="ds-markdown-paragraph my-3 sm:my-3.5 first:mt-0 last:mb-0 leading-[24px] sm:leading-[26px] tracking-normal [word-spacing:normal]"
-                      {...props}
-                    >
-                      {children}
-                    </p>
-                  ),
-                  h1: ({ node, children, ...props }) => (
-                    <h1
-                      className="mt-6 first:mt-0 mb-3 text-[20px] sm:text-[22px] font-bold leading-[28px] sm:leading-[30px] tracking-normal"
-                      {...props}
-                    >
-                      {children}
-                    </h1>
-                  ),
-                  h2: ({ node, children, ...props }) => (
-                    <h2
-                      className="mt-5.5 first:mt-0 mb-2.5 text-[18px] sm:text-[19.5px] font-bold leading-[26px] sm:leading-[28px] tracking-normal"
-                      {...props}
-                    >
-                      {children}
-                    </h2>
-                  ),
-                  h3: ({ node, children, ...props }) => (
-                    <h3
-                      className="mt-5 first:mt-0 mb-2 text-[16.5px] sm:text-[17.5px] font-bold leading-[24px] sm:leading-[26px] tracking-normal"
-                      {...props}
-                    >
-                      {children}
-                    </h3>
-                  ),
-                  h4: ({ node, children, ...props }) => (
-                    <h4
-                      className="mt-3.5 first:mt-0 mb-2 text-[15px] sm:text-[15.5px] font-semibold leading-[24px] sm:leading-[26px] tracking-normal"
-                      {...props}
-                    >
-                      {children}
-                    </h4>
-                  ),
-                  ul: ({ node, children, ...props }) => (
-                    <ul
-                      className="my-3 first:mt-0 last:mb-0 pl-[18px] list-disc space-y-1.5 leading-[24px] sm:leading-[26px] tracking-normal"
-                      {...props}
-                    >
-                      {children}
-                    </ul>
-                  ),
-                  ol: ({ node, children, ...props }) => (
-                    <ol
-                      className="my-3 first:mt-0 last:mb-0 pl-[18px] list-decimal space-y-1.5 leading-[24px] sm:leading-[26px] tracking-normal"
-                      {...props}
-                    >
-                      {children}
-                    </ol>
-                  ),
-                  li: ({ node, children, ...props }) => (
-                    <li
-                      className="pl-0 leading-[24px] sm:leading-[26px] tracking-normal [word-spacing:normal] [&>p]:my-1.5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
-                      {...props}
-                    >
-                      {children}
-                    </li>
-                  ),
-                  blockquote: ({ node, children, ...props }) => (
-                    <blockquote
-                      className={`mt-3.5 mb-0 pl-[14px] border-l-2 leading-[24px] sm:leading-[26px] tracking-normal not-italic ${
-                        isDark ? 'border-[#81858c] text-[#cfd3d6]' : 'border-[#adb2b8] text-[#61666b]'
-                      }`}
-                      {...props}
-                    >
-                      {children}
-                    </blockquote>
-                  ),
-                  strong: ({ node, children, ...props }) => (
-                    <strong
-                      className={`font-semibold tracking-normal ${
-                        isDark ? 'text-white' : 'text-[#0f1115]'
-                      }`}
-                      {...props}
-                    >
-                      {children}
-                    </strong>
-                  ),
-                  hr: ({ node, ...props }) => (
-                    <hr
-                      className={`my-6 border-0 border-t ${
-                        isDark ? 'border-white/[0.12]' : 'border-black/[0.1]'
-                      }`}
-                      {...props}
-                    />
-                  ),
-                  table: ({ node, children, ...props }) => (
-                    <div
-                      className={`my-5 w-full max-w-full min-w-0 overflow-x-auto rounded-xl border [-webkit-overflow-scrolling:touch] ${
-                        isDark
-                          ? 'border-zinc-800 bg-zinc-950/50'
-                          : 'border-zinc-200 bg-white'
-                      }`}
-                    >
-                      <table
-                        className="w-full min-w-max border-collapse text-left text-[0.84rem] leading-[1.6] tracking-[0.008em]"
-                        {...props}
-                      >
-                        {children}
-                      </table>
-                    </div>
-                  ),
-                  tbody: ({ node, children, ...props }) => (
-                    <tbody className="[&>tr:last-child>td]:border-b-0" {...props}>
-                      {children}
-                    </tbody>
-                  ),
-                  th: ({ node, children, ...props }) => (
-                    <th
-                      className={`px-3.5 py-2.5 font-semibold whitespace-nowrap border-b ${
-                        isDark
-                          ? 'bg-zinc-900/80 text-white border-zinc-800'
-                          : 'bg-zinc-50 text-zinc-950 border-zinc-200'
-                      }`}
-                      {...props}
-                    >
-                      {children}
-                    </th>
-                  ),
-                  td: ({ node, children, ...props }) => (
-                    <td
-                      className={`px-3.5 py-2.5 align-top border-b ${
-                        isDark
-                          ? 'text-zinc-200 border-zinc-800/80'
-                          : 'text-zinc-800 border-zinc-200/80'
-                      }`}
-                      {...props}
-                    >
-                      {children}
-                    </td>
-                  ),
-                  a: ({ node, href, children, ...props }) => {
-                    const flatText = React.Children.toArray(children)
-                      .map((c) => (typeof c === 'string' || typeof c === 'number' ? String(c) : ''))
-                      .join('')
-                      .trim();
-                    const hrefCiteMatch = href ? href.match(/^#cite-(\d+)$/) : null;
-                    const textCiteMatch = flatText.match(/^\[?(\d{1,2})\]?$/);
-                    const citeMatch = hrefCiteMatch || textCiteMatch;
-
-                    const allAvailableSources =
-                      orderedMessageSources && orderedMessageSources.length > 0
-                        ? orderedMessageSources
-                        : (message.arxivPapers || []).map((p, idx) => ({
-                            title: p.title,
-                            url: p.pdfUrl || (p as any).absUrl || (p as any).link || '',
-                            domain: 'arxiv.org',
-                            snippet: p.summary,
-                            position: idx + 1,
-                          }));
-
-                    if (citeMatch) {
-                      const num = parseInt(citeMatch[1], 10);
-                      if (allAvailableSources.length > 0) {
-                        const src =
-                          allAvailableSources.find((s, idx) => (s.position || idx + 1) === num) ||
-                          allAvailableSources[num - 1] ||
-                          allAvailableSources.find((s) => s.url === href) ||
-                          allAvailableSources[(num - 1) % allAvailableSources.length];
-                        if (src) {
-                          return (
-                            <WebSearchCitation
-                              source={src}
-                              index={num}
-                              messageId={message.id}
-                              isDark={isDark}
-                              onOpenModal={(s) => setSelectedCitation(s)}
-                            />
-                          );
-                        }
-                      }
-                      return <InlineCitation index={num} messageId={message.id} isDark={isDark} />;
-                    }
-
-                    // Check if href or cite link matches a known web search source
-                    if (href && allAvailableSources.length > 0) {
-                      const matchedIdx = allAvailableSources.findIndex(
-                        (s, idx) => s.url === href || href === `#cite-${s.position || idx + 1}`
-                      );
-                      if (matchedIdx !== -1) {
-                        const matched = allAvailableSources[matchedIdx];
-                        return (
-                          <WebSearchCitation
-                            source={matched}
-                            index={matched.position || matchedIdx + 1}
-                            messageId={message.id}
-                            isDark={isDark}
-                            onOpenModal={(s) => setSelectedCitation(s)}
-                          />
-                        );
-                      }
-                    }
-
-                    return (
-                      <a
-                        {...props}
-                        href={href}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="underline underline-offset-4 font-normal hover:opacity-80"
-                      >
-                        {children}
-                      </a>
-                    );
-                  },
-                  img: ({ node, ...props }) => (
-                    <img
-                      {...props}
-                      loading="lazy"
-                      className={`rounded-2xl my-3 max-w-full max-h-[420px] object-cover border shadow-md ${
-                        isDark ? 'border-[#1f1f1f]' : 'border-[#e5e5e5]'
-                      }`}
-                    />
-                  ),
-                  iframe: ({ node, ...props }) => (
-                    <div
-                      className={`aspect-video w-full max-w-2xl my-4 rounded-2xl overflow-hidden border shadow-xl ${
-                        isDark ? 'border-[#1f1f1f] bg-[#0a0a0a]' : 'border-[#e5e5e5] bg-[#fafafa]'
-                      }`}
-                    >
-                      <iframe
-                        {...props}
-                        className="w-full h-full border-0"
-                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                        allowFullScreen
-                      />
-                    </div>
-                  ),
-                  pre: ({ node, children, ...props }) => {
-                    const child = React.Children.toArray(children)[0] as React.ReactElement<any>;
-                    const childClassName = child?.props?.className || '';
-                    const childContent = String(child?.props?.children || '').trim();
-
-                    // @kobra/plan-card handler for plan/checklist/todo codeblocks
-                    if (
-                      childClassName.includes('language-plan') ||
-                      childClassName.includes('language-checklist') ||
-                      childClassName.includes('language-todo') ||
-                      childClassName.includes('language-action-plan')
-                    ) {
-                      const lines = childContent.split('\n').filter(Boolean);
-                      const titleLine = lines[0]?.replace(/^[#*-]\s*/, '') || 'Action Plan';
-                      const taskLines = lines.slice(1);
-                      const tasks = taskLines.map((line, i) => {
-                        const isDone = /^\s*-\s*\[x\]/i.test(line);
-                        const cleanText = line.replace(/^\s*-\s*\[[ x]\]\s*/i, '').replace(/^[*-]\s*/, '');
-                        return { id: `task-${i}`, text: cleanText, done: isDone };
-                      });
-                      return (
-                        <PlanCard
-                          type="plan"
-                          title={titleLine}
-                          tasks={tasks.length > 0 ? tasks : [{ id: '1', text: titleLine, done: false }]}
-                          isDark={isDark}
-                        />
-                      );
-                    }
-
-                    // @kobra/plan-card handler for poll codeblocks
-                    if (childClassName.includes('language-poll')) {
-                      const lines = childContent.split('\n').filter(Boolean);
-                      const titleLine = lines[0]?.replace(/^[#*-]\s*/, '') || 'Live Poll';
-                      const optLines = lines.slice(1).map((l) => l.replace(/^[0-9.*-]+\s*/, '').trim()).filter(Boolean);
-                      const tasks = optLines.map((opt, i) => ({
-                        id: `opt-${i}`,
-                        text: opt,
-                        done: false,
-                        votes: Math.max(3, 30 - i * 7),
-                      }));
-                      return (
-                        <PlanCard
-                          type="poll"
-                          title={titleLine}
-                          badge="Live Poll"
-                          tasks={
-                            tasks.length > 0
-                              ? tasks
-                              : [
-                                  { id: '1', text: 'Agree / Strongly in favor', done: false, votes: 24 },
-                                  { id: '2', text: 'Neutral / Exploring options', done: false, votes: 14 },
-                                  { id: '3', text: 'Disagree / Prefer alternative', done: false, votes: 6 },
-                                ]
-                          }
-                          isDark={isDark}
-                        />
-                      );
-                    }
-
-                    // @kobra/question-card handler for question/faq/quiz codeblocks
-                    if (
-                      childClassName.includes('language-question') ||
-                      childClassName.includes('language-faq') ||
-                      childClassName.includes('language-quiz')
-                    ) {
-                      const lines = childContent.split('\n').filter(Boolean);
-                      const qTitle = lines[0]?.replace(/^[#?*-]\s*/, '') || 'Related Questions';
-                      const optLines = lines.slice(1).map((l) => l.replace(/^[0-9.*-]+\s*/, '').trim()).filter(Boolean);
-                      return (
-                        <QuestionCard
-                          question={qTitle}
-                          options={
-                            optLines.length > 0
-                              ? optLines
-                              : [
-                                  'Explain this in greater technical depth',
-                                  'What are the primary real-world use cases?',
-                                  'Show a complete working code example',
-                                ]
-                          }
-                          onSelectOption={onAskKinich}
-                          isDark={isDark}
-                        />
-                      );
-                    }
-
-                    // @kobra/weather codeblock handler
-                    if (childClassName.includes('language-weather')) {
-                      return (
-                        <WeatherCard
-                          locationQuery={childContent.split('\n')[0]?.trim() || 'New York'}
-                          isDark={isDark}
-                        />
-                      );
-                    }
-
-                    // @kobra/image-generation codeblock handler
-                    if (
-                      childClassName.includes('language-image-gen') ||
-                      childClassName.includes('language-image-generation')
-                    ) {
-                      return (
-                        <ImageGenerationCard
-                          prompt={childContent.split('\n')[0]?.trim() || 'Minimalist architectural space'}
-                          isDark={isDark}
-                          fallbackImages={message.images}
-                        />
-                      );
-                    }
-
-                    // Render Mermaid diagrams using Pele engine
-                    if (
-                      childClassName.includes('language-mermaid') ||
-                      childClassName.includes('mermaid') ||
-                      childContent.startsWith('graph ') ||
-                      childContent.startsWith('graph TD') ||
-                      childContent.startsWith('flowchart ') ||
-                      childContent.startsWith('sequenceDiagram') ||
-                      childContent.startsWith('classDiagram') ||
-                      childContent.startsWith('stateDiagram') ||
-                      childContent.startsWith('erDiagram') ||
-                      childContent.startsWith('gantt')
-                    ) {
-                      return (
-                        <Suspense fallback={<CodeBlockSkeleton isDark={isDark} />}>
-                          <PeleDiagram code={childContent} isDark={isDark} />
-                        </Suspense>
-                      );
-                    }
-
-                    const isCustomBlock =
-                      childClassName.includes('svg-render') ||
-                      childClassName.includes('language-svg') ||
-                      childClassName.includes('generative-ui') ||
-                      childClassName.includes('open-generative-ui') ||
-                      childClassName.includes('a2ui') ||
-                      (childContent.startsWith('<svg') && childContent.endsWith('</svg>'));
-
-                    if (isCustomBlock) {
-                      return <>{children}</>;
-                    }
-                    const matchLang = /language-([\w+-]+)/.exec(childClassName || '');
-                    const lang = matchLang ? matchLang[1] : '';
-                    return (
-                      <TerminalCodeBlock
-                        language={lang}
-                        code={childContent}
-                        isDark={isDark}
-                      />
-                    );
-                  },
-                  code: ({ node, className, children, ...props }) => {
-                    const strContent = String(children || '').replace(/\n$/, '');
-                    const trimmed = strContent.trim();
-                    const isInline = !className && typeof children === 'string' && !children.includes('\n');
-
-                    if (isInline) {
-                      return (
-                        <code
-                          className={`px-1.5 py-0.5 rounded text-xs font-mono ${
-                            isDark ? 'bg-[#111111] text-[#ededed]' : 'bg-[#f5f5f5] text-[#000000]'
-                          }`}
-                          {...props}
-                        >
-                          {children}
-                        </code>
-                      );
-                    }
-
-                    // Render SVG diagrams natively via dangerouslySetInnerHTML
-                    if (
-                      className?.includes('svg-render') ||
-                      className?.includes('language-svg') ||
-                      (trimmed.startsWith('<svg') && trimmed.endsWith('</svg>'))
-                    ) {
-                      return (
-                        <div
-                          className={`my-4 p-4 rounded-2xl border overflow-x-auto ${
-                            isDark ? 'bg-[#0a0a0a] border-[#1f1f1f]' : 'bg-[#ffffff] border-[#e5e5e5]'
-                          }`}
-                          dangerouslySetInnerHTML={{ __html: trimmed }}
-                        />
-                      );
-                    }
-
-                    // Only render GenerativeUiViewer when explicitly tagged as generative-ui
-                    const isGenUi =
-                      className?.includes('generative-ui') ||
-                      className?.includes('open-generative-ui') ||
-                      className?.includes('a2ui');
-
-                    if (isGenUi) {
-                      return <GenerativeUiViewer code={strContent} title="Interactive Component" />;
-                    }
-
-                    return (
-                      <code className={className} {...props}>
-                        {children}
-                      </code>
-                    );
-                  },
-                }}
-              >
-                {processedContent}
-              </ReactMarkdown>
-            </StreamingText>
+              {markdownRenderedElement}
             </div>
-            {isLongAssistantMessage && !isAssistantMsgExpanded && (
+            {!message.isStreaming && !isAssistantMsgExpanded && (
               <div
-                className={`pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t ${
-                  isDark ? 'from-black via-black/70 to-transparent' : 'from-white via-white/75 to-transparent'
+                className={`pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t ${
+                  isDark ? 'from-black via-black/75 to-transparent' : 'from-white via-white/80 to-transparent'
                 }`}
               />
             )}
           </div>
-
-          {/* Clean Expand / Collapse Control for Long AI Responses */}
-          {isLongAssistantMessage && (
-            <div className="mt-1.5 mb-1 flex items-center">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setIsAssistantMsgExpanded((prev) => !prev);
-                }}
-                data-testid="toggle-assistant-message-expand"
-                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-[12px] font-medium transition-colors duration-200 cursor-pointer select-none ${
-                  isDark
-                    ? 'bg-neutral-900/75 hover:bg-neutral-800/90 border-white/[0.12] text-[#cfd3d6] hover:text-white'
-                    : 'bg-neutral-100/85 hover:bg-neutral-200/85 border-black/[0.08] text-[#43454a] hover:text-black'
-                }`}
-              >
-                <ChevronDown
-                  className={`w-3.5 h-3.5 transition-transform duration-200 ease-out ${
-                    isAssistantMsgExpanded ? 'rotate-180' : 'rotate-0'
-                  }`}
-                />
-                <span>
-                  {isAssistantMsgExpanded
-                    ? 'Collapse response'
-                    : `Expand response (${assistantWordCount.toLocaleString()} words)`}
-                </span>
-              </button>
-            </div>
-          )}
 
           {/* @kobra/product-cards: Intelligently triggered on product/buying/comparison queries */}
           {!message.isStreaming &&
@@ -2768,224 +2892,172 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
 
 
 
-          {/* Saved Knowledge Vault Highlights Strip for this AI Response */}
-          {savedMessageHighlights.length > 0 && !message.isStreaming && (
-            <div className="mt-2 flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-0.5">
-              {onOpenKnowledgeVault && (
-                <button
-                  type="button"
-                  onClick={onOpenKnowledgeVault}
-                  className={`px-2.5 py-1 rounded-full text-[10.5px] font-medium shrink-0 transition-colors cursor-pointer ${
-                    isDark
-                      ? 'bg-white/[0.08] hover:bg-white/[0.14] text-white/90'
-                      : 'bg-black/[0.06] hover:bg-black/[0.1] text-black/85'
-                  }`}
+          {/* DeepSeek App Vertical Context Menu Popup on Tap / Long-Press */}
+          {!message.isStreaming && (showTtsPopup || showActionsOnTap) && (
+            <div className="relative mt-1">
+              {showTtsPopup && (
+                <Suspense
+                  fallback={
+                    <span
+                      className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] text-[#FC4C01]"
+                      aria-busy="true"
+                    >
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    </span>
+                  }
                 >
-                  Vault ({savedMessageHighlights.length})
-                </button>
+                  <TtsPopup
+                    text={message.content || ''}
+                    onClose={() => setShowTtsPopup(false)}
+                    isDark={isDark}
+                  />
+                </Suspense>
               )}
-              {savedMessageHighlights.map((hl) => (
+
+              {showActionsOnTap && (
                 <div
-                  key={hl.id}
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10.5px] max-w-[240px] shrink-0 ${
+                  onClick={(e) => e.stopPropagation()}
+                  className={`absolute left-0 bottom-full mb-1.5 z-50 w-[134px] rounded-[10px] border overflow-hidden shadow-[0_8px_28px_rgba(0,0,0,0.65)] divide-y animate-in fade-in zoom-in-95 duration-150 ${
                     isDark
-                      ? 'bg-white/[0.04] border-white/[0.1] text-white/80'
-                      : 'bg-black/[0.03] border-black/[0.08] text-black/80'
+                      ? 'bg-[#2c2c2e] border-white/[0.08] divide-white/[0.07] text-[#f5f5f7]'
+                      : 'bg-white border-black/[0.08] divide-black/[0.06] text-[#1d1d1f]'
                   }`}
                 >
-                  <span className="truncate" title={hl.content}>
-                    {hl.content}
-                  </span>
                   <button
                     type="button"
-                    onClick={() => KnowledgeVaultStore.deleteItem(hl.id)}
-                    className="opacity-50 hover:opacity-100 cursor-pointer shrink-0"
-                    title="Remove highlight"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      copyText();
+                      setShowActionsOnTap(false);
+                    }}
+                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-[11.5px] leading-tight font-normal transition-colors cursor-pointer text-left ${
+                      isDark ? 'hover:bg-white/[0.08] active:bg-white/[0.12]' : 'hover:bg-black/[0.04] active:bg-black/[0.08]'
+                    }`}
                   >
-                    <X className="w-2.5 h-2.5" />
+                    {copied ? (
+                      <Check className="w-[13px] h-[13px] text-emerald-400 stroke-[1.75] shrink-0" />
+                    ) : (
+                      <Copy className="w-[13px] h-[13px] opacity-90 stroke-[1.75] shrink-0" />
+                    )}
+                    <span>{copied ? 'Copied' : 'Copy'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowTtsPopup(true);
+                      setShowActionsOnTap(false);
+                    }}
+                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-[11.5px] leading-tight font-normal transition-colors cursor-pointer text-left ${
+                      isDark ? 'hover:bg-white/[0.08] active:bg-white/[0.12]' : 'hover:bg-black/[0.04] active:bg-black/[0.08]'
+                    }`}
+                  >
+                    <Volume2 className="w-[13px] h-[13px] opacity-90 stroke-[1.75] shrink-0" />
+                    <span>Read aloud</span>
+                  </button>
+
+                  {onRetry && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDisplayedImages([]);
+                        setActiveImageIndex(null);
+                        setHasMoreImages(false);
+                        onRetry();
+                        setShowActionsOnTap(false);
+                      }}
+                      className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-[11.5px] leading-tight font-normal transition-colors cursor-pointer text-left ${
+                        isDark ? 'hover:bg-white/[0.08] active:bg-white/[0.12]' : 'hover:bg-black/[0.04] active:bg-black/[0.08]'
+                      }`}
+                    >
+                      <RotateCcw className="w-[13px] h-[13px] opacity-90 stroke-[1.75] shrink-0" />
+                      <span>Regenerate</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setReaction((prev) => (prev === 'good' ? null : 'good'));
+                      setShowActionsOnTap(false);
+                    }}
+                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-[11.5px] leading-tight font-normal transition-colors cursor-pointer text-left ${
+                      isDark ? 'hover:bg-white/[0.08] active:bg-white/[0.12]' : 'hover:bg-black/[0.04] active:bg-black/[0.08]'
+                    }`}
+                  >
+                    <ThumbsUp className={`w-[13px] h-[13px] opacity-90 stroke-[1.75] shrink-0 ${reaction === 'good' ? 'fill-current' : ''}`} />
+                    <span>Like</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setReaction((prev) => (prev === 'bad' ? null : 'bad'));
+                      setShowActionsOnTap(false);
+                    }}
+                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-[11.5px] leading-tight font-normal transition-colors cursor-pointer text-left ${
+                      isDark ? 'hover:bg-white/[0.08] active:bg-white/[0.12]' : 'hover:bg-black/[0.04] active:bg-black/[0.08]'
+                    }`}
+                  >
+                    <ThumbsDown className={`w-[13px] h-[13px] opacity-90 stroke-[1.75] shrink-0 ${reaction === 'bad' ? 'fill-current' : ''}`} />
+                    <span>Dislike</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleTogglePin();
+                      setShowActionsOnTap(false);
+                    }}
+                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-[11.5px] leading-tight font-normal transition-colors cursor-pointer text-left ${
+                      isDark ? 'hover:bg-white/[0.08] active:bg-white/[0.12]' : 'hover:bg-black/[0.04] active:bg-black/[0.08]'
+                    }`}
+                  >
+                    <Pin className={`w-[13px] h-[13px] opacity-90 stroke-[1.75] shrink-0 ${isPinned ? 'fill-current' : ''}`} />
+                    <span>{isPinned ? 'Unpin' : 'Pin'}</span>
+                  </button>
+
+                  {onOpenShareStudio && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenShareStudio(message, 'quote');
+                        setShowActionsOnTap(false);
+                      }}
+                      className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-[11.5px] leading-tight font-normal transition-colors cursor-pointer text-left ${
+                        isDark ? 'hover:bg-white/[0.08] active:bg-white/[0.12]' : 'hover:bg-black/[0.04] active:bg-black/[0.08]'
+                      }`}
+                    >
+                      <Share2 className="w-[13px] h-[13px] opacity-90 stroke-[1.75] shrink-0" />
+                      <span>Share</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openKinichReportModal({
+                        targetType: 'ai_answer',
+                        targetId: message.id,
+                        contentPreview: String(message.content || '').slice(0, 400),
+                      });
+                      setShowActionsOnTap(false);
+                    }}
+                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-[11.5px] leading-tight font-normal transition-colors cursor-pointer text-left ${
+                      isDark ? 'hover:bg-white/[0.08] active:bg-white/[0.12]' : 'hover:bg-black/[0.04] active:bg-black/[0.08]'
+                    }`}
+                  >
+                    <Flag className="w-[13px] h-[13px] opacity-90 stroke-[1.75] shrink-0" />
+                    <span>Report</span>
                   </button>
                 </div>
-              ))}
-            </div>
-          )}
-
-          {/* Assistant Action Bar & Timing Tooltip (Hidden until hover or tap) */}
-          {!message.isStreaming && (
-            <div
-              className={`items-center justify-between transition-opacity duration-150 ${
-                showActionsOnTap ||
-                showTtsPopup ||
-                copied ||
-                savedToVault ||
-                showSegmentPicker ||
-                segmentSavedToast
-                  ? 'mt-1 flex opacity-100'
-                  : 'hidden group-hover/msg:mt-1 group-hover/msg:flex group-hover/msg:opacity-100'
-              }`}
-            >
-              <div className={`flex flex-wrap items-center gap-1.5 ${isDark ? 'text-[#6b6b6b]' : 'text-[#9ca3af]'}`}>
-                {/* On-demand Read Aloud Icon + Popup */}
-                <button
-                  type="button"
-                  onClick={() => setShowTtsPopup(true)}
-                  className={`p-1 rounded transition-colors cursor-pointer ${
-                    isDark ? 'hover:text-white' : 'hover:text-[#0d0d0d]'
-                  }`}
-                  title="Read aloud"
-                >
-                  <Volume2 className="w-3.5 h-3.5" />
-                </button>
-
-                {showTtsPopup && (
-                  <Suspense
-                    fallback={
-                      <span
-                        className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] text-[#FC4C01]"
-                        aria-busy="true"
-                      >
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      </span>
-                    }
-                  >
-                    <TtsPopup
-                      text={message.content || ''}
-                      onClose={() => setShowTtsPopup(false)}
-                      isDark={isDark}
-                    />
-                  </Suspense>
-                )}
-
-                <button
-                  onClick={copyText}
-                  className={`p-1 rounded transition-colors cursor-pointer ${
-                    isDark ? 'hover:text-white' : 'hover:text-[#0d0d0d]'
-                  }`}
-                  title="Copy"
-                >
-                  {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-                </button>
-                {onRetry && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDisplayedImages([]);
-                      setActiveImageIndex(null);
-                      setHasMoreImages(false);
-                      onRetry();
-                    }}
-                    className={`p-1 rounded transition-colors cursor-pointer ${
-                      isDark ? 'hover:text-white' : 'hover:text-[#0d0d0d]'
-                    }`}
-                    title="Reload response"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5" />
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={handleTogglePin}
-                  className={`p-1 rounded transition-colors cursor-pointer ${
-                    isPinned
-                      ? isDark
-                        ? 'text-white'
-                        : 'text-neutral-900'
-                      : isDark
-                      ? 'hover:text-white'
-                      : 'hover:text-[#0d0d0d]'
-                  }`}
-                  title={isPinned ? 'Unpin message' : 'Pin message'}
-                  aria-label={isPinned ? 'Unpin message' : 'Pin message'}
-                >
-                  <Pin className={`w-3.5 h-3.5 ${isPinned ? 'fill-current' : ''}`} />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (UserAccountStore.isGuest()) {
-                      window.dispatchEvent(
-                        new CustomEvent('kinich-open-auth', {
-                          detail: { reason: 'Sign in to keep this in your Vault' },
-                        })
-                      );
-                      return;
-                    }
-                    setShowSegmentPicker((prev) => !prev);
-                  }}
-                  className={`p-1 rounded transition-colors cursor-pointer ${
-                    showSegmentPicker || savedMessageHighlights.length > 0
-                      ? isDark
-                        ? 'text-white'
-                        : 'text-neutral-900'
-                      : isDark
-                      ? 'hover:text-white'
-                      : 'hover:text-[#0d0d0d]'
-                  }`}
-                  title="Highlight segments"
-                  aria-label="Highlight segments"
-                >
-                  <Highlighter className="w-3.5 h-3.5" />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleSaveToKnowledgeVault}
-                  data-testid="chat-save-to-vault-btn"
-                  className={`p-1 rounded transition-colors cursor-pointer ${
-                    savedToVault
-                      ? 'text-emerald-500'
-                      : isDark
-                      ? 'hover:text-white'
-                      : 'hover:text-[#0d0d0d]'
-                  }`}
-                  title={
-                    isGuestUser
-                      ? 'Sign in to save'
-                      : savedToVault
-                      ? 'Saved to Vault'
-                      : 'Save to Vault'
-                  }
-                  aria-label={savedToVault ? 'Saved to Vault' : 'Save to Vault'}
-                >
-                  <Bookmark className={`w-3.5 h-3.5 ${savedToVault ? 'fill-current' : ''}`} />
-                </button>
-
-                {onOpenShareStudio && (
-                  <button
-                    type="button"
-                    onClick={() => onOpenShareStudio(message, 'quote')}
-                    className={`p-1 rounded transition-colors cursor-pointer ${
-                      isDark ? 'hover:text-white' : 'hover:text-[#0d0d0d]'
-                    }`}
-                    title="Create Kinich Share Card or Export"
-                    aria-label="Create Kinich Share Card"
-                  >
-                    <Share2 className="w-3.5 h-3.5" />
-                  </button>
-                )}
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    openKinichReportModal({
-                      targetType: 'ai_answer',
-                      targetId: message.id,
-                      contentPreview: String(message.content || '').slice(0, 400),
-                    })
-                  }
-                  className={`p-1 rounded transition-colors cursor-pointer ${
-                    isDark ? 'hover:text-red-400' : 'hover:text-red-600'
-                  }`}
-                  title="Report AI output or safety issue"
-                  aria-label="Report AI output"
-                >
-                  <Flag className="w-3.5 h-3.5" />
-                </button>
-              </div>
-
-              {/* Timing Tooltip */}
-              {message.timing && (
-                <GrokTimingTooltip timing={message.timing} messageContent={message.content} isDark={isDark} />
               )}
             </div>
           )}

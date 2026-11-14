@@ -131,7 +131,7 @@ export const KinichGrowthHubModal: React.FC<KinichGrowthHubModalProps> = ({
   isDark = true,
 }) => {
   const [activeTab, setActiveTab] = useState<GrowthHubTab>(
-    initialTab === 'weekly' ? 'discover' : initialTab
+    initialTab === 'passes' ? 'passes' : 'discover'
   );
 
   // --- TAB 1: DISCOVER STATE ---
@@ -250,7 +250,7 @@ export const KinichGrowthHubModal: React.FC<KinichGrowthHubModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      setActiveTab(initialTab === 'weekly' ? 'discover' : initialTab);
+      setActiveTab(initialTab === 'passes' ? 'passes' : 'discover');
       const localItems = KnowledgeVaultStore.getItems();
       const localThreads = VaultThreadStore.getThreads();
       setVaultItems(localItems);
@@ -569,9 +569,7 @@ export const KinichGrowthHubModal: React.FC<KinichGrowthHubModalProps> = ({
           {(
             [
               { id: 'discover', label: 'Discover' },
-              { id: 'vault', label: `Vault (${vaultThreads.length || vaultItems.length})` },
               { id: 'passes', label: 'Referrals' },
-              { id: 'feedback', label: 'Feedback' },
             ] as const
           ).map((t) => (
             <button
@@ -748,38 +746,6 @@ export const KinichGrowthHubModal: React.FC<KinichGrowthHubModalProps> = ({
                             <button
                               type="button"
                               onClick={() => {
-                                KnowledgeVaultStore.saveItem({
-                                  title: paper.title,
-                                  summary: paper.summary.slice(0, 240),
-                                  content: `### ${paper.title}\n\n- **arXiv:** ${paper.absUrl}\n- **PDF:** ${paper.pdfUrl}\n\n${paper.summary}`,
-                                  type: 'research_summary',
-                                  collectionId: 'col_research_ideas',
-                                  tags: ['arxiv'],
-                                });
-                                setSavedLiveIds((prev) => ({
-                                  ...prev,
-                                  [`arxiv_${paper.id}`]: true,
-                                }));
-                                setVaultItems(KnowledgeVaultStore.getItems());
-                              }}
-                              className={`px-2.5 py-1 rounded-lg border text-xs font-medium cursor-pointer inline-flex items-center gap-1 ${secondaryBtn}`}
-                            >
-                              {isSaved ? (
-                                <>
-                                  <Check className="w-3 h-3 text-emerald-500" />
-                                  <span>Saved</span>
-                                </>
-                              ) : (
-                                <>
-                                  <Bookmark className="w-3 h-3" />
-                                  <span>Save</span>
-                                </>
-                              )}
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => {
                                 const synthArtifact: PublicArtifact = {
                                   id: `arxiv_${paper.id}`,
                                   ownerId: 'arxiv',
@@ -865,28 +831,6 @@ export const KinichGrowthHubModal: React.FC<KinichGrowthHubModalProps> = ({
                             <button
                               type="button"
                               onClick={() => {
-                                KnowledgeVaultStore.saveItem({
-                                  title: repo.fullName,
-                                  summary: repo.description,
-                                  content: `### ${repo.fullName}\n\n- **GitHub:** ${repo.url}\n\n${repo.description}`,
-                                  type: 'discover_resource',
-                                  collectionId: 'col_programming',
-                                  tags: ['github'],
-                                });
-                                setSavedLiveIds((prev) => ({
-                                  ...prev,
-                                  [`gh_${repo.id}`]: true,
-                                }));
-                                setVaultItems(KnowledgeVaultStore.getItems());
-                              }}
-                              className={`px-2.5 py-1 rounded-lg border text-xs font-medium cursor-pointer ${secondaryBtn}`}
-                            >
-                              {isSaved ? 'Saved' : 'Save'}
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => {
                                 const ghArtifact: PublicArtifact = {
                                   id: `gh_${repo.id}`,
                                   ownerId: 'github',
@@ -939,22 +883,6 @@ export const KinichGrowthHubModal: React.FC<KinichGrowthHubModalProps> = ({
                       >
                         <div className="flex items-center justify-between gap-2 text-[11px] text-zinc-400">
                           <span className="font-medium">{item.category}</span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const nowSaved =
-                                KnowledgeVaultStore.toggleBookmarkFromArtifact(item);
-                              if (nowSaved) {
-                                recordArtifactInteraction(item.id, 'save');
-                              }
-                              setVaultItems(KnowledgeVaultStore.getItems());
-                            }}
-                            className={`cursor-pointer font-medium ${
-                              isSaved ? 'text-[#FC4C01]' : 'hover:text-current'
-                            }`}
-                          >
-                            {isSaved ? 'Saved' : 'Save'}
-                          </button>
                         </div>
 
                         <h3
