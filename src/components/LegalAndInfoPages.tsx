@@ -707,28 +707,28 @@ export const LegalAndInfoPages: React.FC<LegalAndInfoPagesProps> = ({
 
   return (
     <div
-      className={`min-h-[100dvh] w-full flex flex-col font-sans selection:bg-[#FC4C01]/30 ${
-        isDark ? 'bg-[#09090b] text-[#f4f4f5]' : 'bg-[#fafafa] text-[#09090b]'
+      className={`min-h-[100dvh] w-full flex flex-col font-sans selection:bg-white/30 ${
+        isDark ? 'bg-black text-white' : 'bg-[#fafafa] text-[#09090b]'
       }`}
     >
-      {/* Top Navigation Bar */}
+      {/* Top Navigation Bar (OpenAI Policy Style) */}
       <header
-        className={`sticky top-0 z-30 border-b px-3 sm:px-8 py-3 flex items-center justify-between gap-3 backdrop-blur-md ${
-          isDark ? 'bg-[#09090b]/90 border-white/10' : 'bg-white/90 border-black/10'
+        className={`sticky top-0 z-30 border-b px-4 sm:px-10 py-3.5 flex items-center justify-between gap-4 backdrop-blur-md ${
+          isDark ? 'bg-black/95 border-white/10' : 'bg-white/95 border-black/10'
         }`}
       >
-        <div className="flex items-center gap-2.5 shrink-0">
+        <div className="flex items-center gap-3 shrink-0">
           <button
             type="button"
             onClick={() => onNavigate('/')}
-            className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-semibold cursor-pointer transition-colors ${
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold cursor-pointer transition-colors ${
               isDark
-                ? 'border-white/15 bg-white/5 hover:bg-white/10 text-white'
-                : 'border-black/15 bg-black/5 hover:bg-black/10 text-black'
+                ? 'border-white/20 bg-white/5 hover:bg-white/10 text-white'
+                : 'border-black/20 bg-black/5 hover:bg-black/10 text-black'
             }`}
           >
             <ArrowLeft className="w-3.5 h-3.5" />
-            <span>Back to {TRADE_NAME}</span>
+            <span>{TRADE_NAME}</span>
           </button>
           <a
             href="/legal"
@@ -736,16 +736,15 @@ export const LegalAndInfoPages: React.FC<LegalAndInfoPagesProps> = ({
               e.preventDefault();
               onNavigate('/legal');
             }}
-            className="hidden sm:flex items-center gap-2 pl-2"
+            className="flex items-center gap-2 pl-1"
           >
-            <GrokLogo className="w-5 h-5 shrink-0" size="sm" showText={false} isDark={isDark} />
-            <span className="font-bold tracking-tight text-sm">{TRADE_NAME} Legal</span>
+            <span className="font-bold tracking-tight text-base sm:text-lg">{TRADE_NAME}</span>
           </a>
         </div>
 
         <nav
           aria-label="Legal policies navigation"
-          className="flex items-center gap-1 overflow-x-auto no-scrollbar max-w-full py-0.5"
+          className="flex items-center gap-1.5 overflow-x-auto no-scrollbar max-w-full py-0.5"
         >
           {navTabs.map((tab) => {
             const active = route === tab.id;
@@ -757,15 +756,14 @@ export const LegalAndInfoPages: React.FC<LegalAndInfoPagesProps> = ({
                   e.preventDefault();
                   onNavigate(tab.path);
                 }}
-                className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap cursor-pointer transition-colors ${
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap cursor-pointer transition-colors ${
                   active
-                    ? 'bg-[#FC4C01] text-white font-semibold'
+                    ? 'bg-white text-black font-semibold'
                     : isDark
-                    ? 'text-white/65 hover:text-white hover:bg-white/5'
-                    : 'text-black/65 hover:text-black hover:bg-black/5'
+                    ? 'text-white/70 hover:text-white hover:bg-white/10'
+                    : 'text-black/70 hover:text-black hover:bg-black/10'
                 }`}
               >
-                {tab.icon}
                 <span>{tab.label}</span>
               </a>
             );
@@ -995,16 +993,16 @@ export const LegalAndInfoPages: React.FC<LegalAndInfoPagesProps> = ({
               )}
 
               {/* Numbered Policy Sections with Anchor Links & Tables */}
-              <div className="space-y-8">
+              <div className="space-y-10">
                 {activeDoc.sections.map((sec) => (
                   <section
                     key={sec.id}
                     id={sec.id}
-                    className="space-y-3 scroll-mt-24 border-b border-current/10 pb-7 last:border-b-0"
+                    className="space-y-3.5 scroll-mt-24 border-b border-white/10 pb-8 last:border-b-0"
                   >
                     <div className="flex items-center justify-between gap-2 group">
-                      <h2 className="text-lg sm:text-xl font-bold tracking-tight">
-                        <span className="font-mono text-xs sm:text-sm text-[#FC4C01] mr-2">
+                      <h2 className="text-lg sm:text-xl font-bold tracking-tight text-white">
+                        <span className="font-mono text-xs sm:text-sm text-zinc-400 mr-2">
                           {sec.number}.
                         </span>
                         {sec.title}
@@ -1013,11 +1011,11 @@ export const LegalAndInfoPages: React.FC<LegalAndInfoPagesProps> = ({
                         type="button"
                         onClick={() => handleCopyAnchor(sec.id)}
                         title={`Copy link to #${sec.id}`}
-                        className="opacity-60 hover:opacity-100 p-1.5 rounded-lg border border-transparent hover:border-current/15 text-xs flex items-center gap-1 cursor-pointer"
+                        className="opacity-40 hover:opacity-100 p-1.5 rounded-lg border border-transparent hover:border-white/20 text-xs flex items-center gap-1 cursor-pointer transition-opacity"
                       >
                         <LinkIcon className="w-3.5 h-3.5" />
                         {copiedAnchor === sec.id && (
-                          <span className="text-[10px] font-mono text-[#FC4C01]">Copied</span>
+                          <span className="text-[10px] font-mono text-white">Copied</span>
                         )}
                       </button>
                     </div>
@@ -1025,20 +1023,14 @@ export const LegalAndInfoPages: React.FC<LegalAndInfoPagesProps> = ({
                     {(sec.paragraphs || []).map((p: string, pIdx: number) => (
                       <p
                         key={pIdx}
-                        className={`text-sm sm:text-[15px] leading-relaxed ${
-                          isDark ? 'text-white/80' : 'text-black/80'
-                        }`}
+                        className="text-sm sm:text-[15px] leading-relaxed text-zinc-300 font-normal"
                       >
                         {p}
                       </p>
                     ))}
 
                     {sec.bullets && sec.bullets.length > 0 && (
-                      <ul
-                        className={`list-disc pl-5 space-y-1.5 text-sm leading-relaxed ${
-                          isDark ? 'text-white/80' : 'text-black/80'
-                        }`}
-                      >
+                      <ul className="list-disc pl-5 space-y-2 text-sm leading-relaxed text-zinc-300 font-normal">
                         {sec.bullets.map((b, bIdx) => (
                           <li key={bIdx}>{b}</li>
                         ))}

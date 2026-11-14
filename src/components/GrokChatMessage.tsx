@@ -1037,20 +1037,19 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                 const isLongUserMessage = rawUserText.length > 360 || lineCount > 8;
                 return (
                   <div
-                    onClick={() => setShowActionsOnTap((prev) => !prev)}
-                    className={`text-[14.5px] sm:text-[15px] leading-[24px] tracking-normal [word-spacing:normal] font-normal px-4 py-2.5 rounded-[22px] backdrop-blur-2xl backdrop-saturate-150 border w-fit max-w-full min-w-0 overflow-hidden whitespace-pre-wrap break-words [overflow-wrap:anywhere] [word-break:break-word] cursor-pointer ${
+                    className={`text-[14.5px] sm:text-[15px] leading-[24px] tracking-normal [word-spacing:normal] font-normal px-4 py-2.5 rounded-[22px] backdrop-blur-2xl backdrop-saturate-150 border w-fit max-w-full min-w-0 overflow-hidden whitespace-pre-wrap break-words [overflow-wrap:anywhere] [word-break:break-word] ${
                       isDark
                         ? 'bg-neutral-900/55 border-white/[0.15] text-[#f9fafb] shadow-[0_8px_28px_rgba(0,0,0,0.45)]'
                         : 'bg-white/75 border-black/[0.08] text-[#0f1115] shadow-[0_8px_24px_rgba(0,0,0,0.06)]'
                     }`}
                   >
-                    <motion.div
-                      initial={false}
-                      animate={{
-                        height: isLongUserMessage ? (isUserMsgExpanded ? 'auto' : 132) : 'auto',
+                    <div
+                      style={{
+                        maxHeight: isLongUserMessage && !isUserMsgExpanded ? '132px' : 'none',
+                        overflow: 'hidden',
+                        transition: 'max-height 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
                       }}
-                      transition={MESSAGE_HEIGHT_TRANSITION}
-                      className="relative overflow-hidden"
+                      className="relative"
                     >
                       <div>{rawUserText}</div>
                       {isLongUserMessage && !isUserMsgExpanded && (
@@ -1060,7 +1059,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                           }`}
                         />
                       )}
-                    </motion.div>
+                    </div>
                     {isLongUserMessage && (
                       <button
                         type="button"
@@ -1592,19 +1591,18 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
             </div>
           )}
 
-          <motion.div
-            initial={false}
-            animate={{
-              height: isLongAssistantMessage ? (isAssistantMsgExpanded ? 'auto' : 260) : 'auto',
+          <div
+            style={{
+              maxHeight: isLongAssistantMessage && !isAssistantMsgExpanded ? '260px' : 'none',
+              overflow: 'hidden',
+              transition: 'max-height 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
             }}
-            transition={MESSAGE_HEIGHT_TRANSITION}
-            className="relative overflow-hidden"
+            className="relative"
           >
             <div
               ref={messageContentRef}
               onMouseUp={handleCaptureTextSelection}
               onTouchEnd={() => setTimeout(handleCaptureTextSelection, 60)}
-              onClick={() => setShowActionsOnTap((prev) => !prev)}
               className="prose-grok ds-markdown max-w-none my-0 text-[14.5px] sm:text-[15.5px] leading-[24px] sm:leading-[26px] tracking-normal [word-spacing:normal]"
             >
               <StreamingText
@@ -2065,7 +2063,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                 }`}
               />
             )}
-          </motion.div>
+          </div>
 
           {/* Clean Expand / Collapse Control for Long AI Responses */}
           {isLongAssistantMessage && (
