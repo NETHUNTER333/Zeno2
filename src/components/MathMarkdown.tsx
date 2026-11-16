@@ -4,6 +4,15 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import { CodeBlockSkeleton } from './Skeleton';
+import {
+  STEM_KATEX_MACROS,
+  normalizeDisplayText,
+  normalizeMathDelimiters,
+  renderLatexToHtml,
+  renderMixedTextWithKatexHtml,
+} from '../lib/latexEngine';
+
+export { normalizeDisplayText, normalizeMathDelimiters };
 
 const PeleDiagram = lazy(() =>
   import('./PeleDiagram').then((m) => ({ default: m.PeleDiagram }))
@@ -12,154 +21,37 @@ const PrismCodeBlock = lazy(() =>
   import('./PrismCodeBlock').then((m) => ({ default: m.PrismCodeBlock }))
 );
 
-const NAMED_OR_NUMERIC_ENTITY_RE =
-  /&(?:amp|apos|quot|nbsp|rsquo|lsquo|ldquo|rdquo|ndash|mdash|#0*(?:34|38|39|160|8211|8212|8216|8217|8220|8221)|#x0*(?:22|26|27|a0|2013|2014|2018|2019|201c|201d)|#(\d+)|#x([0-9a-fA-F]+));/gi;
-
-function decodeSafeEntitiesOnce(text: string): string {
-  return text.replace(NAMED_OR_NUMERIC_ENTITY_RE, (full, decGroup, hexGroup) => {
-    const lower = full.toLowerCase();
-    if (lower === '&amp;' || lower === '&#38;' || lower === '&#x26;') return '&';
-    if (
-      lower === '&apos;' ||
-      lower === '&rsquo;' ||
-      lower === '&lsquo;' ||
-      lower === '&#39;' ||
-      lower === '&#039;' ||
-      lower === '&#x27;' ||
-      lower === '&#8216;' ||
-      lower === '&#8217;' ||
-      lower === '&#x2018;' ||
-      lower === '&#x2019;'
-    ) {
-      return "'";
-    }
-    if (
-      lower === '&quot;' ||
-      lower === '&ldquo;' ||
-      lower === '&rdquo;' ||
-      lower === '&#34;' ||
-      lower === '&#x22;' ||
-      lower === '&#8220;' ||
-      lower === '&#8221;' ||
-      lower === '&#x201c;' ||
-      lower === '&#x201d;'
-    ) {
-      return '"';
-    }
-    if (lower === '&nbsp;' || lower === '&#160;' || lower === '&#xa0;') return ' ';
-    if (lower === '&ndash;' || lower === '&#8211;' || lower === '&#x2013;') return '–';
-    if (lower === '&mdash;' || lower === '&#8212;' || lower === '&#x2014;') return '—';
-
-    const code = decGroup
-      ? parseInt(decGroup, 10)
-      : hexGroup
-      ? parseInt(hexGroup, 16)
-      : NaN;
-    // Never decode < (60) or > (62) in markdown prose so rehypeRaw cannot interpret literal escaped tags as HTML
-    if (!Number.isFinite(code) || code === 60 || code === 62 || code < 32 || code > 0x10ffff) {
-      return full;
-    }
-    try {
-      return String.fromCodePoint(code);
-    } catch {
-      return full;
-    }
-  });
-}
-
-/**
- * Single canonical render-layer normalizer for HTML entities, escaped Unicode quotes,
- * and apostrophes outside fenced/inline code blocks.
- */
-export function normalizeDisplayText(raw: string): string {
-  if (!raw || typeof raw !== 'string') return '';
-
-  const segments = raw.split(/(```[\s\S]*?```|`[^`\n]+`)/g);
-  return segments
-    .map((segment) => {
-      if (segment.startsWith('```') || segment.startsWith('`')) {
-        return segment;
-      }
-
-      let s = segment
-        .replace(/\\u0027/gi, "'")
-        .replace(/\\u0026/gi, '&')
-        .replace(/\\u0022/gi, '"')
-        .replace(/\\u2018|\\u2019/gi, "'")
-        .replace(/\\u201c|\\u201d/gi, '"');
-
-      // Up to 3 bounded passes unwind double-escaped entities like &amp;#39; -> &#39; -> '
-      for (let pass = 0; pass < 3; pass++) {
-        const next = decodeSafeEntitiesOnce(s);
-        if (next === s) break;
-        s = next;
-      }
-
-      return s
-        .replace(/[\u2018\u2019\u02BC]/g, "'")
-        .replace(/[\u201C\u201D]/g, '"')
-        .normalize('NFC');
-    })
-    .join('');
-}
-
-/**
- * Normalizes LaTeX / KaTeX math delimiters in AI responses and study documents
- * so that remark-math + rehype-katex reliably parse both inline ($...$) and
- * block ($$...$$) equations without corrupting fenced or inline code blocks.
- */
-export function normalizeMathDelimiters(raw: string): string {
-  if (!raw || typeof raw !== 'string') return '';
-
-  const cleanRaw = normalizeDisplayText(raw);
-
-  // Split by fenced code blocks (```...```) and inline code (`...`) so code is never touched
-  const segments = cleanRaw.split(/(```[\s\S]*?```|`[^`\n]+`)/g);
-
-  return segments
-    .map((segment) => {
-      if (segment.startsWith('```') || segment.startsWith('`')) {
-        return segment;
-      }
-
-      let s = segment;
-
-      // 1. Convert \[ ... \] display math to $$ ... $$
-      s = s.replace(/\\\[([\s\S]*?)\\\]/g, (_, inner) => `\n$$\n${inner.trim()}\n$$\n`);
-
-      // 2. Convert \( ... \) inline math to $ ... $
-      s = s.replace(/\\\(([\s\S]*?)\\\)/g, (_, inner) => `$${inner.trim()}$`);
-
-      // 3. Wrap standalone \begin{equation|align|aligned|gather|pmatrix|bmatrix|matrix|cases}...\end{...}
-      // blocks that are not already inside $$...$$
-      s = s.replace(
-        /(^|[^$])\\begin\{(equation\*?|align\*?|aligned|gather\*?|cases|pmatrix|bmatrix|vmatrix|matrix)\}([\s\S]*?)\\end\{\2\}(?!\$)/gm,
-        (_, prefix, env, body) => `${prefix}\n$$\n\\begin{${env}}${body}\\end{${env}}\n$$\n`
-      );
-
-      return s;
-    })
-    .join('');
-}
-
 export interface MathMarkdownProps {
   content: string;
   isDark?: boolean;
   inline?: boolean;
+  autoDetectLatex?: boolean;
   className?: string;
 }
 
+const KATEX_PLUGIN_OPTIONS = {
+  throwOnError: false,
+  strict: false,
+  trust: false,
+  output: 'htmlAndMathml' as const,
+  macros: STEM_KATEX_MACROS,
+};
+
 /**
- * Reusable KaTeX + Markdown renderer with clean typography, horizontal overflow protection
- * for wide equations, and support for both block and inline rendering.
+ * Reusable KaTeX + mhchem + Markdown renderer with clean typography,
+ * STEM macros, currency protection, and horizontal overflow scrolling for equations.
  */
 export const MathMarkdown: React.FC<MathMarkdownProps> = ({
   content,
   isDark = false,
   inline = false,
+  autoDetectLatex = false,
   className = '',
 }) => {
-  const normalized = React.useMemo(() => normalizeMathDelimiters(content), [content]);
+  const normalized = React.useMemo(
+    () => normalizeMathDelimiters(content, { autoDetectLatex }),
+    [content, autoDetectLatex]
+  );
 
   if (!normalized) return null;
 
@@ -168,7 +60,7 @@ export const MathMarkdown: React.FC<MathMarkdownProps> = ({
       <span className={`katex-markdown-body inline [&>p]:inline [&>p]:m-0 ${className}`}>
         <ReactMarkdown
           remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: true }]]}
-          rehypePlugins={[[rehypeKatex, { throwOnError: false, strict: false, output: 'htmlAndMathml' }]]}
+          rehypePlugins={[[rehypeKatex, KATEX_PLUGIN_OPTIONS]]}
           components={{
             p: ({ children }) => <span className="leading-relaxed">{children}</span>,
             pre: ({ children }) => {
@@ -190,7 +82,11 @@ export const MathMarkdown: React.FC<MathMarkdownProps> = ({
             code: ({ className: codeClassName, children, ...props }) => {
               const isBlock = Boolean(codeClassName && /language-/.test(codeClassName));
               if (isBlock) {
-                return <code className={codeClassName} {...props}>{children}</code>;
+                return (
+                  <code className={codeClassName} {...props}>
+                    {children}
+                  </code>
+                );
               }
               return (
                 <code
@@ -214,12 +110,10 @@ export const MathMarkdown: React.FC<MathMarkdownProps> = ({
   }
 
   return (
-    <div
-      className={`katex-markdown-body space-y-2.5 ${className}`}
-    >
+    <div className={`katex-markdown-body space-y-2.5 ${className}`}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: true }]]}
-        rehypePlugins={[[rehypeKatex, { throwOnError: false, strict: false, output: 'htmlAndMathml' }]]}
+        rehypePlugins={[[rehypeKatex, KATEX_PLUGIN_OPTIONS]]}
         components={{
           p: ({ children }) => <p className="leading-[1.68] last:mb-0">{children}</p>,
           pre: ({ children }) => {
@@ -308,6 +202,89 @@ export const MathMarkdown: React.FC<MathMarkdownProps> = ({
         {normalized}
       </ReactMarkdown>
     </div>
+  );
+};
+
+export interface MathTextProps {
+  text: string;
+  className?: string;
+  autoDetectLatex?: boolean;
+}
+
+/**
+ * Lightweight synchronous inline KaTeX + prose renderer for quiz options, flashcards,
+ * headings, rubrics, and tooltips without full Markdown block overhead.
+ */
+export const MathText: React.FC<MathTextProps> = ({
+  text,
+  className = '',
+  autoDetectLatex = true,
+}) => {
+  const html = React.useMemo(
+    () => renderMixedTextWithKatexHtml(text, { autoDetectLatex }),
+    [text, autoDetectLatex]
+  );
+  if (!html) return null;
+  return <span className={className} dangerouslySetInnerHTML={{ __html: html }} />;
+};
+
+export interface MathFormulaProps {
+  formula: string;
+  displayMode?: boolean;
+  className?: string;
+}
+
+/**
+ * Direct KaTeX + mhchem renderer for standalone formula strings (with or without $ delimiters).
+ */
+export const MathFormula: React.FC<MathFormulaProps> = ({
+  formula,
+  displayMode = false,
+  className = '',
+}) => {
+  const html = React.useMemo(
+    () => renderLatexToHtml(formula, displayMode),
+    [formula, displayMode]
+  );
+  if (!html) return null;
+  if (displayMode) {
+    return (
+      <div
+        className={`katex-formula-strip ${className}`}
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+    );
+  }
+  return <span className={className} dangerouslySetInnerHTML={{ __html: html }} />;
+};
+
+export interface SvgLatexProps {
+  text: string;
+  autoDetectLatex?: boolean;
+  className?: string;
+  style?: React.CSSProperties;
+}
+
+/**
+ * Renders rich KaTeX / mhchem notation inside SVG <foreignObject xmlns="http://www.w3.org/1999/xhtml">.
+ */
+export const SvgLatex: React.FC<SvgLatexProps> = ({
+  text,
+  autoDetectLatex = true,
+  className = '',
+  style,
+}) => {
+  const html = React.useMemo(
+    () => renderMixedTextWithKatexHtml(text, { autoDetectLatex }),
+    [text, autoDetectLatex]
+  );
+  if (!html) return null;
+  return (
+    <div
+      className={`katex-svg-node ${className}`}
+      style={style}
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
   );
 };
 

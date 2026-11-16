@@ -15,6 +15,11 @@ android {
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
+        // Provide Web OAuth Client ID for @capacitor-firebase/authentication Credential Manager
+        // until android/app/google-services.json is added (avoids duplicate resource errors once it exists).
+        if (!file('google-services.json').exists()) {
+            resValue "string", "default_web_client_id", "129041528700-0ud5ba14sirc78qgktuausb7svra8tql.apps.googleusercontent.com"
+        }
     }
     buildTypes {
         release {

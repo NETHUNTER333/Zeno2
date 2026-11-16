@@ -707,7 +707,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
                 '750 web searches / day',
                 '100 Deep Research runs / day',
                 '200 Study sessions / day',
-                'GLM 4.7 Flash, Kimi K2.5 & Qwen3 30B',
+                'GLM 4.7 Flash, Kimi K2.5, Qwen3 30B & DeepSeek V4.1 Uncensored',
               ].map((feat) => (
                 <li key={feat} className="flex items-center gap-2">
                   <Check className="w-3.5 h-3.5 shrink-0 text-[#FC4C01]" />

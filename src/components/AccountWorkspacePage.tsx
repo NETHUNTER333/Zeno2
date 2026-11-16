@@ -32,7 +32,10 @@ import {
   Globe,
   X,
   Search,
+  Cpu,
+  Upload,
 } from 'lucide-react';
+import { ModelSettingsPanel } from './ModelSettingsPanel';
 import {
   getStoredLocationPref,
   clearStoredLocationPref,
@@ -87,7 +90,7 @@ import {
   setStoredBackgroundGradientMode,
 } from '../lib/modelGradients';
 
-export type AccountTab = 'profile' | 'billing' | 'pricing' | 'chats_projects' | 'preferences' | 'database';
+export type AccountTab = 'profile' | 'models' | 'billing' | 'pricing' | 'chats_projects' | 'preferences' | 'database';
 
 const CANCELLATION_SURVEY_REASONS = [
   {
@@ -1182,6 +1185,7 @@ interface AccountWorkspacePageProps {
   onDeleteThread?: (threadId: string) => void;
   bgGradientMode?: BackgroundGradientMode;
   onSelectBgGradientMode?: (mode: BackgroundGradientMode) => void;
+  onOpenPricing?: (highlightPlan?: 'spark' | 'fire', reason?: string) => void;
 }
 
 export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
@@ -1201,6 +1205,7 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
   onDeleteThread,
   bgGradientMode = 'dynamic-model',
   onSelectBgGradientMode,
+  onOpenPricing,
 }) => {
   const [activeTab, setActiveTab] = useState<AccountTab>(initialTab);
   const [profile, setProfile] = useState<UserProfile>(() => UserAccountStore.getProfile());
@@ -1325,6 +1330,7 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
 
   const navItems: { id: AccountTab; label: string; icon: React.ReactNode }[] = [
     { id: 'profile', label: 'Profile & Account', icon: <User className="w-4 h-4" /> },
+    { id: 'models', label: 'Model Settings', icon: <Cpu className="w-4 h-4 text-[#FC4C01]" /> },
     { id: 'billing', label: 'Billing & Refunds', icon: <Receipt className="w-4 h-4 text-[#FC4C01]" /> },
     { id: 'pricing', label: 'Plans & Pricing ($3 / $7)', icon: <Zap className="w-4 h-4 text-[#FC4C01]" /> },
     { id: 'preferences', label: 'App Preferences', icon: <SlidersHorizontal className="w-4 h-4" /> },
@@ -1395,13 +1401,7 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
       }`}
     >
       {/* Top Header Navigation Bar */}
-      <header
-        className={`h-14 px-4 sm:px-6 border-b flex items-center justify-between shrink-0 z-20 backdrop-blur-md ${
-          isDark
-            ? 'bg-[#09090b]/90 border-white/10'
-            : 'bg-white/90 border-black/10 shadow-xs'
-        }`}
-      >
+      <header className="h-14 px-4 sm:px-6 bg-transparent flex items-center justify-between shrink-0 z-20">
         <div className="flex items-center gap-3">
           <button
             onClick={onBackToChat}
@@ -1470,9 +1470,7 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
         <div
           role="tablist"
           aria-label="Account and settings sections"
-          className={`md:hidden flex items-center gap-1.5 p-3 border-b shrink-0 overflow-x-auto scrollbar-none ${
-            isDark ? 'border-white/10 bg-[#121215]' : 'border-black/10 bg-neutral-50'
-          }`}
+          className="md:hidden flex items-center gap-1.5 p-3 bg-transparent shrink-0 overflow-x-auto scrollbar-none"
         >
           {navItems.map((item, idx) => {
             const isActive = activeTab === item.id;
@@ -1627,6 +1625,19 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
           className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 lg:p-10 slim-scrollbar"
         >
           <div className={`${activeTab === 'pricing' ? 'max-w-6xl' : 'max-w-3xl'} mx-auto space-y-6 pb-16`}>
+            {/* Tab: Model Settings */}
+            {activeTab === 'models' && (
+              <ModelSettingsPanel
+                isDark={isDark}
+                selectedModel={selectedModel}
+                onSelectModel={onSelectModel}
+                webSearchDefault={webSearchDefault}
+                onToggleWebSearchDefault={onToggleWebSearchDefault}
+                onOpenPricing={onOpenPricing}
+                onSaved={triggerSuccessAlert}
+              />
+            )}
+
             {/* Tab: Plans & Pricing ($1 Spark / $5 Fire) */}
             {activeTab === 'pricing' && (
               <Suspense fallback={<ModalSkeleton isDark={isDark} />}>
@@ -2462,8 +2473,34 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
                         </div>
 
                         <div className="flex items-center justify-between gap-1.5 pt-1.5 border-t border-neutral-500/10">
-                          <span className="text-[10px] font-mono tabular-nums text-[#FC4C01]">
-                            +{b.bonusMessages} Msgs · +{b.bonusUploads} Uploads
+                          <span className="inline-flex items-center gap-2 text-[10.5px] font-mono tabular-nums font-medium text-[#FC4C01]">
+                            <span
+                              className="inline-flex items-center gap-1"
+                              title={`+${b.bonusMessages} Messages`}
+                            >
+                              <MessageSquare className="w-3 h-3 shrink-0" />
+                              <span>+{b.bonusMessages}</span>
+                            </span>
+                            <span className="opacity-30">|</span>
+                            <span
+                              className="inline-flex items-center gap-1"
+                              title={`+${b.bonusUploads} Uploads`}
+                            >
+                              <Upload className="w-3 h-3 shrink-0" />
+                              <span>+{b.bonusUploads}</span>
+                            </span>
+                            {b.bonusShields ? (
+                              <>
+                                <span className="opacity-30">|</span>
+                                <span
+                                  className="inline-flex items-center gap-1"
+                                  title={`+${b.bonusShields} Shield`}
+                                >
+                                  <Shield className="w-3 h-3 shrink-0" />
+                                  <span>+{b.bonusShields}</span>
+                                </span>
+                              </>
+                            ) : null}
                           </span>
                           <div className="flex items-center gap-1">
                             {b.isUnlocked && !b.isFeatured && (
@@ -2774,6 +2811,28 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
                   <p className="text-xs sm:text-sm text-neutral-400 mt-1">
                     Theme appearance and search grounding.
                   </p>
+                </div>
+
+                {/* Quick Jump to Model Settings */}
+                <div
+                  className={`p-4 rounded-xl border flex flex-wrap items-center justify-between gap-3 ${
+                    isDark ? 'bg-white/[0.02] border-white/10' : 'bg-white border-black/10 shadow-xs'
+                  }`}
+                >
+                  <div>
+                    <div className="text-sm font-semibold">AI Model &amp; System Prompts</div>
+                    <div className="text-xs text-neutral-400 mt-0.5">
+                      Configure Regular vs. Uncensored system prompts, temperature, reasoning effort, and default models.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('models')}
+                    className="px-3.5 py-2 rounded-xl bg-[#FC4C01] hover:bg-[#e04300] text-white text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer transition-colors"
+                  >
+                    <Cpu className="w-3.5 h-3.5" />
+                    <span>Open Model Settings</span>
+                  </button>
                 </div>
 
                 {/* Theme Switcher */}

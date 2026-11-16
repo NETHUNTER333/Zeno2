@@ -15,6 +15,10 @@ export const SERVER_LIMITS = {
   LLM_UPSTREAM_TIMEOUT_MS: 25_000,
 } as const;
 
+export function isTestRuntime(): boolean {
+  return process.env.NODE_ENV === 'test' || process.env.VITEST === 'true';
+}
+
 export function getFirebaseProjectId(): string {
   return (
     process.env.FIREBASE_PROJECT_ID ||
@@ -22,6 +26,24 @@ export function getFirebaseProjectId(): string {
     (firebaseAppletConfig as { projectId?: string }).projectId ||
     'sustained-chiller-36tp2'
   );
+}
+
+export function getFirestoreDatabaseId(): string {
+  const raw = (
+    process.env.FIRESTORE_DATABASE_ID ||
+    (firebaseAppletConfig as { firestoreDatabaseId?: string }).firestoreDatabaseId ||
+    ''
+  ).trim();
+  if (!raw || raw === '(default)') return '';
+  return raw;
+}
+
+export function getDataDir(): string {
+  const configured = (process.env.DATA_DIR || process.env.KINICH_DATA_DIR || '').trim();
+  if (configured) {
+    return path.resolve(configured);
+  }
+  return path.resolve(process.cwd(), 'data');
 }
 
 const DEFAULT_TREG_ORG = 'syntrofoi';
@@ -49,7 +71,7 @@ function loadLocalRouterKeys(): Record<string, any> {
 }
 
 export function getTregToken(): string {
-  if (process.env.NODE_ENV === 'test' || process.env.VITEST === 'true') {
+  if (isTestRuntime()) {
     return (process.env.TREG_TOKEN || '').trim();
   }
   const envVal = (process.env.TREG_TOKEN || process.env.TREG_API_KEY || '').trim();
@@ -74,7 +96,7 @@ export function getTregBaseUrl(): string {
 }
 
 export function getTinyfishApiKey(): string {
-  if (process.env.NODE_ENV === 'test' || process.env.VITEST === 'true') {
+  if (isTestRuntime()) {
     return (process.env.TINYFISH_API_KEY || '').trim();
   }
   const envVal = (process.env.TINYFISH_API_KEY || process.env.TINYFISH_TOKEN || '').trim();
@@ -95,11 +117,110 @@ export function getTinyfishBaseUrl(): string {
 }
 
 export function isStrictAuthRequired(): boolean {
-  return process.env.REQUIRE_AUTH_FOR_CHAT === 'true';
+  const raw = (process.env.REQUIRE_AUTH_FOR_CHAT || '').trim().toLowerCase();
+  if (raw === 'true') return true;
+  if (raw === 'false') return false;
+  return process.env.NODE_ENV === 'production' && !isTestRuntime();
 }
 
 export function getRedisUrl(): string {
   return (process.env.REDIS_URL || '').trim();
+}
+
+export function isSentryConfigured(): boolean {
+  return Boolean((process.env.SENTRY_DSN || '').trim());
+}
+
+export function isServerFirestoreCredentialsAvailable(): boolean {
+  return Boolean(
+    (process.env.FIREBASE_SERVICE_ACCOUNT_JSON || '').trim() ||
+      (process.env.GOOGLE_APPLICATION_CREDENTIALS || '').trim() ||
+      (process.env.K_SERVICE || '').trim()
+  );
+}
+
+const DEFAULT_PRODUCTION_ALLOWED_ORIGINS = [
+  'https://kinich.app',
+  'https://www.kinich.app',
+  'https://zeno0x.vercel.app',
+  'https://prod-main-zeno-api-c257d4-00gfx3c9932.compute.instacloud-edge.com',
+  'capacitor://localhost',
+  'ionic://localhost',
+  'http://localhost',
+  'https://localhost',
+];
+
+const DEV_LOOPBACK_ORIGIN_REGEX = /^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d{1,5})?$/i;
+const ZENO_VERCEL_PREVIEW_REGEX = /^https:\/\/zeno0x(?:-[a-z0-9-]+)?\.vercel\.app$/i;
+
+function normalizeOriginEntry(raw: string): string | null {
+  const trimmed = raw.trim().replace(/\/+$/, '');
+  if (!trimmed || trimmed === 'MY_APP_URL') return null;
+  if (trimmed.startsWith('capacitor://') || trimmed.startsWith('ionic://')) {
+    return trimmed.toLowerCase();
+  }
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+    return `${parsed.protocol}//${parsed.host}`.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+export function getAllowedOrigins(): Set<string> {
+  const allowlist = new Set<string>(DEFAULT_PRODUCTION_ALLOWED_ORIGINS);
+
+  const envSingleUrls = [process.env.APP_URL, process.env.VITE_BACKEND_URL];
+  for (const candidate of envSingleUrls) {
+    if (typeof candidate === 'string' && candidate.trim()) {
+      const normalized = normalizeOriginEntry(candidate);
+      if (normalized) allowlist.add(normalized);
+    }
+  }
+
+  const envLists = [process.env.ALLOWED_ORIGINS, process.env.CORS_ALLOWED_ORIGINS];
+  for (const listRaw of envLists) {
+    if (typeof listRaw === 'string' && listRaw.trim()) {
+      for (const item of listRaw.split(',')) {
+        const normalized = normalizeOriginEntry(item);
+        if (normalized) allowlist.add(normalized);
+      }
+    }
+  }
+
+  if (process.env.NODE_ENV !== 'production') {
+    allowlist.add('http://localhost:3000');
+    allowlist.add('http://127.0.0.1:3000');
+    allowlist.add('http://localhost:5173');
+    allowlist.add('http://127.0.0.1:5173');
+  }
+
+  return allowlist;
+}
+
+export function isCorsOriginAllowed(origin: string | undefined): boolean {
+  if (!origin || typeof origin !== 'string') return false;
+  const trimmed = origin.trim();
+  if (!trimmed || trimmed === 'null') return false;
+
+  const normalized = normalizeOriginEntry(trimmed);
+  if (!normalized) return false;
+
+  const allowlist = getAllowedOrigins();
+  if (allowlist.has(normalized)) {
+    return true;
+  }
+
+  if (ZENO_VERCEL_PREVIEW_REGEX.test(normalized)) {
+    return true;
+  }
+
+  if (process.env.NODE_ENV !== 'production' && DEV_LOOPBACK_ORIGIN_REGEX.test(normalized)) {
+    return true;
+  }
+
+  return false;
 }
 
 export function getTrustProxySetting(): boolean | number | string {
@@ -154,6 +275,35 @@ export function getStagingConfigSummary(): StagingConfigSummary {
     geminiConfigured: Boolean((process.env.GEMINI_API_KEY || '').trim()),
     redisConfigured: Boolean(getRedisUrl()),
     rateLimitFailMode: process.env.RATE_LIMIT_FAIL_MODE === 'closed' ? 'closed' : 'fallback',
+  };
+}
+
+export interface InfrastructureReadinessSummary {
+  firestoreDatabaseId: string;
+  sharedPersistenceBackend: 'firestore+sqlite' | 'sqlite_volume';
+  dataDir: string;
+  rateLimitBackend: 'redis' | 'firestore' | 'memory';
+  sentryConfigured: boolean;
+  strictAuthRequired: boolean;
+  dodoEnvironment: 'test_mode' | 'live_mode';
+  corsAllowlistCount: number;
+}
+
+export function getInfrastructureReadinessSummary(): InfrastructureReadinessSummary {
+  const firestoreAvailable =
+    !isTestRuntime() &&
+    process.env.DISABLE_SERVER_FIRESTORE !== 'true' &&
+    isServerFirestoreCredentialsAvailable();
+
+  return {
+    firestoreDatabaseId: getFirestoreDatabaseId() || '(default)',
+    sharedPersistenceBackend: firestoreAvailable ? 'firestore+sqlite' : 'sqlite_volume',
+    dataDir: getDataDir(),
+    rateLimitBackend: getRedisUrl() ? 'redis' : firestoreAvailable ? 'firestore' : 'memory',
+    sentryConfigured: isSentryConfigured(),
+    strictAuthRequired: isStrictAuthRequired(),
+    dodoEnvironment: getDodoPaymentsEnvironment(),
+    corsAllowlistCount: getAllowedOrigins().size,
   };
 }
 

@@ -41,7 +41,6 @@ import {
   Filter,
   ArrowUp,
   Send,
-  Sparkles,
   Sliders,
   Type,
   RotateCcw,
@@ -52,7 +51,7 @@ import {
 import { ViewOnMap } from './watermelon/view-on-map';
 import { ThinkingOrb } from 'thinking-orbs';
 import ErrorState from './ErrorState';
-import { normalizeDisplayText } from './MathMarkdown';
+import { MathMarkdown, MathText, normalizeDisplayText } from './MathMarkdown';
 import {
   YouTubeTranscriptSegment,
   YouTubeStudyBundle,
@@ -69,9 +68,10 @@ import { speakTextWithSmallestAi, stopSmallestSpeech } from '../lib/smallestAi';
 import { apiFetch } from '../lib/apiBase';
 import { UserAccountStore } from '../lib/userAccountStore';
 import { KnowledgeVaultStore } from '../lib/growthStore';
-import { MathMarkdown } from './MathMarkdown';
 import { StudyLoopPanel } from './StudyLoopPanel';
 import { StudyArsenalPanel } from './StudyArsenalPanel';
+import { StudyPhysicsVisualizeLab } from './StudyPhysicsVisualizeLab';
+import { StudySketchTutor } from './StudySketchTutor';
 import { StudyLanguageDropdown } from './CustomSearchSelect';
 import {
   StudyLoopStore,
@@ -114,7 +114,13 @@ export type WorkspaceTabType =
   | 'cheat_sheet'
   | 'mind_map'
   | 'code_extractor'
-  | 'study_loop';
+  | 'study_loop'
+  | 'visualize'
+  | 'diagram'
+  | 'mastery_path'
+  | 'deep_solve'
+  | 'plotter'
+  | 'sketch_tutor';
 
 export interface OpenWorkspaceTab {
   id: string;
@@ -432,6 +438,11 @@ export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
     return false;
   });
   const [showHomeStudyLoop, setShowHomeStudyLoop] = useState<boolean>(false);
+  const [fullPageFeature, setFullPageFeature] = useState<{
+    type: WorkspaceTabType;
+    title: string;
+    returnTo: 'home' | 'workspace';
+  } | null>(null);
 
   useEffect(() => {
     const syncSnapRoute = () => {
@@ -499,6 +510,8 @@ export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
 
   // Map & Location State
   const [mapLocationQuery, setMapLocationQuery] = useState<string>('');
+  const [mapTutorDraft, setMapTutorDraft] = useState<string>('');
+  const [mapMoreMenuOpen, setMapMoreMenuOpen] = useState<boolean>(false);
 
   // Lesson Plan State
   const [completedModules, setCompletedModules] = useState<Record<string, boolean>>({});
@@ -724,14 +737,25 @@ export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
     }
   }, [initialId, initialPdf?.pdfName, initialPdf?.extractedText]);
 
+  const FULL_PAGE_TOOL_TYPES = new Set<WorkspaceTabType>([
+    'sketch_tutor',
+    'visualize',
+    'diagram',
+    'mastery_path',
+    'deep_solve',
+    'plotter',
+    'study_loop',
+    'answer_writing',
+    'quiz_battles',
+    'playlist_course',
+    'important_questions',
+    'cheat_sheet',
+    'mind_map',
+    'code_extractor',
+    'map',
+  ]);
+
   const openOrFocusTab = (type: WorkspaceTabType, customTitle?: string, moduleIndex?: number) => {
-    const existing = openTabs.find(
-      (t) => t.type === type && (moduleIndex === undefined || t.moduleIndex === moduleIndex)
-    );
-    if (existing) {
-      setActiveTabId(existing.id);
-      return;
-    }
     const defaultTitles: Record<WorkspaceTabType, string> = {
       learn: 'Study Tools',
       summary: 'Summary',
@@ -752,7 +776,28 @@ export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
       mind_map: customTitle || 'Mind Map',
       code_extractor: customTitle || 'Code Extractor',
       study_loop: customTitle || 'Daily Recall',
+      visualize: customTitle || 'Physics Lab',
+      diagram: customTitle || 'Concept Diagram',
+      mastery_path: customTitle || 'Mastery Path',
+      deep_solve: customTitle || 'Deep Solve',
+      plotter: customTitle || 'Curve Plotter',
+      sketch_tutor: customTitle || 'Visual Whiteboard',
     };
+    if (FULL_PAGE_TOOL_TYPES.has(type)) {
+      setFullPageFeature({
+        type,
+        title: customTitle || defaultTitles[type],
+        returnTo: viewMode,
+      });
+      return;
+    }
+    const existing = openTabs.find(
+      (t) => t.type === type && (moduleIndex === undefined || t.moduleIndex === moduleIndex)
+    );
+    if (existing) {
+      setActiveTabId(existing.id);
+      return;
+    }
     const newTab: OpenWorkspaceTab = {
       id: `tab-${type}-${Date.now()}`,
       type,
@@ -761,6 +806,35 @@ export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
     };
     setOpenTabs((prev) => [...prev, newTab]);
     setActiveTabId(newTab.id);
+  };
+
+  const launchDeepTutorMode = (
+    modeTab: 'visualize' | 'diagram' | 'mastery_path' | 'deep_solve' | 'plotter' | 'sketch_tutor',
+    tabTitle: string
+  ) => {
+    const draftTopic = homePromptDraft.trim();
+    const defaultTitle =
+      modeTab === 'sketch_tutor' ? 'Pythagorean Theorem' : 'Projectile Motion & Mechanics';
+    const hasRealSource = Boolean(activeVideoId || pdfUrl || rawSourceText || studyBundle);
+    const isToolDefaultTitle =
+      !resolvedTitle ||
+      resolvedTitle === 'Study Space' ||
+      resolvedTitle === 'Pythagorean Theorem' ||
+      resolvedTitle === 'Projectile Motion & Mechanics';
+    const targetTopic = draftTopic || (!isToolDefaultTitle && hasRealSource ? resolvedTitle : defaultTitle);
+    if (draftTopic) {
+      setHomePromptDraft('');
+    }
+    if (isToolDefaultTitle || !hasRealSource || draftTopic) {
+      setResolvedTitle(targetTopic);
+      setResolvedAuthor(modeTab === 'sketch_tutor' ? 'Visual Whiteboard' : 'Study Lab');
+      setSourceType('topic');
+    }
+    setFullPageFeature({
+      type: modeTab,
+      title: tabTitle,
+      returnTo: viewMode,
+    });
   };
 
   const closeTab = (tabId: string, e: React.MouseEvent) => {
@@ -1914,10 +1988,18 @@ ${fullTranscriptText}`;
     savedStudyVaultIdRef.current = saved.id;
   };
 
-  const handleSendStudyChat = async (overridePrompt?: string) => {
+  const handleSendStudyChat = async (
+    overridePrompt?: string,
+    opts?: { topicOverride?: string; resetContext?: boolean }
+  ) => {
     const raw = (overridePrompt ?? chatDraft).trim();
     if (!raw && activeChatTags.length === 0) return;
     if (chatLoading) return;
+
+    const effectiveTopic = (opts?.topicOverride || resolvedTitle || 'Study Topic').trim();
+    if (opts?.topicOverride && opts.topicOverride !== resolvedTitle) {
+      setResolvedTitle(opts.topicOverride);
+    }
 
     const wantMindMap =
       activeChatTags.includes('@Mind Map') || /mind\s*map/i.test(raw);
@@ -1926,7 +2008,7 @@ ${fullTranscriptText}`;
 
     const displayPrompt = [
       ...activeChatTags,
-      raw || (wantMindMap ? `Create a mind map for ${resolvedTitle}` : `Explain ${resolvedTitle}`),
+      raw || (wantMindMap ? `Create a mind map for ${effectiveTopic}` : `Explain ${effectiveTopic}`),
     ].join(' ');
 
     const userTurn: VideoChatTurn = {
@@ -1936,7 +2018,7 @@ ${fullTranscriptText}`;
       quotedQuestion: quotedQuizQuestion || undefined,
     };
 
-    setChatTurns((prev) => [...prev, userTurn]);
+    setChatTurns((prev) => (opts?.resetContext ? [userTurn] : [...prev, userTurn]));
     setChatDraft('');
     setActiveChatTags([]);
     const currentQuoted = quotedQuizQuestion;
@@ -1945,18 +2027,19 @@ ${fullTranscriptText}`;
 
     try {
       const authHeaders = await getAuthHeaders();
-      const contextStr =
-        statementBreakdown.length > 0
-          ? statementBreakdown
-              .map((s) => `${s.heading}: ${s.elaboration}`)
-              .join('\n\n')
-              .slice(0, 18000)
-          : studyBundle
-          ? `Overview: ${studyBundle.summary.overview}\nKey Points:\n${studyBundle.summary.keyPoints.join('\n')}`
-          : segments.map((s) => s.text).join('\n');
+      const contextStr = opts?.resetContext
+        ? ''
+        : statementBreakdown.length > 0
+        ? statementBreakdown
+            .map((s) => `${s.heading}: ${s.elaboration}`)
+            .join('\n\n')
+            .slice(0, 18000)
+        : studyBundle
+        ? `Overview: ${studyBundle.summary.overview}\nKey Points:\n${studyBundle.summary.keyPoints.join('\n')}`
+        : segments.map((s) => s.text).join('\n');
 
       const fullPrompt = currentQuoted
-        ? `For the quiz question: "${currentQuoted}"\n\nUser request: ${displayPrompt}\n\nProvide a clear, simple, helpful explanation grounded in "${resolvedTitle}".`
+        ? `For the quiz question: "${currentQuoted}"\n\nUser request: ${displayPrompt}\n\nProvide a clear, simple, helpful explanation grounded in "${effectiveTopic}".`
         : displayPrompt;
 
       const res = await apiFetch('/api/study/ai-assistant', {
@@ -1964,7 +2047,7 @@ ${fullTranscriptText}`;
         headers: authHeaders,
         body: JSON.stringify({
           prompt: fullPrompt,
-          topic: resolvedTitle,
+          topic: effectiveTopic,
           mode: 'chat',
           context: contextStr,
           webSearch: true,
@@ -2037,7 +2120,7 @@ ${fullTranscriptText}`;
   }, [studyBundle]);
 
   // Clean monochrome surface tokens
-  const bgMain = isDark ? 'bg-[#09090b] text-[#f4f4f5]' : 'bg-[#fafafa] text-[#111113]';
+  const bgMain = isDark ? 'bg-[#09090b] text-[#f4f4f5]' : 'bg-[#ffffff] text-[#111113]';
   const bgCard = isDark
     ? 'bg-[#121215] border-white/[0.08] text-[#f4f4f5]'
     : 'bg-[#ffffff] border-black/[0.08] text-[#111113]';
@@ -2122,9 +2205,7 @@ ${fullTranscriptText}`;
   };
 
   const renderSummaryFollowUpSection = () => (
-    <div
-      className={`p-5 sm:p-6 rounded-2xl border transition-all space-y-4 ${borderSubtle} ${bgCard}`}
-    >
+    <div className={`pt-5 border-t space-y-4 ${borderSubtle}`}>
       {/* Header */}
       <div className="flex items-center justify-between gap-3">
         <div>
@@ -2138,7 +2219,7 @@ ${fullTranscriptText}`;
           <button
             type="button"
             onClick={() => setSummaryFollowUpTurns([])}
-            className={`text-xs px-2.5 py-1 rounded-xl border inline-flex items-center gap-1.5 cursor-pointer hover:opacity-80 transition-colors ${borderSubtle} ${textMuted}`}
+            className={`text-xs px-2.5 py-1 rounded-lg border inline-flex items-center gap-1.5 cursor-pointer hover:opacity-80 transition-colors ${borderSubtle} ${textMuted}`}
             title="Reset conversation"
           >
             <RotateCcw className="w-3.5 h-3.5" />
@@ -2147,7 +2228,7 @@ ${fullTranscriptText}`;
         )}
       </div>
 
-      {/* Suggested prompt chips */}
+      {/* Suggested prompts */}
       {summaryFollowUpTurns.length === 0 && (
         <div className="flex flex-wrap gap-2">
           {[
@@ -2161,68 +2242,59 @@ ${fullTranscriptText}`;
               type="button"
               disabled={summaryFollowUpLoading}
               onClick={() => handleSendSummaryFollowUp(chip)}
-              className={`text-xs px-3 py-1.5 rounded-xl border text-left cursor-pointer transition-colors ${
+              className={`text-xs px-3 py-1.5 rounded-lg border text-left cursor-pointer transition-colors ${
                 isDark
                   ? 'bg-white/[0.03] hover:bg-white/[0.08] border-white/[0.08]'
                   : 'bg-black/[0.02] hover:bg-black/[0.05] border-black/[0.08]'
               }`}
             >
-              {chip}
+              <MathText text={chip} />
             </button>
           ))}
         </div>
       )}
 
-      {/* Thread */}
+      {/* Flat Bubble-Free Q&A Thread */}
       {summaryFollowUpTurns.length > 0 && (
-        <div className="space-y-4 pt-2">
+        <div className={`divide-y ${isDark ? 'divide-white/[0.08]' : 'divide-black/[0.08]'}`}>
           {summaryFollowUpTurns.map((turn) => (
-            <div
-              key={turn.id}
-              className={`flex flex-col ${turn.role === 'user' ? 'items-end' : 'items-start'} space-y-1`}
-            >
-              <div className="flex items-center gap-2 px-1 text-[11px]">
-                <span className={`font-medium ${turn.role === 'user' ? textMuted : 'text-amber-500'}`}>
-                  {turn.role === 'user' ? 'You' : 'Kinich Study AI'}
-                </span>
-                <span className={textMuted}>
-                  {new Date(turn.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </span>
+            <div key={turn.id} className="py-3 space-y-1.5">
+              <div className="flex items-center justify-between gap-2 text-[11px]">
+                <div className="flex items-center gap-2">
+                  <span className={`font-semibold ${turn.role === 'user' ? textMuted : isDark ? 'text-white' : 'text-black'}`}>
+                    {turn.role === 'user' ? 'You' : 'Tutor'}
+                  </span>
+                  <span className={textMuted}>
+                    {new Date(turn.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </div>
+                {turn.role !== 'user' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(turn.text);
+                      setCopiedFollowUpTurnId(turn.id);
+                      setTimeout(() => setCopiedFollowUpTurnId(null), 2000);
+                    }}
+                    className={`p-1 rounded-md border text-xs inline-flex items-center gap-1 cursor-pointer ${borderSubtle}`}
+                    title="Copy response"
+                  >
+                    {copiedFollowUpTurnId === turn.id ? (
+                      <Check className="w-3.5 h-3.5 text-green-500" />
+                    ) : (
+                      <Copy className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+                )}
               </div>
 
               {turn.role === 'user' ? (
-                <div
-                  className={`max-w-[85%] px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-medium ${
-                    isDark ? 'bg-neutral-800 text-white' : 'bg-neutral-100 text-neutral-900'
-                  }`}
-                >
-                  {turn.text}
+                <div className="text-xs sm:text-sm font-medium leading-relaxed">
+                  <MathText text={turn.text} />
                 </div>
               ) : (
-                <div
-                  className={`w-full p-4 sm:p-5 rounded-2xl border text-xs sm:text-sm leading-relaxed relative group ${
-                    isDark ? 'bg-neutral-900/60 border-neutral-800' : 'bg-neutral-50/80 border-neutral-200'
-                  }`}
-                >
-                  <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        navigator.clipboard.writeText(turn.text);
-                        setCopiedFollowUpTurnId(turn.id);
-                        setTimeout(() => setCopiedFollowUpTurnId(null), 2000);
-                      }}
-                      className={`p-1.5 rounded-lg border text-xs inline-flex items-center gap-1 cursor-pointer ${borderSubtle} ${bgCard}`}
-                      title="Copy response"
-                    >
-                      {copiedFollowUpTurnId === turn.id ? (
-                        <Check className="w-3.5 h-3.5 text-green-500" />
-                      ) : (
-                        <Copy className="w-3.5 h-3.5" />
-                      )}
-                    </button>
-                  </div>
-                  <MathMarkdown content={turn.text} isDark={isDark} />
+                <div className="text-xs sm:text-sm leading-relaxed">
+                  <MathMarkdown content={turn.text} isDark={isDark} autoDetectLatex />
                 </div>
               )}
             </div>
@@ -2232,19 +2304,17 @@ ${fullTranscriptText}`;
 
       {/* Loading state */}
       {summaryFollowUpLoading && (
-        <div
-          className={`p-4 rounded-2xl border flex items-center gap-3 text-xs ${borderSubtle} ${bgSubtle}`}
-        >
-          <Loader2 className="w-4 h-4 animate-spin text-amber-500 shrink-0" />
+        <div className="py-2 flex items-center gap-2.5 text-xs">
+          <Loader2 className={`w-4 h-4 animate-spin shrink-0 ${isDark ? 'text-white' : 'text-black'}`} />
           <span className={textMuted}>
-            Analyzing summary context and synthesizing grounded answer...
+            Synthesizing answer from study notes...
           </span>
         </div>
       )}
 
       {/* Error state */}
       {summaryFollowUpError && (
-        <div className="p-3 rounded-2xl border border-red-500/20 bg-red-500/10 text-red-400 text-xs flex items-center justify-between">
+        <div className="py-2 text-red-400 text-xs flex items-center justify-between">
           <span>{summaryFollowUpError}</span>
           <button
             type="button"
@@ -2262,9 +2332,9 @@ ${fullTranscriptText}`;
           e.preventDefault();
           handleSendSummaryFollowUp();
         }}
-        className={`relative flex flex-col gap-2 p-3 sm:p-3.5 rounded-2xl border transition-all focus-within:ring-1 focus-within:ring-amber-500/30 ${borderSubtle} ${
-          isDark ? 'bg-neutral-900/40' : 'bg-neutral-50'
-        }`}
+        className={`flex flex-col gap-2 p-2.5 sm:p-3 rounded-lg border transition-all focus-within:ring-1 ${
+          isDark ? 'focus-within:ring-white/25 bg-[#121215]' : 'focus-within:ring-black/20 bg-white'
+        } ${borderSubtle}`}
       >
         <textarea
           rows={2}
@@ -2276,7 +2346,7 @@ ${fullTranscriptText}`;
               handleSendSummaryFollowUp();
             }
           }}
-          placeholder="Ask a follow-up about this summary (e.g. 'Can you explain this with a real-life analogy?')..."
+          placeholder="Ask a follow-up about this summary..."
           className="w-full bg-transparent border-0 text-xs sm:text-sm outline-none resize-none leading-relaxed placeholder:text-neutral-400"
         />
 
@@ -2292,7 +2362,7 @@ ${fullTranscriptText}`;
           <button
             type="submit"
             disabled={!summaryFollowUpQuery.trim() || summaryFollowUpLoading}
-            className={`h-8 px-4 rounded-xl text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-all ${
+            className={`h-8 px-4 rounded-lg text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-all ${
               isDark
                 ? 'bg-white text-black hover:bg-neutral-200'
                 : 'bg-black text-white hover:bg-neutral-800'
@@ -2350,16 +2420,358 @@ ${fullTranscriptText}`;
       />
 
       {/* ===================================================================== */}
-      {/* VIEW 1: STUDY SPACE HOME (Compact, Monochrome, Clean)                  */}
+      {/* VIEW 0: DEDICATED FULL-PAGE TOOL SCREEN (NO SCRIM, BACK BUTTON)       */}
       {/* ===================================================================== */}
-      {viewMode === 'home' ? (
+      {fullPageFeature ? (
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          {fullPageFeature.type === 'sketch_tutor' && (
+            <StudySketchTutor
+              topicTitle={resolvedTitle}
+              topicContext={
+                rawSourceText ||
+                segments.map((s) => s.text).join('\n') ||
+                studyBundle?.summary?.overview ||
+                ''
+              }
+              isDark={isDark}
+              onBack={() => {
+                const ret = fullPageFeature.returnTo;
+                setFullPageFeature(null);
+                if (ret === 'home') setViewMode('home');
+              }}
+              onStartQuiz={() => {
+                setFullPageFeature(null);
+                setViewMode('workspace');
+                openOrFocusTab('quiz', 'Quiz');
+              }}
+              onAskTutor={(prompt, topicOverride) => {
+                setFullPageFeature(null);
+                setViewMode('workspace');
+                openOrFocusTab('chat', 'Tutor');
+                handleSendStudyChat(prompt, {
+                  topicOverride,
+                  resetContext: Boolean(topicOverride),
+                });
+              }}
+            />
+          )}
+
+          {(fullPageFeature.type === 'visualize' ||
+            fullPageFeature.type === 'diagram' ||
+            fullPageFeature.type === 'mastery_path' ||
+            fullPageFeature.type === 'deep_solve' ||
+            fullPageFeature.type === 'plotter') && (
+            <StudyPhysicsVisualizeLab
+              key={fullPageFeature.type}
+              standalone={true}
+              pageTitle={fullPageFeature.title}
+              topicTitle={resolvedTitle}
+              topicContext={
+                rawSourceText ||
+                segments.map((s) => s.text).join('\n') ||
+                studyBundle?.summary?.overview ||
+                ''
+              }
+              lessonModules={lessonModules}
+              concepts={studyBundle?.explanation?.concepts}
+              initialMode={
+                fullPageFeature.type === 'diagram'
+                  ? 'diagram'
+                  : fullPageFeature.type === 'mastery_path'
+                  ? 'mastery'
+                  : fullPageFeature.type === 'deep_solve'
+                  ? 'deep_solve'
+                  : fullPageFeature.type === 'plotter'
+                  ? 'plotter'
+                  : 'physics'
+              }
+              isDark={isDark}
+              onBack={() => {
+                const ret = fullPageFeature.returnTo;
+                setFullPageFeature(null);
+                if (ret === 'home') setViewMode('home');
+              }}
+              onStartQuiz={() => {
+                setFullPageFeature(null);
+                setViewMode('workspace');
+                openOrFocusTab('quiz', 'Quiz');
+              }}
+              onAskTutor={(prompt, topicOverride) => {
+                setFullPageFeature(null);
+                setViewMode('workspace');
+                openOrFocusTab('chat', 'Tutor');
+                handleSendStudyChat(prompt, {
+                  topicOverride,
+                  resetContext: Boolean(topicOverride),
+                });
+              }}
+            />
+          )}
+
+          {fullPageFeature.type === 'study_loop' && (
+            <StudyLoopPanel
+              standalone={true}
+              pageTitle={fullPageFeature.title}
+              onBack={() => {
+                const ret = fullPageFeature.returnTo;
+                setFullPageFeature(null);
+                if (ret === 'home') setViewMode('home');
+              }}
+              isDark={isDark}
+              initialTab={
+                typeof window !== 'undefined' &&
+                window.location.pathname.toLowerCase().startsWith('/snap-solve')
+                  ? 'snap_solve'
+                  : 'revision'
+              }
+              onAskTutor={(prompt, topicOverride) => {
+                setFullPageFeature(null);
+                setViewMode('workspace');
+                openOrFocusTab('chat', 'Tutor');
+                handleSendStudyChat(prompt, {
+                  topicOverride,
+                  resetContext: Boolean(topicOverride),
+                });
+              }}
+            />
+          )}
+
+          {(fullPageFeature.type === 'answer_writing' ||
+            fullPageFeature.type === 'quiz_battles' ||
+            fullPageFeature.type === 'playlist_course' ||
+            fullPageFeature.type === 'important_questions' ||
+            fullPageFeature.type === 'cheat_sheet' ||
+            fullPageFeature.type === 'mind_map' ||
+            fullPageFeature.type === 'code_extractor') && (
+            <StudyArsenalPanel
+              key={fullPageFeature.type}
+              singlePageMode={true}
+              pageTitle={fullPageFeature.title}
+              onBack={() => {
+                const ret = fullPageFeature.returnTo;
+                setFullPageFeature(null);
+                if (ret === 'home') setViewMode('home');
+              }}
+              initialFeature={fullPageFeature.type}
+              lectureTitle={resolvedTitle}
+              lectureContent={
+                rawSourceText ||
+                segments.map((s) => s.text).join('\n') ||
+                studyBundle?.summary?.overview ||
+                ''
+              }
+              lectureQuiz={quizList}
+              isDark={isDark}
+              onSwitchFeature={(feat, title) =>
+                setFullPageFeature({
+                  type: feat,
+                  title,
+                  returnTo: fullPageFeature.returnTo,
+                })
+              }
+              onAskTutor={(prompt, topicOverride) => {
+                setFullPageFeature(null);
+                setViewMode('workspace');
+                openOrFocusTab('chat', 'Tutor');
+                handleSendStudyChat(prompt, {
+                  topicOverride,
+                  resetContext: Boolean(topicOverride),
+                });
+              }}
+            />
+          )}
+
+          {fullPageFeature.type === 'map' && (
+            <div className="min-h-full flex flex-col">
+              <header className="h-14 px-4 sm:px-6 bg-transparent flex items-center justify-between gap-3 shrink-0">
+                <div className="flex items-center gap-3 min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const ret = fullPageFeature.returnTo;
+                      setFullPageFeature(null);
+                      if (ret === 'home') setViewMode('home');
+                    }}
+                    data-testid="study-feature-back-btn"
+                    className={`h-8 px-3 rounded-full border text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                      isDark
+                        ? 'border-white/[0.12] text-neutral-200 hover:bg-white/[0.06]'
+                        : 'border-black/[0.12] text-neutral-800 hover:bg-black/[0.04]'
+                    }`}
+                  >
+                    <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
+                    <span>Back</span>
+                  </button>
+                  <h1 className="text-sm sm:text-base font-semibold tracking-tight truncate">
+                    Location &amp; Map
+                  </h1>
+                </div>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setMapMoreMenuOpen((v) => !v)}
+                    aria-label="Map options"
+                    className={`size-8 rounded-full border inline-flex items-center justify-center transition-colors cursor-pointer ${borderSubtle}`}
+                  >
+                    <MoreVertical className="w-3.5 h-3.5" />
+                  </button>
+                  {mapMoreMenuOpen && (
+                    <div
+                      className={`absolute right-0 top-full mt-1.5 w-48 rounded-xl border p-1.5 z-40 shadow-2xl ${
+                        isDark ? 'bg-[#18181b] border-white/[0.12] text-white' : 'bg-white border-black/[0.1] text-black'
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMapMoreMenuOpen(false);
+                          const loc = mapLocationQuery || resolvedTitle || 'Study Location';
+                          setFullPageFeature(null);
+                          setViewMode('workspace');
+                          openOrFocusTab('chat', 'Tutor');
+                          handleSendStudyChat(
+                            `Explain the history, significance, and key facts about "${loc}".`,
+                            { topicOverride: loc, resetContext: true }
+                          );
+                        }}
+                        className="w-full px-3 py-2 rounded-lg text-xs font-medium text-left flex items-center gap-2 hover:bg-current/5 cursor-pointer"
+                      >
+                        <MessageSquare className="w-3.5 h-3.5" />
+                        <span>Study Tutor</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMapMoreMenuOpen(false);
+                          const ret = fullPageFeature.returnTo;
+                          setFullPageFeature(null);
+                          if (ret === 'home') setViewMode('home');
+                        }}
+                        className="w-full px-3 py-2 rounded-lg text-xs text-left flex items-center gap-2 hover:bg-current/5 cursor-pointer"
+                      >
+                        <ArrowLeft className="w-3.5 h-3.5" />
+                        <span>Back to Study Space</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </header>
+              <div className="max-w-3xl w-full mx-auto px-4 sm:px-6 py-6 space-y-6 pb-24">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-xs font-medium text-neutral-500">
+                      Search location, campus, or institute
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setMapLocationQuery(resolvedTitle || 'Boston Public Garden')}
+                      className={`h-7 px-3 rounded-full border text-[11px] font-medium inline-flex items-center gap-1.5 cursor-pointer ${borderSubtle}`}
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      <span>Use Study Topic</span>
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <MapPin className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400" />
+                    <input
+                      type="text"
+                      value={mapLocationQuery}
+                      onChange={(e) => setMapLocationQuery(e.target.value)}
+                      placeholder="e.g. CERN Geneva, Stanford University, MIT Cambridge MA..."
+                      className={`w-full pl-10 pr-4 py-2.5 rounded-full border text-xs outline-none transition-colors ${
+                        isDark
+                          ? 'bg-[#121215] border-white/15 text-white placeholder-neutral-500 focus:border-white/35'
+                          : 'bg-white border-black/15 text-black placeholder-neutral-400 focus:border-black/35'
+                      }`}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    'CERN, Geneva, Switzerland',
+                    'MIT, Cambridge, MA',
+                    'Stanford University, CA',
+                    'Oxford University, UK',
+                    'IISc, Bangalore, India',
+                    'Max Planck Institute, Germany',
+                    'NASA JPL, Pasadena, CA',
+                  ].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setMapLocationQuery(preset)}
+                      className={`px-3 py-1 rounded-full border text-xs font-medium transition-colors cursor-pointer ${
+                        mapLocationQuery === preset
+                          ? isDark
+                            ? 'bg-white text-black border-white'
+                            : 'bg-black text-white border-black'
+                          : isDark
+                          ? 'border-white/10 text-neutral-400 hover:text-white hover:bg-white/[0.05]'
+                          : 'border-black/10 text-neutral-600 hover:text-black hover:bg-black/[0.04]'
+                      }`}
+                    >
+                      {preset.split(',')[0]}
+                    </button>
+                  ))}
+                </div>
+
+                <div
+                  className={`p-8 sm:p-12 rounded-2xl border text-center flex flex-col items-center justify-center gap-4 ${bgCard}`}
+                >
+                  <div className="text-sm font-semibold">
+                    {mapLocationQuery || resolvedTitle || 'Location'}
+                  </div>
+                  <ViewOnMap
+                    address={mapLocationQuery || resolvedTitle || 'Boston Public Garden'}
+                    locationName={mapLocationQuery || resolvedTitle || 'View on Map'}
+                    isDark={isDark}
+                  />
+                </div>
+
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const q = mapTutorDraft.trim();
+                    if (!q) return;
+                    const loc = mapLocationQuery || resolvedTitle || 'Study Location';
+                    setMapTutorDraft('');
+                    setFullPageFeature(null);
+                    setViewMode('workspace');
+                    openOrFocusTab('chat', 'Tutor');
+                    handleSendStudyChat(`[Location & Map: ${loc}]\n\n${q}`, {
+                      topicOverride: loc,
+                      resetContext: true,
+                    });
+                  }}
+                  className={`flex items-center gap-2 p-2 pl-4 rounded-2xl border ${bgCard}`}
+                >
+                  <input
+                    type="text"
+                    value={mapTutorDraft}
+                    onChange={(e) => setMapTutorDraft(e.target.value)}
+                    placeholder={`Ask Study Tutor about ${mapLocationQuery || resolvedTitle || 'this location'}...`}
+                    className="flex-1 min-w-0 bg-transparent border-0 text-xs sm:text-sm outline-none placeholder:text-neutral-500"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!mapTutorDraft.trim()}
+                    className={`px-3.5 py-2 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-40 whitespace-nowrap shrink-0 ${
+                      isDark ? 'bg-white text-black hover:bg-neutral-200' : 'bg-black text-white hover:bg-neutral-800'
+                    }`}
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>Ask Tutor</span>
+                  </button>
+                </form>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : viewMode === 'home' ? (
         <div className="flex-1 flex flex-col overflow-y-auto">
           {/* Header without translucent scrim, blur, or gradient */}
-          <header
-            className={`h-13 px-3 sm:px-5 border-b flex items-center justify-between gap-2 shrink-0 ${
-              isDark ? 'bg-[#09090b] border-white/[0.08]' : 'bg-[#fafafa] border-black/[0.08]'
-            }`}
-          >
+          <header className="h-13 px-3 sm:px-5 bg-transparent flex items-center justify-between gap-2 shrink-0">
             <div className="flex items-center gap-2.5">
               <button
                 type="button"
@@ -2392,7 +2804,7 @@ ${fullTranscriptText}`;
             )}
           </header>
 
-          <div className="max-w-2xl w-full mx-auto px-4 sm:px-6 py-3 space-y-4">
+          <div className="max-w-2xl w-full mx-auto px-3 sm:px-5 py-3 space-y-3.5">
             {/* 3-Column Compact Ingestion: Upload, Link, Paste (Pill-shaped, Clean) */}
             <div className="grid grid-cols-3 gap-2 sm:gap-2.5">
               <button
@@ -2492,21 +2904,98 @@ ${fullTranscriptText}`;
                   className="w-full bg-transparent border-0 text-xs sm:text-sm outline-none placeholder:text-muted-foreground/60"
                 />
               </div>
-              <button
-                type="submit"
-                disabled={!homePromptDraft.trim()}
-                className={`size-8 sm:size-9 rounded-full flex items-center justify-center transition-all cursor-pointer shrink-0 ${
-                  !homePromptDraft.trim()
-                    ? 'opacity-30 cursor-not-allowed bg-neutral-500/20 text-neutral-400'
-                    : isDark
-                    ? 'bg-white text-black hover:bg-neutral-200 active:scale-95'
-                    : 'bg-black text-white hover:bg-neutral-800 active:scale-95'
-                }`}
-                title="Start learning"
-              >
-                <ArrowUp className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              </button>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const q = homePromptDraft.trim();
+                    setHomePromptDraft('');
+                    setViewMode('workspace');
+                    openOrFocusTab('chat', 'Tutor');
+                    if (q) {
+                      handleSendStudyChat(q, {
+                        topicOverride: q.slice(0, 72),
+                        resetContext: true,
+                      });
+                    }
+                  }}
+                  className={`h-8 px-3 rounded-full border text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
+                    isDark
+                      ? 'border-white/[0.12] text-neutral-200 hover:bg-white/[0.08]'
+                      : 'border-black/[0.12] text-neutral-800 hover:bg-black/[0.05]'
+                  }`}
+                  title="Ask Study Tutor directly"
+                  data-testid="home-ask-tutor-btn"
+                >
+                  <MessageSquare className="w-3.5 h-3.5" />
+                  <span>Tutor</span>
+                </button>
+                <button
+                  type="submit"
+                  disabled={!homePromptDraft.trim()}
+                  className={`size-8 sm:size-9 rounded-full flex items-center justify-center transition-all cursor-pointer shrink-0 ${
+                    !homePromptDraft.trim()
+                      ? 'opacity-30 cursor-not-allowed bg-neutral-500/20 text-neutral-400'
+                      : isDark
+                      ? 'bg-white text-black hover:bg-neutral-200 active:scale-95'
+                      : 'bg-black text-white hover:bg-neutral-800 active:scale-95'
+                  }`}
+                  title="Start learning"
+                >
+                  <ArrowUp className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                </button>
+              </div>
             </form>
+
+            {/* Quick Launch Bar for Visual Whiteboard & Study Labs */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-0.5" data-testid="study-home-deeptutor-bar">
+              {[
+                {
+                  mode: 'sketch_tutor' as const,
+                  title: 'Visual Whiteboard',
+                  sub: 'Drawn lessons & audio',
+                },
+                {
+                  mode: 'visualize' as const,
+                  title: 'Physics Lab',
+                  sub: 'Interactive simulation',
+                },
+                {
+                  mode: 'diagram' as const,
+                  title: 'Concept Diagram',
+                  sub: 'Flows & SVG export',
+                },
+                {
+                  mode: 'mastery_path' as const,
+                  title: 'Mastery Path',
+                  sub: 'Skill checkpoints',
+                },
+                {
+                  mode: 'deep_solve' as const,
+                  title: 'Deep Solve',
+                  sub: 'Step-by-step proofs',
+                },
+                {
+                  mode: 'plotter' as const,
+                  title: 'Curve Plotter',
+                  sub: 'y(x) function graph',
+                },
+              ].map((card) => (
+                <button
+                  key={card.mode}
+                  type="button"
+                  onClick={() => launchDeepTutorMode(card.mode, card.title)}
+                  className={`px-3.5 py-2.5 rounded-xl border text-left transition-colors cursor-pointer ${
+                    isDark
+                      ? 'bg-[#121215] border-white/[0.08] hover:border-white/[0.25] text-neutral-100'
+                      : 'bg-white border-black/[0.08] hover:border-black/[0.25] text-neutral-900'
+                  }`}
+                >
+                  <div className="text-xs font-semibold truncate">{card.title}</div>
+                  <div className={`text-[11px] truncate ${textMuted}`}>{card.sub}</div>
+                </button>
+              ))}
+            </div>
 
             {typeof window !== 'undefined' && window.location.pathname.startsWith('/battle/') && (
               <div className="pt-1">
@@ -2649,12 +3138,34 @@ ${fullTranscriptText}`;
 
                           {openSpaceMenuId === sp.id && (
                             <div
-                              className={`absolute right-0 top-full mt-1 w-32 rounded-xl border p-1 z-30 shadow-xl ${
+                              className={`absolute right-0 top-full mt-1 w-40 rounded-xl border p-1 z-30 shadow-xl ${
                                 isDark
                                   ? 'bg-[#18181b] border-white/[0.12] text-white'
                                   : 'bg-white border-black/[0.1] text-black'
                               }`}
                             >
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setOpenSpaceMenuId(null);
+                                  if (sp.videoId) {
+                                    loadYouTubeSource(sp.videoId, sp.name);
+                                  } else if (sp.rawText && sp.rawText.length >= 240) {
+                                    loadTextOrPdfSource(
+                                      sp.name,
+                                      sp.rawText,
+                                      sp.sourceType === 'pdf' ? 'pdf' : 'text'
+                                    );
+                                  } else {
+                                    loadTopicStudySpace(sp.name);
+                                  }
+                                  openOrFocusTab('chat', 'Tutor');
+                                }}
+                                className="w-full px-2.5 py-1.5 rounded-lg text-xs text-left flex items-center gap-2 hover:bg-current/5 cursor-pointer transition-colors font-medium"
+                              >
+                                <MessageSquare className="w-3.5 h-3.5" />
+                                <span>Study Tutor</span>
+                              </button>
                               <button
                                 type="button"
                                 onClick={() => {
@@ -2676,10 +3187,12 @@ ${fullTranscriptText}`;
             </div>
           </div>
 
-          {/* Link Input Modal */}
+          {/* Link Input Full-Screen Overlay (No Scrim) */}
           {linkModalOpen && (
             <div
-              className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4"
+              className={`fixed inset-0 z-50 flex items-center justify-center p-4 ${
+                isDark ? 'bg-[#09090b]' : 'bg-[#ffffff]'
+              }`}
               onClick={() => setLinkModalOpen(false)}
             >
               <div
@@ -2744,10 +3257,12 @@ ${fullTranscriptText}`;
             </div>
           )}
 
-          {/* Paste Text Modal */}
+          {/* Paste Text Full-Screen Overlay (No Scrim) */}
           {pasteModalOpen && (
             <div
-              className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4"
+              className={`fixed inset-0 z-50 flex items-center justify-center p-4 ${
+                isDark ? 'bg-[#09090b]' : 'bg-[#ffffff]'
+              }`}
               onClick={() => setPasteModalOpen(false)}
             >
               <div
@@ -2824,12 +3339,8 @@ ${fullTranscriptText}`;
         /* VIEW 2: ACTIVE STUDY WORKSPACE                                        */
         /* ===================================================================== */
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
-          {/* Top Header — Clean, Consistent Pill Control Row without Crushed Title */}
-          <header
-            className={`h-13 px-3 sm:px-5 border-b flex items-center justify-between gap-2 shrink-0 ${
-              isDark ? 'bg-[#09090b] border-white/[0.08]' : 'bg-[#fafafa] border-black/[0.08]'
-            }`}
-          >
+          {/* Top Header — Clean, Consistent Pill Control Row without Scrim or Border */}
+          <header className="h-13 px-3 sm:px-5 bg-transparent flex items-center justify-between gap-2 shrink-0">
             <div className="flex items-center gap-2 shrink-0">
               <button
                 type="button"
@@ -2915,7 +3426,9 @@ ${fullTranscriptText}`;
                     ? isDark
                       ? 'bg-white/[0.04] hover:bg-white/[0.09] border-white/[0.15] text-neutral-300'
                       : 'bg-black/[0.04] hover:bg-black/[0.08] border-black/[0.15] text-neutral-800'
-                    : 'bg-[#FC4C01] hover:bg-[#e04300] border-[#FC4C01] text-white shadow-[0_0_16px_rgba(252,76,1,0.3)]'
+                    : isDark
+                    ? 'bg-white text-black border-white hover:bg-neutral-200'
+                    : 'bg-black text-white border-black hover:bg-neutral-800'
                 }`}
                 title={
                   isGuestStudyUser
@@ -2972,6 +3485,18 @@ ${fullTranscriptText}`;
                         : 'bg-white border-black/[0.1] text-black'
                     }`}
                   >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTopMoreMenuOpen(false);
+                        setFullPageFeature(null);
+                        openOrFocusTab('chat', 'Tutor');
+                      }}
+                      className="w-full px-3 py-2 rounded-lg text-xs font-medium flex items-center gap-2.5 hover:bg-current/5 cursor-pointer"
+                    >
+                      <MessageSquare className="w-3.5 h-3.5" />
+                      <span>Study Tutor</span>
+                    </button>
                     <button
                       type="button"
                       onClick={() => {
@@ -3046,29 +3571,32 @@ ${fullTranscriptText}`;
               data-testid="study-sage-banner"
               className={`px-4 py-2 border-b flex flex-wrap items-center justify-between gap-2 text-xs transition-all ${
                 isDark
-                  ? 'bg-[#121215] border-[#FC4C01]/20 text-neutral-200'
-                  : 'bg-[#fffaf7] border-[#FC4C01]/20 text-neutral-900'
+                  ? 'bg-[#121215] border-white/[0.08] text-neutral-200'
+                  : 'bg-[#fafafa] border-black/[0.08] text-neutral-900'
               }`}
             >
               <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#FC4C01]/10 text-[#FC4C01] font-semibold text-[11px] border border-[#FC4C01]/25">
-                  <Sparkles className="w-3 h-3" />
-                  Sage
+                <span
+                  className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full font-semibold text-[11px] border ${
+                    isDark ? 'bg-white/10 text-white border-white/15' : 'bg-black/5 text-black border-black/15'
+                  }`}
+                >
+                  Vault Sync
                 </span>
                 {sageStudyOrganizing ? (
                   <span className="text-neutral-400">
-                    {sageStatusText || 'Assigning Subject, Chapter, tags, and linking related Vault lectures…'}
+                    {sageStatusText || 'Organizing Subject, Chapter, tags, and linking Vault items…'}
                   </span>
                 ) : (
                   <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center gap-1 font-semibold text-[#FC4C01]">
+                    <span className={`inline-flex items-center gap-1 font-semibold ${isDark ? 'text-white' : 'text-black'}`}>
                       <FolderOpen className="w-3.5 h-3.5" />
                       {sageStatusText || (sageStudyCard ? `${sageStudyCard.subject} → ${sageStudyCard.chapter}` : 'Saved ✓')}
                     </span>
                     <button
                       type="button"
                       onClick={() => window.dispatchEvent(new CustomEvent('kinich-open-vault'))}
-                      className="text-[11px] text-[#FC4C01] hover:underline font-medium cursor-pointer"
+                      className={`text-[11px] hover:underline font-medium cursor-pointer ${isDark ? 'text-neutral-200' : 'text-neutral-800'}`}
                     >
                       View in Vault →
                     </button>
@@ -3078,7 +3606,7 @@ ${fullTranscriptText}`;
               </div>
               {sageStudyCard && Array.isArray(sageStudyCard.linkedItems) && sageStudyCard.linkedItems.length > 0 && (
                 <div className="flex items-center gap-1.5">
-                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#FC4C01]">
+                  <span className={`inline-flex items-center gap-1 text-[11px] font-semibold ${isDark ? 'text-neutral-300' : 'text-neutral-700'}`}>
                     <Link2 className="w-3 h-3" />
                     Linked:
                   </span>
@@ -3099,8 +3627,9 @@ ${fullTranscriptText}`;
             </div>
           )}
 
-          {/* Collapsible Source Video / PDF Drawer */}
-          {showSourceViewer && (
+          {/* Collapsible Source Video / PDF Drawer (only when source content actually exists) */}
+          {showSourceViewer &&
+            Boolean(activeVideoId || pdfUrl || rawSourceText || studyBundle?.summary?.overview) && (
             <div className={`px-3 sm:px-5 py-2.5 border-b shrink-0 ${borderSubtle}`}>
               <div
                 className={`max-w-3xl mx-auto rounded-2xl border overflow-hidden ${
@@ -3150,12 +3679,8 @@ ${fullTranscriptText}`;
             </div>
           )}
 
-          {/* Workspace Navigation Tabs (Pill style) */}
-          <div
-            className={`px-3 sm:px-5 py-1.5 border-b flex items-center gap-1.5 overflow-x-auto scrollbar-none shrink-0 ${
-              isDark ? 'bg-[#0c0c0e] border-white/[0.08]' : 'bg-[#f4f4f6] border-black/[0.08]'
-            }`}
-          >
+          {/* Workspace Navigation Tabs (Pill style, no scrim bar) */}
+          <div className="px-3 sm:px-5 py-1.5 bg-transparent flex items-center gap-1.5 overflow-x-auto scrollbar-none shrink-0">
             {openTabs.map((tab) => {
               const isActive = tab.id === activeTabObj?.id;
               return (
@@ -3307,7 +3832,6 @@ ${fullTranscriptText}`;
                       <ThinkingOrb state="searching" size={20} />
                       <div>
                         <div className="text-sm font-semibold flex items-center gap-2">
-                          <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                           <span>
                             {segments.length > 0
                               ? loadingStageText
@@ -3459,11 +3983,15 @@ ${fullTranscriptText}`;
                 {focusedModuleView.mode === 'summary' ? (
                   <div className="space-y-4">
                     <h2 className="text-lg sm:text-xl font-bold tracking-tight">
-                      {lessonModules[focusedModuleView.moduleIndex]?.title}
+                      <MathText text={lessonModules[focusedModuleView.moduleIndex]?.title || ''} />
                     </h2>
-                    <p className="text-sm sm:text-[15px] leading-relaxed whitespace-pre-line">
-                      {lessonModules[focusedModuleView.moduleIndex]?.summary}
-                    </p>
+                    <div className="text-sm sm:text-[15px] leading-relaxed">
+                      <MathMarkdown
+                        content={lessonModules[focusedModuleView.moduleIndex]?.summary || ''}
+                        isDark={isDark}
+                        autoDetectLatex
+                      />
+                    </div>
                     <div className="flex items-center justify-between pt-4">
                       <button
                         type="button"
@@ -3637,6 +4165,42 @@ ${fullTranscriptText}`;
                             label: 'Daily Recall',
                             sub: 'SM-2 & exam plan',
                             onClick: () => openOrFocusTab('study_loop', 'Daily Recall'),
+                          },
+                          {
+                            id: 'sketch_tutor',
+                            label: 'Visual Whiteboard',
+                            sub: 'Drawn lessons & audio',
+                            onClick: () => openOrFocusTab('sketch_tutor', 'Visual Whiteboard'),
+                          },
+                          {
+                            id: 'visualize',
+                            label: 'Physics Lab',
+                            sub: 'Interactive simulation',
+                            onClick: () => openOrFocusTab('visualize', 'Physics Lab'),
+                          },
+                          {
+                            id: 'diagram',
+                            label: 'Concept Diagram',
+                            sub: 'Flows & SVG export',
+                            onClick: () => openOrFocusTab('diagram', 'Concept Diagram'),
+                          },
+                          {
+                            id: 'mastery_path',
+                            label: 'Mastery Path',
+                            sub: 'Roadmap & checkpoints',
+                            onClick: () => openOrFocusTab('mastery_path', 'Mastery Path'),
+                          },
+                          {
+                            id: 'deep_solve',
+                            label: 'Deep Solve',
+                            sub: 'Step-by-step derivations',
+                            onClick: () => openOrFocusTab('deep_solve', 'Deep Solve'),
+                          },
+                          {
+                            id: 'plotter',
+                            label: 'Curve Plotter',
+                            sub: 'y(x) function graph',
+                            onClick: () => openOrFocusTab('plotter', 'Curve Plotter'),
                           },
                           {
                             id: 'map',
@@ -3866,6 +4430,21 @@ ${fullTranscriptText}`;
                                         type="button"
                                         onClick={() => {
                                           setOpenSetMenuId(null);
+                                          openOrFocusTab('chat', 'Tutor');
+                                          handleSendStudyChat(`Help me master "${setItem.title}": ${setItem.subtitle}`, {
+                                            topicOverride: setItem.title,
+                                            resetContext: false,
+                                          });
+                                        }}
+                                        className="w-full px-3 py-2 rounded-lg text-xs font-medium text-left flex items-center gap-2 hover:bg-current/5 cursor-pointer"
+                                      >
+                                        <MessageSquare className="w-3.5 h-3.5" />
+                                        <span>Study Tutor</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setOpenSetMenuId(null);
                                           handleExportStudyPack();
                                         }}
                                         className="w-full px-3 py-2 rounded-lg text-xs text-left flex items-center gap-2 hover:bg-current/5 cursor-pointer"
@@ -3938,7 +4517,9 @@ ${fullTranscriptText}`;
                           type="button"
                           data-testid="study-summary-add-to-recall-btn"
                           onClick={handleAddCurrentStudyToRecall}
-                          className="h-8 inline-flex items-center gap-1.5 px-3.5 rounded-full bg-[#FC4C01] hover:bg-[#e04300] text-white text-xs font-semibold cursor-pointer transition-colors"
+                          className={`h-8 inline-flex items-center gap-1.5 px-3.5 rounded-full text-xs font-semibold cursor-pointer transition-colors ${
+                            isDark ? 'bg-white text-black hover:bg-neutral-200' : 'bg-black text-white hover:bg-neutral-800'
+                          }`}
                         >
                           <Plus className="w-3.5 h-3.5" />
                           <span>Add to Recall</span>
@@ -3950,14 +4531,16 @@ ${fullTranscriptText}`;
                           onClick={handleStartSummaryAudioRecap}
                           className={`h-8 inline-flex items-center gap-1.5 px-3.5 rounded-full border text-xs font-semibold cursor-pointer ${
                             bgAudioRecapState === 'playing'
-                              ? 'bg-[#FC4C01]/20 border-[#FC4C01] text-[#FC4C01]'
+                              ? isDark
+                                ? 'bg-white/15 border-white text-white'
+                                : 'bg-black/10 border-black text-black'
                               : borderSubtle
                           }`}
                         >
                           {bgAudioRecapState === 'playing' ? (
-                            <VolumeX className="w-3.5 h-3.5 text-[#FC4C01]" />
+                            <VolumeX className="w-3.5 h-3.5" />
                           ) : (
-                            <Volume2 className="w-3.5 h-3.5 text-[#FC4C01]" />
+                            <Volume2 className="w-3.5 h-3.5" />
                           )}
                           <span>
                             {bgAudioRecapState === 'loading'
@@ -4006,13 +4589,15 @@ ${fullTranscriptText}`;
                     )}
 
                     {bgAudioRecapInfo && (
-                      <div className="p-3 rounded-xl bg-[#FC4C01]/10 border border-[#FC4C01]/30 text-xs text-amber-200 flex items-center justify-between gap-2">
+                      <div className={`p-3 rounded-xl border text-xs flex items-center justify-between gap-2 ${borderSubtle} ${bgSubtle}`}>
                         <span>{bgAudioRecapInfo}</span>
                         {bgAudioRecapState === 'error' && (
                           <button
                             type="button"
                             onClick={handleStartSummaryAudioRecap}
-                            className="px-2.5 py-1 rounded bg-[#FC4C01] text-white font-semibold"
+                            className={`px-2.5 py-1 rounded font-semibold ${
+                              isDark ? 'bg-white text-black' : 'bg-black text-white'
+                            }`}
                           >
                             Retry
                           </button>
@@ -4026,7 +4611,9 @@ ${fullTranscriptText}`;
                         <button
                           type="button"
                           onClick={() => handleExplainSummaryInLocalLang(summaryLocalLang)}
-                          className="px-2.5 py-1 rounded bg-[#FC4C01] text-white font-semibold"
+                          className={`px-2.5 py-1 rounded font-semibold ${
+                            isDark ? 'bg-white text-black' : 'bg-black text-white'
+                          }`}
                         >
                           Retry
                         </button>
@@ -4034,8 +4621,8 @@ ${fullTranscriptText}`;
                     )}
 
                     {summaryTranslatedText && (
-                      <div className="p-4 rounded-2xl bg-[#FC4C01]/10 border border-[#FC4C01]/30 text-sm whitespace-pre-wrap leading-relaxed">
-                        {summaryTranslatedText}
+                      <div className={`p-4 rounded-2xl border text-sm leading-relaxed ${borderSubtle} ${bgSubtle}`}>
+                        <MathMarkdown content={summaryTranslatedText} isDark={isDark} autoDetectLatex />
                       </div>
                     )}
 
@@ -4051,9 +4638,9 @@ ${fullTranscriptText}`;
                         {/* Overview */}
                         <section className="space-y-2.5">
                           <h3 className="text-sm font-semibold">Overview</h3>
-                          <p className="text-sm sm:text-[15px] leading-relaxed">
-                            {studyBundle.summary.overview}
-                          </p>
+                          <div className="text-sm sm:text-[15px] leading-relaxed">
+                            <MathMarkdown content={studyBundle.summary.overview} isDark={isDark} autoDetectLatex />
+                          </div>
                         </section>
 
                         {/* Related YouTube Videos + Live Web Search Backend — ONLY for general topic queries */}
@@ -4203,16 +4790,16 @@ ${fullTranscriptText}`;
 
                         {/* Detailed Notes (When expanded) */}
                         {aiExhaustiveSummary && (
-                          <section className={`p-5 rounded-2xl border space-y-3 ${bgCard}`}>
+                          <section className={`pt-4 border-t space-y-2.5 ${borderSubtle}`}>
                             <h3 className="text-sm font-semibold">Detailed Guide</h3>
                             <div className="text-sm sm:text-[15px] leading-relaxed">
-                              <MathMarkdown content={aiExhaustiveSummary} isDark={isDark} />
+                              <MathMarkdown content={aiExhaustiveSummary} isDark={isDark} autoDetectLatex />
                             </div>
                           </section>
                         )}
 
                         {/* Key Points Breakdown */}
-                        <section className="space-y-3.5">
+                        <section className={`pt-4 border-t space-y-3 ${borderSubtle}`}>
                           <div className="flex items-center justify-between">
                             <h3 className="text-sm font-semibold">Key Points</h3>
                             {synthesizingDeepSummary && (
@@ -4223,14 +4810,14 @@ ${fullTranscriptText}`;
                             )}
                           </div>
 
-                          <div className="space-y-3">
+                          <div className={`divide-y ${isDark ? 'divide-white/[0.08]' : 'divide-black/[0.08]'}`}>
                             {statementBreakdown.map((st) => (
                               <div
                                 key={st.index}
-                                className={`p-4 sm:p-5 rounded-2xl border space-y-2 ${bgCard}`}
+                                className="py-3 space-y-1.5"
                               >
                                 <h4 className="text-sm sm:text-base font-semibold tracking-tight">
-                                  {st.heading}
+                                  <MathText text={st.heading} />
                                 </h4>
                                 {st.claim && st.claim !== st.elaboration && (
                                   <div
@@ -4238,12 +4825,12 @@ ${fullTranscriptText}`;
                                       isDark ? 'text-neutral-200' : 'text-neutral-800'
                                     }`}
                                   >
-                                    {st.claim}
+                                    <MathText text={st.claim} />
                                   </div>
                                 )}
-                                <p className={`text-sm sm:text-[15px] leading-relaxed ${textMuted}`}>
-                                  {st.elaboration}
-                                </p>
+                                <div className={`text-sm sm:text-[15px] leading-relaxed ${textMuted}`}>
+                                  <MathMarkdown content={st.elaboration} isDark={isDark} inline autoDetectLatex />
+                                </div>
                               </div>
                             ))}
                           </div>
@@ -4259,9 +4846,9 @@ ${fullTranscriptText}`;
                           );
                           if (uniqueConcepts.length === 0) return null;
                           return (
-                            <section className="space-y-3">
+                            <section className={`pt-4 border-t space-y-3 ${borderSubtle}`}>
                               <h3 className="text-sm font-semibold">Key Terms</h3>
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
                                 {uniqueConcepts.map((concept, cIdx) => {
                                   const cleanMech = (concept.mechanism || '').trim();
                                   const showMech =
@@ -4272,13 +4859,17 @@ ${fullTranscriptText}`;
                                   return (
                                     <div
                                       key={cIdx}
-                                      className={`p-4 rounded-2xl border space-y-1.5 ${bgCard}`}
+                                      className={`pb-3 border-b space-y-1 ${borderSubtle}`}
                                     >
-                                      <div className="text-sm font-semibold">{concept.term}</div>
-                                      <p className="text-xs leading-relaxed">{concept.definition}</p>
+                                      <div className="text-sm font-semibold">
+                                        <MathText text={concept.term} />
+                                      </div>
+                                      <p className="text-xs leading-relaxed">
+                                        <MathText text={concept.definition} />
+                                      </p>
                                       {showMech && (
                                         <p className={`text-xs leading-relaxed ${textMuted}`}>
-                                          {cleanMech}
+                                          <MathText text={cleanMech} />
                                         </p>
                                       )}
                                     </div>
@@ -4289,7 +4880,7 @@ ${fullTranscriptText}`;
                           );
                         })()}
 
-                        {/* Elite Follow-Up Assistant inside Summary */}
+                        {/* Follow-Up Assistant inside Summary */}
                         {renderSummaryFollowUpSection()}
 
                         {/* Bottom Actions Row */}
@@ -4504,12 +5095,12 @@ ${fullTranscriptText}`;
                           <div key={mIdx} className={`p-4 rounded-2xl border space-y-3 ${bgCard}`}>
                             <div className="flex items-center justify-between">
                               <div className="text-sm font-semibold">
-                                {mIdx + 1}. {mod.title}
+                                {mIdx + 1}. <MathText text={mod.title} />
                               </div>
                             </div>
 
                             <p className={`text-xs sm:text-sm leading-relaxed ${textMuted}`}>
-                              {mod.summary}
+                              <MathText text={mod.summary} />
                             </p>
 
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
@@ -4605,7 +5196,7 @@ ${fullTranscriptText}`;
 
                     <div className="pt-1 flex items-start justify-between gap-3">
                       <h2 className="text-sm sm:text-base font-medium leading-relaxed flex-1">
-                        {currentQuizItem.question}
+                        <MathText text={currentQuizItem.question} />
                       </h2>
                       {(currentQuizItem.timestamp_s !== undefined || currentQuizItem.timestamp !== undefined) && (
                         <button
@@ -4678,7 +5269,9 @@ ${fullTranscriptText}`;
                             <span className={`font-mono font-semibold shrink-0 ${textMuted}`}>
                               {String.fromCharCode(65 + oIdx)}.
                             </span>
-                            <span className="flex-1 leading-relaxed">{opt}</span>
+                            <span className="flex-1 leading-relaxed">
+                              <MathText text={opt} />
+                            </span>
                           </button>
                         );
                       })}
@@ -4701,7 +5294,9 @@ ${fullTranscriptText}`;
                                 65 + currentQuizItem.correctIndex
                               )}`}
                         </div>
-                        <p className={textMuted}>{currentQuizItem.explanation}</p>
+                        <p className={textMuted}>
+                          <MathText text={currentQuizItem.explanation} />
+                        </p>
                         {currentQuizItem.sourceQuote && (
                           <div
                             className={`pt-2 border-t text-xs italic ${borderSubtle} ${textMuted}`}
@@ -4811,7 +5406,9 @@ ${fullTranscriptText}`;
                             }
                             className={`px-4 py-1.5 rounded-full border text-xs font-medium transition-colors cursor-pointer ${
                               isSelected
-                                ? 'bg-[#FC4C01] text-white border-[#FC4C01]'
+                                ? isDark
+                                  ? 'bg-white text-black border-white font-semibold'
+                                  : 'bg-black text-white border-black font-semibold'
                                 : isDark
                                 ? 'bg-white/[0.04] hover:bg-white/[0.09] border-white/[0.1] text-neutral-200'
                                 : 'bg-black/[0.03] hover:bg-black/[0.07] border-black/[0.1] text-neutral-800'
@@ -4981,14 +5578,20 @@ ${fullTranscriptText}`;
                               </div>
 
                               <div className="my-auto py-8 text-center px-3 space-y-3">
-                                <p className="text-base sm:text-lg font-medium leading-relaxed">
-                                  {isCardFlipped
-                                    ? customFlashcards[cardIndex].back
-                                    : customFlashcards[cardIndex].front}
-                                </p>
+                                <div className="text-base sm:text-lg font-medium leading-relaxed">
+                                  <MathMarkdown
+                                    content={
+                                      isCardFlipped
+                                        ? customFlashcards[cardIndex].back
+                                        : customFlashcards[cardIndex].front
+                                    }
+                                    isDark={isDark}
+                                    autoDetectLatex
+                                  />
+                                </div>
                                 {showCardHint && !isCardFlipped && (
                                   <p className={`text-xs ${textMuted}`}>
-                                    Hint: {customFlashcards[cardIndex].back.slice(0, 32)}...
+                                    Hint: <MathText text={`${customFlashcards[cardIndex].back.slice(0, 48)}...`} />
                                   </p>
                                 )}
                               </div>
@@ -5040,7 +5643,9 @@ ${fullTranscriptText}`;
                                     }
                                     className={`px-4 py-1.5 rounded-full border text-xs font-medium transition-colors cursor-pointer ${
                                       isSelected
-                                        ? 'bg-[#FC4C01] text-white border-[#FC4C01]'
+                                        ? isDark
+                                          ? 'bg-white text-black border-white font-semibold'
+                                          : 'bg-black text-white border-black font-semibold'
                                         : isDark
                                         ? 'bg-white/[0.04] hover:bg-white/[0.09] border-white/[0.1] text-neutral-200'
                                         : 'bg-black/[0.03] hover:bg-black/[0.07] border-black/[0.1] text-neutral-800'
@@ -5259,7 +5864,9 @@ ${fullTranscriptText}`;
                           className={`p-4 sm:p-5 rounded-2xl border space-y-2 ${bgCard}`}
                         >
                           <div className="flex items-center justify-between gap-2">
-                            <h3 className="text-sm sm:text-base font-semibold">{ch.title}</h3>
+                            <h3 className="text-sm sm:text-base font-semibold">
+                              <MathText text={ch.title} />
+                            </h3>
                             {activeVideoId && (
                               <button
                                 type="button"
@@ -5271,7 +5878,7 @@ ${fullTranscriptText}`;
                             )}
                           </div>
                           <p className={`text-xs sm:text-sm leading-relaxed ${textMuted}`}>
-                            {ch.summary}
+                            <MathText text={ch.summary} />
                           </p>
                         </div>
                       ))}
@@ -5455,7 +6062,7 @@ ${fullTranscriptText}`;
                             <div
                               key={idx}
                               onClick={() => triggerJump(seg.start_s)}
-                              className={`p-4 rounded-2xl border flex items-start gap-3.5 overflow-visible group/seg transition-all duration-200 cursor-pointer ${bgCard} hover:border-[#FC4C01]/30 hover:shadow-xs`}
+                              className={`p-4 rounded-2xl border flex items-start gap-3.5 overflow-visible group/seg transition-all duration-200 cursor-pointer ${bgCard} hover:border-current/25 hover:shadow-xs`}
                               title="Click to jump YouTube player to this segment"
                             >
                               {activeVideoId && (
@@ -5468,8 +6075,10 @@ ${fullTranscriptText}`;
                                   className={`px-2.5 py-0.5 rounded-full font-mono text-[11px] shrink-0 cursor-pointer flex items-center gap-1 transition-all ${
                                     activeJumpTimestamp !== null &&
                                     Math.abs(activeJumpTimestamp - seg.start_s) < 2
-                                      ? 'bg-[#FC4C01] text-white shadow-xs'
-                                      : `${bgSubtle} hover:bg-[#FC4C01]/10 hover:text-[#FC4C01]`
+                                      ? isDark
+                                        ? 'bg-white text-black font-semibold'
+                                        : 'bg-black text-white font-semibold'
+                                      : `${bgSubtle} hover:opacity-80`
                                   }`}
                                   title="Jump to timestamp in video"
                                 >
@@ -5499,10 +6108,12 @@ ${fullTranscriptText}`;
                                       }}
                                       className={`inline cursor-pointer rounded px-1 -mx-0.5 transition-all duration-150 ${
                                         isJumped
-                                          ? 'bg-[#FC4C01]/25 text-[#FC4C01] font-semibold ring-1 ring-[#FC4C01]/40'
+                                          ? isDark
+                                            ? 'bg-white/20 text-white font-semibold ring-1 ring-white/40'
+                                            : 'bg-black/15 text-black font-semibold ring-1 ring-black/40'
                                           : isDark
-                                          ? 'hover:bg-white/[0.08] hover:text-white hover:underline hover:decoration-[#FC4C01]/40'
-                                          : 'hover:bg-black/[0.06] hover:text-black hover:underline hover:decoration-[#FC4C01]/40'
+                                          ? 'hover:bg-white/[0.08] hover:text-white hover:underline'
+                                          : 'hover:bg-black/[0.06] hover:text-black hover:underline'
                                       }`}
                                       title={`Click sentence to jump video to ${formatTime(sentenceTime)}`}
                                     >
@@ -5518,11 +6129,11 @@ ${fullTranscriptText}`;
                                     e.stopPropagation();
                                     handleCreateSubclip(seg.text, seg.start_s);
                                   }}
-                                  className={`px-2.5 py-1.5 rounded-xl border text-xs font-medium inline-flex items-center gap-1 opacity-60 group-hover/seg:opacity-100 hover:bg-[#FC4C01]/15 hover:text-[#FC4C01] hover:border-[#FC4C01]/30 transition-all text-neutral-400 cursor-pointer`}
+                                  className={`px-2.5 py-1.5 rounded-xl border text-xs font-medium inline-flex items-center gap-1 opacity-70 group-hover/seg:opacity-100 transition-all cursor-pointer ${borderSubtle}`}
                                   title="Create Subclip (Save as Flashcard)"
                                   aria-label="Create Subclip"
                                 >
-                                  <Layers className="w-3.5 h-3.5 text-[#FC4C01]" />
+                                  <Layers className="w-3.5 h-3.5" />
                                   <span className="hidden sm:inline">Subclip</span>
                                 </button>
                                 <button
@@ -5575,13 +6186,13 @@ ${fullTranscriptText}`;
 
                 {/* Subclip Toast Banner */}
                 {subclipToast && (
-                  <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 bg-[#18181b] border border-[#FC4C01]/40 text-white px-4 py-2.5 rounded-2xl shadow-2xl flex items-center gap-3">
-                    <Check className="w-4 h-4 text-[#FC4C01]" />
+                  <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 bg-[#18181b] border border-white/20 text-white px-4 py-2.5 rounded-2xl shadow-2xl flex items-center gap-3">
+                    <Check className="w-4 h-4 text-white" />
                     <span className="text-xs font-semibold">{subclipToast}</span>
                     <button
                       type="button"
                       onClick={() => openOrFocusTab('flashcards', 'Flashcards')}
-                      className="px-2.5 py-1 rounded-xl bg-[#FC4C01] text-white text-[11px] font-semibold hover:opacity-90 cursor-pointer ml-1"
+                      className="px-2.5 py-1 rounded-xl bg-white text-black text-[11px] font-semibold hover:opacity-90 cursor-pointer ml-1"
                     >
                       View Flashcards
                     </button>
@@ -5618,8 +6229,8 @@ ${fullTranscriptText}`;
                 {/* TAB 9: TUTOR CHAT                                           */}
                 {/* =========================================================== */}
                 {activeTabObj?.type === 'chat' && (
-                  <div className="max-w-3xl mx-auto px-4 sm:px-6 py-5 flex flex-col min-h-[72vh] pb-28">
-                    <div className="flex items-center justify-between mb-4">
+                  <div className="max-w-3xl mx-auto px-3 sm:px-5 py-4 flex flex-col min-h-[72vh] pb-28">
+                    <div className="flex items-center justify-between mb-3">
                       <h2 className="text-base font-semibold">Study Tutor</h2>
 
                       <button
@@ -5628,7 +6239,7 @@ ${fullTranscriptText}`;
                           setChatTurns([]);
                           setQuotedQuizQuestion(null);
                         }}
-                        className={`h-8 px-3.5 rounded-full border text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer transition-colors ${borderSubtle}`}
+                        className={`h-8 px-3 rounded-lg border text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer transition-colors ${borderSubtle}`}
                       >
                         <Plus className="w-3.5 h-3.5" />
                         <span>Clear Chat</span>
@@ -5684,7 +6295,7 @@ ${fullTranscriptText}`;
                                 key={pill.label}
                                 type="button"
                                 onClick={pill.onClick}
-                                className={`h-8 inline-flex items-center gap-1.5 px-3.5 rounded-full border text-xs font-medium transition-colors cursor-pointer ${
+                                className={`h-8 inline-flex items-center gap-1.5 px-3.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer ${
                                   isDark
                                     ? 'bg-[#121215] border-white/10 hover:border-white/25 hover:bg-white/[0.05]'
                                     : 'bg-white border-black/10 hover:border-black/25 hover:bg-black/[0.03]'
@@ -5698,33 +6309,28 @@ ${fullTranscriptText}`;
                         </div>
                       </div>
                     ) : (
-                      <div className="flex-1 space-y-5">
+                      <div className={`flex-1 divide-y ${isDark ? 'divide-white/[0.08]' : 'divide-black/[0.08]'}`}>
                         {chatTurns.map((turn) => (
-                          <div key={turn.id} className="space-y-3">
+                          <div key={turn.id} className="py-3.5 space-y-2">
+                            <div className={`text-[11px] font-semibold ${turn.role === 'user' ? textMuted : ''}`}>
+                              {turn.role === 'user' ? 'You' : 'Tutor'}
+                            </div>
                             {turn.role === 'user' ? (
-                              <div
-                                className={`ml-auto max-w-xl p-4 rounded-2xl border text-xs sm:text-sm ${
-                                  isDark
-                                    ? 'bg-[#18181b] border-white/[0.1]'
-                                    : 'bg-[#f4f4f5] border-black/[0.08]'
-                                }`}
-                              >
+                              <div className="space-y-1.5 text-xs sm:text-sm font-medium leading-relaxed">
                                 {turn.quotedQuestion && (
-                                  <div
-                                    className={`mb-2 pb-2 border-b text-xs ${borderSubtle} ${textMuted}`}
-                                  >
-                                    "{turn.quotedQuestion}"
+                                  <div className={`pb-1.5 border-b text-xs font-normal ${borderSubtle} ${textMuted}`}>
+                                    &ldquo;<MathText text={turn.quotedQuestion} />&rdquo;
                                   </div>
                                 )}
-                                <div>{turn.content}</div>
+                                <div>
+                                  <MathText text={turn.content} />
+                                </div>
                               </div>
                             ) : (
-                              <div className="space-y-4">
+                              <div className="space-y-3">
                                 {turn.includeMindMap && (
-                                  <div className={`rounded-2xl border overflow-hidden ${bgCard}`}>
-                                    <div
-                                      className={`px-4 py-3 border-b flex items-center justify-between ${borderSubtle}`}
-                                    >
+                                  <div className={`border-y py-3 space-y-3 ${borderSubtle}`}>
+                                    <div className="flex items-center justify-between">
                                       <span className="text-xs font-semibold">
                                         Mind Map · {resolvedTitle}
                                       </span>
@@ -5736,10 +6342,10 @@ ${fullTranscriptText}`;
                                         <Download className="w-3.5 h-3.5" />
                                       </button>
                                     </div>
-                                    <div className="p-4 sm:p-5 overflow-x-auto">
-                                      <div className="flex items-center gap-6 min-w-[480px]">
+                                    <div className="overflow-x-auto">
+                                      <div className="flex items-center gap-5 min-w-[480px]">
                                         <div
-                                          className={`px-4 py-2.5 rounded-xl border text-xs font-semibold shrink-0 ${
+                                          className={`px-3.5 py-2 rounded-lg border text-xs font-semibold shrink-0 ${
                                             isDark
                                               ? 'bg-white text-black border-white'
                                               : 'bg-black text-white border-black'
@@ -5748,13 +6354,13 @@ ${fullTranscriptText}`;
                                           {resolvedTitle.slice(0, 28)}
                                         </div>
 
-                                        <div className="space-y-3 flex-1">
+                                        <div className="space-y-2.5 flex-1">
                                           {mindMapBranches.map((branch) => {
                                             const isExp = expandedMindMapNodes[branch.id] ?? true;
                                             return (
                                               <div
                                                 key={branch.id}
-                                                className="flex items-center gap-4"
+                                                className="flex items-center gap-3"
                                               >
                                                 <button
                                                   type="button"
@@ -5764,13 +6370,13 @@ ${fullTranscriptText}`;
                                                       [branch.id]: !isExp,
                                                     }))
                                                   }
-                                                  className={`px-3.5 py-2 rounded-xl border text-xs font-medium inline-flex items-center gap-2 shrink-0 cursor-pointer ${
+                                                  className={`px-3 py-1.5 rounded-lg border text-xs font-medium inline-flex items-center gap-2 shrink-0 cursor-pointer ${
                                                     isDark
                                                       ? 'bg-white/[0.08] border-white/[0.15]'
                                                       : 'bg-black/[0.06] border-black/[0.12]'
                                                   }`}
                                                 >
-                                                  <span>{branch.label}</span>
+                                                  <span><MathText text={branch.label} /></span>
                                                   {isExp ? (
                                                     <ChevronLeft className="w-3 h-3" />
                                                   ) : (
@@ -5779,13 +6385,13 @@ ${fullTranscriptText}`;
                                                 </button>
 
                                                 {isExp && branch.children && (
-                                                  <div className="space-y-1.5 flex-1">
+                                                  <div className="space-y-1 flex-1">
                                                     {branch.children.map((ch) => (
                                                       <div
                                                         key={ch.id}
-                                                        className={`px-3 py-2 rounded-xl border text-[11px] leading-snug ${borderSubtle} ${bgSubtle}`}
+                                                        className={`px-2.5 py-1.5 rounded-md border text-[11px] leading-snug ${borderSubtle}`}
                                                       >
-                                                        {ch.label}
+                                                        <MathText text={ch.label} />
                                                       </div>
                                                     ))}
                                                   </div>
@@ -5800,28 +6406,26 @@ ${fullTranscriptText}`;
                                 )}
 
                                 {turn.includeFlowChart && (
-                                  <div className={`rounded-2xl border overflow-hidden ${bgCard}`}>
-                                    <div
-                                      className={`px-4 py-3 border-b flex items-center justify-between ${borderSubtle}`}
-                                    >
-                                      <span className="text-xs font-semibold">
-                                        Flowchart · {resolvedTitle}
-                                      </span>
-                                    </div>
-                                    <div className="p-4 space-y-2">
+                                  <div className={`border-y py-3 space-y-2 ${borderSubtle}`}>
+                                    <span className="text-xs font-semibold block">
+                                      Flowchart · {resolvedTitle}
+                                    </span>
+                                    <div className="space-y-1.5">
                                       {lessonModules.map((m, idx) => (
                                         <div key={idx} className="flex flex-col items-center">
                                           <div
-                                            className={`w-full max-w-md p-3 rounded-xl border text-center ${borderSubtle} ${bgSubtle}`}
+                                            className={`w-full max-w-md p-2.5 rounded-lg border text-center ${borderSubtle}`}
                                           >
-                                            <div className="text-xs font-semibold">{m.title}</div>
+                                            <div className="text-xs font-semibold">
+                                              <MathText text={m.title} />
+                                            </div>
                                             <div className={`text-[11px] mt-0.5 ${textMuted}`}>
-                                              {m.summary}
+                                              <MathText text={m.summary} />
                                             </div>
                                           </div>
                                           {idx < lessonModules.length - 1 && (
                                             <div
-                                              className={`h-4 w-px ${
+                                              className={`h-3 w-px ${
                                                 isDark ? 'bg-white/20' : 'bg-black/20'
                                               }`}
                                             />
@@ -5833,23 +6437,17 @@ ${fullTranscriptText}`;
                                 )}
 
                                 <div className="text-xs sm:text-sm leading-relaxed">
-                                  <MathMarkdown content={turn.content} isDark={isDark} />
+                                  <MathMarkdown content={turn.content} isDark={isDark} autoDetectLatex />
                                 </div>
                               </div>
                             )}
                           </div>
                         ))}
                         {chatLoading && (
-                          <div className="flex items-center justify-start my-1.5">
-                            <div
-                              className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium shadow-sm ${
-                                isDark
-                                  ? 'bg-[#18181b]/95 border-neutral-800 text-neutral-300'
-                                  : 'bg-neutral-100/90 border-neutral-200 text-neutral-700'
-                              }`}
-                            >
+                          <div className="flex items-center justify-start py-3">
+                            <div className={`inline-flex items-center gap-2 text-xs font-medium ${textMuted}`}>
                               <ThinkingOrb state="searching" size={20} />
-                              <span>Thinking....</span>
+                              <span>Thinking...</span>
                             </div>
                           </div>
                         )}
@@ -6054,8 +6652,8 @@ ${fullTranscriptText}`;
                           placeholder="e.g. CERN Geneva, Stanford University, MIT Cambridge MA, IISc Bangalore..."
                           className={`w-full pl-10 pr-4 py-2.5 rounded-full border text-xs outline-none transition-colors ${
                             isDark
-                              ? 'bg-[#121215] border-white/15 text-white placeholder-neutral-500 focus:border-[#FC4C01]'
-                              : 'bg-white border-black/15 text-black placeholder-neutral-400 focus:border-[#FC4C01]'
+                              ? 'bg-[#121215] border-white/15 text-white placeholder-neutral-500 focus:border-white/35'
+                              : 'bg-white border-black/15 text-black placeholder-neutral-400 focus:border-black/35'
                           }`}
                         />
                       </div>
@@ -6080,7 +6678,9 @@ ${fullTranscriptText}`;
                             onClick={() => setMapLocationQuery(preset)}
                             className={`px-3 py-1 rounded-full border text-xs font-medium transition-colors cursor-pointer ${
                               mapLocationQuery === preset
-                                ? 'bg-[#FC4C01] text-white border-[#FC4C01] shadow-xs'
+                                ? isDark
+                                  ? 'bg-white text-black border-white'
+                                  : 'bg-black text-white border-black'
                                 : isDark
                                 ? 'border-white/10 text-neutral-400 hover:text-white hover:bg-white/[0.05]'
                                 : 'border-black/10 text-neutral-600 hover:text-black hover:bg-black/[0.04]'
@@ -6130,6 +6730,13 @@ ${fullTranscriptText}`;
                     lectureQuiz={quizList}
                     isDark={isDark}
                     onSwitchFeature={(feat, title) => openOrFocusTab(feat, title)}
+                    onAskTutor={(prompt, topicOverride) => {
+                      openOrFocusTab('chat', 'Tutor');
+                      handleSendStudyChat(prompt, {
+                        topicOverride,
+                        resetContext: Boolean(topicOverride),
+                      });
+                    }}
                   />
                 )}
 
@@ -6139,6 +6746,13 @@ ${fullTranscriptText}`;
                     <StudyLoopPanel
                       embedded={true}
                       isDark={isDark}
+                      onAskTutor={(prompt, topicOverride) => {
+                        openOrFocusTab('chat', 'Tutor');
+                        handleSendStudyChat(prompt, {
+                          topicOverride,
+                          resetContext: Boolean(topicOverride),
+                        });
+                      }}
                       initialTab={
                         typeof window !== 'undefined' &&
                         window.location.pathname.toLowerCase().startsWith('/snap-solve')
@@ -6147,6 +6761,61 @@ ${fullTranscriptText}`;
                       }
                     />
                   </div>
+                )}
+
+                {/* Dedicated Full-Page Tabs for DeepTutor Labs (Physics Sandbox, Visualize, Mastery Path, Deep Solve) */}
+                {(activeTabObj?.type === 'visualize' ||
+                  activeTabObj?.type === 'mastery_path' ||
+                  activeTabObj?.type === 'deep_solve') && (
+                  <StudyPhysicsVisualizeLab
+                    key={activeTabObj.type}
+                    topicTitle={resolvedTitle}
+                    topicContext={
+                      rawSourceText ||
+                      segments.map((s) => s.text).join('\n') ||
+                      studyBundle?.summary?.overview ||
+                      ''
+                    }
+                    lessonModules={lessonModules}
+                    concepts={studyBundle?.explanation?.concepts}
+                    initialMode={
+                      activeTabObj.type === 'mastery_path'
+                        ? 'mastery'
+                        : activeTabObj.type === 'deep_solve'
+                        ? 'deep_solve'
+                        : 'physics'
+                    }
+                    isDark={isDark}
+                    onStartQuiz={() => openOrFocusTab('quiz', 'Quiz')}
+                    onAskTutor={(prompt, topicOverride) => {
+                      openOrFocusTab('chat', 'Tutor');
+                      handleSendStudyChat(prompt, {
+                        topicOverride,
+                        resetContext: Boolean(topicOverride),
+                      });
+                    }}
+                  />
+                )}
+                {/* Dedicated Full-Page Tab for Interactive Visual Whiteboard Tutor (Sketchd / whiteboard-ai-tutor) */}
+                {activeTabObj?.type === 'sketch_tutor' && (
+                  <StudySketchTutor
+                    topicTitle={resolvedTitle}
+                    topicContext={
+                      rawSourceText ||
+                      segments.map((s) => s.text).join('\n') ||
+                      studyBundle?.summary?.overview ||
+                      ''
+                    }
+                    isDark={isDark}
+                    onStartQuiz={() => openOrFocusTab('quiz', 'Quiz')}
+                    onAskTutor={(prompt, topicOverride) => {
+                      openOrFocusTab('chat', 'Tutor');
+                      handleSendStudyChat(prompt, {
+                        topicOverride,
+                        resetContext: Boolean(topicOverride),
+                      });
+                    }}
+                  />
                 )}
               </>
             )}

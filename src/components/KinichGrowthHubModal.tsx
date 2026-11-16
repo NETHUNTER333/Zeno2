@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   X,
   Search,
@@ -13,6 +13,10 @@ import {
   Share2,
   Trash2,
   Play,
+  FileText,
+  MessageSquare,
+  Upload,
+  BookOpen,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -105,8 +109,30 @@ interface LiveDiscoverConnectedRepo {
   license?: string | null;
 }
 
+interface LiveDiscoverArxivDomain {
+  id: string;
+  label: string;
+  badge: string;
+  count: number;
+}
+
+const DEFAULT_ARXIV_DOMAINS: LiveDiscoverArxivDomain[] = [
+  { id: 'ai_llm', label: 'AI & Language Models', badge: 'cs.CL · cs.AI', count: 10 },
+  { id: 'ml_dl', label: 'Machine Learning & Deep Learning', badge: 'cs.LG · stat.ML', count: 10 },
+  { id: 'cv_multimodal', label: 'Computer Vision & Multimodal', badge: 'cs.CV', count: 10 },
+  { id: 'robotics', label: 'Robotics & Autonomous Systems', badge: 'cs.RO · eess.SY', count: 10 },
+  { id: 'quantum', label: 'Quantum Physics & Computing', badge: 'quant-ph', count: 10 },
+  { id: 'astrophysics', label: 'Astrophysics & Cosmology', badge: 'astro-ph', count: 10 },
+  { id: 'systems_sec', label: 'Systems, Distributed & Security', badge: 'cs.DC · cs.CR', count: 10 },
+  { id: 'math_theory', label: 'Mathematics, Optimization & Theory', badge: 'math.OC · cs.DS', count: 10 },
+];
+
 interface LiveDiscoverArxivPaper {
   id: string;
+  arxivId?: string;
+  domainId?: string;
+  domainLabel?: string;
+  domainBadge?: string;
   title: string;
   summary: string;
   authors: string[];
@@ -142,7 +168,11 @@ export const KinichGrowthHubModal: React.FC<KinichGrowthHubModalProps> = ({
   const [discoverSourceFilter, setDiscoverSourceFilter] = useState<
     'all' | 'arxiv' | 'github' | 'community'
   >('all');
+  const [selectedArxivDomain, setSelectedArxivDomain] = useState<string>('all');
+  const [liveArxivDomains, setLiveArxivDomains] =
+    useState<LiveDiscoverArxivDomain[]>(DEFAULT_ARXIV_DOMAINS);
   const [liveArxivPapers, setLiveArxivPapers] = useState<LiveDiscoverArxivPaper[]>([]);
+  const [liveRefreshBatch, setLiveRefreshBatch] = useState<number>(1);
   const [liveGithubRepos, setLiveGithubRepos] = useState<LiveDiscoverConnectedRepo[]>([
     {
       id: 1001,
@@ -200,6 +230,12 @@ export const KinichGrowthHubModal: React.FC<KinichGrowthHubModalProps> = ({
   const [liveFeedLoading, setLiveFeedLoading] = useState<boolean>(false);
   const [liveRefreshTick, setLiveRefreshTick] = useState<number>(0);
   const [savedLiveIds, setSavedLiveIds] = useState<Record<string, boolean>>({});
+  const [arxivInfinitePage, setArxivInfinitePage] = useState<number>(0);
+  const [isLoadingMoreArxiv, setIsLoadingMoreArxiv] = useState<boolean>(false);
+  const [hasMoreArxiv, setHasMoreArxiv] = useState<boolean>(true);
+  const discoverScrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const arxivSentinelRef = useRef<HTMLDivElement | null>(null);
+  const isFetchingMoreRef = useRef<boolean>(false);
 
   // --- TAB 2: VAULT STATE ---
   const [vaultItems, setVaultItems] = useState<KnowledgeVaultItem[]>(() =>
@@ -302,6 +338,9 @@ export const KinichGrowthHubModal: React.FC<KinichGrowthHubModalProps> = ({
     let cancelled = false;
     setDiscoverLoading(true);
     setLiveFeedLoading(true);
+    setArxivInfinitePage(0);
+    setHasMoreArxiv(true);
+    isFetchingMoreRef.current = false;
 
     fetchDiscoverArtifacts({
       category: discoverCategory,
@@ -320,13 +359,25 @@ export const KinichGrowthHubModal: React.FC<KinichGrowthHubModalProps> = ({
     fetch(
       `/api/discover/live?category=${encodeURIComponent(discoverCategory)}&q=${encodeURIComponent(
         discoverQuery
-      )}&refresh=${liveRefreshTick}`
+      )}&refresh=${liveRefreshTick}&t=${Date.now()}`,
+      { cache: 'no-store' }
     )
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (cancelled || !data) return;
+        if (Array.isArray(data.arxivDomains) && data.arxivDomains.length > 0) {
+          setLiveArxivDomains(data.arxivDomains);
+        }
         if (Array.isArray(data.arxivPapers) && data.arxivPapers.length > 0) {
           setLiveArxivPapers(data.arxivPapers);
+        }
+        if (typeof data.hasMore === 'boolean') {
+          setHasMoreArxiv(data.hasMore);
+        }
+        if (typeof data.refreshBatch === 'number') {
+          setLiveRefreshBatch(data.refreshBatch);
+        } else {
+          setLiveRefreshBatch((liveRefreshTick % 30) + 1);
         }
         if (Array.isArray(data.githubRepos) && data.githubRepos.length > 0) {
           setLiveGithubRepos(data.githubRepos);
@@ -341,6 +392,120 @@ export const KinichGrowthHubModal: React.FC<KinichGrowthHubModalProps> = ({
       cancelled = true;
     };
   }, [isOpen, activeTab, discoverCategory, discoverQuery, liveRefreshTick]);
+
+  const loadMoreArxivPapers = useCallback(() => {
+    if (
+      !isOpen ||
+      activeTab !== 'discover' ||
+      (discoverSourceFilter !== 'all' && discoverSourceFilter !== 'arxiv') ||
+      liveFeedLoading ||
+      isFetchingMoreRef.current ||
+      !hasMoreArxiv ||
+      liveArxivPapers.length === 0
+    ) {
+      return;
+    }
+
+    isFetchingMoreRef.current = true;
+    setIsLoadingMoreArxiv(true);
+    const nextPage = arxivInfinitePage + 1;
+    const nextCursor = liveRefreshTick + nextPage;
+
+    fetch(
+      `/api/discover/live?category=${encodeURIComponent(discoverCategory)}&q=${encodeURIComponent(
+        discoverQuery
+      )}&domain=${encodeURIComponent(selectedArxivDomain)}&refresh=${nextCursor}&t=${Date.now()}`,
+      { cache: 'no-store' }
+    )
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!data || !Array.isArray(data.arxivPapers) || data.arxivPapers.length === 0) {
+          setHasMoreArxiv(false);
+          return;
+        }
+        const incoming: LiveDiscoverArxivPaper[] = data.arxivPapers;
+        setLiveArxivPapers((prev) => {
+          const seen = new Set(
+            prev.map((p) => `${p.domainId || 'ai_llm'}::${p.arxivId || p.id}`)
+          );
+          const uniqueIncoming: LiveDiscoverArxivPaper[] = [];
+          for (const p of incoming) {
+            const key = `${p.domainId || 'ai_llm'}::${p.arxivId || p.id}`;
+            if (!seen.has(key)) {
+              seen.add(key);
+              uniqueIncoming.push({
+                ...p,
+                id: `${p.id}_p${nextPage}`,
+              });
+            }
+          }
+          if (uniqueIncoming.length === 0) {
+            return prev;
+          }
+          return [...prev, ...uniqueIncoming];
+        });
+        setArxivInfinitePage(nextPage);
+        if (nextPage >= 28 || data.hasMore === false) {
+          setHasMoreArxiv(false);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        isFetchingMoreRef.current = false;
+        setIsLoadingMoreArxiv(false);
+      });
+  }, [
+    isOpen,
+    activeTab,
+    discoverSourceFilter,
+    liveFeedLoading,
+    hasMoreArxiv,
+    liveArxivPapers.length,
+    arxivInfinitePage,
+    liveRefreshTick,
+    discoverCategory,
+    discoverQuery,
+    selectedArxivDomain,
+  ]);
+
+  useEffect(() => {
+    if (
+      !isOpen ||
+      activeTab !== 'discover' ||
+      (discoverSourceFilter !== 'all' && discoverSourceFilter !== 'arxiv')
+    ) {
+      return;
+    }
+    const sentinelEl = arxivSentinelRef.current;
+    const rootEl = discoverScrollContainerRef.current;
+    if (!sentinelEl || typeof IntersectionObserver === 'undefined') return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const first = entries[0];
+        if (first && first.isIntersecting) {
+          loadMoreArxivPapers();
+        }
+      },
+      {
+        root: rootEl,
+        rootMargin: '0px 0px 360px 0px',
+        threshold: 0.01,
+      }
+    );
+
+    observer.observe(sentinelEl);
+    return () => {
+      observer.disconnect();
+    };
+  }, [
+    isOpen,
+    activeTab,
+    discoverSourceFilter,
+    selectedArxivDomain,
+    liveArxivPapers.length,
+    loadMoreArxivPapers,
+  ]);
 
   useEffect(() => {
     if (!isOpen || activeTab !== 'passes') return;
@@ -560,11 +725,7 @@ export const KinichGrowthHubModal: React.FC<KinichGrowthHubModalProps> = ({
       }`}
     >
       {/* Simple, Calm Top Bar with Tabs + Close Button */}
-      <div
-        className={`px-4 sm:px-6 py-3 border-b flex items-center justify-between gap-3 shrink-0 ${
-          isDark ? 'border-zinc-800/80 bg-[#09090b]' : 'border-zinc-200 bg-white'
-        }`}
-      >
+      <div className="px-4 sm:px-6 py-3 bg-transparent flex items-center justify-between gap-3 shrink-0">
         <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
           {(
             [
@@ -606,7 +767,21 @@ export const KinichGrowthHubModal: React.FC<KinichGrowthHubModalProps> = ({
       </div>
 
       {/* Main Content Area */}
-      <div className="flex-1 overflow-y-auto slim-scrollbar p-4 sm:p-6 text-xs">
+      <div
+        ref={discoverScrollContainerRef}
+        onScroll={(e) => {
+          if (
+            activeTab === 'discover' &&
+            (discoverSourceFilter === 'all' || discoverSourceFilter === 'arxiv')
+          ) {
+            const el = e.currentTarget;
+            if (el.scrollHeight - el.scrollTop - el.clientHeight < 360) {
+              loadMoreArxivPapers();
+            }
+          }
+        }}
+        className="flex-1 overflow-y-auto slim-scrollbar p-4 sm:p-6 text-xs"
+      >
         <div className="max-w-4xl mx-auto">
           {/* =========================================================
               TAB 1: DISCOVER (CLEAN, CALM, MINIMAL)
@@ -663,120 +838,300 @@ export const KinichGrowthHubModal: React.FC<KinichGrowthHubModalProps> = ({
                     type="button"
                     onClick={() => setLiveRefreshTick((t) => t + 1)}
                     disabled={liveFeedLoading}
-                    title="Refresh"
-                    className={`size-8 rounded-xl border flex items-center justify-center cursor-pointer transition-colors shrink-0 ${secondaryBtn}`}
+                    title="Refresh to load the next batch of 10 latest papers per domain"
+                    className={`px-3 py-1.5 rounded-xl border flex items-center gap-1.5 text-xs font-semibold cursor-pointer transition-colors shrink-0 ${secondaryBtn}`}
                   >
                     <RefreshCw
-                      className={`w-3.5 h-3.5 ${liveFeedLoading ? 'animate-spin' : ''}`}
+                      className={`w-3.5 h-3.5 text-[#FC4C01] ${liveFeedLoading ? 'animate-spin' : ''}`}
                     />
+                    <span>{liveFeedLoading ? 'Refreshing...' : 'Refresh Latest'}</span>
                   </button>
                 </div>
               </div>
 
-              {/* Clean Feed List */}
-              <div className="space-y-3">
-                {/* Research Papers */}
-                {(discoverSourceFilter === 'all' || discoverSourceFilter === 'arxiv') &&
-                  liveArxivPapers.map((paper) => {
-                    const connectedRepo = paper.connectedRepos?.[0] || null;
-                    const isSaved = Boolean(savedLiveIds[`arxiv_${paper.id}`]);
-                    return (
-                      <div
-                        key={paper.id}
-                        className={`p-4 rounded-2xl border space-y-2.5 transition-colors ${cardSurface}`}
-                      >
-                        <div className="flex items-center justify-between gap-2 text-[11px] text-zinc-400">
-                          <span className="font-medium text-[#FC4C01]">
-                            Paper · {paper.primaryCategory || 'CS.AI'}
-                          </span>
-                          <span>
-                            {paper.published
-                              ? new Date(paper.published).toLocaleDateString('en-US', {
-                                  month: 'short',
-                                  day: 'numeric',
-                                })
-                              : 'Recent'}
-                          </span>
-                        </div>
+              {/* 8-Domain Filter Strip & Status Bar for arXiv Papers */}
+              {(discoverSourceFilter === 'all' || discoverSourceFilter === 'arxiv') && (
+                <div className="space-y-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-[#FC4C01]">
+                        {liveArxivDomains.length} Research Domains
+                      </span>
+                      <span className="text-zinc-500">·</span>
+                      <span className={isDark ? 'text-zinc-300' : 'text-zinc-700'}>
+                        10 Latest Papers per Domain ({liveArxivPapers.length} total)
+                      </span>
+                    </div>
+                    <span
+                      className={`px-2 py-0.5 rounded-md border font-mono text-[10px] ${
+                        isDark
+                          ? 'bg-zinc-900 border-zinc-800 text-zinc-400'
+                          : 'bg-zinc-100 border-zinc-200 text-zinc-600'
+                      }`}
+                    >
+                      Recent Batch #{liveRefreshBatch}
+                    </span>
+                  </div>
 
-                        <a
-                          href={paper.absUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="block text-sm font-semibold leading-snug hover:text-[#FC4C01] transition-colors"
-                        >
-                          {paper.title}
-                        </a>
-
-                        <p
-                          className={`text-xs line-clamp-2 leading-relaxed ${
-                            isDark ? 'text-zinc-400' : 'text-zinc-600'
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedArxivDomain('all')}
+                      className={`px-3 py-1.5 rounded-xl border text-xs font-medium cursor-pointer transition-colors whitespace-nowrap shrink-0 ${
+                        selectedArxivDomain === 'all'
+                          ? 'bg-[#FC4C01] border-[#FC4C01] text-white font-semibold'
+                          : isDark
+                          ? 'bg-zinc-900/80 border-zinc-800 text-zinc-300 hover:bg-zinc-800 hover:text-white'
+                          : 'bg-white border-zinc-200 text-zinc-700 hover:bg-zinc-100 hover:text-black'
+                      }`}
+                    >
+                      All {liveArxivDomains.length} Domains ({liveArxivPapers.length})
+                    </button>
+                    {liveArxivDomains.map((dom) => {
+                      const count = liveArxivPapers.filter((p) => p.domainId === dom.id).length || dom.count;
+                      const isActive = selectedArxivDomain === dom.id;
+                      return (
+                        <button
+                          key={dom.id}
+                          type="button"
+                          onClick={() => setSelectedArxivDomain(dom.id)}
+                          className={`px-3 py-1.5 rounded-xl border text-xs font-medium cursor-pointer transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
+                            isActive
+                              ? 'bg-[#FC4C01] border-[#FC4C01] text-white font-semibold'
+                              : isDark
+                              ? 'bg-zinc-900/80 border-zinc-800 text-zinc-300 hover:bg-zinc-800 hover:text-white'
+                              : 'bg-white border-zinc-200 text-zinc-700 hover:bg-zinc-100 hover:text-black'
                           }`}
                         >
-                          {paper.summary}
-                        </p>
+                          <span>{dom.label}</span>
+                          <span
+                            className={`px-1.5 py-0.2 rounded-md text-[10px] font-mono ${
+                              isActive
+                                ? 'bg-black/25 text-white'
+                                : isDark
+                                ? 'bg-zinc-800 text-zinc-400'
+                                : 'bg-zinc-100 text-zinc-600'
+                            }`}
+                          >
+                            {count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
-                        <div className="pt-2 flex flex-wrap items-center justify-between gap-2">
-                          <div className="flex items-center gap-3 text-xs">
-                            <a
-                              href={paper.pdfUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className={`inline-flex items-center gap-1 font-medium hover:underline ${
-                                isDark ? 'text-zinc-300' : 'text-zinc-700'
-                              }`}
-                            >
-                              <span>PDF</span>
-                              <ExternalLink className="w-3 h-3" />
-                            </a>
-                            {connectedRepo && (
-                              <a
-                                href={connectedRepo.url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 font-medium text-emerald-500 hover:underline"
+              {/* Clean Feed List */}
+              <div className="space-y-6">
+                {/* Research Papers Grouped by Domain (8 Domains x 10 Latest Papers Each) */}
+                {(discoverSourceFilter === 'all' || discoverSourceFilter === 'arxiv') &&
+                  liveArxivDomains
+                    .filter((dom) => selectedArxivDomain === 'all' || dom.id === selectedArxivDomain)
+                    .map((domain) => {
+                      const domainPapers = liveArxivPapers.filter(
+                        (p) => (p.domainId || 'ai_llm') === domain.id
+                      );
+                      if (domainPapers.length === 0) return null;
+
+                      return (
+                        <div key={domain.id} className="space-y-3">
+                          {/* Domain Section Header */}
+                          <div
+                            className={`flex flex-wrap items-center justify-between gap-2 pb-2 border-b ${
+                              isDark ? 'border-zinc-800/90' : 'border-zinc-200'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <h3 className="text-sm font-bold tracking-tight">{domain.label}</h3>
+                              <span
+                                className={`px-2 py-0.5 rounded-md text-[10px] font-mono border ${
+                                  isDark
+                                    ? 'bg-zinc-900 border-zinc-800 text-[#FC4C01]'
+                                    : 'bg-orange-50 border-orange-200 text-[#FC4C01]'
+                                }`}
                               >
-                                <GitBranch className="w-3 h-3" />
-                                <span>{connectedRepo.name}</span>
-                              </a>
-                            )}
+                                {domain.badge}
+                              </span>
+                            </div>
+                            <span className="text-[11px] font-medium text-zinc-400">
+                              {domainPapers.length} latest papers
+                            </span>
                           </div>
 
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const synthArtifact: PublicArtifact = {
-                                  id: `arxiv_${paper.id}`,
-                                  ownerId: 'arxiv',
-                                  showAuthorAttribution: true,
-                                  title: paper.title,
-                                  summary: paper.summary,
-                                  content: `Analyze this research paper (${paper.absUrl}):\n\n**Title:** ${paper.title}\n**Abstract:** ${paper.summary}`,
-                                  category: 'Research',
-                                  outputType: 'research_summary',
-                                  tags: ['arxiv'],
-                                  authorName: paper.authors[0] || 'arXiv',
-                                  authorUsername: 'arxiv',
-                                  visibility: 'public',
-                                  viewsCount: 1,
-                                  savesCount: 0,
-                                  forksCount: 0,
-                                  createdAt: Date.now(),
-                                  updatedAt: Date.now(),
-                                };
-                                onForkArtifactIntoChat(synthArtifact);
-                                onClose();
-                              }}
-                              className="px-3 py-1 rounded-lg bg-[#FC4C01] hover:bg-[#e04300] text-white text-xs font-semibold cursor-pointer transition-colors"
-                            >
-                              Ask Kinich
-                            </button>
+                          <div className="space-y-3">
+                            {domainPapers.map((paper, paperIdx) => {
+                              const connectedRepo = paper.connectedRepos?.[0] || null;
+                              return (
+                                <div
+                                  key={paper.id}
+                                  className={`p-4 rounded-2xl border space-y-2.5 transition-colors ${cardSurface}`}
+                                >
+                                  <div className="flex items-center justify-between gap-2 text-[11px] text-zinc-400">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-[#FC4C01]/15 text-[#FC4C01] font-semibold">
+                                        #{paperIdx + 1}
+                                      </span>
+                                      <span className="font-medium text-[#FC4C01]">
+                                        {paper.domainLabel || domain.label} ·{' '}
+                                        {paper.primaryCategory || 'CS.AI'}
+                                      </span>
+                                    </div>
+                                    <span>
+                                      {paper.published
+                                        ? new Date(paper.published).toLocaleDateString('en-US', {
+                                            month: 'short',
+                                            day: 'numeric',
+                                            year: 'numeric',
+                                          })
+                                        : 'Recent'}
+                                    </span>
+                                  </div>
+
+                                  <a
+                                    href={paper.absUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="block text-sm font-semibold leading-snug hover:text-[#FC4C01] transition-colors"
+                                  >
+                                    {paper.title}
+                                  </a>
+
+                                  <p
+                                    className={`text-xs line-clamp-2 leading-relaxed ${
+                                      isDark ? 'text-zinc-400' : 'text-zinc-600'
+                                    }`}
+                                  >
+                                    {paper.summary}
+                                  </p>
+
+                                  <div className="pt-2 flex flex-wrap items-center justify-between gap-2">
+                                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                                      <a
+                                        href={paper.pdfUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border font-semibold transition-colors ${
+                                          isDark
+                                            ? 'bg-zinc-800/90 hover:bg-zinc-700 border-zinc-600/80 text-white'
+                                            : 'bg-zinc-100 hover:bg-zinc-200 border-zinc-300 text-zinc-900'
+                                        }`}
+                                        title="Open Paper PDF"
+                                      >
+                                        <FileText className="w-4 h-4 text-[#FC4C01] shrink-0" />
+                                        <span>PDF</span>
+                                        <ExternalLink className="w-3.5 h-3.5 opacity-85 shrink-0" />
+                                      </a>
+                                      {connectedRepo && (
+                                        <a
+                                          href={connectedRepo.url}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border font-semibold transition-colors ${
+                                            isDark
+                                              ? 'bg-emerald-500/15 hover:bg-emerald-500/25 border-emerald-500/40 text-emerald-300'
+                                              : 'bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/35 text-emerald-700'
+                                          }`}
+                                          title={`Open GitHub repository: ${connectedRepo.name}`}
+                                        >
+                                          <GitBranch className="w-4 h-4 shrink-0" />
+                                          <span>{connectedRepo.name}</span>
+                                          <ExternalLink className="w-3.5 h-3.5 opacity-85 shrink-0" />
+                                        </a>
+                                      )}
+                                    </div>
+
+                                    <div className="flex items-center gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const synthArtifact: PublicArtifact = {
+                                            id: `arxiv_${paper.id}`,
+                                            ownerId: 'arxiv',
+                                            showAuthorAttribution: true,
+                                            title: paper.title,
+                                            summary: paper.summary,
+                                            content: `Analyze this research paper (${paper.absUrl}):\n\n**Title:** ${paper.title}\n**Abstract:** ${paper.summary}`,
+                                            category: 'Research',
+                                            outputType: 'research_summary',
+                                            tags: ['arxiv'],
+                                            authorName: paper.authors[0] || 'arXiv',
+                                            authorUsername: 'arxiv',
+                                            visibility: 'public',
+                                            viewsCount: 1,
+                                            savesCount: 0,
+                                            forksCount: 0,
+                                            createdAt: Date.now(),
+                                            updatedAt: Date.now(),
+                                          };
+                                          onForkArtifactIntoChat(synthArtifact);
+                                          onClose();
+                                        }}
+                                        className="px-3 py-1 rounded-lg bg-[#FC4C01] hover:bg-[#e04300] text-white text-xs font-semibold cursor-pointer transition-colors"
+                                      >
+                                        Ask Kinich
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
                         </div>
+                      );
+                    })}
+
+                {/* Infinite Scroll Sentinel & Auto-Loader for ArXiv Papers */}
+                {(discoverSourceFilter === 'all' || discoverSourceFilter === 'arxiv') &&
+                  liveArxivPapers.length > 0 && (
+                    <div
+                      ref={arxivSentinelRef}
+                      data-testid="arxiv-infinite-scroll-sentinel"
+                      className={`p-4 rounded-2xl border flex flex-col sm:flex-row items-center justify-between gap-3 transition-colors ${cardSurface}`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        {isLoadingMoreArxiv ? (
+                          <>
+                            <RefreshCw className="w-4 h-4 text-[#FC4C01] animate-spin shrink-0" />
+                            <span className="text-xs font-medium">
+                              Automatically fetching more recent arXiv papers...
+                            </span>
+                          </>
+                        ) : hasMoreArxiv ? (
+                          <>
+                            <span className="size-2 rounded-full bg-[#FC4C01] animate-pulse shrink-0" />
+                            <span className={isDark ? 'text-zinc-300' : 'text-zinc-700'}>
+                              Showing <strong>{liveArxivPapers.length}</strong> papers across{' '}
+                              <strong>{liveArxivDomains.length}</strong> domains · Scroll down to
+                              auto-load more
+                            </span>
+                          </>
+                        ) : (
+                          <span className="text-zinc-400">
+                            All recent arXiv batches loaded ({liveArxivPapers.length} papers).
+                          </span>
+                        )}
                       </div>
-                    );
-                  })}
+
+                      {hasMoreArxiv && (
+                        <button
+                          type="button"
+                          onClick={loadMoreArxivPapers}
+                          disabled={isLoadingMoreArxiv}
+                          className={`px-3.5 py-1.5 rounded-xl border text-xs font-semibold cursor-pointer transition-colors shrink-0 flex items-center gap-1.5 ${secondaryBtn}`}
+                        >
+                          <RefreshCw
+                            className={`w-3.5 h-3.5 text-[#FC4C01] ${
+                              isLoadingMoreArxiv ? 'animate-spin' : ''
+                            }`}
+                          />
+                          <span>
+                            {isLoadingMoreArxiv ? 'Loading...' : 'Load More Papers'}
+                          </span>
+                        </button>
+                      )}
+                    </div>
+                  )}
 
                 {/* GitHub Repositories */}
                 {(discoverSourceFilter === 'all' || discoverSourceFilter === 'github') &&
@@ -819,12 +1174,16 @@ export const KinichGrowthHubModal: React.FC<KinichGrowthHubModalProps> = ({
                             href={repo.url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className={`inline-flex items-center gap-1 text-xs font-medium hover:underline ${
-                              isDark ? 'text-zinc-300' : 'text-zinc-700'
+                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors ${
+                              isDark
+                                ? 'bg-zinc-800/90 hover:bg-zinc-700 border-zinc-600/80 text-white'
+                                : 'bg-zinc-100 hover:bg-zinc-200 border-zinc-300 text-zinc-900'
                             }`}
+                            title={`Open ${repo.fullName} on GitHub`}
                           >
+                            <GitBranch className="w-4 h-4 text-emerald-400 shrink-0" />
                             <span>GitHub</span>
-                            <ExternalLink className="w-3 h-3" />
+                            <ExternalLink className="w-3.5 h-3.5 opacity-85 shrink-0" />
                           </a>
 
                           <div className="flex items-center gap-2">
@@ -1716,9 +2075,30 @@ export const KinichGrowthHubModal: React.FC<KinichGrowthHubModalProps> = ({
                           {tier.targetReferrals}{' '}
                           {tier.targetReferrals === 1 ? 'Referral' : 'Referrals'}
                         </div>
-                        <div className="text-[11px] text-zinc-400">
-                          +{tier.bonusMessages} Prompts · +{tier.bonusUploads} Uploads · +
-                          {tier.bonusQuizzes} Quizzes
+                        <div className="flex items-center gap-2 pt-0.5 text-[11px] font-mono tabular-nums text-zinc-300">
+                          <span
+                            className="inline-flex items-center gap-1"
+                            title={`+${tier.bonusMessages} Prompts`}
+                          >
+                            <MessageSquare className="w-3.5 h-3.5 text-[#FC4C01] shrink-0" />
+                            <span>+{tier.bonusMessages}</span>
+                          </span>
+                          <span className="opacity-30">|</span>
+                          <span
+                            className="inline-flex items-center gap-1"
+                            title={`+${tier.bonusUploads} Uploads`}
+                          >
+                            <Upload className="w-3.5 h-3.5 text-[#FC4C01] shrink-0" />
+                            <span>+{tier.bonusUploads}</span>
+                          </span>
+                          <span className="opacity-30">|</span>
+                          <span
+                            className="inline-flex items-center gap-1"
+                            title={`+${tier.bonusQuizzes} Quizzes`}
+                          >
+                            <BookOpen className="w-3.5 h-3.5 text-[#FC4C01] shrink-0" />
+                            <span>+{tier.bonusQuizzes}</span>
+                          </span>
                         </div>
                       </div>
 

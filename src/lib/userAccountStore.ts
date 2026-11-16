@@ -429,7 +429,13 @@ export const DEFAULT_PERSONALIZATION: UserPersonalization = {
   customInstructionsEnabled: true,
   voicePersona: 'Puck',
   voiceSpeed: 1.0,
-  defaultModelId: 'deepseek-v4.1-flash-free',
+  defaultModelId: 'zro-deepseek-v4.1-flash',
+  defaultVisionModelId: 'zro-glm-5.3-flash',
+  temperature: 0.5,
+  reasoningEffort: 'medium',
+  regularSystemPrompt: '',
+  uncensoredSystemPrompt: '',
+  maskProviderIdentity: true,
 };
 
 export const DEFAULT_PROJECT_FOLDERS: ProjectFolder[] = [];
@@ -764,7 +770,11 @@ export const UserAccountStore = {
   },
 
   getPersonalization(): UserPersonalization {
-    return loadFromStorage<UserPersonalization>(STORAGE_KEYS.PERSONALIZATION, DEFAULT_PERSONALIZATION);
+    const stored = loadFromStorage<Partial<UserPersonalization>>(
+      STORAGE_KEYS.PERSONALIZATION,
+      DEFAULT_PERSONALIZATION
+    );
+    return { ...DEFAULT_PERSONALIZATION, ...(stored || {}) };
   },
   savePersonalization(p: UserPersonalization): void {
     saveToStorage(STORAGE_KEYS.PERSONALIZATION, p);

@@ -2,6 +2,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
+import { getDataDir } from './config';
+import {
+  getServerFirestoreAdapter,
+  logFirestoreSyncWarning,
+  SERVER_COLLECTIONS,
+} from './firestorePersistence';
 
 export interface ReferralCodeRow {
   user_id: string;
@@ -88,7 +94,7 @@ export class ReferralDatabase {
         fs.mkdirSync(parentDir, { recursive: true });
       }
     } else {
-      const dataDir = path.resolve(process.cwd(), 'data');
+      const dataDir = getDataDir();
       if (!fs.existsSync(dataDir)) {
         fs.mkdirSync(dataDir, { recursive: true });
       }
@@ -605,6 +611,393 @@ export class ReferralDatabase {
       referrerUid: record.user_id,
       referrerName: `Researcher ${shortId}`,
     };
+  }
+
+  // ============================================================================
+  // CROSS-INSTANCE FIRESTORE SYNC & TRANSACTIONAL REFERRAL HELPERS
+  // ============================================================================
+
+  private upsertCodeInSqlite(row: ReferralCodeRow): void {
+    try {
+      this.db
+        .prepare(
+          `INSERT INTO referral_codes (user_id, code, created_at) VALUES (?, ?, ?)
+           ON CONFLICT(user_id) DO UPDATE SET code = excluded.code`
+        )
+        .run(row.user_id, row.code, Number(row.created_at) || Date.now());
+    } catch {}
+  }
+
+  private upsertReferralInSqlite(row: ReferralRow): void {
+    try {
+      this.db
+        .prepare(
+          `INSERT INTO referrals (id, referrer_id, referred_user_id, status, created_at, qualified_at)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(referred_user_id) DO UPDATE SET
+             status = CASE
+               WHEN referrals.status = 'rewarded' THEN 'rewarded'
+               ELSE excluded.status
+             END,
+             qualified_at = COALESCE(referrals.qualified_at, excluded.qualified_at)`
+        )
+        .run(
+          row.id,
+          row.referrer_id,
+          row.referred_user_id,
+          row.status,
+          Number(row.created_at) || Date.now(),
+          row.qualified_at ?? null
+        );
+    } catch {}
+  }
+
+  private upsertRewardInSqlite(row: RewardLedgerRow): void {
+    try {
+      this.db
+        .prepare(
+          `INSERT OR IGNORE INTO rewards_ledger (id, user_id, amount, days, reason, referral_id, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(
+          row.id,
+          row.user_id,
+          Number(row.amount) || 0,
+          Number(row.days) || 0,
+          row.reason,
+          row.referral_id,
+          Number(row.created_at) || Date.now()
+        );
+    } catch {}
+  }
+
+  public async getOrCreateReferralCodeAsync(userId: string): Promise<string> {
+    const adapter = getServerFirestoreAdapter();
+    if (!adapter) {
+      return this.getOrCreateReferralCode(userId);
+    }
+    try {
+      const existing = await adapter.getDoc(SERVER_COLLECTIONS.REFERRAL_CODES, userId);
+      const canonical = ReferralDatabase.computeCanonicalCode(userId);
+      const code = typeof existing?.code === 'string' && existing.code.startsWith('zp_') ? canonical : canonical;
+      const row: ReferralCodeRow = {
+        user_id: userId,
+        code,
+        created_at: Number(existing?.created_at) || Date.now(),
+      };
+      if (!existing || existing.code !== code) {
+        await adapter.setDoc(SERVER_COLLECTIONS.REFERRAL_CODES, userId, row, true);
+      }
+      this.upsertCodeInSqlite(row);
+      return code;
+    } catch (err) {
+      logFirestoreSyncWarning('referralCodeAsync', err);
+      return this.getOrCreateReferralCode(userId);
+    }
+  }
+
+  public async findByCodeAsync(code: string): Promise<ReferralCodeRow | null> {
+    const cleanCode = String(code || '').trim();
+    if (!cleanCode) return null;
+    const local = this.findByCode(cleanCode);
+    if (local) return local;
+
+    const adapter = getServerFirestoreAdapter();
+    if (!adapter) return null;
+    try {
+      const matches = await adapter.queryWhere(SERVER_COLLECTIONS.REFERRAL_CODES, 'code', '==', cleanCode, 1);
+      if (matches.length > 0 && matches[0].data?.user_id) {
+        const row: ReferralCodeRow = {
+          user_id: String(matches[0].data.user_id),
+          code: String(matches[0].data.code),
+          created_at: Number(matches[0].data.created_at) || Date.now(),
+        };
+        this.upsertCodeInSqlite(row);
+        return row;
+      }
+    } catch (err) {
+      logFirestoreSyncWarning('referralFindCode', err);
+    }
+    return null;
+  }
+
+  public async validateCodeAsync(code: string, ip = '127.0.0.1') {
+    if (!checkRateLimit(validateIpRateLimits, ip, 30, 60 * 1000)) {
+      return { valid: false, reason: 'Rate limit exceeded. Please wait a moment.' };
+    }
+    const cleanCode = String(code || '').trim();
+    if (!cleanCode || !cleanCode.startsWith('zp_')) {
+      return { valid: false, reason: 'Invalid referral code format' };
+    }
+    const record = await this.findByCodeAsync(cleanCode);
+    if (!record) {
+      return { valid: false, reason: 'Referral code not found' };
+    }
+    const shortId = record.user_id.length > 8 ? record.user_id.slice(0, 6) : record.user_id;
+    return {
+      valid: true,
+      code: record.code,
+      referrerUid: record.user_id,
+      referrerName: `Researcher ${shortId}`,
+    };
+  }
+
+  public async claimReferralAsync(params: {
+    claimantUserId?: string;
+    claimantUid?: string;
+    claimantEmail?: string;
+    code: string;
+    accountCreatedAtMs?: number;
+    accountCreatedAt?: number;
+    ip?: string;
+    ipAddress?: string;
+  }) {
+    const adapter = getServerFirestoreAdapter();
+    if (!adapter) {
+      return this.claimReferral(params);
+    }
+
+    const claimantUserId = params.claimantUserId || params.claimantUid;
+    const code = params.code;
+    const accountCreatedAtMs = params.accountCreatedAtMs ?? params.accountCreatedAt;
+    const ip = params.ip || params.ipAddress || '127.0.0.1';
+
+    if (!claimantUserId) {
+      this.logClaimAttempt(null, code, ip, false, 'Unauthenticated');
+      return { success: false, claimed: false, status: 'failed' as const, error: 'Authentication required', statusCode: 401 };
+    }
+
+    const cleanCode = String(code || '').trim();
+    if (!cleanCode) {
+      this.logClaimAttempt(claimantUserId, code, ip, false, 'Empty code');
+      return { success: false, claimed: false, error: 'Referral code is required', statusCode: 400 };
+    }
+
+    if (!checkRateLimit(claimIpRateLimits, ip, 10, 5 * 60 * 1000)) {
+      this.logClaimAttempt(claimantUserId, cleanCode, ip, false, 'Rate limit exceeded');
+      return { success: false, claimed: false, error: 'Too many claim attempts. Please wait a few minutes.', statusCode: 429 };
+    }
+
+    const codeRecord = await this.findByCodeAsync(cleanCode);
+    if (!codeRecord) {
+      this.logClaimAttempt(claimantUserId, cleanCode, ip, false, 'Code not found');
+      return { success: false, claimed: false, error: 'Invalid or unknown referral code', statusCode: 404 };
+    }
+
+    if (codeRecord.user_id === claimantUserId) {
+      this.logClaimAttempt(claimantUserId, cleanCode, ip, false, 'Self-referral by user_id');
+      return {
+        success: false,
+        claimed: false,
+        status: 'failed' as const,
+        error: 'Self-referrals not permitted. You cannot claim your own referral code.',
+        errorCode: 'self_referral_not_allowed',
+        statusCode: 400,
+      };
+    }
+
+    if (accountCreatedAtMs && accountCreatedAtMs > 0) {
+      const MAX_CLAIM_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+      if (Date.now() - accountCreatedAtMs > MAX_CLAIM_WINDOW_MS) {
+        this.logClaimAttempt(claimantUserId, cleanCode, ip, false, 'Account older than 7 days');
+        return {
+          success: false,
+          claimed: false,
+          status: 'failed' as const,
+          error: 'Referral codes can only be claimed within 7 days of account creation',
+          errorCode: 'claim_window_expired',
+          statusCode: 400,
+        };
+      }
+    }
+
+    try {
+      const outcome = await adapter.runTransaction(async (tx) => {
+        const existingRef = await tx.get(SERVER_COLLECTIONS.REFERRALS, claimantUserId);
+        if (existingRef) {
+          if (existingRef.referrer_id === codeRecord.user_id) {
+            return {
+              kind: 'already_claimed' as const,
+              row: existingRef as ReferralRow,
+            };
+          }
+          return { kind: 'conflict' as const, row: existingRef as ReferralRow };
+        }
+
+        const newRef: ReferralRow = {
+          id: `ref_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
+          referrer_id: codeRecord.user_id,
+          referred_user_id: claimantUserId,
+          status: 'pending',
+          created_at: Date.now(),
+          qualified_at: null,
+        };
+        tx.set(SERVER_COLLECTIONS.REFERRALS, claimantUserId, newRef, false);
+        return { kind: 'claimed' as const, row: newRef };
+      });
+
+      if (outcome.kind === 'conflict') {
+        this.upsertReferralInSqlite(outcome.row);
+        this.logClaimAttempt(claimantUserId, cleanCode, ip, false, 'Already referred by another user');
+        return {
+          success: false,
+          claimed: false,
+          status: 'failed' as const,
+          error: 'This account has already been referred by another researcher',
+          errorCode: 'already_referred_by_another',
+          statusCode: 409,
+        };
+      }
+
+      this.upsertReferralInSqlite(outcome.row);
+      if (outcome.kind === 'already_claimed') {
+        this.logClaimAttempt(claimantUserId, cleanCode, ip, true, 'Idempotent duplicate claim');
+        return {
+          success: true,
+          claimed: true,
+          status: 'already_claimed' as const,
+          alreadyClaimed: true,
+          referrerUid: codeRecord.user_id,
+          referrerId: codeRecord.user_id,
+          statusCode: 200,
+        };
+      }
+
+      this.logClaimAttempt(claimantUserId, cleanCode, ip, true, 'Successfully claimed referral');
+      return {
+        success: true,
+        claimed: true,
+        status: 'claimed' as const,
+        referrerUid: codeRecord.user_id,
+        referrerId: codeRecord.user_id,
+        statusCode: 200,
+      };
+    } catch (err) {
+      logFirestoreSyncWarning('referralClaimTx', err);
+      return this.claimReferral(params);
+    }
+  }
+
+  public async qualifyReferralAsync(referredUserId: string): Promise<{
+    qualified: boolean;
+    rewarded: boolean;
+    rewardCredited?: boolean;
+    referrerId?: string;
+    referrerUid?: string;
+  }> {
+    const adapter = getServerFirestoreAdapter();
+    if (!adapter) {
+      return this.qualifyReferral(referredUserId);
+    }
+
+    try {
+      const outcome = await adapter.runTransaction(async (tx) => {
+        const ref = (await tx.get(SERVER_COLLECTIONS.REFERRALS, referredUserId)) as ReferralRow | null;
+        if (!ref || ref.status !== 'pending') {
+          return { qualified: false, rewarded: false, rewardCredited: false };
+        }
+
+        const now = Date.now();
+        const updatedRef: ReferralRow = {
+          ...ref,
+          status: 'rewarded',
+          qualified_at: now,
+        };
+        const referrerReward: RewardLedgerRow = {
+          id: `rew_referrer_${ref.id}`,
+          user_id: ref.referrer_id,
+          amount: 10,
+          days: 7,
+          reason: 'Referral Bonus: Invited researcher qualified',
+          referral_id: ref.id,
+          created_at: now,
+        };
+        const claimantReward: RewardLedgerRow = {
+          id: `rew_claimant_${ref.id}`,
+          user_id: ref.referred_user_id,
+          amount: 10,
+          days: 7,
+          reason: 'Welcome Referral Pass Bonus',
+          referral_id: `${ref.id}_claimant`,
+          created_at: now,
+        };
+
+        tx.set(SERVER_COLLECTIONS.REFERRALS, referredUserId, updatedRef, false);
+        tx.set(SERVER_COLLECTIONS.REFERRAL_REWARDS, referrerReward.id, referrerReward, false);
+        tx.set(SERVER_COLLECTIONS.REFERRAL_REWARDS, claimantReward.id, claimantReward, false);
+
+        return {
+          qualified: true,
+          rewarded: true,
+          rewardCredited: true,
+          referrerId: ref.referrer_id,
+          referrerUid: ref.referrer_id,
+          updatedRef,
+          referrerReward,
+          claimantReward,
+        };
+      });
+
+      if (outcome.qualified && (outcome as any).updatedRef) {
+        this.upsertReferralInSqlite((outcome as any).updatedRef);
+        this.upsertRewardInSqlite((outcome as any).referrerReward);
+        this.upsertRewardInSqlite((outcome as any).claimantReward);
+      }
+
+      return {
+        qualified: outcome.qualified,
+        rewarded: outcome.rewarded,
+        rewardCredited: outcome.rewardCredited,
+        referrerId: outcome.referrerId,
+        referrerUid: outcome.referrerUid,
+      };
+    } catch (err) {
+      logFirestoreSyncWarning('referralQualifyTx', err);
+      return this.qualifyReferral(referredUserId);
+    }
+  }
+
+  public async getReferralForUserAsync(referredUserId: string): Promise<ReferralRow | null> {
+    const adapter = getServerFirestoreAdapter();
+    if (adapter) {
+      try {
+        const remote = await adapter.getDoc(SERVER_COLLECTIONS.REFERRALS, referredUserId);
+        if (remote?.id && remote?.referrer_id) {
+          const row = remote as ReferralRow;
+          this.upsertReferralInSqlite(row);
+          return row;
+        }
+      } catch (err) {
+        logFirestoreSyncWarning('referralGetForUser', err);
+      }
+    }
+    return this.getReferralForUser(referredUserId);
+  }
+
+  public async getDashboardAsync(userId: string): Promise<ReferralDashboardData> {
+    await this.getOrCreateReferralCodeAsync(userId);
+    const adapter = getServerFirestoreAdapter();
+    if (adapter) {
+      try {
+        const [remoteReferrals, remoteRewards] = await Promise.all([
+          adapter.queryWhere(SERVER_COLLECTIONS.REFERRALS, 'referrer_id', '==', userId, 100),
+          adapter.queryWhere(SERVER_COLLECTIONS.REFERRAL_REWARDS, 'user_id', '==', userId, 100),
+        ]);
+        for (const r of remoteReferrals) {
+          if (r.data?.id && r.data?.referred_user_id) {
+            this.upsertReferralInSqlite(r.data as ReferralRow);
+          }
+        }
+        for (const rw of remoteRewards) {
+          if (rw.data?.id && rw.data?.user_id) {
+            this.upsertRewardInSqlite(rw.data as RewardLedgerRow);
+          }
+        }
+      } catch (err) {
+        logFirestoreSyncWarning('referralDashboardHydrate', err);
+      }
+    }
+    return this.getDashboard(userId);
   }
 }
 

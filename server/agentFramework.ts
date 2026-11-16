@@ -5,6 +5,14 @@ import { GoogleGenAI, Type } from '@google/genai';
 import { z } from 'zod';
 import { getEffectiveServerUserPlan } from './billingEngine';
 import { verifyChatQuotaBeforeExecution, recordServerQuotaConsumption } from './rateLimiter';
+import { sanitizeProviderIdentityLeak } from './prompts';
+import {
+  buildFallbackPhysicsSimulation,
+  createInitialCustomPhysicsState,
+  getDefaultCustomParams,
+  sanitizeCustomPhysicsSpec,
+  stepCustomPhysicsState,
+} from '../src/lib/physicsEngine';
 
 export type VaultThreadType = 'youtube' | 'web_link' | 'pdf' | 'image' | 'text';
 
@@ -466,6 +474,17 @@ export function setAgentLlmBridge(bridge: ChatCompletionBridge) {
   agentLlmBridge = bridge;
 }
 
+export type ImageSearchBridge = (
+  query: string,
+  limit?: number
+) => Promise<Array<{ title: string; imageUrl: string; thumbnailUrl?: string; source?: string; link?: string }>>;
+
+let agentImageSearchBridge: ImageSearchBridge | null = null;
+
+export function setAgentImageSearchBridge(bridge: ImageSearchBridge) {
+  agentImageSearchBridge = bridge;
+}
+
 export async function callAgentLlm(options: AgentLlmCallOptions): Promise<AgentLlmCallResult | null> {
   const timeoutMs = options.timeoutMs || 14000;
 
@@ -527,7 +546,7 @@ export async function callAgentLlm(options: AgentLlmCallOptions): Promise<AgentL
           model: provider.model,
           messages,
           temperature: 0.2,
-          max_tokens: 2048,
+          max_tokens: 3072,
         }),
         signal: controller.signal,
       });
@@ -4857,6 +4876,476 @@ Return ONLY valid JSON:
       return res.status(500).json({
         ok: false,
         error: err?.message || 'Could not extract code from tutorial.',
+      });
+    }
+  });
+
+  // 8. Concept Visualizer (Interactive layered SVG diagram nodes for DeepTutor Visualize)
+  app.post('/api/study/visualize', async (req: Request, res: Response) => {
+    try {
+      const topic = String(req.body?.topic || 'Core Physics & STEM Systems').trim().slice(0, 180);
+      const context = String(req.body?.context || '').trim().slice(0, 5000);
+
+      const prompt = `You are Kinich, a principal STEM educator building a domain-accurate conceptual flow diagram for "${topic}".
+${context ? `Reference Material:\n${context}` : ''}
+Rules:
+- Every node must name an authentic physical law, mathematical entity, or mechanism specific to "${topic}" (no generic textbook placeholders).
+- Keep titles concise (3-5 words max) and details sharp with units or equations when helpful (under 15 words).
+Return ONLY valid JSON:
+{
+  "nodes": [
+    {
+      "id": "n1",
+      "title": "Short node title",
+      "detail": "Concise mechanism, equation, or role",
+      "tier": 0
+    }
+  ]
+}
+Include 4 to 6 nodes ordered progressively from tier 0 (foundational inputs/axioms), tier 1 (governing laws/interactions), to tier 2 (equilibrium, conserved quantities, or measurable outcomes).`;
+
+      const llmRes = await callAgentLlm({ prompt, responseMimeType: 'application/json', timeoutMs: 12000 });
+      const parsed = llmRes?.text ? safeExtractJsonObject(llmRes.text) : null;
+
+      const nodes =
+        parsed && Array.isArray(parsed.nodes) && parsed.nodes.length >= 3
+          ? parsed.nodes.slice(0, 6).map((n: any, idx: number) => ({
+              id: String(n.id || `n_${idx + 1}`),
+              title: sanitizeProviderIdentityLeak(String(n.title || `Concept ${idx + 1}`), true).slice(0, 60),
+              detail: sanitizeProviderIdentityLeak(String(n.detail || 'Core conceptual stage'), true).slice(0, 120),
+              tier: Math.max(0, Math.min(2, Number(n.tier ?? Math.floor(idx / 2)))),
+            }))
+          : [
+              { id: 'n_1', title: `${topic} Axioms`, detail: 'System boundaries, conserved quantities, initial conditions', tier: 0 },
+              { id: 'n_2', title: 'State Variables', detail: 'Measurable degrees of freedom and units', tier: 0 },
+              { id: 'n_3', title: 'Governing Relation', detail: 'Differential or algebraic coupling law', tier: 1 },
+              { id: 'n_4', title: 'Dynamic Evolution', detail: 'Time-stepped rate of change & feedback', tier: 1 },
+              { id: 'n_5', title: 'Observable Prediction', detail: 'Test values, plots, and limiting cases', tier: 2 },
+            ];
+
+      return res.json({
+        ok: true,
+        topic,
+        nodes,
+      });
+    } catch (err: any) {
+      return res.status(500).json({
+        ok: false,
+        error: err?.message || 'Could not generate conceptual diagram.',
+      });
+    }
+  });
+
+  // 9. Deep Solve (Step-by-step STEM problem solver with dimensional checks)
+  app.post('/api/study/deep-solve', async (req: Request, res: Response) => {
+    try {
+      const problem = String(req.body?.problem || '').trim().slice(0, 4000);
+      const topic = String(req.body?.topic || 'STEM Problem Solving').trim().slice(0, 180);
+      const context = String(req.body?.context || '').trim().slice(0, 6000);
+
+      if (!problem) {
+        return res.status(400).json({ ok: false, error: 'Problem prompt is required.' });
+      }
+
+      const prompt = `You are Kinich, a master STEM professor running Deep Solve mode for "${topic}".
+Solve the student's problem with crystal clarity and rigor:
+1. **Given & Target**: List known quantities with exact SI units and state assumptions.
+2. **Governing Law**: State the exact physical law, theorem, or identity used and why it applies.
+3. **Symbolic Derivation**: Show every algebraic/calculus step cleanly using LaTeX ($...$ inline, $$...$$ display). Do not skip algebra.
+4. **Substitution & Dimensional Verification**: Plug in numbers, verify units cancel cleanly, and evaluate to appropriate significant figures.
+5. **Limiting Case & Final Answer**: Check one physical limiting case and present a clear **Final Answer** line.
+Never mention any AI provider or company name other than Kinich.
+
+${context ? `Study Material Context:\n${context}\n\n` : ''}Problem:\n${problem}`;
+
+      const llmRes = await callAgentLlm({ prompt, timeoutMs: 16000 });
+      const rawSolution = String(llmRes?.text || '').trim();
+
+      const fallbackSolution = `### Deep Solve Breakdown — ${topic}
+
+#### 1. Given Quantities & System Setup
+- **Problem Statement**: ${problem}
+- Identify all known initial conditions, constraints, and target output variable in SI units.
+
+#### 2. Governing Principles
+- Apply the foundational conservation or constitutive law governing **${topic}**.
+- Express the relationship symbolically before substituting numbers so scaling and units stay transparent.
+
+#### 3. Step-by-Step Derivation
+1. Isolate the target unknown on the left-hand side of the governing equation.
+2. Verify unit consistency across every additive term (dimensional homogeneity).
+3. Evaluate limiting behavior (boundary cases where key parameters approach zero or infinity).
+
+#### 4. Sanity Check & Final Verification
+- Confirm magnitude, sign, and SI units match physical intuition for **${topic}**.`;
+
+      const solution = sanitizeProviderIdentityLeak(rawSolution || fallbackSolution, true);
+
+      return res.json({
+        ok: true,
+        topic,
+        solution,
+      });
+    } catch (err: any) {
+      return res.status(500).json({
+        ok: false,
+        error: err?.message || 'Could not complete Deep Solve.',
+      });
+    }
+  });
+
+  // 10. Visual Whiteboard Tutor (Sketchd / whiteboard-ai-tutor style interactive visual lessons)
+  app.post('/api/study/sketch-lesson', async (req: Request, res: Response) => {
+    const startedAt = Date.now();
+    try {
+      const promptText = String(req.body?.prompt || req.body?.topic || '').trim().slice(0, 2000);
+      const topic = String(req.body?.topic || promptText || 'Visual Lesson').trim().slice(0, 180);
+      const history = Array.isArray(req.body?.history) ? req.body.history.slice(-6) : [];
+      const sketchNote = String(req.body?.sketchNote || '').trim().slice(0, 800);
+      const includeImages = req.body?.includeImages !== false;
+
+      if (!promptText) {
+        return res.status(400).json({ ok: false, error: 'A lesson prompt or topic is required.' });
+      }
+
+      const historyContext = history
+        .map((h: any) => `${h?.role === 'assistant' ? 'Tutor' : 'Student'}: ${String(h?.content || '').slice(0, 300)}`)
+        .join('\n');
+
+      const llmPrompt = `You are Kinich, a master visual whiteboard tutor creating high-craft drawn explanations on an 800x450 logical board. Never mention any AI provider or company name other than Kinich.
+Topic: "${topic}"
+User Request: "${promptText}"
+${historyContext ? `Prior Session Context:\n${historyContext}\n` : ''}${
+  sketchNote ? `Student drew/annotated on the whiteboard: ${sketchNote}\n` : ''
+}
+Pick the single best interactive moduleType from:
+- "geometry" (for triangles, Pythagorean theorem, circles, area proofs; fill "geometry" with a, b, formula)
+- "graph" (for physics trajectories, waves, calculus functions; fill "graph")
+- "vocab_match" (for language learning & flashcards; fill "vocabPairs" with 5-6 items: [{"id":"v1","source":"term","target":"translation","phonetic":"optional","example":"optional"}])
+- "gallery" (for history, cars, geography, art, monuments, or topics needing real photographs; set concise "imageQuery")
+- "whiteboard" (for math fractions, equations, systems, biology, circuits, code architecture)
+
+VISUAL DRAWING QUALITY RULES (CRITICAL):
+- Each step must have 5 to 10 crisp, well-spaced geometric primitives (NEVER a single generic box!).
+- Draw concrete visual models: e.g., for fractions draw equal-sized partitioned rectangles with shaded parts and a number line; for physics draw vectors, free-body boxes, curves, and labeled axes; for biology/systems draw multi-node flow arrows with equations and concise labels; for math proofs draw axes, tangent/secant lines, and highlighted terms.
+- Use clean monochrome/slate board palette ONLY (NEVER orange):
+  - Primary ink strokes / curves: "#f4f4f5"
+  - Secondary structural lines / axes: "#94a3b8"
+  - Soft fill / highlight bands: "rgba(148,163,184,0.16)" or "rgba(244,244,245,0.22)"
+- Keep all coordinates strictly inside x: 40..760, y: 35..415 without overlapping text.
+
+Return ONLY valid JSON:
+{
+  "title": "Concise lesson title",
+  "subject": "Subject name",
+  "moduleType": "whiteboard" | "geometry" | "graph" | "vocab_match" | "gallery",
+  "summary": "Clear 2-3 sentence conceptual overview without raw asterisks",
+  "imageQuery": "concise safe photo search query if photos help, or empty string",
+  "steps": [
+    {
+      "id": "s1",
+      "title": "Step title",
+      "explanation": "Clear 2-3 sentence explanation tying directly to the strokes drawn on the board",
+      "highlights": ["Concrete takeaway 1", "Concrete takeaway 2"],
+      "keyFormula": "Optional equation or notation",
+      "drawCommands": [
+        { "type": "highlight", "x": 60, "y": 40, "w": 680, "h": 48, "color": "rgba(148,163,184,0.14)" },
+        { "type": "text", "x": 80, "y": 72, "text": "Title on board", "size": 21, "bold": true, "color": "#f4f4f5" },
+        { "type": "rect", "x": 80, "y": 140, "w": 180, "h": 90, "label": "Part A", "stroke": "#f4f4f5", "fill": "rgba(244,244,245,0.14)" },
+        { "type": "rect", "x": 260, "y": 140, "w": 180, "h": 90, "label": "Part B", "stroke": "#94a3b8" },
+        { "type": "arrow", "x1": 460, "y1": 185, "x2": 545, "y2": 185, "label": "transforms", "color": "#f4f4f5" },
+        { "type": "circle", "cx": 630, "cy": 185, "r": 62, "label": "Result", "stroke": "#f4f4f5", "fill": "rgba(148,163,184,0.16)" }
+      ]
+    }
+  ],
+  "followUpSuggestions": ["Specific follow-up 1", "Specific follow-up 2", "Specific follow-up 3"],
+  "geometry": null,
+  "vocabPairs": null,
+  "graph": null
+}
+Generate 3 to 4 visual steps.`;
+
+      const shouldSearchPhotos =
+        includeImages &&
+        /\b(mustang|car|history|war|empire|rome|egypt|animal|bird|planet|galaxy|painting|artist|architecture|bridge|volcano|anatom|cell|photo|image|picture)\b/i.test(
+          `${topic} ${promptText}`
+        );
+
+      const [llmRes, initialPhotos] = await Promise.all([
+        callAgentLlm({ prompt: llmPrompt, responseMimeType: 'application/json', timeoutMs: 15000 }),
+        shouldSearchPhotos && agentImageSearchBridge
+          ? agentImageSearchBridge(`${topic} ${promptText}`.slice(0, 90), 4).catch(() => [])
+          : Promise.resolve([]),
+      ]);
+
+      const parsed = llmRes?.text ? safeExtractJsonObject(llmRes.text) : null;
+
+      let photos = Array.isArray(initialPhotos) ? initialPhotos : [];
+      const llmImageQuery = String(parsed?.imageQuery || '').trim();
+      if (includeImages && photos.length === 0 && llmImageQuery && agentImageSearchBridge) {
+        photos = await agentImageSearchBridge(llmImageQuery, 4).catch(() => []);
+      }
+
+      const normalizeStrokeHex = (raw: any, fallback: string): string => {
+        if (typeof raw !== 'string' || !raw.trim()) return fallback;
+        const low = raw.trim().toLowerCase();
+        if (low.includes('fc4c01') || low.includes('e04300') || low.includes('f97316') || low.includes('ea580c') || low.includes('252,76,1')) {
+          return fallback;
+        }
+        return raw;
+      };
+
+      const sanitizeDrawCommands = (cmds: any): any[] => {
+        if (!Array.isArray(cmds)) return [];
+        const valid: any[] = [];
+        for (const cmd of cmds.slice(0, 14)) {
+          if (!cmd || typeof cmd !== 'object') continue;
+          const t = String(cmd.type || '');
+          if (t === 'line' || t === 'arrow') {
+            valid.push({
+              type: t,
+              x1: Number(cmd.x1 ?? 100),
+              y1: Number(cmd.y1 ?? 200),
+              x2: Number(cmd.x2 ?? 300),
+              y2: Number(cmd.y2 ?? 200),
+              dashed: Boolean(cmd.dashed),
+              label: cmd.label ? sanitizeProviderIdentityLeak(String(cmd.label), true).slice(0, 40) : undefined,
+              color: normalizeStrokeHex(cmd.color, '#94a3b8'),
+              width: Number(cmd.width ?? 2.8),
+            });
+          } else if (t === 'rect' || t === 'highlight') {
+            valid.push({
+              type: t,
+              x: Number(cmd.x ?? 80),
+              y: Number(cmd.y ?? 80),
+              w: Math.max(16, Number(cmd.w ?? 160)),
+              h: Math.max(16, Number(cmd.h ?? 80)),
+              label: cmd.label ? sanitizeProviderIdentityLeak(String(cmd.label), true).slice(0, 44) : undefined,
+              stroke: normalizeStrokeHex(cmd.stroke, '#f4f4f5'),
+              fill: cmd.fill ? normalizeStrokeHex(cmd.fill, 'rgba(148,163,184,0.16)') : undefined,
+              color: normalizeStrokeHex(cmd.color, 'rgba(148,163,184,0.16)'),
+            });
+          } else if (t === 'circle') {
+            valid.push({
+              type: 'circle',
+              cx: Number(cmd.cx ?? 400),
+              cy: Number(cmd.cy ?? 225),
+              r: Math.max(6, Math.min(180, Number(cmd.r ?? 50))),
+              label: cmd.label ? sanitizeProviderIdentityLeak(String(cmd.label), true).slice(0, 36) : undefined,
+              stroke: normalizeStrokeHex(cmd.stroke, '#f4f4f5'),
+              fill: normalizeStrokeHex(cmd.fill, 'rgba(148,163,184,0.16)'),
+            });
+          } else if (t === 'text') {
+            valid.push({
+              type: 'text',
+              x: Number(cmd.x ?? 90),
+              y: Number(cmd.y ?? 90),
+              text: sanitizeProviderIdentityLeak(String(cmd.text || ''), true).slice(0, 72),
+              size: Math.max(12, Math.min(34, Number(cmd.size ?? 20))),
+              bold: Boolean(cmd.bold),
+              color: normalizeStrokeHex(cmd.color, '#f4f4f5'),
+            });
+          } else if (t === 'curve' && Array.isArray(cmd.points) && cmd.points.length >= 2) {
+            valid.push({
+              type: 'curve',
+              points: cmd.points.slice(0, 30).map((p: any) => [Number(p?.[0] ?? 0), Number(p?.[1] ?? 0)]),
+              color: normalizeStrokeHex(cmd.color, '#f4f4f5'),
+              width: Number(cmd.width ?? 3),
+              label: cmd.label ? sanitizeProviderIdentityLeak(String(cmd.label), true).slice(0, 40) : undefined,
+            });
+          }
+        }
+        return valid;
+      };
+
+      const parsedSteps =
+        parsed && Array.isArray(parsed.steps) && parsed.steps.length >= 1
+          ? parsed.steps.slice(0, 5).map((s: any, idx: number) => {
+              const cmds = sanitizeDrawCommands(s?.drawCommands);
+              return {
+                id: String(s?.id || `step_${idx + 1}`),
+                title: sanitizeProviderIdentityLeak(String(s?.title || `${idx + 1}. Visual Step`), true).slice(0, 90),
+                explanation: sanitizeProviderIdentityLeak(String(s?.explanation || ''), true).slice(0, 900),
+                highlights: Array.isArray(s?.highlights)
+                  ? s.highlights.slice(0, 4).map((h: any) => sanitizeProviderIdentityLeak(String(h), true).slice(0, 120))
+                  : [],
+                keyFormula: s?.keyFormula ? sanitizeProviderIdentityLeak(String(s.keyFormula), true).slice(0, 120) : undefined,
+                drawCommands:
+                  cmds.length > 0
+                    ? cmds
+                    : [
+                        { type: 'highlight', x: 60, y: 45, w: 680, h: 52, color: 'rgba(148,163,184,0.14)' },
+                        { type: 'text', x: 80, y: 78, text: sanitizeProviderIdentityLeak(String(s?.title || topic), true).slice(0, 48), size: 22, bold: true, color: '#f4f4f5' },
+                        { type: 'rect', x: 85, y: 155, w: 185, h: 110, stroke: '#94a3b8', fill: 'rgba(148,163,184,0.14)', label: 'Input State' },
+                        { type: 'arrow', x1: 280, y1: 210, x2: 365, y2: 210, label: 'applies', color: '#f4f4f5' },
+                        { type: 'rect', x: 375, y: 155, w: 185, h: 110, stroke: '#f4f4f5', fill: 'rgba(244,244,245,0.14)', label: 'Core Rule' },
+                        { type: 'arrow', x1: 570, y1: 210, x2: 620, y2: 210, color: '#94a3b8' },
+                        { type: 'circle', cx: 680, cy: 210, r: 54, stroke: '#f4f4f5', fill: 'rgba(148,163,184,0.16)', label: 'Outcome' },
+                      ],
+              };
+            })
+          : null;
+
+      const allowedModules = new Set(['whiteboard', 'geometry', 'graph', 'vocab_match', 'gallery']);
+      const moduleType =
+        parsed && allowedModules.has(String(parsed.moduleType))
+          ? String(parsed.moduleType)
+          : photos.length > 0
+          ? 'gallery'
+          : 'whiteboard';
+
+      const lesson = parsedSteps
+        ? {
+            id: `sketch_${Date.now()}`,
+            title: sanitizeProviderIdentityLeak(String(parsed.title || topic), true).slice(0, 120),
+            subject: sanitizeProviderIdentityLeak(String(parsed.subject || 'Visual Tutor'), true).slice(0, 60),
+            moduleType,
+            summary: sanitizeProviderIdentityLeak(
+              String(parsed.summary || `Interactive visual lesson for ${topic}.`),
+              true
+            ).slice(0, 360),
+            imageQuery: llmImageQuery || topic,
+            steps: parsedSteps,
+            geometry: parsed.geometry && typeof parsed.geometry === 'object' ? parsed.geometry : undefined,
+            vocabPairs: Array.isArray(parsed.vocabPairs)
+              ? parsed.vocabPairs
+                  .slice(0, 8)
+                  .map((p: any, idx: number) => {
+                    if (!p || typeof p !== 'object') return null;
+                    const source = String(p.source ?? p.term ?? p.word ?? p.front ?? p.question ?? '').trim();
+                    const target = String(p.target ?? p.translation ?? p.meaning ?? p.definition ?? p.back ?? p.answer ?? '').trim();
+                    if (!source || !target) return null;
+                    return {
+                      id: String(p.id || `vp_${idx + 1}`),
+                      source: sanitizeProviderIdentityLeak(source, true).slice(0, 80),
+                      target: sanitizeProviderIdentityLeak(target, true).slice(0, 80),
+                      phonetic: p.phonetic ? sanitizeProviderIdentityLeak(String(p.phonetic), true).slice(0, 60) : undefined,
+                      example: p.example ? sanitizeProviderIdentityLeak(String(p.example), true).slice(0, 140) : undefined,
+                    };
+                  })
+                  .filter(Boolean)
+              : undefined,
+            graph: parsed.graph && typeof parsed.graph === 'object' ? parsed.graph : undefined,
+            images: photos.slice(0, 4),
+            followUpSuggestions: Array.isArray(parsed.followUpSuggestions)
+              ? parsed.followUpSuggestions.slice(0, 3).map((q: any) => sanitizeProviderIdentityLeak(String(q), true))
+              : [
+                  `Go deeper on ${topic}`,
+                  `Quiz me visually on ${topic}`,
+                  `Show another angle or example`,
+                ],
+            generatedLatencyMs: Date.now() - startedAt,
+          }
+        : null;
+
+      return res.json({
+        ok: true,
+        lesson,
+        images: photos.slice(0, 4),
+        generatedLatencyMs: Date.now() - startedAt,
+      });
+    } catch (err: any) {
+      return res.status(500).json({
+        ok: false,
+        error: err?.message || 'Could not build visual whiteboard lesson.',
+      });
+    }
+  });
+
+  // 11. Physics Lab AI Simulation Generator (Prompt -> Validated 2D Custom Simulation Spec)
+  app.post('/api/study/physics-sim', async (req: Request, res: Response) => {
+    try {
+      const promptText = String(req.body?.prompt || '').trim().slice(0, 500);
+      const topic = String(req.body?.topic || promptText || '2D Physics Simulation').trim().slice(0, 180);
+      const context = String(req.body?.context || '').trim().slice(0, 3000);
+
+      if (!promptText) {
+        return res.status(400).json({ ok: false, error: 'Simulation prompt is required.' });
+      }
+
+      const simPrompt = `You are Kinich, a computational physics engine architect. Design an accurate, stable 2D numerical simulation for the user's request.
+User Request: "${promptText}"
+${topic && topic !== promptText ? `Topic Context: "${topic}"` : ''}
+${context ? `Study Notes:\n${context}\n` : ''}
+Expression Syntax Rules (STRICT — evaluated by a safe math parser):
+- Allowed operators: +  -  *  /  ^
+- Allowed functions: sin(), cos(), tan(), sqrt(), abs(), exp(), log(), ln(), sign(), min(a,b), max(a,b), pow(a,b), atan2(y,x), hypot(x,y)
+- Reserved dynamic state variables: x, y, vx, vy, r (sqrt(x^2+y^2)), v (sqrt(vx^2+vy^2)), t (seconds), pi, e
+- Custom slider parameters: define 2 to 4 parameters in "params" using alphanumeric keys (e.g. "g", "k", "m", "B", "theta", "v0", "drag") that do NOT collide with x, y, vx, vy, r, v, t, pi, e.
+- "initial": strings for { "x", "y", "vx", "vy" } evaluated using your slider parameter keys (NOT x/y/t).
+- "axExpr" and "ayExpr": acceleration formulas in world units/s^2 (stay numerically stable without dividing by zero — wrap denominators in max(..., 1)).
+- "peExpr": optional potential energy formula.
+- "renderStyle": one of "particle", "orbit", "pendulum_rod", "spring_block", "incline".
+  - Use "orbit" if attracting toward origin (0,0).
+  - Use "pendulum_rod" if tethered to origin (0,0).
+  - Use "spring_block" if oscillating around (0,0).
+  - Use "incline" if sliding down a ramp (set "inclineAngleDeg" to ramp angle 10..60 and "floorY": 0).
+  - Otherwise use "particle" (set "floorY": 0 and "restitution": 0..0.95 if it should bounce or hit the ground, else "floorY": null).
+- Keep initial coordinates and accelerations scaled within roughly [-25, 25] world units so motion stays clearly visible in a 2D viewport.
+
+Return ONLY valid JSON:
+{
+  "title": "Concise simulation title",
+  "formula": "Readable governing equation string",
+  "description": "1-2 sentence explanation of the physics model.",
+  "renderStyle": "particle",
+  "floorY": 0,
+  "restitution": 0.8,
+  "scaleHint": 12,
+  "params": [
+    { "key": "g", "label": "Gravity (g)", "unit": "m/s²", "min": 1, "max": 25, "step": 0.2, "defaultValue": 9.8 }
+  ],
+  "initial": { "x": "-5", "y": "8", "vx": "3", "vy": "0" },
+  "axExpr": "-drag * vx",
+  "ayExpr": "-g - drag * vy",
+  "peExpr": "g * max(0, y)"
+}`;
+
+      const llmRes = await callAgentLlm({
+        prompt: simPrompt,
+        responseMimeType: 'application/json',
+        timeoutMs: 14000,
+      });
+
+      const parsed = llmRes?.text ? safeExtractJsonObject(llmRes.text) : null;
+      let spec = sanitizeCustomPhysicsSpec(parsed, promptText.slice(0, 64));
+
+      // Verify numerical stability over several integration steps
+      if (spec) {
+        try {
+          const defaultParams = getDefaultCustomParams(spec);
+          let st = createInitialCustomPhysicsState(spec, defaultParams);
+          for (let i = 0; i < 8; i++) {
+            st = stepCustomPhysicsState(st, 0.02, spec, defaultParams);
+            if (!Number.isFinite(st.pos.x) || !Number.isFinite(st.pos.y) || Math.hypot(st.pos.x, st.pos.y) > 1e5) {
+              spec = null;
+              break;
+            }
+          }
+        } catch {
+          spec = null;
+        }
+      }
+
+      if (!spec) {
+        spec = buildFallbackPhysicsSimulation(promptText);
+      } else {
+        spec = {
+          ...spec,
+          id: `custom-${Date.now()}`,
+          title: sanitizeProviderIdentityLeak(spec.title, true),
+          description: sanitizeProviderIdentityLeak(spec.description, true),
+        };
+      }
+
+      return res.json({
+        ok: true,
+        spec,
+      });
+    } catch (err: any) {
+      return res.status(500).json({
+        ok: false,
+        error: err?.message || 'Could not generate physics simulation.',
       });
     }
   });

@@ -7,14 +7,21 @@ import type { PaymentMethodTypes } from 'dodopayments/resources/payments';
 import type { Express, Request, Response } from 'express';
 import {
   getAppBaseUrl,
+  getDataDir,
   getDodoPaymentsApiKey,
   getDodoPaymentsEnvironment,
   getDodoPaymentsWebhookKey,
   getDodoProductIds,
+  isTestRuntime as configIsTestRuntime,
   sanitizeErrorMessage,
   sendNormalizedError,
 } from './config';
 import { requireFirebaseAuth } from './auth';
+import {
+  getServerFirestoreAdapter,
+  logFirestoreSyncWarning,
+  SERVER_COLLECTIONS,
+} from './firestorePersistence';
 import {
   registerBillingEntitlementResolver,
   upgradeServerSubscriptionPlan,
@@ -355,7 +362,7 @@ export const PLAN_CATALOG: Record<
     plan: 'spark',
     interval: 'monthly',
     name: 'Kinich Spark (Monthly)',
-    description: 'Kinich Spark AI subscription — 1,500 daily messages, 250 daily uploads, and Spark models.',
+    description: 'Kinich Spark AI subscription — 1,500 daily messages, 250 daily uploads, Spark models & DeepSeek V4.1 Uncensored.',
     usdPriceCents: 300, // $3.00
     usdDisplay: '$3/month',
     inrPriceCents: 9900, // ₹99.00
@@ -451,11 +458,11 @@ export function formatMinorCurrencyAmount(minorUnits: number, currency: Currency
 }
 
 function isTestRuntime(): boolean {
-  return process.env.NODE_ENV === 'test' || process.env.VITEST === 'true';
+  return configIsTestRuntime();
 }
 
 // ============================================================================
-// SQLITE BILLING DATABASE ENGINE
+// SQLITE + FIRESTORE SHARED BILLING DATABASE ENGINE
 // ============================================================================
 
 let billingDb: Database.Database | null = null;
@@ -466,7 +473,7 @@ export function getBillingDb(): Database.Database {
   const isTest = isTestRuntime();
   let dbPath = ':memory:';
   if (!isTest) {
-    const dataDir = path.resolve(process.cwd(), 'data');
+    const dataDir = getDataDir();
     if (!fs.existsSync(dataDir)) {
       fs.mkdirSync(dataDir, { recursive: true });
     }
@@ -632,6 +639,384 @@ export function getEffectiveServerUserPlan(firebaseUid: string | null | undefine
 registerBillingEntitlementResolver(getEffectiveServerUserPlan);
 
 // ============================================================================
+// CROSS-INSTANCE FIRESTORE BILLING HYDRATION & WRITE-THROUGH SYNC
+// ============================================================================
+
+function mergeUserRecordIntoSqlite(db: Database.Database, row: Record<string, any>): void {
+  const uid = String(row.firebase_uid || '').trim();
+  if (!uid) return;
+  const local = db
+    .prepare('SELECT updated_at FROM users WHERE firebase_uid = ?')
+    .get(uid) as { updated_at?: string } | undefined;
+  const localMs = local?.updated_at ? Date.parse(local.updated_at) : 0;
+  const remoteMs = row.updated_at ? Date.parse(String(row.updated_at)) : 0;
+  if (local && !Number.isNaN(localMs) && !Number.isNaN(remoteMs) && localMs > remoteMs) {
+    return;
+  }
+
+  db.prepare(
+    `INSERT INTO users (
+      firebase_uid, email, name, plan, plan_interval, plan_status,
+      dodo_customer_id, dodo_subscription_id, current_period_end,
+      cancel_at_next_billing_date, billing_country, billing_currency,
+      dispute_flagged, first_purchase_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(firebase_uid) DO UPDATE SET
+      email = COALESCE(excluded.email, users.email),
+      name = COALESCE(excluded.name, users.name),
+      plan = excluded.plan,
+      plan_interval = excluded.plan_interval,
+      plan_status = excluded.plan_status,
+      dodo_customer_id = COALESCE(excluded.dodo_customer_id, users.dodo_customer_id),
+      dodo_subscription_id = COALESCE(excluded.dodo_subscription_id, users.dodo_subscription_id),
+      current_period_end = COALESCE(excluded.current_period_end, users.current_period_end),
+      cancel_at_next_billing_date = excluded.cancel_at_next_billing_date,
+      billing_country = COALESCE(excluded.billing_country, users.billing_country),
+      billing_currency = COALESCE(excluded.billing_currency, users.billing_currency),
+      dispute_flagged = MAX(users.dispute_flagged, excluded.dispute_flagged),
+      first_purchase_at = COALESCE(users.first_purchase_at, excluded.first_purchase_at),
+      updated_at = excluded.updated_at`
+  ).run(
+    uid,
+    row.email ?? null,
+    row.name ?? null,
+    row.plan || 'free',
+    row.plan_interval ?? null,
+    row.plan_status || 'none',
+    row.dodo_customer_id ?? null,
+    row.dodo_subscription_id ?? null,
+    row.current_period_end ?? null,
+    Number(row.cancel_at_next_billing_date ? 1 : 0),
+    row.billing_country || 'US',
+    row.billing_currency || 'USD',
+    Number(row.dispute_flagged ? 1 : 0),
+    row.first_purchase_at ?? null,
+    String(row.updated_at || new Date().toISOString())
+  );
+}
+
+function mergeSubscriptionIntoSqlite(db: Database.Database, row: Record<string, any>): void {
+  const subId = String(row.dodo_subscription_id || '').trim();
+  const uid = String(row.firebase_uid || '').trim();
+  if (!subId || !uid) return;
+  const local = db
+    .prepare('SELECT updated_at FROM subscriptions WHERE dodo_subscription_id = ?')
+    .get(subId) as { updated_at?: string } | undefined;
+  const localMs = local?.updated_at ? Date.parse(local.updated_at) : 0;
+  const remoteMs = row.updated_at ? Date.parse(String(row.updated_at)) : 0;
+  if (local && !Number.isNaN(localMs) && !Number.isNaN(remoteMs) && localMs > remoteMs) {
+    return;
+  }
+
+  db.prepare(
+    `INSERT INTO subscriptions (
+      dodo_subscription_id, firebase_uid, dodo_customer_id, product_id,
+      plan, interval, status, currency, amount,
+      next_billing_date, previous_billing_date, cancel_at_next_billing_date,
+      cancelled_at, last_event_timestamp, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(dodo_subscription_id) DO UPDATE SET
+      firebase_uid = excluded.firebase_uid,
+      dodo_customer_id = COALESCE(excluded.dodo_customer_id, subscriptions.dodo_customer_id),
+      product_id = excluded.product_id,
+      plan = excluded.plan,
+      interval = excluded.interval,
+      status = excluded.status,
+      currency = excluded.currency,
+      amount = excluded.amount,
+      next_billing_date = COALESCE(excluded.next_billing_date, subscriptions.next_billing_date),
+      previous_billing_date = COALESCE(excluded.previous_billing_date, subscriptions.previous_billing_date),
+      cancel_at_next_billing_date = excluded.cancel_at_next_billing_date,
+      cancelled_at = COALESCE(excluded.cancelled_at, subscriptions.cancelled_at),
+      last_event_timestamp = COALESCE(excluded.last_event_timestamp, subscriptions.last_event_timestamp),
+      updated_at = excluded.updated_at`
+  ).run(
+    subId,
+    uid,
+    row.dodo_customer_id ?? null,
+    String(row.product_id || `pdt_kinich_${row.plan || 'spark'}_${row.interval || 'monthly'}`),
+    row.plan || 'spark',
+    row.interval || 'monthly',
+    row.status || 'active',
+    row.currency || 'USD',
+    Number(row.amount || 0),
+    row.next_billing_date ?? null,
+    row.previous_billing_date ?? null,
+    Number(row.cancel_at_next_billing_date ? 1 : 0),
+    row.cancelled_at ?? null,
+    row.last_event_timestamp ?? null,
+    String(row.created_at || new Date().toISOString()),
+    String(row.updated_at || new Date().toISOString())
+  );
+}
+
+function mergePaymentIntoSqlite(db: Database.Database, row: Record<string, any>): void {
+  const payId = String(row.dodo_payment_id || '').trim();
+  if (!payId) return;
+  db.prepare(
+    `INSERT INTO payments (
+      dodo_payment_id, dodo_subscription_id, firebase_uid, amount, currency,
+      status, payment_method, payment_method_type, card_network, card_last_four,
+      invoice_id, invoice_url, error_code, error_message, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(dodo_payment_id) DO UPDATE SET
+      dodo_subscription_id = COALESCE(excluded.dodo_subscription_id, payments.dodo_subscription_id),
+      firebase_uid = CASE
+        WHEN excluded.firebase_uid != 'unknown' THEN excluded.firebase_uid
+        ELSE payments.firebase_uid
+      END,
+      status = excluded.status,
+      invoice_id = COALESCE(excluded.invoice_id, payments.invoice_id),
+      invoice_url = COALESCE(excluded.invoice_url, payments.invoice_url),
+      error_code = COALESCE(excluded.error_code, payments.error_code),
+      error_message = COALESCE(excluded.error_message, payments.error_message)`
+  ).run(
+    payId,
+    row.dodo_subscription_id ?? null,
+    String(row.firebase_uid || 'unknown'),
+    Number(row.amount || 0),
+    String(row.currency || 'USD'),
+    String(row.status || 'succeeded'),
+    row.payment_method ?? null,
+    row.payment_method_type ?? null,
+    row.card_network ?? null,
+    row.card_last_four ?? null,
+    row.invoice_id ?? null,
+    row.invoice_url ?? null,
+    row.error_code ?? null,
+    row.error_message ?? null,
+    String(row.created_at || new Date().toISOString())
+  );
+}
+
+function mergeRefundIntoSqlite(db: Database.Database, row: Record<string, any>): void {
+  const refundId = String(row.dodo_refund_id || '').trim();
+  if (!refundId) return;
+  db.prepare(
+    `INSERT INTO refunds (
+      dodo_refund_id, dodo_payment_id, firebase_uid, amount, currency, status, reason, is_partial, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(dodo_refund_id) DO UPDATE SET
+      firebase_uid = CASE
+        WHEN excluded.firebase_uid != 'unknown' THEN excluded.firebase_uid
+        ELSE refunds.firebase_uid
+      END,
+      status = excluded.status,
+      amount = excluded.amount,
+      reason = COALESCE(excluded.reason, refunds.reason)`
+  ).run(
+    refundId,
+    String(row.dodo_payment_id || 'unknown'),
+    String(row.firebase_uid || 'unknown'),
+    Number(row.amount || 0),
+    String(row.currency || 'USD'),
+    String(row.status || 'succeeded'),
+    row.reason ?? null,
+    Number(row.is_partial ? 1 : 0),
+    String(row.created_at || new Date().toISOString())
+  );
+}
+
+export async function ensureBillingUserHydrated(uid: string | null | undefined): Promise<void> {
+  if (!uid || uid === 'guest') return;
+  const adapter = getServerFirestoreAdapter();
+  if (!adapter) return;
+  const db = getBillingDb();
+
+  try {
+    const [remoteUser, remoteSubs, remotePayments, remoteRefunds] = await Promise.all([
+      adapter.getDoc(SERVER_COLLECTIONS.BILLING_USERS, uid),
+      adapter.queryWhere(SERVER_COLLECTIONS.BILLING_SUBSCRIPTIONS, 'firebase_uid', '==', uid, 10),
+      adapter.queryWhere(SERVER_COLLECTIONS.BILLING_PAYMENTS, 'firebase_uid', '==', uid, 20),
+      adapter.queryWhere(SERVER_COLLECTIONS.BILLING_REFUNDS, 'firebase_uid', '==', uid, 20),
+    ]);
+
+    const tx = db.transaction(() => {
+      if (remoteUser) mergeUserRecordIntoSqlite(db, remoteUser);
+      for (const s of remoteSubs) mergeSubscriptionIntoSqlite(db, s.data);
+      for (const p of remotePayments) mergePaymentIntoSqlite(db, p.data);
+      for (const r of remoteRefunds) mergeRefundIntoSqlite(db, r.data);
+    });
+    tx();
+  } catch (err) {
+    logFirestoreSyncWarning('billingHydrateUser', err);
+  }
+}
+
+export async function syncBillingUserToFirestore(uid: string): Promise<void> {
+  const adapter = getServerFirestoreAdapter();
+  if (!adapter || !uid) return;
+  const db = getBillingDb();
+  const row = db
+    .prepare('SELECT * FROM users WHERE firebase_uid = ?')
+    .get(uid) as UserBillingRecord | undefined;
+  if (!row) return;
+  try {
+    await adapter.setDoc(SERVER_COLLECTIONS.BILLING_USERS, uid, row, true);
+  } catch (err) {
+    logFirestoreSyncWarning('billingSyncUser', err);
+  }
+}
+
+export async function hydrateBillingWebhookContextFromFirestore(
+  webhookId: string,
+  eventData: any
+): Promise<void> {
+  const adapter = getServerFirestoreAdapter();
+  if (!adapter) return;
+  const db = getBillingDb();
+
+  try {
+    const safeWebhookId = String(webhookId || '').trim();
+    if (safeWebhookId) {
+      const remoteWh = await adapter.getDoc(SERVER_COLLECTIONS.BILLING_WEBHOOKS, safeWebhookId);
+      if (remoteWh?.webhook_id) {
+        db.prepare(
+          'INSERT OR IGNORE INTO processed_webhooks (webhook_id, event_type, processed_at) VALUES (?, ?, ?)'
+        ).run(
+          String(remoteWh.webhook_id),
+          String(remoteWh.event_type || 'unknown'),
+          String(remoteWh.processed_at || new Date().toISOString())
+        );
+        return;
+      }
+    }
+
+    const metaUid = String(
+      eventData?.metadata?.firebase_uid || eventData?.metadata?.uid || eventData?.metadata?.user_id || ''
+    ).trim();
+    const paymentId = String(eventData?.payment_id || eventData?.payment?.payment_id || '').trim();
+    const subId = String(eventData?.subscription_id || eventData?.subscription?.subscription_id || '').trim();
+    const customerId = String(eventData?.customer?.customer_id || eventData?.customer_id || '').trim();
+
+    if (paymentId) {
+      const payDoc = await adapter.getDoc(SERVER_COLLECTIONS.BILLING_PAYMENTS, paymentId);
+      if (payDoc) {
+        mergePaymentIntoSqlite(db, payDoc);
+        if (payDoc.firebase_uid && payDoc.firebase_uid !== 'unknown') {
+          await ensureBillingUserHydrated(String(payDoc.firebase_uid));
+        }
+      }
+    }
+    if (subId) {
+      const subDoc = await adapter.getDoc(SERVER_COLLECTIONS.BILLING_SUBSCRIPTIONS, subId);
+      if (subDoc) {
+        mergeSubscriptionIntoSqlite(db, subDoc);
+        if (subDoc.firebase_uid && subDoc.firebase_uid !== 'unknown') {
+          await ensureBillingUserHydrated(String(subDoc.firebase_uid));
+        }
+      }
+    }
+    if (metaUid && metaUid !== 'guest') {
+      await ensureBillingUserHydrated(metaUid);
+    }
+    if (customerId) {
+      const custUsers = await adapter.queryWhere(
+        SERVER_COLLECTIONS.BILLING_USERS,
+        'dodo_customer_id',
+        '==',
+        customerId,
+        1
+      );
+      for (const u of custUsers) {
+        if (u.data?.firebase_uid) {
+          await ensureBillingUserHydrated(String(u.data.firebase_uid));
+        }
+      }
+    }
+  } catch (err) {
+    logFirestoreSyncWarning('billingHydrateWebhook', err);
+  }
+}
+
+export async function syncBillingStateToFirestoreAfterMutation(params: {
+  uid?: string | null;
+  subscriptionId?: string | null;
+  paymentId?: string | null;
+  refundId?: string | null;
+  webhookId?: string | null;
+}): Promise<void> {
+  const adapter = getServerFirestoreAdapter();
+  if (!adapter) return;
+  const db = getBillingDb();
+  const writes: Array<Promise<void>> = [];
+
+  try {
+    if (params.uid) {
+      const userRow = db
+        .prepare('SELECT * FROM users WHERE firebase_uid = ?')
+        .get(params.uid) as Record<string, any> | undefined;
+      if (userRow) {
+        writes.push(adapter.setDoc(SERVER_COLLECTIONS.BILLING_USERS, params.uid, userRow, true));
+      }
+      const userSubs = db
+        .prepare('SELECT * FROM subscriptions WHERE firebase_uid = ? ORDER BY updated_at DESC LIMIT 5')
+        .all(params.uid) as Array<Record<string, any>>;
+      for (const s of userSubs) {
+        if (s.dodo_subscription_id) {
+          writes.push(
+            adapter.setDoc(
+              SERVER_COLLECTIONS.BILLING_SUBSCRIPTIONS,
+              String(s.dodo_subscription_id),
+              s,
+              true
+            )
+          );
+        }
+      }
+    }
+
+    if (params.subscriptionId) {
+      const subRow = db
+        .prepare('SELECT * FROM subscriptions WHERE dodo_subscription_id = ?')
+        .get(params.subscriptionId) as Record<string, any> | undefined;
+      if (subRow) {
+        writes.push(
+          adapter.setDoc(SERVER_COLLECTIONS.BILLING_SUBSCRIPTIONS, params.subscriptionId, subRow, true)
+        );
+      }
+    }
+
+    if (params.paymentId) {
+      const payRow = db
+        .prepare('SELECT * FROM payments WHERE dodo_payment_id = ?')
+        .get(params.paymentId) as Record<string, any> | undefined;
+      if (payRow) {
+        writes.push(
+          adapter.setDoc(SERVER_COLLECTIONS.BILLING_PAYMENTS, params.paymentId, payRow, true)
+        );
+      }
+    }
+
+    if (params.refundId) {
+      const refRow = db
+        .prepare('SELECT * FROM refunds WHERE dodo_refund_id = ?')
+        .get(params.refundId) as Record<string, any> | undefined;
+      if (refRow) {
+        writes.push(
+          adapter.setDoc(SERVER_COLLECTIONS.BILLING_REFUNDS, params.refundId, refRow, true)
+        );
+      }
+    }
+
+    if (params.webhookId) {
+      const whRow = db
+        .prepare('SELECT * FROM processed_webhooks WHERE webhook_id = ?')
+        .get(params.webhookId) as Record<string, any> | undefined;
+      if (whRow) {
+        writes.push(
+          adapter.setDoc(SERVER_COLLECTIONS.BILLING_WEBHOOKS, params.webhookId, whRow, true)
+        );
+      }
+    }
+
+    await Promise.all(writes);
+  } catch (err) {
+    logFirestoreSyncWarning('billingSyncMutation', err);
+  }
+}
+
+// ============================================================================
 // DODO PAYMENTS SDK CLIENT & PRODUCT AUTO-PROVISIONING
 // ============================================================================
 
@@ -670,6 +1055,9 @@ export function getDodoClient(): DodoPayments | null {
 
 function getProductsCacheFile(): string {
   const env = getDodoPaymentsEnvironment();
+  if ((process.env.DATA_DIR || process.env.KINICH_DATA_DIR || '').trim()) {
+    return path.join(getDataDir(), `dodo_${env}_products.json`);
+  }
   return path.resolve(process.cwd(), '.insta', `dodo_${env}_products.json`);
 }
 
@@ -740,6 +1128,21 @@ export async function resolveServerProductId(
   if (runtimeProductIds[key]) {
     return runtimeProductIds[key]!;
   }
+  const adapter = getServerFirestoreAdapter();
+  const envName = getDodoPaymentsEnvironment();
+  if (adapter) {
+    try {
+      const remoteProducts = await adapter.getDoc(
+        SERVER_COLLECTIONS.BILLING_META,
+        `products_${envName}`
+      );
+      if (remoteProducts && typeof remoteProducts[key] === 'string' && remoteProducts[key].startsWith('pdt_')) {
+        runtimeProductIds[key] = remoteProducts[key];
+        saveCachedProducts();
+        return runtimeProductIds[key]!;
+      }
+    } catch {}
+  }
 
   const client = getDodoClient();
   const spec = PLAN_CATALOG[key];
@@ -753,6 +1156,14 @@ export async function resolveServerProductId(
         if (pName === spec.name.toLowerCase() && p?.product_id) {
           runtimeProductIds[key] = String(p.product_id);
           saveCachedProducts();
+          if (adapter) {
+            void adapter.setDoc(
+              SERVER_COLLECTIONS.BILLING_META,
+              `products_${envName}`,
+              { [key]: runtimeProductIds[key] },
+              true
+            );
+          }
           return runtimeProductIds[key]!;
         }
       }
@@ -777,6 +1188,14 @@ export async function resolveServerProductId(
       if (created?.product_id) {
         runtimeProductIds[key] = String(created.product_id);
         saveCachedProducts();
+        if (adapter) {
+          void adapter.setDoc(
+            SERVER_COLLECTIONS.BILLING_META,
+            `products_${envName}`,
+            { [key]: runtimeProductIds[key] },
+            true
+          );
+        }
         return runtimeProductIds[key]!;
       }
     } catch (err) {
@@ -1658,7 +2077,7 @@ export function registerDodoBillingRoutes(app: Express): void {
   });
 
   // 3. POST /api/billing/country — Persist user's billing country
-  app.post('/api/billing/country', (req: Request, res: Response) => {
+  app.post('/api/billing/country', async (req: Request, res: Response) => {
     const country = normalizeCountryCode(req.body?.country, 'US');
     const countryInfo = getCountryInfo(country);
     const paymentMethods = getPaymentMethodsForCountry(country);
@@ -1671,6 +2090,7 @@ export function registerDodoBillingRoutes(app: Express): void {
     );
 
     if (req.auth?.uid) {
+      await ensureBillingUserHydrated(req.auth.uid);
       const db = getBillingDb();
       getOrCreateBillingUser(req.auth.uid, {
         email: req.auth.email || null,
@@ -1679,6 +2099,7 @@ export function registerDodoBillingRoutes(app: Express): void {
       db.prepare(
         'UPDATE users SET billing_country = ?, billing_currency = ?, updated_at = ? WHERE firebase_uid = ?'
       ).run(country, countryInfo.currency, new Date().toISOString(), req.auth.uid);
+      await syncBillingUserToFirestore(req.auth.uid);
     }
 
     return res.json({
@@ -1728,6 +2149,7 @@ export function registerDodoBillingRoutes(app: Express): void {
       const interval = rawInterval as BillingInterval;
       const uid = req.auth!.uid;
 
+      await ensureBillingUserHydrated(uid);
       const userRecord = getOrCreateBillingUser(uid, {
         email: req.auth!.email || req.body?.email || null,
         name: req.body?.name || null,
@@ -1745,6 +2167,7 @@ export function registerDodoBillingRoutes(app: Express): void {
       db.prepare(
         'UPDATE users SET billing_country = ?, billing_currency = ?, updated_at = ? WHERE firebase_uid = ?'
       ).run(country, countryInfo.currency, new Date().toISOString(), uid);
+      await syncBillingUserToFirestore(uid);
 
       // Server-authoritative product_id lookup (uses INR products when country === 'IN')
       const productId = await resolveServerProductId(plan, interval);
@@ -1845,6 +2268,7 @@ export function registerDodoBillingRoutes(app: Express): void {
       });
     }
 
+    await ensureBillingUserHydrated(uid);
     const db = getBillingDb();
     let user = getOrCreateBillingUser(uid, {
       email: req.auth?.email || null,
@@ -1981,6 +2405,9 @@ export function registerDodoBillingRoutes(app: Express): void {
   app.get('/api/billing/invoices', requireFirebaseAuth, async (req: Request, res: Response) => {
     try {
       const uid = req.auth?.uid;
+      if (uid) {
+        await ensureBillingUserHydrated(uid);
+      }
       const db = getBillingDb();
 
       let localPayments: any[] = [];
@@ -2023,6 +2450,7 @@ export function registerDodoBillingRoutes(app: Express): void {
       if (!client) {
         return sendNormalizedError(res, 503, 'billing/not-configured', 'Dodo Payments SDK not configured');
       }
+      await ensureBillingUserHydrated(req.auth!.uid);
       const user = getOrCreateBillingUser(req.auth!.uid, { email: req.auth!.email || null });
       if (!user.dodo_customer_id) {
         return sendNormalizedError(
@@ -2070,6 +2498,7 @@ export function registerDodoBillingRoutes(app: Express): void {
 
       const plan = rawPlan as PaidPlanId;
       const interval = rawInterval as BillingInterval;
+      await ensureBillingUserHydrated(req.auth!.uid);
       const user = getOrCreateBillingUser(req.auth!.uid, { email: req.auth!.email || null });
 
       if (!user.dodo_subscription_id) {
@@ -2114,6 +2543,7 @@ export function registerDodoBillingRoutes(app: Express): void {
         return sendNormalizedError(res, 503, 'billing/not-configured', 'Dodo Payments SDK not configured');
       }
 
+      await ensureBillingUserHydrated(req.auth!.uid);
       const user = getOrCreateBillingUser(req.auth!.uid, { email: req.auth!.email || null });
       if (!user.dodo_subscription_id) {
         return sendNormalizedError(
@@ -2153,6 +2583,7 @@ export function registerDodoBillingRoutes(app: Express): void {
       const restorePlan = req.body?.restorePlan === 'fire' ? 'fire' : 'spark';
       const cancelReason = String(req.body?.reason || 'cancelled_by_customer').trim();
       const uid = req.auth!.uid;
+      await ensureBillingUserHydrated(uid);
       const user = getOrCreateBillingUser(uid, { email: req.auth!.email || null });
 
       let updatedSub: any = null;
@@ -2224,6 +2655,10 @@ export function registerDodoBillingRoutes(app: Express): void {
 
       const eff = getEffectiveServerUserPlan(uid);
       upgradeServerSubscriptionPlan(req, eff.plan, eff.interval);
+      await syncBillingStateToFirestoreAfterMutation({
+        uid,
+        subscriptionId: user.dodo_subscription_id || null,
+      });
 
       const message = resume
         ? `Your ${newPlan.toUpperCase()} plan has been restored and auto-renewal is active.`
@@ -2257,6 +2692,7 @@ export function registerDodoBillingRoutes(app: Express): void {
   app.post('/api/billing/refund', requireFirebaseAuth, async (req: Request, res: Response) => {
     try {
       const uid = req.auth!.uid;
+      await ensureBillingUserHydrated(uid);
       const db = getBillingDb();
       const user = getOrCreateBillingUser(uid, { email: req.auth!.email || null });
       const requestedPaymentId = String(req.body?.payment_id || req.body?.paymentId || '').trim();
@@ -2389,6 +2825,12 @@ export function registerDodoBillingRoutes(app: Express): void {
       }
 
       const formattedRefundAmt = formatMinorCurrencyAmount(refundAmount, refundCurrency as Currency);
+      await syncBillingStateToFirestoreAfterMutation({
+        uid,
+        subscriptionId: user.dodo_subscription_id || null,
+        paymentId: targetPayment ? String(targetPayment.dodo_payment_id) : finalPaymentId,
+        refundId: finalRefundId,
+      });
 
       return res.json({
         success: true,
@@ -2419,6 +2861,7 @@ export function registerDodoBillingRoutes(app: Express): void {
   app.get('/api/billing/refunds', requireFirebaseAuth, async (req: Request, res: Response) => {
     try {
       const uid = req.auth!.uid;
+      await ensureBillingUserHydrated(uid);
       const db = getBillingDb();
       const localRefunds = db
         .prepare('SELECT * FROM refunds WHERE firebase_uid = ? ORDER BY created_at DESC LIMIT 20')
@@ -2439,7 +2882,7 @@ export function registerDodoBillingRoutes(app: Express): void {
   });
 
   // 10. POST /api/webhooks/dodo — Verified Dodo Webhook Endpoint (raw body signature verification)
-  const webhookHandler = (req: Request, res: Response) => {
+  const webhookHandler = async (req: Request, res: Response) => {
     try {
       const client = getDodoClient();
       if (!client) {
@@ -2486,7 +2929,19 @@ export function registerDodoBillingRoutes(app: Express): void {
         );
       }
 
+      await hydrateBillingWebhookContextFromFirestore(webhookId, unwrapped?.data);
       const outcome = processVerifiedDodoWebhookEvent(webhookId, unwrapped);
+
+      if (!outcome.duplicate) {
+        const wData = unwrapped?.data || {};
+        await syncBillingStateToFirestoreAfterMutation({
+          uid: outcome.uid,
+          subscriptionId: String(wData?.subscription_id || '').trim() || null,
+          paymentId: String(wData?.payment_id || wData?.payment?.payment_id || '').trim() || null,
+          refundId: String(wData?.refund_id || wData?.id || '').trim() || null,
+          webhookId,
+        });
+      }
 
       // Sync quota ledger if a user's plan changed
       if (outcome.uid && !outcome.duplicate && !outcome.outOfOrder) {

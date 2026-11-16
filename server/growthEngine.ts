@@ -1514,7 +1514,7 @@ export function registerGrowthEngineRoutes(app: Router): void {
   });
 
   // 9. Real Persistent Referral System Endpoints (GET /api/referral/me, GET /api/referral/validate/:code, POST /api/referral/claim)
-  app.get('/api/referral/me', (req: Request, res: Response) => {
+  app.get('/api/referral/me', async (req: Request, res: Response) => {
     const uid =
       req.auth?.uid ||
       (typeof req.headers['x-zeno-client-id'] === 'string' && req.headers['x-zeno-client-id'].trim().length > 0
@@ -1527,7 +1527,7 @@ export function registerGrowthEngineRoutes(app: Router): void {
 
     try {
       const db = getReferralDb();
-      const dashboard = db.getDashboard(uid);
+      const dashboard = await db.getDashboardAsync(uid);
       return res.json({
         success: true,
         code: dashboard.code,
@@ -1541,11 +1541,11 @@ export function registerGrowthEngineRoutes(app: Router): void {
     }
   });
 
-  app.get('/api/referral/validate/:code', (req: Request, res: Response) => {
+  app.get('/api/referral/validate/:code', async (req: Request, res: Response) => {
     const code = String(req.params.code || '').trim();
     try {
       const db = getReferralDb();
-      const result = db.validateCode(code, req.ip || '127.0.0.1');
+      const result = await db.validateCodeAsync(code, req.ip || '127.0.0.1');
       if (!result.valid) {
         return res.status(200).json({
           valid: false,
@@ -1563,7 +1563,7 @@ export function registerGrowthEngineRoutes(app: Router): void {
     }
   });
 
-  app.post('/api/referral/claim', (req: Request, res: Response) => {
+  app.post('/api/referral/claim', async (req: Request, res: Response) => {
     const claimantUid =
       req.auth?.uid ||
       (typeof req.body?.claimantUid === 'string' && req.body.claimantUid.trim().length > 0
@@ -1590,7 +1590,7 @@ export function registerGrowthEngineRoutes(app: Router): void {
 
     try {
       const db = getReferralDb();
-      const result = db.claimReferral({
+      const result = await db.claimReferralAsync({
         claimantUserId: claimantUid,
         claimantEmail: req.auth?.email,
         code,
@@ -1613,7 +1613,7 @@ export function registerGrowthEngineRoutes(app: Router): void {
   });
 
   // Backward compatibility routes for growth store
-  app.get('/api/growth/referrals/me', (req: Request, res: Response) => {
+  app.get('/api/growth/referrals/me', async (req: Request, res: Response) => {
     const uid =
       req.auth?.uid ||
       (typeof req.headers['x-zeno-client-id'] === 'string' && isValidSafeId(req.headers['x-zeno-client-id'], 64)
@@ -1622,8 +1622,8 @@ export function registerGrowthEngineRoutes(app: Router): void {
 
     try {
       const db = getReferralDb();
-      const dashboard = db.getDashboard(uid);
-      const claimedRef = db.getReferralForUser(uid);
+      const dashboard = await db.getDashboardAsync(uid);
+      const claimedRef = await db.getReferralForUserAsync(uid);
       return res.json({
         success: true,
         referralCode: dashboard.code,
@@ -1672,7 +1672,7 @@ export function registerGrowthEngineRoutes(app: Router): void {
     });
   });
 
-  app.post('/api/growth/referrals/claim', (req: Request, res: Response) => {
+  app.post('/api/growth/referrals/claim', async (req: Request, res: Response) => {
     const claimantUid =
       req.auth?.uid ||
       (typeof req.headers['x-zeno-client-id'] === 'string' && isValidSafeId(req.headers['x-zeno-client-id'], 64)
@@ -1697,7 +1697,7 @@ export function registerGrowthEngineRoutes(app: Router): void {
 
     try {
       const db = getReferralDb();
-      db.claimReferral({
+      await db.claimReferralAsync({
         claimantUserId: claimantUid,
         claimantEmail: req.auth?.email,
         code,

@@ -241,11 +241,7 @@ export const PublicArtifactView: React.FC<PublicArtifactViewProps> = ({
       }`}
     >
       {/* Top Bar — clean, non-overlapping on mobile and desktop */}
-      <div
-        className={`px-4 sm:px-6 py-3 border-b flex flex-wrap items-center justify-between gap-2.5 shrink-0 ${
-          isDark ? 'border-white/[0.08] bg-[#09090b]' : 'border-black/[0.08] bg-white'
-        }`}
-      >
+      <div className="px-4 sm:px-6 py-3 bg-transparent flex flex-wrap items-center justify-between gap-2.5 shrink-0">
         <div className="flex items-center gap-2 min-w-0">
           <button
             type="button"

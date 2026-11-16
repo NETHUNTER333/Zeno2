@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
+  ArrowLeft,
   CheckCircle2,
+  MessageSquare,
+  MoreVertical,
+  Send,
   Trash2,
   X,
 } from 'lucide-react';
@@ -23,24 +27,32 @@ import { KnowledgeVaultStore, VaultThreadStore } from '../lib/growthStore';
 import { extractTextFromPdfFile } from '../lib/pdfStudyEngine';
 import { StudyLanguageDropdown } from './CustomSearchSelect';
 import ErrorState from './ErrorState';
-import { MathMarkdown } from './MathMarkdown';
+import { MathMarkdown, MathText } from './MathMarkdown';
 
 interface StudyLoopPanelProps {
   isOpen?: boolean;
   onClose?: () => void;
+  onBack?: () => void;
+  standalone?: boolean;
+  pageTitle?: string;
   initialTab?: 'revision' | 'plan' | 'weak_spots' | 'upload' | 'snap_solve';
   embedded?: boolean;
   isDark?: boolean;
   onOpenPricing?: () => void;
+  onAskTutor?: (prompt: string, topicOverride?: string) => void;
 }
 
 export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
   isOpen = true,
   onClose,
+  onBack,
+  standalone = false,
+  pageTitle = 'Daily Recall',
   initialTab = 'revision',
   embedded = false,
   isDark: isDarkProp,
-  onOpenPricing,
+  onOpenPricing: _onOpenPricing,
+  onAskTutor,
 }) => {
   const [detectedDark, setDetectedDark] = useState<boolean>(() => {
     if (typeof isDarkProp === 'boolean') return isDarkProp;
@@ -96,6 +108,8 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
     UserAccountStore.getPreferredStudyLanguage()
   );
   const [isGuest, setIsGuest] = useState<boolean>(() => UserAccountStore.isGuest());
+  const [moreMenuOpen, setMoreMenuOpen] = useState<boolean>(false);
+  const [tutorDraft, setTutorDraft] = useState<string>('');
 
   // Add Exam Modal State
   const [showAddExamModal, setShowAddExamModal] = useState(false);
@@ -269,14 +283,23 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
     ? 'bg-black/40 border-white/[0.09]'
     : 'bg-white border-black/[0.08]';
   const inputClass = isDark
-    ? 'bg-black/40 border-white/[0.12] text-white placeholder:text-neutral-500 focus:border-[#FC4C01]'
-    : 'bg-white border-black/[0.12] text-neutral-900 placeholder:text-neutral-400 focus:border-[#FC4C01]';
+    ? 'bg-black/40 border-white/[0.12] text-white placeholder:text-neutral-500 focus:border-white/35'
+    : 'bg-white border-black/[0.12] text-neutral-900 placeholder:text-neutral-400 focus:border-black/35';
   const textPrimary = isDark ? 'text-neutral-100' : 'text-neutral-900';
   const textSecondary = isDark ? 'text-neutral-400' : 'text-neutral-500';
   const borderSubtle = isDark ? 'border-white/[0.08]' : 'border-black/[0.08]';
   const btnGhost = isDark
     ? 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.1] text-neutral-200'
     : 'bg-black/[0.03] hover:bg-black/[0.07] border-black/[0.1] text-neutral-700';
+  const primaryBtn = isDark
+    ? 'bg-white text-black hover:bg-neutral-200'
+    : 'bg-black text-white hover:bg-neutral-800';
+  const btnActive = isDark
+    ? 'bg-white text-black border-white font-semibold'
+    : 'bg-black text-white border-black font-semibold';
+  const surfaceSelected = isDark
+    ? 'bg-white/[0.05] border-white/25'
+    : 'bg-black/[0.04] border-black/25';
 
   const handleGradeCard = async (grade: RecallGrade) => {
     if (!activeCard) return;
@@ -698,17 +721,114 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
 
   if (!isOpen) return null;
 
-  const containerClass = embedded
+  const containerClass = standalone
+    ? 'min-h-full flex flex-col'
+    : embedded
     ? 'w-full'
-    : 'fixed inset-0 z-[120] flex items-center justify-center bg-black/75 backdrop-blur-md p-2 sm:p-4 overflow-y-auto';
+    : `fixed inset-0 z-[120] flex flex-col overflow-y-auto ${
+        isDark ? 'bg-[#09090b] text-white' : 'bg-[#ffffff] text-black'
+      }`;
 
-  const panelClass = embedded
+  const panelClass = standalone
+    ? `max-w-3xl w-full mx-auto px-4 sm:px-6 py-6 flex-1 flex flex-col`
+    : embedded
     ? `w-full rounded-2xl border overflow-hidden transition-colors ${surfaceOuter}`
-    : `w-full max-w-5xl rounded-2xl border overflow-hidden shadow-2xl max-h-[92vh] flex flex-col ${surfaceOuter}`;
+    : `w-full max-w-4xl mx-auto my-4 sm:my-8 rounded-2xl border overflow-hidden flex flex-col ${surfaceOuter}`;
+
+  const innerFrameClass = standalone
+    ? `w-full rounded-2xl border overflow-hidden flex flex-col ${surfaceOuter}`
+    : '';
 
   return (
     <div className={containerClass} data-testid="study-loop-panel">
+      {standalone && (
+        <header className="h-14 px-4 sm:px-6 bg-transparent flex items-center justify-between gap-3 shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            {onBack && (
+              <button
+                type="button"
+                onClick={onBack}
+                data-testid="study-feature-back-btn"
+                className={`h-8 px-3 rounded-full border text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0 ${btnGhost}`}
+              >
+                <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
+                <span>Back</span>
+              </button>
+            )}
+            <h1 className="text-sm sm:text-base font-semibold tracking-tight truncate">
+              {pageTitle}
+            </h1>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <span
+              className={`text-xs font-mono tabular-nums ${textSecondary}`}
+              data-testid="study-streak-counter"
+            >
+              {streak.currentStreak}d streak · {dailyReviewStats.reviewedToday}/{tierLimits.dailyRecallReviews}
+            </span>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setMoreMenuOpen((v) => !v)}
+                aria-label="Daily recall options"
+                data-testid="loop-more-menu-btn"
+                className={`size-8 rounded-full border inline-flex items-center justify-center transition-colors cursor-pointer ${btnGhost}`}
+              >
+                <MoreVertical className="w-3.5 h-3.5" />
+              </button>
+              {moreMenuOpen && (
+                <div
+                  className={`absolute right-0 top-full mt-1.5 w-48 rounded-xl border p-1.5 z-40 shadow-2xl ${
+                    isDark ? 'bg-[#18181b] border-white/[0.12] text-white' : 'bg-white border-black/[0.1] text-black'
+                  }`}
+                >
+                  {onAskTutor && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMoreMenuOpen(false);
+                        const ctx =
+                          activeTab === 'snap_solve' && snapQuestionText.trim()
+                            ? `Walk me step-by-step through this Snap & Solve question: "${snapQuestionText.trim()}"`
+                            : activeTab === 'upload' && activeStudyPack
+                            ? `Explain the key concepts and takeaways from "${activeStudyPack.title}".`
+                            : activeTab === 'weak_spots' && drillingChapter
+                            ? `Help me master my weak chapter "${drillingChapter}" with clear examples.`
+                            : `Coach me on my upcoming revision topic (${revisionSummary.nearestExam?.exam?.subject || 'Study Plan'}).`;
+                        const topicOverride =
+                          activeStudyPack?.title ||
+                          drillingChapter ||
+                          revisionSummary.nearestExam?.exam?.subject ||
+                          pageTitle;
+                        onAskTutor(ctx, topicOverride);
+                      }}
+                      className="w-full px-3 py-2 rounded-lg text-xs font-medium text-left flex items-center gap-2 hover:bg-current/5 cursor-pointer"
+                    >
+                      <MessageSquare className="w-3.5 h-3.5" />
+                      <span>Study Tutor</span>
+                    </button>
+                  )}
+                  {onBack && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMoreMenuOpen(false);
+                        onBack();
+                      }}
+                      className="w-full px-3 py-2 rounded-lg text-xs text-left flex items-center gap-2 hover:bg-current/5 cursor-pointer"
+                    >
+                      <ArrowLeft className="w-3.5 h-3.5" />
+                      <span>Back to Study Space</span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </header>
+      )}
       <div className={panelClass}>
+        <div className={innerFrameClass}>
         {/* Simple Header */}
         <div className={`px-4 py-3 sm:px-5 sm:py-3.5 border-b flex flex-col gap-2.5 ${surfaceHeader}`}>
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -718,8 +838,8 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
               </h2>
               <span className={`text-xs ${textSecondary}`}>·</span>
               <span
-                className="text-xs font-semibold text-[#FC4C01]"
-                data-testid="study-streak-counter"
+                className={`text-xs font-semibold ${textPrimary}`}
+                data-testid={standalone ? undefined : 'study-streak-counter'}
               >
                 {streak.currentStreak}d streak
               </span>
@@ -735,7 +855,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                   <span className={`text-xs hidden sm:inline ${textSecondary}`}>·</span>
                   <span
                     data-testid="exam-countdown-banner"
-                    className="text-xs font-semibold text-[#FC4C01]"
+                    className={`text-xs font-semibold ${textPrimary}`}
                   >
                     {revisionSummary.nearestExam.countdownLabel}
                   </span>
@@ -751,12 +871,12 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                   setExamFormError(null);
                   setShowAddExamModal(true);
                 }}
-                className="px-2.5 py-1 rounded-lg bg-[#FC4C01] hover:bg-[#e04300] text-white text-xs font-semibold transition cursor-pointer"
+                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${primaryBtn}`}
               >
                 + Add exam
               </button>
 
-              {onClose && !embedded && (
+              {onClose && !embedded && !standalone && (
                 <button
                   type="button"
                   onClick={onClose}
@@ -784,12 +904,8 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                   type="button"
                   data-testid={`study-loop-tab-${t.id}`}
                   onClick={() => setActiveTab(t.id as any)}
-                  className={`flex items-center justify-center px-2.5 py-1.5 rounded-xl text-xs font-medium transition cursor-pointer truncate ${
-                    isActive
-                      ? 'bg-[#FC4C01] text-white'
-                      : isDark
-                      ? 'bg-white/[0.04] text-neutral-300 hover:bg-white/[0.08] hover:text-white border border-white/[0.06]'
-                      : 'bg-white text-neutral-700 hover:bg-black/[0.04] hover:text-black border border-black/[0.07]'
+                  className={`flex items-center justify-center px-2.5 py-1.5 rounded-xl text-xs font-medium transition cursor-pointer truncate border ${
+                    isActive ? btnActive : btnGhost
                   }`}
                 >
                   <span className="truncate">{t.label}</span>
@@ -803,11 +919,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
         <div className="p-3.5 sm:p-5 overflow-y-auto flex-1 space-y-4">
           {isGuest && (
             <div
-              className={`flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-xl border text-xs ${
-                isDark
-                  ? 'bg-[#FC4C01]/10 border-[#FC4C01]/25 text-neutral-200'
-                  : 'bg-[#FC4C01]/[0.06] border-[#FC4C01]/25 text-neutral-800'
-              }`}
+              className={`flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-xl border text-xs ${surfaceSelected} ${textPrimary}`}
             >
               <span>
                 Guest mode preview — sign in to save your exams and SM-2 Recall deck to your Vault.
@@ -815,7 +927,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
               <button
                 type="button"
                 onClick={() => promptGuestSignInForVault('Sign in to keep this in your Vault')}
-                className="px-2.5 py-1 rounded-lg bg-[#FC4C01] text-white font-semibold hover:bg-[#e04300] transition cursor-pointer shrink-0"
+                className={`px-2.5 py-1 rounded-lg font-semibold transition cursor-pointer shrink-0 ${primaryBtn}`}
               >
                 Sign in
               </button>
@@ -875,9 +987,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                       type="button"
                       onClick={handleToggleWebPush}
                       className={`px-2 py-0.5 rounded-md text-[11px] font-medium border transition cursor-pointer ${
-                        streak.browserNotificationsEnabled
-                          ? 'bg-[#FC4C01]/15 border-[#FC4C01]/40 text-[#FC4C01]'
-                          : btnGhost
+                        streak.browserNotificationsEnabled ? btnActive : btnGhost
                       }`}
                     >
                       {streak.browserNotificationsEnabled ? 'Push On' : 'Push'}
@@ -906,7 +1016,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                   className={`rounded-xl border p-3.5 space-y-2.5 ${surfaceInner}`}
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-[#FC4C01]">
+                    <span className={`text-xs font-bold ${textPrimary}`}>
                       New Flashcard in Recall (SM-2)
                     </span>
                     <button
@@ -945,7 +1055,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                     />
                     <button
                       type="submit"
-                      className="px-3.5 py-1.5 rounded-lg bg-[#FC4C01] text-white text-xs font-semibold hover:bg-[#e04300] transition cursor-pointer"
+                      className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${primaryBtn}`}
                     >
                       Save Card
                     </button>
@@ -954,17 +1064,8 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
               )}
 
               {revisionBannerMsg && (
-                <div className="p-3 rounded-xl bg-[#FC4C01]/10 border border-[#FC4C01]/30 text-xs flex items-center justify-between gap-2">
+                <div className={`p-3 rounded-xl border text-xs flex items-center justify-between gap-2 ${surfaceSelected}`}>
                   <span className={textPrimary}>{revisionBannerMsg}</span>
-                  {planTier === 'free' && onOpenPricing && (
-                    <button
-                      type="button"
-                      onClick={onOpenPricing}
-                      className="px-3 py-1 rounded-lg bg-[#FC4C01] text-white font-semibold shrink-0 cursor-pointer"
-                    >
-                      Upgrade Tier
-                    </button>
-                  )}
                 </div>
               )}
 
@@ -975,7 +1076,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                 >
                   <div className={`flex flex-wrap items-center justify-between gap-2 text-xs ${textSecondary}`}>
                     <div className="flex items-center gap-2">
-                      <span className="font-semibold text-[#FC4C01]">
+                      <span className={`font-semibold ${textPrimary}`}>
                         {activeCard.subject} → {activeCard.chapter}
                       </span>
                       {activeCard.pageOrTimestamp && (
@@ -998,9 +1099,9 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                     <div className={`text-[11px] uppercase tracking-wider mb-1 font-semibold ${textSecondary}`}>
                       {activeCard.type === 'quiz' ? 'Active Recall Quiz' : 'Recall Prompt'}
                     </div>
-                    <p className={`text-sm sm:text-base font-semibold leading-relaxed ${textPrimary}`}>
-                      {activeCard.front}
-                    </p>
+                    <div className={`text-sm sm:text-base font-semibold leading-relaxed ${textPrimary}`}>
+                      <MathMarkdown content={activeCard.front} isDark={isDark} inline autoDetectLatex />
+                    </div>
                   </div>
 
                   {/* If Quiz Card with Options */}
@@ -1035,7 +1136,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                               <span className="font-mono font-bold mr-2">
                                 {String.fromCharCode(65 + idx)}.
                               </span>
-                              {opt}
+                              <MathText text={opt} />
                             </button>
                           );
                         })}
@@ -1054,15 +1155,17 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                     </button>
                   ) : (
                     <div className={`space-y-3.5 pt-3 border-t ${borderSubtle}`}>
-                      <div className={`p-3.5 rounded-xl border border-[#FC4C01]/30 bg-[#FC4C01]/[0.06]`}>
-                        <div className="text-[11px] uppercase tracking-wider text-[#FC4C01] font-semibold mb-1">
+                      <div className={`p-3.5 rounded-xl border ${surfaceSelected}`}>
+                        <div className={`text-[11px] uppercase tracking-wider font-semibold mb-1 ${textPrimary}`}>
                           Verified Answer
                         </div>
-                        <p className={`text-xs sm:text-sm leading-relaxed ${textPrimary}`}>
-                          {activeCard.back}
-                        </p>
+                        <div className={`text-xs sm:text-sm leading-relaxed ${textPrimary}`}>
+                          <MathMarkdown content={activeCard.back} isDark={isDark} inline autoDetectLatex />
+                        </div>
                         {activeCard.explanation && (
-                          <p className={`text-xs mt-1.5 ${textSecondary}`}>{activeCard.explanation}</p>
+                          <div className={`text-xs mt-1.5 ${textSecondary}`}>
+                            <MathMarkdown content={activeCard.explanation} isDark={isDark} inline autoDetectLatex />
+                          </div>
                         )}
                       </div>
 
@@ -1080,9 +1183,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                               data-testid={`grade-${g}-btn`}
                               onClick={() => handleGradeCard(g)}
                               className={`px-4 py-1.5 rounded-full border text-xs font-medium transition cursor-pointer ${
-                                isSelected
-                                  ? 'bg-[#FC4C01] text-white border-[#FC4C01]'
-                                  : btnGhost
+                                isSelected ? btnActive : btnGhost
                               }`}
                             >
                               {label}
@@ -1124,7 +1225,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowAddExamModal(true)}
-                  className="px-3 py-1.5 rounded-xl bg-[#FC4C01] text-white text-xs font-semibold hover:bg-[#e04300] transition cursor-pointer"
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer ${primaryBtn}`}
                 >
                   + Add exam ({exams.length}/{tierLimits.maxExams})
                 </button>
@@ -1146,7 +1247,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                       <div>
                         <div className="flex items-center gap-2">
                           <h4 className={`text-sm sm:text-base font-bold ${textPrimary}`}>{exam.name}</h4>
-                          <span className="text-xs font-semibold text-[#FC4C01]">
+                          <span className={`text-xs font-semibold ${textSecondary}`}>
                             · {daysLeft === 0 ? 'Exam Today' : `in ${daysLeft} day${daysLeft === 1 ? '' : 's'}`}
                           </span>
                         </div>
@@ -1192,7 +1293,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                             key={day.dateIst}
                             className={`flex items-center justify-between gap-3 p-3 rounded-xl border transition ${
                               day.isFullRevision
-                                ? 'bg-[#FC4C01]/[0.07] border-[#FC4C01]/35'
+                                ? surfaceSelected
                                 : isToday
                                 ? isDark
                                   ? 'bg-white/[0.05] border-white/20'
@@ -1212,10 +1313,12 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                                 }}
                                 className={`mt-0.5 w-5 h-5 rounded-md border flex items-center justify-center transition cursor-pointer ${
                                   day.completed
-                                    ? 'bg-[#FC4C01] border-[#FC4C01] text-white'
+                                    ? isDark
+                                      ? 'bg-white border-white text-black'
+                                      : 'bg-black border-black text-white'
                                     : isDark
-                                    ? 'border-white/25 text-transparent hover:border-[#FC4C01]'
-                                    : 'border-black/25 text-transparent hover:border-[#FC4C01]'
+                                    ? 'border-white/25 text-transparent hover:border-white'
+                                    : 'border-black/25 text-transparent hover:border-black'
                                 }`}
                               >
                                 <CheckCircle2 className="w-3.5 h-3.5" />
@@ -1226,12 +1329,12 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                                     Day {day.dayNumber} · {day.dateIst}
                                   </span>
                                   {isToday && (
-                                    <span className="text-[10px] font-bold uppercase text-[#FC4C01]">
+                                    <span className={`text-[10px] font-bold uppercase ${textPrimary}`}>
                                       · Today (IST)
                                     </span>
                                   )}
                                   {day.isFullRevision && (
-                                    <span className="text-[10px] font-bold uppercase text-[#FC4C01]">
+                                    <span className={`text-[10px] font-bold uppercase ${textSecondary}`}>
                                       · Last 2 Days: Full Revision
                                     </span>
                                   )}
@@ -1280,7 +1383,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                             ws.percentCorrect < 60
                               ? 'text-rose-500'
                               : ws.percentCorrect < 80
-                              ? 'text-amber-500'
+                              ? textPrimary
                               : 'text-emerald-500'
                           }`}
                         >
@@ -1290,7 +1393,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                       <h4 className={`text-sm font-bold mt-0.5 ${textPrimary}`}>{ws.chapter}</h4>
                       <div className={`w-full h-1.5 rounded-full overflow-hidden mt-2 ${isDark ? 'bg-white/10' : 'bg-black/10'}`}>
                         <div
-                          className="h-full bg-[#FC4C01] transition-all"
+                          className={`h-full transition-all ${isDark ? 'bg-white' : 'bg-black'}`}
                           style={{ width: `${Math.max(8, ws.percentCorrect)}%` }}
                         />
                       </div>
@@ -1307,7 +1410,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                       data-testid="practice-weak-topic-btn"
                       onClick={() => handlePracticeWeakTopic(ws.chapter, ws.subject)}
                       disabled={drillLoading && drillingChapter === ws.chapter}
-                      className="w-full py-2 px-3 rounded-lg bg-[#FC4C01]/12 hover:bg-[#FC4C01] text-[#FC4C01] hover:text-white border border-[#FC4C01]/30 text-xs font-semibold transition cursor-pointer"
+                      className={`w-full py-2 px-3 rounded-lg border text-xs font-semibold transition cursor-pointer ${btnGhost}`}
                     >
                       {drillLoading && drillingChapter === ws.chapter
                         ? 'Generating 5 questions...'
@@ -1324,7 +1427,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                 >
                   <div className="flex items-center justify-between gap-2">
                     <div>
-                      <span className="text-[11px] uppercase tracking-wider text-[#FC4C01] font-bold">
+                      <span className={`text-[11px] uppercase tracking-wider font-bold ${textSecondary}`}>
                         Targeted 5-Question Drill
                       </span>
                       <h4 className={`text-sm sm:text-base font-bold ${textPrimary}`}>{drillingChapter}</h4>
@@ -1357,7 +1460,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                             className={`p-3.5 rounded-xl border space-y-2 ${surfaceElevated}`}
                           >
                             <div className={`text-xs sm:text-sm font-semibold ${textPrimary}`}>
-                              {qIdx + 1}. {q.question}
+                              {qIdx + 1}. <MathText text={q.question} />
                             </div>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                               {q.options.map((opt, oIdx) => {
@@ -1386,15 +1489,17 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                                     <span className="font-mono font-bold mr-1.5">
                                       {String.fromCharCode(65 + oIdx)}.
                                     </span>
-                                    {opt}
+                                    <MathText text={opt} />
                                   </button>
                                 );
                               })}
                             </div>
                             {chosen !== undefined && (
                               <div className={`text-xs p-2.5 rounded-lg border ${surfaceInner}`}>
-                                <strong className="text-[#FC4C01]">Explanation:</strong>{' '}
-                                <span className={textPrimary}>{q.explanation}</span>
+                                <strong className={textPrimary}>Explanation:</strong>{' '}
+                                <span className={textPrimary}>
+                                  <MathText text={q.explanation} />
+                                </span>
                               </div>
                             )}
                           </div>
@@ -1423,10 +1528,8 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                       key={m}
                       type="button"
                       onClick={() => setUploadMode(m)}
-                      className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
-                        uploadMode === m
-                          ? 'bg-[#FC4C01] text-white'
-                          : btnGhost
+                      className={`px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition cursor-pointer ${
+                        uploadMode === m ? btnActive : btnGhost
                       }`}
                     >
                       {m === 'pdf' ? 'PDF' : m === 'image' ? 'Image OCR' : 'Paste Text'}
@@ -1436,7 +1539,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
               </div>
 
               {uploadMode === 'pdf' && (
-                <div className={`p-5 rounded-xl border border-dashed border-[#FC4C01]/40 text-center space-y-2.5 ${surfaceInner}`}>
+                <div className={`p-5 rounded-xl border border-dashed text-center space-y-2.5 ${borderSubtle} ${surfaceInner}`}>
                   <div className={`text-xs sm:text-sm font-semibold ${textPrimary}`}>
                     Select a PDF (up to {tierLimits.pdfMaxPages} pages)
                   </div>
@@ -1454,7 +1557,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                     type="button"
                     onClick={() => pdfInputRef.current?.click()}
                     disabled={uploadLoading}
-                    className="px-4 py-2 rounded-xl bg-[#FC4C01] text-white text-xs font-semibold hover:bg-[#e04300] transition cursor-pointer"
+                    className={`px-4 py-2 rounded-xl text-xs font-semibold transition cursor-pointer ${primaryBtn}`}
                   >
                     {uploadLoading ? 'Analyzing PDF Pages...' : 'Choose PDF File'}
                   </button>
@@ -1462,7 +1565,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
               )}
 
               {uploadMode === 'image' && (
-                <div className={`p-5 rounded-xl border border-dashed border-[#FC4C01]/40 text-center space-y-2.5 ${surfaceInner}`}>
+                <div className={`p-5 rounded-xl border border-dashed text-center space-y-2.5 ${borderSubtle} ${surfaceInner}`}>
                   <div className={`text-xs sm:text-sm font-semibold ${textPrimary}`}>
                     Upload Photo of Notes or Textbook Page
                   </div>
@@ -1480,7 +1583,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                     type="button"
                     onClick={() => imageInputRef.current?.click()}
                     disabled={uploadLoading}
-                    className="px-4 py-2 rounded-xl bg-[#FC4C01] text-white text-xs font-semibold hover:bg-[#e04300] transition cursor-pointer"
+                    className={`px-4 py-2 rounded-xl text-xs font-semibold transition cursor-pointer ${primaryBtn}`}
                   >
                     {uploadLoading ? 'Running Vision OCR...' : 'Upload Notes Photo'}
                   </button>
@@ -1510,7 +1613,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                   <button
                     type="submit"
                     disabled={uploadLoading}
-                    className="px-4 py-2 rounded-xl bg-[#FC4C01] text-white text-xs font-semibold hover:bg-[#e04300] transition cursor-pointer"
+                    className={`px-4 py-2 rounded-xl text-xs font-semibold transition cursor-pointer ${primaryBtn}`}
                   >
                     {uploadLoading
                       ? 'Generating Summary, Quiz & Flashcards...'
@@ -1538,7 +1641,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
                         <h4 className={`text-sm sm:text-base font-bold ${textPrimary}`}>{activeStudyPack.title}</h4>
-                        <span className="text-xs font-semibold text-[#FC4C01]">
+                        <span className={`text-xs font-semibold ${textSecondary}`}>
                           · {activeStudyPack.subject} → {activeStudyPack.chapter}
                         </span>
                       </div>
@@ -1573,7 +1676,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                         type="button"
                         data-testid="add-pack-to-recall-btn"
                         onClick={() => handleAddPackToRecall(activeStudyPack)}
-                        className="px-3 py-1.5 rounded-lg bg-[#FC4C01] hover:bg-[#e04300] text-white text-xs font-semibold transition cursor-pointer"
+                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${primaryBtn}`}
                       >
                         + Add to Recall
                       </button>
@@ -1581,28 +1684,19 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                   </div>
 
                   {(audioScriptPreview || audioInfoMsg) && (
-                    <div className={`p-3 rounded-xl border border-[#FC4C01]/30 space-y-1.5 text-xs ${surfaceElevated}`}>
+                    <div className={`p-3 rounded-xl border space-y-1.5 text-xs ${surfaceSelected}`}>
                       <div className="flex items-center justify-between">
-                        <span className="font-semibold text-[#FC4C01]">
+                        <span className={`font-semibold ${textPrimary}`}>
                           Audio Recap ({language}){' '}
-                          {audioIsPreviewTier ? '· Free Tier 30s Preview' : '· Full Playback'}
+                          {audioIsPreviewTier ? '· 30s Preview' : '· Full Playback'}
                         </span>
-                        {audioIsPreviewTier && onOpenPricing && (
-                          <button
-                            type="button"
-                            onClick={onOpenPricing}
-                            className="text-[11px] font-semibold text-[#FC4C01] underline cursor-pointer"
-                          >
-                            Unlock Full Recap on Spark
-                          </button>
-                        )}
                       </div>
                       {audioScriptPreview && (
                         <p className={`leading-relaxed line-clamp-3 ${textPrimary}`}>
                           {audioScriptPreview}
                         </p>
                       )}
-                      {audioInfoMsg && <p className="text-[#FC4C01]">{audioInfoMsg}</p>}
+                      {audioInfoMsg && <p className={textSecondary}>{audioInfoMsg}</p>}
                     </div>
                   )}
 
@@ -1624,7 +1718,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                       <button
                         type="button"
                         onClick={() => handleExplainPackSummary(language)}
-                        className="px-2.5 py-1 rounded bg-[#FC4C01] text-white font-semibold"
+                        className={`px-2.5 py-1 rounded font-semibold ${primaryBtn}`}
                       >
                         Retry
                       </button>
@@ -1644,10 +1738,8 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                         key={st.id}
                         type="button"
                         onClick={() => setPackSubTab(st.id as any)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
-                          packSubTab === st.id
-                            ? 'bg-[#FC4C01] text-white'
-                            : btnGhost
+                        className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition cursor-pointer ${
+                          packSubTab === st.id ? btnActive : btnGhost
                         }`}
                       >
                         {st.label}
@@ -1658,8 +1750,8 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                   {packSubTab === 'summary' && (
                     <div className="space-y-2.5">
                       {packTranslatedSummary && (
-                        <div className={`p-3.5 rounded-xl border border-[#FC4C01]/30 text-xs whitespace-pre-wrap leading-relaxed ${surfaceElevated}`}>
-                          {packTranslatedSummary}
+                        <div className={`p-3.5 rounded-xl border text-xs leading-relaxed ${surfaceSelected}`}>
+                          <MathMarkdown content={packTranslatedSummary} isDark={isDark} autoDetectLatex />
                         </div>
                       )}
                       {activeStudyPack.summaryBullets.map((b, i) => (
@@ -1667,10 +1759,10 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                           key={i}
                           className={`flex items-start justify-between gap-3 p-3 rounded-xl border ${surfaceElevated}`}
                         >
-                          <p className={`text-xs sm:text-sm leading-relaxed ${textPrimary}`}>
-                            {b.text}
-                          </p>
-                          <span className="text-[11px] font-mono font-semibold text-[#FC4C01] shrink-0">
+                          <div className={`text-xs sm:text-sm leading-relaxed ${textPrimary}`}>
+                            <MathMarkdown content={b.text} isDark={isDark} inline autoDetectLatex />
+                          </div>
+                          <span className={`text-[11px] font-mono font-semibold shrink-0 ${textSecondary}`}>
                             p.{b.page}
                           </span>
                         </div>
@@ -1689,15 +1781,15 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                             onClick={() =>
                               setPackFlippedCards((prev) => ({ ...prev, [fc.id]: !flipped }))
                             }
-                            className={`p-3.5 rounded-xl border hover:border-[#FC4C01]/50 transition cursor-pointer space-y-2.5 ${surfaceElevated}`}
+                            className={`p-3.5 rounded-xl border transition cursor-pointer space-y-2.5 ${surfaceElevated}`}
                           >
                             <div className={`flex items-center justify-between text-[11px] ${textSecondary}`}>
                               <span>{flipped ? 'Answer' : 'Question'}</span>
-                              <span className="font-mono text-[#FC4C01]">{fc.pageLabel}</span>
+                              <span className={`font-mono ${textSecondary}`}>{fc.pageLabel}</span>
                             </div>
-                            <p className={`text-xs sm:text-sm font-medium ${textPrimary}`}>
-                              {flipped ? fc.back : fc.front}
-                            </p>
+                            <div className={`text-xs sm:text-sm font-medium ${textPrimary}`}>
+                              <MathMarkdown content={flipped ? fc.back : fc.front} isDark={isDark} inline autoDetectLatex />
+                            </div>
                             <div
                               className="flex items-center gap-1.5 pt-1"
                               onClick={(e) => e.stopPropagation()}
@@ -1726,9 +1818,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                                       setCards(StudyLoopStore.getCards());
                                     }}
                                     className={`px-2.5 py-1 rounded-full border text-[11px] font-medium transition cursor-pointer ${
-                                      isSelected
-                                        ? 'bg-[#FC4C01] text-white border-[#FC4C01]'
-                                        : btnGhost
+                                      isSelected ? btnActive : btnGhost
                                     }`}
                                   >
                                     {label}
@@ -1754,9 +1844,9 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                           >
                             <div className="flex items-center justify-between gap-2">
                               <span className={`text-xs sm:text-sm font-semibold ${textPrimary}`}>
-                                {idx + 1}. {q.question}
+                                {idx + 1}. <MathText text={q.question} />
                               </span>
-                              <span className="text-[11px] font-mono text-[#FC4C01] shrink-0">
+                              <span className={`text-[11px] font-mono shrink-0 ${textSecondary}`}>
                                 {q.pageLabel}
                               </span>
                             </div>
@@ -1786,16 +1876,18 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                                     <span className="font-mono font-bold mr-1.5">
                                       {String.fromCharCode(65 + oIdx)}.
                                     </span>
-                                    {opt}
+                                    <MathText text={opt} />
                                   </button>
                                 );
                               })}
                             </div>
                             {picked !== undefined && (
-                              <p className={`text-xs p-2.5 rounded-lg border ${surfaceInner}`}>
-                                <strong className="text-[#FC4C01]">Explanation:</strong>{' '}
-                                <span className={textPrimary}>{q.explanation}</span>
-                              </p>
+                              <div className={`text-xs p-2.5 rounded-lg border ${surfaceInner}`}>
+                                <strong className={textPrimary}>Explanation:</strong>{' '}
+                                <span className={textPrimary}>
+                                  <MathText text={q.explanation} />
+                                </span>
+                              </div>
                             )}
                             <div className="flex items-center gap-1.5 pt-1">
                               {(['again', 'hard', 'good', 'easy'] as const).map((g) => {
@@ -1825,9 +1917,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                                       setCards(StudyLoopStore.getCards());
                                     }}
                                     className={`px-2.5 py-1 rounded-full border text-[11px] font-medium transition cursor-pointer ${
-                                      isSelected
-                                        ? 'bg-[#FC4C01] text-white border-[#FC4C01]'
-                                        : btnGhost
+                                      isSelected ? btnActive : btnGhost
                                     }`}
                                   >
                                     {label}
@@ -1872,7 +1962,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                     data-testid="snap-photo-upload-btn"
                     onClick={() => snapInputRef.current?.click()}
                     disabled={snapLoading}
-                    className="px-3.5 py-2 rounded-xl bg-[#FC4C01] hover:bg-[#e04300] text-white text-xs font-semibold transition cursor-pointer"
+                    className={`px-3.5 py-2 rounded-xl text-xs font-semibold transition cursor-pointer ${primaryBtn}`}
                   >
                     Snap / Upload Question Photo
                   </button>
@@ -1917,11 +2007,11 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                 >
                   <div className={`flex flex-wrap items-center justify-between gap-2 border-b pb-3 ${borderSubtle}`}>
                     <div>
-                      <span className="text-[11px] uppercase tracking-wider text-[#FC4C01] font-bold">
+                      <span className={`text-[11px] uppercase tracking-wider font-bold ${textSecondary}`}>
                         Step-by-Step Worked Solution
                       </span>
                       <h4 className={`text-sm sm:text-base font-bold mt-0.5 ${textPrimary}`}>
-                        <MathMarkdown content={snapResult.questionExtracted} isDark={isDark} inline />
+                        <MathMarkdown content={snapResult.questionExtracted} isDark={isDark} inline autoDetectLatex />
                       </h4>
                     </div>
 
@@ -1929,7 +2019,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                       {snapResult.checkWithTextbook && (
                         <span
                           data-testid="check-with-textbook-badge"
-                          className="px-2.5 py-1 rounded-lg bg-amber-500/15 border border-amber-500/35 text-amber-600 dark:text-amber-300 text-xs font-semibold"
+                          className={`px-2.5 py-1 rounded-lg border text-xs font-semibold ${surfaceSelected} ${textPrimary}`}
                         >
                           Check with your textbook
                         </span>
@@ -1943,7 +2033,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                       <button
                         type="button"
                         onClick={() => handleExplainSnapSolve(language)}
-                        className="px-2.5 py-1 rounded bg-[#FC4C01] text-white font-semibold"
+                        className={`px-2.5 py-1 rounded font-semibold ${primaryBtn}`}
                       >
                         Retry
                       </button>
@@ -1951,8 +2041,8 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                   )}
 
                   {snapTranslatedText && (
-                    <div className={`p-3.5 rounded-xl border border-[#FC4C01]/30 text-xs leading-relaxed ${surfaceElevated}`}>
-                      <MathMarkdown content={snapTranslatedText} isDark={isDark} />
+                    <div className={`p-3.5 rounded-xl border text-xs leading-relaxed ${surfaceSelected}`}>
+                      <MathMarkdown content={snapTranslatedText} isDark={isDark} autoDetectLatex />
                     </div>
                   )}
 
@@ -1962,37 +2052,38 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                         key={idx}
                         className={`p-3 rounded-xl border text-xs sm:text-sm leading-relaxed ${surfaceElevated} ${textPrimary}`}
                       >
-                        <MathMarkdown content={step} isDark={isDark} />
+                        <MathMarkdown content={step} isDark={isDark} autoDetectLatex />
                       </div>
                     ))}
-                    <div className="p-3 rounded-xl bg-[#FC4C01]/12 border border-[#FC4C01]/35 text-xs sm:text-sm font-bold text-[#FC4C01]">
+                    <div className={`p-3 rounded-xl border text-xs sm:text-sm font-bold ${surfaceSelected} ${textPrimary}`}>
                       <span>Final Answer: </span>
                       <MathMarkdown
                         content={snapResult.answer || snapResult.finalAnswer || ''}
                         isDark={isDark}
                         inline
+                        autoDetectLatex
                       />
                     </div>
                   </div>
 
                   {snapResult.conceptBehindIt && (
                     <div className={`p-3.5 rounded-xl border space-y-1 ${surfaceElevated}`}>
-                      <div className="text-[11px] uppercase tracking-wider text-[#FC4C01] font-bold">
+                      <div className={`text-[11px] uppercase tracking-wider font-bold ${textSecondary}`}>
                         Concept Behind It · {snapResult.conceptBehindIt.subject} → {snapResult.conceptBehindIt.chapter}
                       </div>
                       <div className={`text-sm font-bold ${textPrimary}`}>
-                        {snapResult.conceptBehindIt.title}
+                        <MathText text={snapResult.conceptBehindIt.title} />
                       </div>
                       <div className={`text-xs leading-relaxed ${textSecondary}`}>
-                        <MathMarkdown content={snapResult.conceptBehindIt.explanation} isDark={isDark} />
+                        <MathMarkdown content={snapResult.conceptBehindIt.explanation} isDark={isDark} autoDetectLatex />
                       </div>
                     </div>
                   )}
 
                   {snapResult.similarPracticeQuestion && (
-                    <div className={`p-3.5 rounded-xl border border-[#FC4C01]/30 space-y-2.5 ${surfaceElevated}`}>
+                    <div className={`p-3.5 rounded-xl border space-y-2.5 ${surfaceElevated}`}>
                       <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold uppercase tracking-wider text-[#FC4C01]">
+                        <span className={`text-xs font-bold uppercase tracking-wider ${textSecondary}`}>
                           1 Similar Practice Question
                         </span>
                         <button
@@ -2014,13 +2105,13 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                               },
                             ])
                           }
-                          className="text-xs font-semibold text-[#FC4C01] hover:underline cursor-pointer"
+                          className={`text-xs font-semibold hover:underline cursor-pointer ${textPrimary}`}
                         >
                           + Add to Recall
                         </button>
                       </div>
                       <div className={`text-xs sm:text-sm font-semibold ${textPrimary}`}>
-                        <MathMarkdown content={snapResult.similarPracticeQuestion.question} isDark={isDark} inline />
+                        <MathMarkdown content={snapResult.similarPracticeQuestion.question} isDark={isDark} inline autoDetectLatex />
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         {snapResult.similarPracticeQuestion.options.map((opt, idx) => {
@@ -2047,19 +2138,20 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                             <span className="font-mono font-bold mr-1.5">
                               {String.fromCharCode(65 + idx)}.
                             </span>
-                            <MathMarkdown content={opt} isDark={isDark} inline />
+                            <MathMarkdown content={opt} isDark={isDark} inline autoDetectLatex />
                           </button>
                         );
                       })}
                     </div>
                       {snapPracticeAnswer !== null && (
                         <div className={`text-xs p-2.5 rounded-lg border ${surfaceInner}`}>
-                          <strong className="text-[#FC4C01]">Explanation:</strong>{' '}
+                          <strong className={textPrimary}>Explanation:</strong>{' '}
                           <span className={textPrimary}>
                             <MathMarkdown
                               content={snapResult.similarPracticeQuestion.explanation}
                               isDark={isDark}
                               inline
+                              autoDetectLatex
                             />
                           </span>
                         </div>
@@ -2070,14 +2162,63 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
               )}
             </div>
           )}
+
+          {/* Unified Prompt Input Bar Connected to Study Tutor */}
+          {onAskTutor && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const q = tutorDraft.trim();
+                if (!q) return;
+                const topicOverride =
+                  activeStudyPack?.title ||
+                  drillingChapter ||
+                  revisionSummary.nearestExam?.exam?.subject ||
+                  pageTitle;
+                const prefix =
+                  activeTab === 'snap_solve' && snapQuestionText.trim()
+                    ? `[Snap & Solve: ${snapQuestionText.trim()}]\n\n`
+                    : activeTab === 'upload' && activeStudyPack
+                    ? `[Study Pack: ${activeStudyPack.title}]\n\n`
+                    : `[${pageTitle} · ${activeTab}]\n\n`;
+                setTutorDraft('');
+                onAskTutor(`${prefix}${q}`, topicOverride);
+              }}
+              className={`flex items-center gap-2 p-2 pl-4 rounded-2xl border ${surfaceInner}`}
+              data-testid="loop-tutor-prompt-bar"
+            >
+              <input
+                type="text"
+                value={tutorDraft}
+                onChange={(e) => setTutorDraft(e.target.value)}
+                placeholder={`Ask Study Tutor about ${
+                  activeStudyPack?.title || drillingChapter || pageTitle
+                }...`}
+                className="flex-1 min-w-0 bg-transparent border-0 text-xs sm:text-sm outline-none placeholder:text-neutral-500"
+              />
+              <button
+                type="submit"
+                disabled={!tutorDraft.trim()}
+                className={`px-3.5 py-2 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-40 whitespace-nowrap shrink-0 ${primaryBtn}`}
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>Ask Tutor</span>
+              </button>
+            </form>
+          )}
         </div>
+      </div>
       </div>
 
       {/* ==================================================================== */}
-      {/* ADD EXAM MODAL                                                       */}
+      {/* ADD EXAM PAGE (Full-page view without modal blur scrim)              */}
       {/* ==================================================================== */}
       {showAddExamModal && (
-        <div className="fixed inset-0 z-[140] flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
+        <div
+          className={`fixed inset-0 z-[140] overflow-y-auto p-4 sm:p-8 flex items-start justify-center ${
+            isDark ? 'bg-[#09090b] text-white' : 'bg-[#ffffff] text-black'
+          }`}
+        >
           <form
             onSubmit={handleCreateExam}
             className={`w-full max-w-lg rounded-2xl border p-5 space-y-4 shadow-2xl ${surfaceOuter}`}
@@ -2156,10 +2297,8 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                           active ? prev.filter((item) => item !== ch) : [...prev, ch]
                         )
                       }
-                      className={`px-2.5 py-1 rounded-lg text-xs font-medium transition cursor-pointer ${
-                        active
-                          ? 'bg-[#FC4C01] text-white'
-                          : btnGhost
+                      className={`px-2.5 py-1 rounded-lg border text-xs font-medium transition cursor-pointer ${
+                        active ? btnActive : btnGhost
                       }`}
                     >
                       {ch}
@@ -2203,7 +2342,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
               <button
                 type="submit"
                 data-testid="save-exam-submit-btn"
-                className="px-4 py-2 rounded-xl bg-[#FC4C01] hover:bg-[#e04300] text-xs font-semibold text-white cursor-pointer"
+                className={`px-4 py-2 rounded-xl text-xs font-semibold cursor-pointer ${primaryBtn}`}
               >
                 Save Exam &amp; Build Plan
               </button>

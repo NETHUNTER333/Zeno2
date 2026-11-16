@@ -385,6 +385,7 @@ export interface UserProfile {
 
 export type ResponseLength = 'concise' | 'balanced' | 'detailed';
 export type ResponseStyle = 'casual' | 'professional' | 'technical' | 'creative';
+export type ReasoningEffort = 'low' | 'medium' | 'high';
 export interface UserPersonalization {
   preferredName: string;
   preferredLanguage: string;
@@ -396,6 +397,12 @@ export interface UserPersonalization {
   voicePersona: string;
   voiceSpeed: number; // 0.75 - 1.5
   defaultModelId: string;
+  defaultVisionModelId?: string;
+  temperature?: number;
+  reasoningEffort?: ReasoningEffort;
+  regularSystemPrompt?: string;
+  uncensoredSystemPrompt?: string;
+  maskProviderIdentity?: boolean;
 }
 
 export interface ProjectFolder {

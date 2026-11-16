@@ -6,9 +6,10 @@ import {
   memoryLocalCache,
   setLogLevel,
   doc,
-  getDocFromCache,
-  setDoc,
   getDoc,
+  setDoc,
+  getDocFromCache,
+  getDocFromServer,
   updateDoc,
   deleteDoc,
   collection,
@@ -27,7 +28,7 @@ try {
   // Ignore if setLogLevel is unavailable in test mocks
 }
 
-const app = initializeApp(firebaseConfig);
+export const app = initializeApp(firebaseConfig);
 const databaseId = (firebaseConfig as any).firestoreDatabaseId;
 
 function initFirestoreInstance(): Firestore {
@@ -50,6 +51,18 @@ function initFirestoreInstance(): Firestore {
 
 export const db = initFirestoreInstance();
 export const auth = getAuth(app);
+
+async function validateFirestoreConnection(): Promise<void> {
+  if (typeof window === 'undefined' || typeof getDocFromServer !== 'function') return;
+  try {
+    await getDocFromServer(doc(db, 'test', 'connection'));
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('the client is offline')) {
+      console.warn('Please check your Firebase configuration (Firestore client is offline).');
+    }
+  }
+}
+void validateFirestoreConnection();
 
 export enum OperationType {
   CREATE = 'create',

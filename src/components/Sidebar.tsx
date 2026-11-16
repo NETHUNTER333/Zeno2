@@ -33,6 +33,8 @@ import {
   Gift,
   Award,
   Layers,
+  MessageSquare,
+  Upload,
 } from 'lucide-react';
 import { GrokLogo } from './GrokLogo';
 import { ChatMessage, SavedBookmark, KnowledgeVaultItem } from '../types';
@@ -314,6 +316,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onToggleTheme,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [isWorkspaceCollapsed, setIsWorkspaceCollapsed] = useState<boolean>(() => {
     try {
       return localStorage.getItem('kinich_sidebar_workspace_collapsed') === 'true';
@@ -676,7 +679,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
             id: `thread-${thread.id}`,
             label: thread.title,
             sublabel: normalizedQuery ? getMatchingSnippet(thread, normalizedQuery) : undefined,
-            onClick: () => onSelectThread(thread.id),
+            onClick: () => {
+              onSelectThread(thread.id);
+              if (window.innerWidth < 768) onClose();
+            },
             trailing: (
               <ThreadTrailingMenu
                 thread={thread}
@@ -717,18 +723,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <>
-      {isOpen && (
-        <div
-          onClick={onClose}
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 md:hidden"
-        />
-      )}
-
       <aside
-        className={`fixed md:static inset-y-0 left-0 z-50 w-72 border-r backdrop-blur-2xl flex flex-col transition-all duration-200 ease-in-out select-none ${
+        className={`fixed md:static inset-0 md:inset-y-0 left-0 z-50 w-full md:w-72 h-[100dvh] md:h-auto border-r-0 md:border-r backdrop-blur-2xl flex flex-col transition-transform md:transition-all duration-200 ease-in-out select-none ${
           isDark
-            ? 'bg-neutral-950/85 border-white/[0.1] text-white'
-            : 'bg-white/85 border-black/[0.08] text-[#000000]'
+            ? 'bg-neutral-950 md:bg-neutral-950/85 border-white/[0.1] text-white'
+            : 'bg-white md:bg-white/85 border-black/[0.08] text-[#000000]'
         } ${isOpen ? 'translate-x-0' : '-translate-x-full md:-ml-72'}`}
       >
         <div
@@ -869,20 +868,61 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   {dailyStreak.currentStreak} {dailyStreak.currentStreak === 1 ? 'Day' : 'Days'}
                 </div>
               </div>
-              <div
-                className={`p-2 rounded-lg border ${
-                  isDark ? 'bg-white/[0.02] border-white/[0.06]' : 'bg-white border-black/[0.06]'
-                }`}
-              >
-                <div
-                  className={`text-[10px] ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}
-                >
-                  Daily Goal
-                </div>
-                <div className="text-sm font-semibold font-mono tabular-nums mt-0.5">
-                  {dailyStreak.todayInteractions} / {dailyStreak.dailyGoal || 3}x
-                </div>
-              </div>
+              {(() => {
+                const goalTarget = Math.max(1, dailyStreak.dailyGoal || 3);
+                const isExceeded = dailyStreak.todayInteractions > goalTarget;
+                const isMet = dailyStreak.todayInteractions >= goalTarget;
+                const cappedPct = Math.min(
+                  100,
+                  Math.max(0, Math.round((dailyStreak.todayInteractions / goalTarget) * 100))
+                );
+                return (
+                  <div
+                    className={`p-2 rounded-lg border transition-all ${
+                      isExceeded
+                        ? 'bg-[#FC4C01]/10 border-[#FC4C01]/60 shadow-[0_0_14px_-3px_rgba(252,76,1,0.4)]'
+                        : isDark
+                        ? 'bg-white/[0.02] border-white/[0.06]'
+                        : 'bg-white border-black/[0.06]'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-1">
+                      <span
+                        className={`text-[10px] ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}
+                      >
+                        Daily Goal
+                      </span>
+                      {isExceeded && (
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-[#FC4C01]">
+                          Level Up
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-sm font-semibold font-mono tabular-nums mt-0.5 flex items-center justify-between">
+                      <span>
+                        {dailyStreak.todayInteractions} / {goalTarget}x
+                      </span>
+                      <span className={`text-[10px] ${isMet ? 'text-[#FC4C01]' : 'opacity-60'}`}>
+                        {cappedPct}%
+                      </span>
+                    </div>
+                    <div
+                      className={`w-full h-1 rounded-full overflow-hidden mt-1.5 ${
+                        isDark ? 'bg-white/10' : 'bg-black/10'
+                      }`}
+                    >
+                      <div
+                        className={`h-full transition-all duration-300 ${
+                          isExceeded
+                            ? 'bg-gradient-to-r from-[#FC4C01] to-amber-400'
+                            : 'bg-[#FC4C01]'
+                        }`}
+                        style={{ width: `${cappedPct}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
             {/* 7-Day Activity Strip */}
@@ -943,12 +983,37 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     {nextStreakMilestone.milestone.title} ({nextStreakMilestone.milestone.days}d)
                   </div>
                   <div
-                    className={`text-[9.5px] font-mono tabular-nums ${
-                      isDark ? 'text-neutral-400' : 'text-neutral-500'
+                    className={`flex items-center gap-2 mt-1 text-[10px] font-mono tabular-nums ${
+                      isDark ? 'text-neutral-300' : 'text-neutral-600'
                     }`}
                   >
-                    +{nextStreakMilestone.milestone.bonusMessages} msgs · +
-                    {nextStreakMilestone.milestone.bonusUploads} uploads
+                    <span
+                      className="inline-flex items-center gap-1"
+                      title={`+${nextStreakMilestone.milestone.bonusMessages} Messages`}
+                    >
+                      <MessageSquare className="w-3 h-3 text-[#FC4C01] shrink-0" />
+                      <span>+{nextStreakMilestone.milestone.bonusMessages}</span>
+                    </span>
+                    <span className="opacity-30">|</span>
+                    <span
+                      className="inline-flex items-center gap-1"
+                      title={`+${nextStreakMilestone.milestone.bonusUploads} Uploads`}
+                    >
+                      <Upload className="w-3 h-3 text-[#FC4C01] shrink-0" />
+                      <span>+{nextStreakMilestone.milestone.bonusUploads}</span>
+                    </span>
+                    {nextStreakMilestone.milestone.bonusShields > 0 && (
+                      <>
+                        <span className="opacity-30">|</span>
+                        <span
+                          className="inline-flex items-center gap-1"
+                          title={`+${nextStreakMilestone.milestone.bonusShields} Streak Shield`}
+                        >
+                          <Shield className="w-3 h-3 text-[#FC4C01] shrink-0" />
+                          <span>+{nextStreakMilestone.milestone.bonusShields}</span>
+                        </span>
+                      </>
+                    )}
                   </div>
                 </div>
                 {nextStreakMilestone.canClaim ? (
@@ -1065,6 +1130,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <input
               type="text"
               value={searchTerm}
+              onFocus={() => setIsSearchFocused(true)}
+              onBlur={() => setIsSearchFocused(false)}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Search messages & chats..."
               className={`w-full border rounded-xl pl-8 pr-7 py-2 text-xs focus:outline-none transition-colors ${
@@ -1092,7 +1159,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         {/* Rare UI BounceSidebar with motion arc dot animation */}
-        <div className="flex-1 overflow-y-auto px-2 pt-1 pb-48 scrollbar-thin">
+        <div className="flex-1 min-h-0 overflow-y-auto px-2 pt-1 pb-4 scrollbar-thin">
           <BounceSidebar
             items={bounceItems}
             value={activeBounceIndex}
@@ -1112,8 +1179,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
           )}
         </div>
 
-        {/* Permanent Pricing & Quota Pill in Sidebar */}
-        <div className="px-3 pb-2.5">
+        {/* Permanent Pricing & Quota Pill in Sidebar (collapses when mobile keyboard is open) */}
+        <div
+          className={`px-3 pt-2 pb-2.5 shrink-0 ${
+            isSearchFocused ? 'hidden md:block' : 'block'
+          } [@media(max-height:520px)]:hidden md:[@media(max-height:520px)]:block`}
+        >
           {(() => {
             const planCheck: any = UserAccountStore.getNormalizedPlan(userSub.plan);
             return (
@@ -1142,10 +1213,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <Zap className="w-3.5 h-3.5 text-[#FC4C01] fill-[#FC4C01]/20 shrink-0" />
                     <span>
                       {planCheck === 'fire'
-                        ? 'Fire Plan ($7)'
-                        : planCheck === 'spark'
-                        ? 'Spark Plan ($3 · 10x)'
-                        : 'Plans & Pricing ($3 / $7)'}
+                        ? 'Pro Plan ($7/mo)'
+                        : 'Upgrade to Pro - $7/mo'}
                     </span>
                   </span>
                   <span
@@ -1158,8 +1227,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     {planCheck === 'fire'
                       ? 'Active'
                       : planCheck === 'spark'
-                      ? 'Upgrade $7'
-                      : 'Start $3'}
+                      ? 'Pro'
+                      : 'Upgrade'}
                   </span>
                 </div>
                 <div

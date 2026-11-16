@@ -399,18 +399,12 @@ export const PageExtractModal: React.FC<PageExtractModalProps> = ({
 
   return (
     <div
-      className={`fixed inset-0 z-50 w-full h-[100dvh] overflow-y-auto overflow-x-hidden scrollbar-thin transition-colors ${
+      className={`fixed inset-0 z-50 w-full h-[100dvh] flex flex-col overflow-hidden transition-colors ${
         isDark ? 'bg-[#09090b] text-[#fafafa]' : 'bg-white text-[#09090b]'
       }`}
     >
-      {/* Sticky Minimal Header */}
-      <header
-        className={`sticky top-0 z-20 backdrop-blur-md border-b transition-colors ${
-          isDark
-            ? 'bg-[#09090b]/90 border-white/[0.08]'
-            : 'bg-white/90 border-black/[0.08]'
-        }`}
-      >
+      {/* Clean Flat Header (Zero Scrim / Zero Blur) */}
+      <header className="shrink-0 z-20 bg-transparent transition-colors">
         <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0 flex-1">
             <button
@@ -518,6 +512,7 @@ export const PageExtractModal: React.FC<PageExtractModalProps> = ({
         </div>
       </header>
 
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden scrollbar-thin">
       {/* Main Single-Column Editorial Container */}
       <main className="w-full max-w-4xl mx-auto px-4 sm:px-6 py-5 sm:py-7 min-w-0">
         {/* Compact Single-Row URL Input Bar (No Nested Wrapper Box) */}
@@ -833,6 +828,7 @@ export const PageExtractModal: React.FC<PageExtractModalProps> = ({
           </article>
         )}
       </main>
+      </div>
     </div>
   );
 };

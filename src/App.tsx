@@ -32,6 +32,7 @@ import {
   GROK_MODELS,
   ModelOption,
   getDefaultVisionModel,
+  getPreferredDefaultModel,
   GrokModelPicker,
   getModelRequiredTier,
 } from './components/GrokModelPicker';
@@ -56,6 +57,11 @@ const PricingModal = lazy(() =>
 );
 const StudyWorkspace = lazy(() =>
   import('./components/StudyWorkspace').then((m) => ({ default: m.StudyWorkspace }))
+);
+const HitaishiStagePage = lazy(() =>
+  import('./components/hitaishi/HitaishiStagePage').then((m) => ({
+    default: m.HitaishiStagePage,
+  }))
 );
 const QuickOnboardingModal = lazy(() =>
   import('./components/QuickOnboardingModal').then((m) => ({ default: m.QuickOnboardingModal }))
@@ -599,9 +605,12 @@ export default function App() {
   });
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [currentView, setCurrentView] = useState<'chat' | 'account' | 'study'>(() => {
+  const [currentView, setCurrentView] = useState<'chat' | 'account' | 'study' | 'hitaishi'>(() => {
     if (typeof window !== 'undefined') {
       const p = window.location.pathname.toLowerCase();
+      if (p === '/hitaishi' || p.startsWith('/hitaishi/') || p === '/stage' || p.startsWith('/stage/')) {
+        return 'hitaishi';
+      }
       if (
         p === '/study' ||
         p.startsWith('/study/') ||
@@ -631,7 +640,7 @@ export default function App() {
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [searchMode, setSearchMode] = useState<SearchMode>('organic');
-  const [selectedModel, setSelectedModel] = useState<ModelOption>(GROK_MODELS[0]);
+  const [selectedModel, setSelectedModel] = useState<ModelOption>(() => getPreferredDefaultModel());
   const [bgGradientMode, setBgGradientMode] = useState<BackgroundGradientMode>(() =>
     getStoredBackgroundGradientMode()
   );
@@ -1998,6 +2007,15 @@ export default function App() {
           clientClock,
           systemPrompt: clockSystemPrompt,
           personalization: userPersonalization,
+          modelSettings: {
+            temperature: userPersonalization?.temperature,
+            reasoningEffort: userPersonalization?.reasoningEffort,
+            responseLength: userPersonalization?.responseLength,
+            responseStyle: userPersonalization?.responseStyle,
+            regularSystemPrompt: userPersonalization?.regularSystemPrompt,
+            uncensoredSystemPrompt: userPersonalization?.uncensoredSystemPrompt,
+            maskProviderIdentity: userPersonalization?.maskProviderIdentity,
+          },
           pinnedInsights: UserAccountStore.getBookmarks().slice(0, 10),
           subscriptionPlan: UserAccountStore.getNormalizedPlan(),
           clientUsage: UserAccountStore.getUsage(),
@@ -2362,6 +2380,18 @@ export default function App() {
           location: getEffectiveLocationPayload(),
           systemPrompt: clockSystemPrompt,
           personalization: UserAccountStore.getPersonalization(),
+          modelSettings: (() => {
+            const p = UserAccountStore.getPersonalization();
+            return {
+              temperature: p?.temperature,
+              reasoningEffort: p?.reasoningEffort,
+              responseLength: p?.responseLength,
+              responseStyle: p?.responseStyle,
+              regularSystemPrompt: p?.regularSystemPrompt,
+              uncensoredSystemPrompt: p?.uncensoredSystemPrompt,
+              maskProviderIdentity: p?.maskProviderIdentity,
+            };
+          })(),
           pinnedInsights: UserAccountStore.getBookmarks().slice(0, 10),
           subscriptionPlan: UserAccountStore.getNormalizedPlan(),
           clientUsage: UserAccountStore.getUsage(),
@@ -2550,6 +2580,18 @@ export default function App() {
           location: getEffectiveLocationPayload(),
           systemPrompt: clockSystemPrompt,
           personalization: UserAccountStore.getPersonalization(),
+          modelSettings: (() => {
+            const p = UserAccountStore.getPersonalization();
+            return {
+              temperature: p?.temperature,
+              reasoningEffort: p?.reasoningEffort,
+              responseLength: p?.responseLength,
+              responseStyle: p?.responseStyle,
+              regularSystemPrompt: p?.regularSystemPrompt,
+              uncensoredSystemPrompt: p?.uncensoredSystemPrompt,
+              maskProviderIdentity: p?.maskProviderIdentity,
+            };
+          })(),
           pinnedInsights: UserAccountStore.getBookmarks().slice(0, 10),
           subscriptionPlan: UserAccountStore.getNormalizedPlan(),
           clientUsage: UserAccountStore.getUsage(),
@@ -2719,6 +2761,13 @@ export default function App() {
                   onDeleteThread={handleDeleteThread}
                   bgGradientMode={bgGradientMode}
                   onSelectBgGradientMode={handleSelectBgGradientMode}
+                  onOpenPricing={(highlightPlan, reason) =>
+                    setPricingModalState({
+                      isOpen: true,
+                      highlightPlan,
+                      limitReason: reason || null,
+                    })
+                  }
                 />
               </Suspense>
             </div>
@@ -2757,17 +2806,33 @@ export default function App() {
                 />
               </Suspense>
             </div>
+          ) : currentView === 'hitaishi' ? (
+            <div className="flex-1 min-w-0 flex flex-col h-full overflow-hidden relative z-10">
+              <Suspense fallback={<RouteSkeleton isDark={isDark} />}>
+                <HitaishiStagePage
+                  onBack={() => {
+                    if (typeof window !== 'undefined') {
+                      const p = window.location.pathname.toLowerCase();
+                      if (p.startsWith('/hitaishi') || p.startsWith('/stage')) {
+                        window.history.pushState({}, '', '/');
+                      }
+                    }
+                    setCurrentView('chat');
+                  }}
+                />
+              </Suspense>
+            </div>
           ) : (
             /* Main Chat Canvas */
             <div className="flex-1 min-w-0 flex flex-col h-full overflow-hidden relative z-10">
-              {/* Glassmorphic Floating Top Controls (Sidebar toggle, Model Picker, Study Studio & New Chat) */}
+              {/* Clean Flat Top Controls (Sidebar toggle, Model Picker, Study Studio & New Chat) */}
               <div className="absolute top-[max(0.5rem,env(safe-area-inset-top))] left-3 right-3 sm:left-4 sm:right-4 z-30 flex items-center justify-between gap-2 pointer-events-none">
                 <button
                   onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                  className={`pointer-events-auto size-8 rounded-xl border backdrop-blur-2xl backdrop-saturate-150 flex items-center justify-center transition-all cursor-pointer active:scale-95 ${
+                  className={`pointer-events-auto size-8 rounded-xl border flex items-center justify-center transition-colors cursor-pointer active:scale-95 ${
                     isDark
-                      ? 'bg-neutral-900/55 hover:bg-neutral-800/70 border-white/[0.16] text-white shadow-[0_8px_32px_rgba(0,0,0,0.55)]'
-                      : 'bg-white/65 hover:bg-white/85 border-black/[0.1] text-[#000000] shadow-[0_8px_32px_rgba(0,0,0,0.1)]'
+                      ? 'bg-[#09090b] hover:bg-white/[0.08] border-white/[0.14] text-white'
+                      : 'bg-white hover:bg-black/[0.05] border-black/[0.1] text-[#000000]'
                   }`}
                   title={isSidebarOpen ? 'Close sidebar' : 'Open sidebar'}
                   aria-label={isSidebarOpen ? 'Close sidebar' : 'Open sidebar'}
@@ -2833,10 +2898,10 @@ export default function App() {
                       }
                       setCurrentView('study');
                     }}
-                    className={`pointer-events-auto flex items-center gap-1.5 px-3 py-1.5 rounded-full border backdrop-blur-2xl backdrop-saturate-150 text-[11px] font-semibold tracking-tight transition-all cursor-pointer whitespace-nowrap active:scale-95 ${
+                    className={`pointer-events-auto flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[11px] font-semibold tracking-tight transition-colors cursor-pointer whitespace-nowrap active:scale-95 ${
                       isDark
-                        ? 'bg-neutral-900/55 hover:bg-neutral-800/65 border-white/[0.16] text-white shadow-[0_8px_32px_rgba(0,0,0,0.55)]'
-                        : 'bg-white/65 hover:bg-white/85 border-black/[0.1] text-[#0d0d0d] shadow-[0_8px_32px_rgba(0,0,0,0.1)]'
+                        ? 'bg-[#09090b] hover:bg-white/[0.08] border-white/[0.14] text-white'
+                        : 'bg-white hover:bg-black/[0.05] border-black/[0.1] text-[#0d0d0d]'
                     }`}
                     title="Open Study Space"
                   >
@@ -2845,10 +2910,10 @@ export default function App() {
                   <button
                     type="button"
                     onClick={handleNewChat}
-                    className={`pointer-events-auto size-8 rounded-xl border backdrop-blur-2xl backdrop-saturate-150 flex items-center justify-center transition-all cursor-pointer active:scale-95 ${
+                    className={`pointer-events-auto size-8 rounded-xl border flex items-center justify-center transition-colors cursor-pointer active:scale-95 ${
                       isDark
-                        ? 'bg-neutral-900/55 hover:bg-neutral-800/65 border-white/[0.16] text-white shadow-[0_8px_32px_rgba(0,0,0,0.55)]'
-                        : 'bg-white/65 hover:bg-white/85 border-black/[0.1] text-[#000000] shadow-[0_8px_32px_rgba(0,0,0,0.1)]'
+                        ? 'bg-[#09090b] hover:bg-white/[0.08] border-white/[0.14] text-white'
+                        : 'bg-white hover:bg-black/[0.05] border-black/[0.1] text-[#000000]'
                     }`}
                     title="New chat"
                     aria-label="New chat"
@@ -2939,6 +3004,53 @@ export default function App() {
                         </div>
                       </div>
                     )}
+                    {/* Attached Hitaishi Bar on top of Prompt Input Bar */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/hitaishi')) {
+                          window.history.pushState({}, '', '/hitaishi');
+                        }
+                        setCurrentView('hitaishi');
+                      }}
+                      className={`w-[calc(100%-16px)] sm:w-[calc(100%-24px)] -mb-3 pb-4.5 pt-2.5 px-3.5 rounded-t-[20px] border border-b-0 flex items-center justify-between gap-2.5 text-left transition-all cursor-pointer group ${
+                        isDark
+                          ? 'bg-[#15161b] hover:bg-[#1c1e26] border-white/[0.1] text-white'
+                          : 'bg-[#f4f3ee] hover:bg-[#eae8e0] border-black/[0.08] text-[#111827]'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <img
+                          src="/hitaishi-assets/characters/n01/avatar.webp"
+                          alt="Hitaishi Avatar"
+                          className="w-6 h-6 rounded-full object-cover ring-2 ring-white dark:ring-zinc-900 shrink-0"
+                        />
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="inline-flex items-center gap-1.5 text-[13px] font-bold tracking-tight shrink-0">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            Hitaishi
+                          </span>
+                          <span
+                            className={`text-[11.5px] truncate ${
+                              isDark ? 'text-zinc-400' : 'text-zinc-600'
+                            }`}
+                          >
+                            2D &amp; 3D AI Avatar Stage · Character Studio
+                          </span>
+                        </div>
+                      </div>
+                      <span
+                        className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold shrink-0 transition-transform group-hover:translate-x-0.5 ${
+                          isDark
+                            ? 'bg-blue-500/20 text-blue-300 border border-blue-400/30'
+                            : 'bg-blue-600 text-white'
+                        }`}
+                      >
+                        <span>Open Stage</span>
+                        <span>→</span>
+                      </span>
+                    </button>
+
                     {/* ChatInput (@kobra/chat-input with @kobra/chat-history & upward model selector) */}
                     <div className="w-full relative z-10">
                       <ChatInput
@@ -2998,11 +3110,12 @@ export default function App() {
                 <div className="flex-1 min-w-0 flex flex-col h-full overflow-hidden relative">
                   {/* Scrollable Messages Viewport with bottom padding so content flows beneath the floating composer */}
                   <div ref={messagesContainerRef} className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden px-3 sm:px-4 pb-36 scrollbar-thin">
-                    <div className="pt-12 pb-3 max-w-3xl mx-auto w-full min-w-0">
+                    <div className="pt-14 sm:pt-16 pb-3 max-w-3xl mx-auto w-full min-w-0">
+
                       {/* Shared Public Thread Read-Only Snapshot Banner */}
                       {sharedBannerId && activeThread && (
                         <div
-                          className={`mt-10 mb-4 px-4 py-3 rounded-2xl border flex flex-wrap items-center justify-between gap-3 ${
+                          className={`mt-2 mb-4 px-4 py-3 rounded-2xl border flex flex-wrap items-center justify-between gap-3 ${
                             isDark
                               ? 'bg-[#121212] border-white/15 text-neutral-200'
                               : 'bg-neutral-50 border-black/10 text-neutral-800'
@@ -3121,6 +3234,52 @@ export default function App() {
                           </div>
                         </div>
                       )}
+                      {/* Attached Hitaishi Bar on top of Floating Prompt Input Bar */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/hitaishi')) {
+                            window.history.pushState({}, '', '/hitaishi');
+                          }
+                          setCurrentView('hitaishi');
+                        }}
+                        className={`w-[calc(100%-16px)] sm:w-[calc(100%-24px)] -mb-3 pb-4.5 pt-2 px-3.5 rounded-t-[20px] border border-b-0 flex items-center justify-between gap-2.5 text-left transition-all cursor-pointer group ${
+                          isDark
+                            ? 'bg-[#15161b]/95 hover:bg-[#1c1e26] border-white/[0.1] text-white backdrop-blur-md'
+                            : 'bg-[#f4f3ee]/95 hover:bg-[#eae8e0] border-black/[0.08] text-[#111827] backdrop-blur-md'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <img
+                            src="/hitaishi-assets/characters/n01/avatar.webp"
+                            alt="Hitaishi Avatar"
+                            className="w-5 h-5 rounded-full object-cover ring-2 ring-white dark:ring-zinc-900 shrink-0"
+                          />
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="inline-flex items-center gap-1.5 text-xs font-bold tracking-tight shrink-0">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                              Hitaishi
+                            </span>
+                            <span
+                              className={`text-[11px] truncate ${
+                                isDark ? 'text-zinc-400' : 'text-zinc-600'
+                              }`}
+                            >
+                              2D &amp; 3D AI Avatar Stage · Character Studio
+                            </span>
+                          </div>
+                        </div>
+                        <span
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-semibold shrink-0 transition-transform group-hover:translate-x-0.5 ${
+                            isDark
+                              ? 'bg-blue-500/20 text-blue-300 border border-blue-400/30'
+                              : 'bg-blue-600 text-white'
+                          }`}
+                        >
+                          <span>Stage</span>
+                          <span>→</span>
+                        </span>
+                      </button>
                       <div className="w-full relative z-10">
                         <ChatInput
                         onSend={handleSend}

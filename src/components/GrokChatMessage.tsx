@@ -1654,14 +1654,14 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                 );
               })()}
 
-              {/* DeepSeek App Vertical Context Menu Popup on Tap / Long-Press */}
+              {/* Vertical Context Menu Popup on Tap / Long-Press */}
               {showActionsOnTap && (
                 <div
                   onClick={(e) => e.stopPropagation()}
-                  className={`absolute right-0 top-full mt-1 z-50 w-[124px] rounded-[10px] border overflow-hidden shadow-[0_8px_28px_rgba(0,0,0,0.65)] divide-y animate-in fade-in zoom-in-95 duration-150 ${
+                  className={`absolute right-0 top-full mt-2 z-50 min-w-[156px] p-1.5 rounded-2xl border backdrop-blur-2xl flex flex-col gap-0.5 animate-in fade-in zoom-in-95 duration-150 ${
                     isDark
-                      ? 'bg-[#2c2c2e] border-white/[0.08] divide-white/[0.07] text-[#f5f5f7]'
-                      : 'bg-white border-black/[0.08] divide-black/[0.06] text-[#1d1d1f]'
+                      ? 'bg-[#1f1f23]/95 border-white/[0.1] shadow-[0_14px_40px_rgba(0,0,0,0.65)] text-[#f5f5f7]'
+                      : 'bg-white/95 border-black/[0.08] shadow-[0_14px_36px_rgba(0,0,0,0.14)] text-[#1d1d1f]'
                   }`}
                 >
                   <button
@@ -1671,14 +1671,14 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                       copyText();
                       setShowActionsOnTap(false);
                     }}
-                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-[11.5px] leading-tight font-normal transition-colors cursor-pointer text-left ${
-                      isDark ? 'hover:bg-white/[0.08] active:bg-white/[0.12]' : 'hover:bg-black/[0.04] active:bg-black/[0.08]'
+                    className={`w-full flex items-center gap-2.5 px-3 py-2 min-h-[38px] rounded-[10px] text-[13px] leading-tight font-medium whitespace-nowrap transition-all duration-150 cursor-pointer text-left active:scale-[0.98] ${
+                      isDark ? 'hover:bg-white/[0.09] active:bg-white/[0.15]' : 'hover:bg-black/[0.05] active:bg-black/[0.09]'
                     }`}
                   >
                     {copied ? (
-                      <Check className="w-[13px] h-[13px] text-emerald-400 stroke-[1.75] shrink-0" />
+                      <Check className="w-[15px] h-[15px] text-emerald-400 stroke-[1.85] shrink-0" />
                     ) : (
-                      <Copy className="w-[13px] h-[13px] opacity-90 stroke-[1.75] shrink-0" />
+                      <Copy className="w-[15px] h-[15px] opacity-85 stroke-[1.85] shrink-0" />
                     )}
                     <span>{copied ? 'Copied' : 'Copy'}</span>
                   </button>
@@ -1691,11 +1691,11 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                         setIsEditing(true);
                         setShowActionsOnTap(false);
                       }}
-                      className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-[11.5px] leading-tight font-normal transition-colors cursor-pointer text-left ${
-                        isDark ? 'hover:bg-white/[0.08] active:bg-white/[0.12]' : 'hover:bg-black/[0.04] active:bg-black/[0.08]'
+                      className={`w-full flex items-center gap-2.5 px-3 py-2 min-h-[38px] rounded-[10px] text-[13px] leading-tight font-medium whitespace-nowrap transition-all duration-150 cursor-pointer text-left active:scale-[0.98] ${
+                        isDark ? 'hover:bg-white/[0.09] active:bg-white/[0.15]' : 'hover:bg-black/[0.05] active:bg-black/[0.09]'
                       }`}
                     >
-                      <Pencil className="w-[13px] h-[13px] opacity-90 stroke-[1.75] shrink-0" />
+                      <Pencil className="w-[15px] h-[15px] opacity-85 stroke-[1.85] shrink-0" />
                       <span>Edit</span>
                     </button>
                   )}
@@ -1708,11 +1708,11 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                           onAskKinich(`Regarding my prompt: "${message.content.slice(0, 200)}" — `);
                           setShowActionsOnTap(false);
                         }}
-                        className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-[11.5px] leading-tight font-normal transition-colors cursor-pointer text-left ${
-                          isDark ? 'hover:bg-white/[0.08] active:bg-white/[0.12]' : 'hover:bg-black/[0.04] active:bg-black/[0.08]'
+                        className={`w-full flex items-center gap-2.5 px-3 py-2 min-h-[38px] rounded-[10px] text-[13px] leading-tight font-medium whitespace-nowrap transition-all duration-150 cursor-pointer text-left active:scale-[0.98] ${
+                          isDark ? 'hover:bg-white/[0.09] active:bg-white/[0.15]' : 'hover:bg-black/[0.05] active:bg-black/[0.09]'
                         }`}
                       >
-                        <MessageSquare className="w-[13px] h-[13px] opacity-90 stroke-[1.75] shrink-0" />
+                        <MessageSquare className="w-[15px] h-[15px] opacity-85 stroke-[1.85] shrink-0" />
                         <span>Reply</span>
                       </button>
                       <button
@@ -1722,11 +1722,11 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                           onAskKinich(`Scope and analyze further based on prompt: "${message.content.slice(0, 200)}"`);
                           setShowActionsOnTap(false);
                         }}
-                        className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-[11.5px] leading-tight font-normal transition-colors cursor-pointer text-left ${
-                          isDark ? 'hover:bg-white/[0.08] active:bg-white/[0.12]' : 'hover:bg-black/[0.04] active:bg-black/[0.08]'
+                        className={`w-full flex items-center gap-2.5 px-3 py-2 min-h-[38px] rounded-[10px] text-[13px] leading-tight font-medium whitespace-nowrap transition-all duration-150 cursor-pointer text-left active:scale-[0.98] ${
+                          isDark ? 'hover:bg-white/[0.09] active:bg-white/[0.15]' : 'hover:bg-black/[0.05] active:bg-black/[0.09]'
                         }`}
                       >
-                        <GitFork className="w-[13px] h-[13px] opacity-90 stroke-[1.75] shrink-0" />
+                        <GitFork className="w-[15px] h-[15px] opacity-85 stroke-[1.85] shrink-0" />
                         <span>Scope</span>
                       </button>
                     </>
@@ -1957,10 +1957,10 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
           {/* Floating Highlight & Save Selection Bar when text is selected inside AI response */}
           {(selectedSegmentText || segmentSavedToast) && !message.isStreaming && (
             <div
-              className={`sticky top-2 z-30 mb-2 px-2.5 py-1.5 rounded-full border backdrop-blur-2xl backdrop-saturate-150 shadow-lg flex items-center justify-between gap-2 transition-all ${
+              className={`sticky top-2 z-30 mb-2 px-2.5 py-1.5 rounded-full border flex items-center justify-between gap-2 transition-colors ${
                 isDark
-                  ? 'bg-neutral-900/80 border-white/[0.16] text-white'
-                  : 'bg-white/85 border-black/[0.1] text-[#111111]'
+                  ? 'bg-[#141418] border-white/[0.16] text-white'
+                  : 'bg-white border-black/[0.1] text-[#111111]'
               }`}
             >
               {segmentSavedToast && !selectedSegmentText ? (
@@ -2919,10 +2919,10 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
               {showActionsOnTap && (
                 <div
                   onClick={(e) => e.stopPropagation()}
-                  className={`absolute left-0 bottom-full mb-1.5 z-50 w-[134px] rounded-[10px] border overflow-hidden shadow-[0_8px_28px_rgba(0,0,0,0.65)] divide-y animate-in fade-in zoom-in-95 duration-150 ${
+                  className={`absolute left-0 bottom-full mb-2 z-50 min-w-[168px] p-1.5 rounded-2xl border backdrop-blur-2xl flex flex-col gap-0.5 animate-in fade-in zoom-in-95 duration-150 ${
                     isDark
-                      ? 'bg-[#2c2c2e] border-white/[0.08] divide-white/[0.07] text-[#f5f5f7]'
-                      : 'bg-white border-black/[0.08] divide-black/[0.06] text-[#1d1d1f]'
+                      ? 'bg-[#1f1f23]/95 border-white/[0.1] shadow-[0_14px_40px_rgba(0,0,0,0.65)] text-[#f5f5f7]'
+                      : 'bg-white/95 border-black/[0.08] shadow-[0_14px_36px_rgba(0,0,0,0.14)] text-[#1d1d1f]'
                   }`}
                 >
                   <button
@@ -2932,14 +2932,14 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                       copyText();
                       setShowActionsOnTap(false);
                     }}
-                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-[11.5px] leading-tight font-normal transition-colors cursor-pointer text-left ${
-                      isDark ? 'hover:bg-white/[0.08] active:bg-white/[0.12]' : 'hover:bg-black/[0.04] active:bg-black/[0.08]'
+                    className={`w-full flex items-center gap-2.5 px-3 py-2 min-h-[38px] rounded-[10px] text-[13px] leading-tight font-medium whitespace-nowrap transition-all duration-150 cursor-pointer text-left active:scale-[0.98] ${
+                      isDark ? 'hover:bg-white/[0.09] active:bg-white/[0.15]' : 'hover:bg-black/[0.05] active:bg-black/[0.09]'
                     }`}
                   >
                     {copied ? (
-                      <Check className="w-[13px] h-[13px] text-emerald-400 stroke-[1.75] shrink-0" />
+                      <Check className="w-[15px] h-[15px] text-emerald-400 stroke-[1.85] shrink-0" />
                     ) : (
-                      <Copy className="w-[13px] h-[13px] opacity-90 stroke-[1.75] shrink-0" />
+                      <Copy className="w-[15px] h-[15px] opacity-85 stroke-[1.85] shrink-0" />
                     )}
                     <span>{copied ? 'Copied' : 'Copy'}</span>
                   </button>
@@ -2951,11 +2951,11 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                       setShowTtsPopup(true);
                       setShowActionsOnTap(false);
                     }}
-                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-[11.5px] leading-tight font-normal transition-colors cursor-pointer text-left ${
-                      isDark ? 'hover:bg-white/[0.08] active:bg-white/[0.12]' : 'hover:bg-black/[0.04] active:bg-black/[0.08]'
+                    className={`w-full flex items-center gap-2.5 px-3 py-2 min-h-[38px] rounded-[10px] text-[13px] leading-tight font-medium whitespace-nowrap transition-all duration-150 cursor-pointer text-left active:scale-[0.98] ${
+                      isDark ? 'hover:bg-white/[0.09] active:bg-white/[0.15]' : 'hover:bg-black/[0.05] active:bg-black/[0.09]'
                     }`}
                   >
-                    <Volume2 className="w-[13px] h-[13px] opacity-90 stroke-[1.75] shrink-0" />
+                    <Volume2 className="w-[15px] h-[15px] opacity-85 stroke-[1.85] shrink-0" />
                     <span>Read aloud</span>
                   </button>
 
@@ -2970,11 +2970,11 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                         onRetry();
                         setShowActionsOnTap(false);
                       }}
-                      className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-[11.5px] leading-tight font-normal transition-colors cursor-pointer text-left ${
-                        isDark ? 'hover:bg-white/[0.08] active:bg-white/[0.12]' : 'hover:bg-black/[0.04] active:bg-black/[0.08]'
+                      className={`w-full flex items-center gap-2.5 px-3 py-2 min-h-[38px] rounded-[10px] text-[13px] leading-tight font-medium whitespace-nowrap transition-all duration-150 cursor-pointer text-left active:scale-[0.98] ${
+                        isDark ? 'hover:bg-white/[0.09] active:bg-white/[0.15]' : 'hover:bg-black/[0.05] active:bg-black/[0.09]'
                       }`}
                     >
-                      <RotateCcw className="w-[13px] h-[13px] opacity-90 stroke-[1.75] shrink-0" />
+                      <RotateCcw className="w-[15px] h-[15px] opacity-85 stroke-[1.85] shrink-0" />
                       <span>Regenerate</span>
                     </button>
                   )}
@@ -2986,11 +2986,17 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                       setReaction((prev) => (prev === 'good' ? null : 'good'));
                       setShowActionsOnTap(false);
                     }}
-                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-[11.5px] leading-tight font-normal transition-colors cursor-pointer text-left ${
-                      isDark ? 'hover:bg-white/[0.08] active:bg-white/[0.12]' : 'hover:bg-black/[0.04] active:bg-black/[0.08]'
+                    className={`w-full flex items-center gap-2.5 px-3 py-2 min-h-[38px] rounded-[10px] text-[13px] leading-tight font-medium whitespace-nowrap transition-all duration-150 cursor-pointer text-left active:scale-[0.98] ${
+                      reaction === 'good'
+                        ? isDark
+                          ? 'bg-emerald-500/15 text-emerald-300'
+                          : 'bg-emerald-500/10 text-emerald-700'
+                        : isDark
+                        ? 'hover:bg-white/[0.09] active:bg-white/[0.15]'
+                        : 'hover:bg-black/[0.05] active:bg-black/[0.09]'
                     }`}
                   >
-                    <ThumbsUp className={`w-[13px] h-[13px] opacity-90 stroke-[1.75] shrink-0 ${reaction === 'good' ? 'fill-current' : ''}`} />
+                    <ThumbsUp className={`w-[15px] h-[15px] opacity-85 stroke-[1.85] shrink-0 ${reaction === 'good' ? 'fill-current opacity-100' : ''}`} />
                     <span>Like</span>
                   </button>
 
@@ -3001,11 +3007,17 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                       setReaction((prev) => (prev === 'bad' ? null : 'bad'));
                       setShowActionsOnTap(false);
                     }}
-                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-[11.5px] leading-tight font-normal transition-colors cursor-pointer text-left ${
-                      isDark ? 'hover:bg-white/[0.08] active:bg-white/[0.12]' : 'hover:bg-black/[0.04] active:bg-black/[0.08]'
+                    className={`w-full flex items-center gap-2.5 px-3 py-2 min-h-[38px] rounded-[10px] text-[13px] leading-tight font-medium whitespace-nowrap transition-all duration-150 cursor-pointer text-left active:scale-[0.98] ${
+                      reaction === 'bad'
+                        ? isDark
+                          ? 'bg-amber-500/15 text-amber-300'
+                          : 'bg-amber-500/10 text-amber-700'
+                        : isDark
+                        ? 'hover:bg-white/[0.09] active:bg-white/[0.15]'
+                        : 'hover:bg-black/[0.05] active:bg-black/[0.09]'
                     }`}
                   >
-                    <ThumbsDown className={`w-[13px] h-[13px] opacity-90 stroke-[1.75] shrink-0 ${reaction === 'bad' ? 'fill-current' : ''}`} />
+                    <ThumbsDown className={`w-[15px] h-[15px] opacity-85 stroke-[1.85] shrink-0 ${reaction === 'bad' ? 'fill-current opacity-100' : ''}`} />
                     <span>Dislike</span>
                   </button>
 
@@ -3016,11 +3028,17 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                       handleTogglePin();
                       setShowActionsOnTap(false);
                     }}
-                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-[11.5px] leading-tight font-normal transition-colors cursor-pointer text-left ${
-                      isDark ? 'hover:bg-white/[0.08] active:bg-white/[0.12]' : 'hover:bg-black/[0.04] active:bg-black/[0.08]'
+                    className={`w-full flex items-center gap-2.5 px-3 py-2 min-h-[38px] rounded-[10px] text-[13px] leading-tight font-medium whitespace-nowrap transition-all duration-150 cursor-pointer text-left active:scale-[0.98] ${
+                      isPinned
+                        ? isDark
+                          ? 'bg-orange-500/15 text-orange-300'
+                          : 'bg-orange-500/10 text-orange-700'
+                        : isDark
+                        ? 'hover:bg-white/[0.09] active:bg-white/[0.15]'
+                        : 'hover:bg-black/[0.05] active:bg-black/[0.09]'
                     }`}
                   >
-                    <Pin className={`w-[13px] h-[13px] opacity-90 stroke-[1.75] shrink-0 ${isPinned ? 'fill-current' : ''}`} />
+                    <Pin className={`w-[15px] h-[15px] opacity-85 stroke-[1.85] shrink-0 ${isPinned ? 'fill-current opacity-100' : ''}`} />
                     <span>{isPinned ? 'Unpin' : 'Pin'}</span>
                   </button>
 
@@ -3032,11 +3050,11 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                         onOpenShareStudio(message, 'quote');
                         setShowActionsOnTap(false);
                       }}
-                      className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-[11.5px] leading-tight font-normal transition-colors cursor-pointer text-left ${
-                        isDark ? 'hover:bg-white/[0.08] active:bg-white/[0.12]' : 'hover:bg-black/[0.04] active:bg-black/[0.08]'
+                      className={`w-full flex items-center gap-2.5 px-3 py-2 min-h-[38px] rounded-[10px] text-[13px] leading-tight font-medium whitespace-nowrap transition-all duration-150 cursor-pointer text-left active:scale-[0.98] ${
+                        isDark ? 'hover:bg-white/[0.09] active:bg-white/[0.15]' : 'hover:bg-black/[0.05] active:bg-black/[0.09]'
                       }`}
                     >
-                      <Share2 className="w-[13px] h-[13px] opacity-90 stroke-[1.75] shrink-0" />
+                      <Share2 className="w-[15px] h-[15px] opacity-85 stroke-[1.85] shrink-0" />
                       <span>Share</span>
                     </button>
                   )}
@@ -3052,11 +3070,13 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                       });
                       setShowActionsOnTap(false);
                     }}
-                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-[11.5px] leading-tight font-normal transition-colors cursor-pointer text-left ${
-                      isDark ? 'hover:bg-white/[0.08] active:bg-white/[0.12]' : 'hover:bg-black/[0.04] active:bg-black/[0.08]'
+                    className={`w-full flex items-center gap-2.5 px-3 py-2 min-h-[38px] rounded-[10px] text-[13px] leading-tight font-medium whitespace-nowrap transition-all duration-150 cursor-pointer text-left active:scale-[0.98] ${
+                      isDark
+                        ? 'text-red-300/90 hover:bg-red-500/15 active:bg-red-500/20'
+                        : 'text-red-600 hover:bg-red-500/10 active:bg-red-500/15'
                     }`}
                   >
-                    <Flag className="w-[13px] h-[13px] opacity-90 stroke-[1.75] shrink-0" />
+                    <Flag className="w-[15px] h-[15px] opacity-90 stroke-[1.85] shrink-0" />
                     <span>Report</span>
                   </button>
                 </div>

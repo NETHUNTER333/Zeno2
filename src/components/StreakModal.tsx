@@ -19,6 +19,8 @@ import {
   BookOpen,
   Layers,
   Bookmark,
+  MessageSquare,
+  Upload,
 } from 'lucide-react';
 import {
   UserAccountStore,
@@ -365,10 +367,13 @@ export const StreakModal: React.FC<StreakModalProps> = ({
     }
   };
 
+  const dailyGoalTarget = Math.max(1, streak.dailyGoal || 3);
   const todayGoalProgress = Math.min(
     100,
-    Math.round((streak.todayInteractions / Math.max(1, streak.dailyGoal || 3)) * 100)
+    Math.max(0, Math.round((streak.todayInteractions / dailyGoalTarget) * 100))
   );
+  const isDailyGoalExceeded = streak.todayInteractions > dailyGoalTarget;
+  const isDailyGoalReached = streak.todayInteractions >= dailyGoalTarget;
 
   return (
     <div
@@ -824,10 +829,40 @@ export const StreakModal: React.FC<StreakModalProps> = ({
                     {Math.min(streak.currentStreak, nextMilestone.days)} / {nextMilestone.days}d
                   </span>
                 </div>
-                <p className={`text-[11px] mb-2.5 ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
-                  {nextMilestone.subtitle} · Reward: +{nextMilestone.bonusMessages} msgs, +
-                  {nextMilestone.bonusUploads} uploads
-                </p>
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
+                  <p className={`text-[11px] ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
+                    {nextMilestone.subtitle}
+                  </p>
+                  <div className="inline-flex items-center gap-2 text-[11px] font-mono tabular-nums font-medium text-[#FC4C01]">
+                    <span
+                      className="inline-flex items-center gap-1"
+                      title={`+${nextMilestone.bonusMessages} Bonus Messages`}
+                    >
+                      <MessageSquare className="w-3.5 h-3.5 shrink-0" />
+                      <span>+{nextMilestone.bonusMessages}</span>
+                    </span>
+                    <span className={isDark ? 'text-white/25' : 'text-black/25'}>|</span>
+                    <span
+                      className="inline-flex items-center gap-1"
+                      title={`+${nextMilestone.bonusUploads} Bonus Uploads`}
+                    >
+                      <Upload className="w-3.5 h-3.5 shrink-0" />
+                      <span>+{nextMilestone.bonusUploads}</span>
+                    </span>
+                    {nextMilestone.bonusShields > 0 && (
+                      <>
+                        <span className={isDark ? 'text-white/25' : 'text-black/25'}>|</span>
+                        <span
+                          className="inline-flex items-center gap-1"
+                          title={`+${nextMilestone.bonusShields} Streak Shield`}
+                        >
+                          <Shield className="w-3.5 h-3.5 shrink-0" />
+                          <span>+{nextMilestone.bonusShields}</span>
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </div>
                 <div
                   className={`w-full h-2 rounded-full overflow-hidden ${
                     isDark ? 'bg-white/10' : 'bg-black/10'
@@ -898,14 +933,32 @@ export const StreakModal: React.FC<StreakModalProps> = ({
                           >
                             {m.subtitle}
                           </div>
-                          <div className="flex items-center gap-2 mt-1 text-[10px] font-mono tabular-nums text-[#FC4C01]">
-                            <span>+{m.bonusMessages} Msgs</span>
-                            <span>·</span>
-                            <span>+{m.bonusUploads} Uploads</span>
+                          <div className="flex items-center gap-2.5 mt-1.5 text-[11px] font-mono tabular-nums font-medium text-[#FC4C01]">
+                            <span
+                              className="inline-flex items-center gap-1"
+                              title={`+${m.bonusMessages} Bonus Messages`}
+                            >
+                              <MessageSquare className="w-3.5 h-3.5 shrink-0" />
+                              <span>+{m.bonusMessages}</span>
+                            </span>
+                            <span className={isDark ? 'text-white/25' : 'text-black/25'}>|</span>
+                            <span
+                              className="inline-flex items-center gap-1"
+                              title={`+${m.bonusUploads} Bonus Uploads`}
+                            >
+                              <Upload className="w-3.5 h-3.5 shrink-0" />
+                              <span>+{m.bonusUploads}</span>
+                            </span>
                             {m.bonusShields > 0 && (
                               <>
-                                <span>·</span>
-                                <span>+{m.bonusShields} Shield</span>
+                                <span className={isDark ? 'text-white/25' : 'text-black/25'}>|</span>
+                                <span
+                                  className="inline-flex items-center gap-1"
+                                  title={`+${m.bonusShields} Streak Shield`}
+                                >
+                                  <Shield className="w-3.5 h-3.5 shrink-0" />
+                                  <span>+{m.bonusShields}</span>
+                                </span>
                               </>
                             )}
                           </div>
@@ -1043,27 +1096,49 @@ export const StreakModal: React.FC<StreakModalProps> = ({
 
               {/* Daily Interaction Goal Selector */}
               <div
-                className={`p-4 rounded-xl border ${
-                  isDark ? 'bg-[#0f0f0f] border-white/10' : 'bg-neutral-50 border-black/10'
+                className={`p-4 rounded-xl border transition-all ${
+                  isDailyGoalExceeded
+                    ? isDark
+                      ? 'bg-[#0f0f0f] border-[#FC4C01]/65 ring-1 ring-[#FC4C01]/30 shadow-[0_0_24px_-4px_rgba(252,76,1,0.38)]'
+                      : 'bg-[#FC4C01]/[0.03] border-[#FC4C01]/60 ring-1 ring-[#FC4C01]/25 shadow-[0_0_20px_-4px_rgba(252,76,1,0.28)]'
+                    : isDark
+                    ? 'bg-[#0f0f0f] border-white/10'
+                    : 'bg-neutral-50 border-black/10'
                 }`}
               >
-                <div className="flex items-center justify-between mb-2">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
                   <div className="flex items-center gap-2">
                     <Target className="w-4 h-4 text-[#FC4C01]" />
                     <span className="text-xs font-semibold">Daily Interaction Goal</span>
+                    {isDailyGoalExceeded && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-[#FC4C01]/15 text-[#FC4C01] border border-[#FC4C01]/40 shadow-[0_0_10px_rgba(252,76,1,0.25)]">
+                        <Zap className="w-2.5 h-2.5 fill-current" />
+                        <span>Level Up</span>
+                      </span>
+                    )}
                   </div>
                   <span className="text-xs font-mono tabular-nums font-semibold text-[#FC4C01]">
-                    Today: {streak.todayInteractions} / {streak.dailyGoal} ({todayGoalProgress}%)
+                    Today: {streak.todayInteractions} / {dailyGoalTarget} ({todayGoalProgress}%
+                    {isDailyGoalExceeded
+                      ? ` · +${streak.todayInteractions - dailyGoalTarget} bonus`
+                      : ''}
+                    )
                   </span>
                 </div>
 
                 <div
-                  className={`w-full h-2 rounded-full overflow-hidden mb-3.5 ${
+                  className={`w-full h-2.5 rounded-full overflow-hidden mb-3.5 ${
                     isDark ? 'bg-white/10' : 'bg-black/10'
                   }`}
                 >
                   <div
-                    className="h-full bg-[#FC4C01] transition-all duration-300"
+                    className={`h-full transition-all duration-300 ${
+                      isDailyGoalExceeded
+                        ? 'bg-gradient-to-r from-[#FC4C01] via-amber-500 to-emerald-400 shadow-[0_0_12px_rgba(252,76,1,0.6)]'
+                        : isDailyGoalReached
+                        ? 'bg-[#FC4C01] shadow-[0_0_8px_rgba(252,76,1,0.4)]'
+                        : 'bg-[#FC4C01]'
+                    }`}
                     style={{ width: `${todayGoalProgress}%` }}
                   />
                 </div>

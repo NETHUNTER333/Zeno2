@@ -1825,17 +1825,17 @@ STRICT RULES:
         {liveStatusAnnouncement}
       </div>
 
-      {/* Floating Top Pill Controls (Zero Scrim / Zero Border / Clean Glass Pills) */}
+      {/* Clean Flat Top Controls (Zero Scrim / Zero Blur / Zero Shadow) */}
       <div className="absolute top-0 left-0 right-0 z-30 pointer-events-none px-3 sm:px-6 pt-[max(0.6rem,env(safe-area-inset-top))] pb-2">
         <div className="max-w-3xl mx-auto w-full flex items-center justify-between gap-2">
           {/* Back Pill Button */}
           <button
             type="button"
             onClick={onClose}
-            className={`pointer-events-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border backdrop-blur-2xl transition-all active:scale-95 cursor-pointer shadow-xs ${
+            className={`pointer-events-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors active:scale-95 cursor-pointer ${
               isDark
-                ? 'bg-neutral-900/75 hover:bg-neutral-800/85 border-white/[0.14] text-neutral-200 hover:text-white shadow-[0_4px_16px_rgba(0,0,0,0.4)]'
-                : 'bg-white/85 hover:bg-white border-black/[0.1] text-neutral-700 hover:text-black shadow-[0_4px_16px_rgba(0,0,0,0.06)]'
+                ? 'bg-[#0a0a0c] hover:bg-white/[0.08] border-white/[0.14] text-neutral-200 hover:text-white'
+                : 'bg-[#fafafa] hover:bg-black/[0.05] border-black/[0.1] text-neutral-700 hover:text-black'
             }`}
           >
             <ArrowLeft className="w-3.5 h-3.5" />
@@ -1848,14 +1848,14 @@ STRICT RULES:
               type="button"
               onClick={() => setIsHistoryOpen((prev) => !prev)}
               title="Research History"
-              className={`pointer-events-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border backdrop-blur-2xl whitespace-nowrap transition-all active:scale-95 cursor-pointer shadow-xs ${
+              className={`pointer-events-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border whitespace-nowrap transition-colors active:scale-95 cursor-pointer ${
                 isHistoryOpen
                   ? isDark
                     ? 'bg-white text-black border-white'
                     : 'bg-neutral-900 text-white border-neutral-900'
                   : isDark
-                  ? 'bg-neutral-900/75 hover:bg-neutral-800/85 border-white/[0.14] text-neutral-200 hover:text-white shadow-[0_4px_16px_rgba(0,0,0,0.4)]'
-                  : 'bg-white/85 hover:bg-white border-black/[0.1] text-neutral-700 hover:text-black shadow-[0_4px_16px_rgba(0,0,0,0.06)]'
+                  ? 'bg-[#0a0a0c] hover:bg-white/[0.08] border-white/[0.14] text-neutral-200 hover:text-white'
+                  : 'bg-[#fafafa] hover:bg-black/[0.05] border-black/[0.1] text-neutral-700 hover:text-black'
               }`}
             >
               <Clock className="w-3.5 h-3.5" />
@@ -1882,10 +1882,10 @@ STRICT RULES:
                 type="button"
                 onClick={resetToCleanPage}
                 title="Start a new research topic"
-                className={`pointer-events-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border backdrop-blur-2xl whitespace-nowrap transition-all active:scale-95 cursor-pointer shadow-xs ${
+                className={`pointer-events-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border whitespace-nowrap transition-colors active:scale-95 cursor-pointer ${
                   isDark
-                    ? 'bg-neutral-900/75 hover:bg-neutral-800/85 border-white/[0.14] text-neutral-200 hover:text-white shadow-[0_4px_16px_rgba(0,0,0,0.4)]'
-                    : 'bg-white/85 hover:bg-white border-black/[0.1] text-neutral-700 hover:text-black shadow-[0_4px_16px_rgba(0,0,0,0.06)]'
+                    ? 'bg-[#0a0a0c] hover:bg-white/[0.08] border-white/[0.14] text-neutral-200 hover:text-white'
+                    : 'bg-[#fafafa] hover:bg-black/[0.05] border-black/[0.1] text-neutral-700 hover:text-black'
                 }`}
               >
                 <Plus className="w-3.5 h-3.5" />
@@ -1913,10 +1913,10 @@ STRICT RULES:
                   onInsertReportToChat(turns[0].question, combined, allSources, []);
                   onClose();
                 }}
-                className={`pointer-events-auto inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium border backdrop-blur-2xl whitespace-nowrap transition-all active:scale-95 cursor-pointer shadow-xs ${
+                className={`pointer-events-auto inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium border whitespace-nowrap transition-colors active:scale-95 cursor-pointer ${
                   isDark
                     ? 'bg-white text-black hover:bg-neutral-200 border-white'
-                    : 'bg-neutral-900 text-white hover:bg-neutral-800 border-neutral-900 shadow-[0_4px_16px_rgba(0,0,0,0.12)]'
+                    : 'bg-neutral-900 text-white hover:bg-neutral-800 border-neutral-900'
                 }`}
               >
                 <Sparkles className="w-3.5 h-3.5" />
@@ -2048,7 +2048,7 @@ STRICT RULES:
                   <div className="mb-3">
                     <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
                       <span
-                        className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10.5px] font-medium border backdrop-blur-md ${
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10.5px] font-medium border ${
                           isDark
                             ? 'border-white/[0.12] bg-white/[0.06] text-neutral-300'
                             : 'border-black/[0.08] bg-black/[0.04] text-neutral-700'

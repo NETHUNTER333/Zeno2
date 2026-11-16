@@ -1,7 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
+  ArrowLeft,
   ChevronDown,
+  MessageSquare,
+  MoreVertical,
   RefreshCw,
+  Send,
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import {
@@ -18,6 +22,7 @@ import {
 } from '../lib/firebase';
 import { UserAccountStore } from '../lib/userAccountStore';
 import { promptGuestSignInForVault } from '../lib/studyLoopStore';
+import { MathMarkdown, MathText, MathFormula, SvgLatex } from './MathMarkdown';
 
 export type ArsenalFeatureTab =
   | 'answer_writing'
@@ -42,7 +47,10 @@ export interface StudyArsenalPanelProps {
   isDark?: boolean;
   compactHeader?: boolean;
   singlePageMode?: boolean;
+  pageTitle?: string;
+  onBack?: () => void;
   onSwitchFeature?: (feature: ArsenalFeatureTab, title: string) => void;
+  onAskTutor?: (prompt: string, topicOverride?: string) => void;
 }
 
 interface ImportantQuestionItem {
@@ -107,11 +115,16 @@ export const StudyArsenalPanel: React.FC<StudyArsenalPanelProps> = ({
   lectureQuiz = [],
   isDark = true,
   singlePageMode = true,
+  pageTitle,
+  onBack,
   onSwitchFeature,
+  onAskTutor,
 }) => {
   const [activeFeature, setActiveFeature] = useState<ArsenalFeatureTab>(
     initialBattleId ? 'quiz_battles' : initialFeature
   );
+  const [moreMenuOpen, setMoreMenuOpen] = useState<boolean>(false);
+  const [tutorDraft, setTutorDraft] = useState<string>('');
 
   useEffect(() => {
     if (initialBattleId) {
@@ -129,6 +142,7 @@ export const StudyArsenalPanel: React.FC<StudyArsenalPanelProps> = ({
     ? 'bg-[#121215] border-white/[0.08] text-white'
     : 'bg-white border-black/[0.08] text-neutral-900';
   const borderSubtle = isDark ? 'border-white/[0.08]' : 'border-black/[0.08]';
+  const textPrimary = isDark ? 'text-white' : 'text-neutral-900';
   const textMuted = isDark ? 'text-neutral-400' : 'text-neutral-500';
   const inputClass = isDark
     ? 'bg-[#121215] border-white/[0.1] text-white placeholder:text-neutral-500 focus:border-white/30'
@@ -136,6 +150,9 @@ export const StudyArsenalPanel: React.FC<StudyArsenalPanelProps> = ({
   const primaryBtn = isDark
     ? 'bg-white text-black hover:bg-neutral-200'
     : 'bg-black text-white hover:bg-neutral-800';
+  const ghostBtn = isDark
+    ? 'border-white/[0.12] text-neutral-200 hover:bg-white/[0.06]'
+    : 'border-black/[0.12] text-neutral-800 hover:bg-black/[0.04]';
   const pillToggleWrap = isDark
     ? 'bg-[#121215] border-white/[0.08]'
     : 'bg-[#f4f4f5] border-black/[0.08]';
@@ -737,16 +754,98 @@ export const StudyArsenalPanel: React.FC<StudyArsenalPanelProps> = ({
     setCodeRunOutput(file.expectedOutput || 'Executed cleanly (Exit code 0).');
   };
 
+  const activeFeatureLabel =
+    pageTitle || FEATURE_TABS.find((t) => t.id === activeFeature)?.label || 'Study Tool';
+
   return (
-    <div
-      className={
-        singlePageMode
-          ? 'max-w-3xl mx-auto px-4 sm:px-6 py-5 space-y-5 pb-24'
-          : `rounded-2xl border p-4 sm:p-5 space-y-5 ${bgCard}`
-      }
-      data-testid="study-arsenal-panel"
-    >
-      {/* Only show horizontal selector if NOT in dedicated single-page mode */}
+    <div className={singlePageMode && onBack ? 'min-h-full flex flex-col' : ''}>
+      {singlePageMode && onBack && (
+        <header className="h-14 px-4 sm:px-6 bg-transparent flex items-center justify-between gap-3 shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <button
+              type="button"
+              onClick={onBack}
+              data-testid="study-feature-back-btn"
+              className={`h-8 px-3 rounded-full border text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0 ${ghostBtn}`}
+            >
+              <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
+              <span>Back</span>
+            </button>
+            <h1 className="text-sm sm:text-base font-semibold tracking-tight truncate">
+              {activeFeatureLabel}
+            </h1>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {lectureTitle && (
+              <span className={`text-xs truncate max-w-[220px] hidden sm:inline ${textMuted}`}>
+                {lectureTitle}
+              </span>
+            )}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setMoreMenuOpen((v) => !v)}
+                aria-label="Study tool options"
+                data-testid="arsenal-more-menu-btn"
+                className={`size-8 rounded-full border inline-flex items-center justify-center transition-colors cursor-pointer ${ghostBtn}`}
+              >
+                <MoreVertical className="w-3.5 h-3.5" />
+              </button>
+              {moreMenuOpen && (
+                <div
+                  className={`absolute right-0 top-full mt-1.5 w-48 rounded-xl border p-1.5 z-40 shadow-2xl ${
+                    isDark ? 'bg-[#18181b] border-white/[0.12] text-white' : 'bg-white border-black/[0.1] text-black'
+                  }`}
+                >
+                  {onAskTutor && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMoreMenuOpen(false);
+                        const promptByFeature =
+                          activeFeature === 'answer_writing' && ansQuestion.trim()
+                            ? `Coach me on how to write a full-marks answer to: "${ansQuestion.trim()}" (${effectiveTitle}).`
+                            : activeFeature === 'quiz_battles'
+                            ? `Explain the key concepts tested in Quiz Battles for "${battleTopic || effectiveTitle}".`
+                            : activeFeature === 'cheat_sheet' && cheatSheet
+                            ? `Walk me through the core formulas and exam traps in the "${cheatSheet.title}" cheat sheet.`
+                            : activeFeature === 'mind_map' && mindMap
+                            ? `Explain how the core branches of "${mindMap.rootTitle}" connect: ${mindMap.branches.map((b) => b.title).join(', ')}.`
+                            : `Teach me step-by-step about "${effectiveTitle}" (${activeFeatureLabel}).`;
+                        onAskTutor(promptByFeature, effectiveTitle);
+                      }}
+                      className="w-full px-3 py-2 rounded-lg text-xs font-medium text-left flex items-center gap-2 hover:bg-current/5 cursor-pointer"
+                    >
+                      <MessageSquare className="w-3.5 h-3.5" />
+                      <span>Study Tutor</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMoreMenuOpen(false);
+                      onBack();
+                    }}
+                    className="w-full px-3 py-2 rounded-lg text-xs text-left flex items-center gap-2 hover:bg-current/5 cursor-pointer"
+                  >
+                    <ArrowLeft className="w-3.5 h-3.5" />
+                    <span>Back to Study Space</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </header>
+      )}
+      <div
+        className={
+          singlePageMode
+            ? 'max-w-3xl w-full mx-auto px-4 sm:px-6 py-6 space-y-5 pb-24'
+            : `rounded-2xl border p-4 sm:p-5 space-y-5 ${bgCard}`
+        }
+        data-testid="study-arsenal-panel"
+      >
+        {/* Only show horizontal selector if NOT in dedicated single-page mode */}
       {!singlePageMode && (
         <div className={`flex flex-wrap items-center gap-1.5 pb-3 border-b ${borderSubtle}`}>
           {FEATURE_TABS.map((tab) => {
@@ -863,9 +962,11 @@ export const StudyArsenalPanel: React.FC<StudyArsenalPanelProps> = ({
               data-testid="answer-evaluation-result"
             >
               <div className={`flex items-center justify-between gap-3 border-b pb-3 ${borderSubtle}`}>
-                <div className="text-sm font-semibold">{ansEvaluation.question}</div>
+                <div className="text-sm font-semibold">
+                  <MathText text={ansEvaluation.question} />
+                </div>
                 <div className="text-right shrink-0">
-                  <div className="text-xl font-bold font-mono tabular-nums text-[#FC4C01]">
+                  <div className={`text-xl font-bold font-mono tabular-nums ${textPrimary}`}>
                     {ansEvaluation.marksAwarded} / {ansEvaluation.maxMarks}
                   </div>
                   <div className={`text-[11px] ${textMuted}`}>Grade {ansEvaluation.gradeLetter}</div>
@@ -879,23 +980,27 @@ export const StudyArsenalPanel: React.FC<StudyArsenalPanelProps> = ({
                     className={`p-3 rounded-xl border space-y-1 ${borderSubtle}`}
                   >
                     <div className="flex items-center justify-between text-xs font-semibold">
-                      <span>{r.criterion}</span>
-                      <span className="font-mono tabular-nums text-[#FC4C01]">
+                      <span><MathText text={r.criterion} /></span>
+                      <span className={`font-mono tabular-nums ${textPrimary}`}>
                         {r.awarded}/{r.max}
                       </span>
                     </div>
-                    <p className={`text-[11px] leading-relaxed ${textMuted}`}>{r.comment}</p>
+                    <p className={`text-[11px] leading-relaxed ${textMuted}`}>
+                      <MathText text={r.comment} />
+                    </p>
                   </div>
                 ))}
               </div>
 
               <div className="space-y-1.5 text-xs">
                 <div className="font-semibold">Examiner Feedback</div>
-                <p className={`leading-relaxed ${textMuted}`}>{ansEvaluation.examinerFeedback}</p>
+                <p className={`leading-relaxed ${textMuted}`}>
+                  <MathText text={ansEvaluation.examinerFeedback} />
+                </p>
                 {ansEvaluation.missingKeywords.length > 0 && (
                   <div className={`pt-1 ${textMuted}`}>
                     <span className="font-semibold">Missing keywords: </span>
-                    {ansEvaluation.missingKeywords.join(' · ')}
+                    <MathText text={ansEvaluation.missingKeywords.join(' · ')} />
                   </div>
                 )}
               </div>
@@ -904,7 +1009,7 @@ export const StudyArsenalPanel: React.FC<StudyArsenalPanelProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowTopperAnswer((prev) => !prev)}
-                  className="text-xs font-semibold text-[#FC4C01] inline-flex items-center gap-1 cursor-pointer"
+                  className={`text-xs font-semibold inline-flex items-center gap-1 hover:underline cursor-pointer ${textPrimary}`}
                 >
                   <span>
                     {showTopperAnswer ? 'Hide Model Answer' : `View ${ansEvaluation.maxMarks}/${ansEvaluation.maxMarks} Model Answer`}
@@ -928,8 +1033,8 @@ export const StudyArsenalPanel: React.FC<StudyArsenalPanelProps> = ({
               </div>
 
               {showTopperAnswer && (
-                <div className={`p-3.5 rounded-xl border text-xs leading-relaxed whitespace-pre-wrap ${borderSubtle}`}>
-                  {ansEvaluation.modelTopperAnswer}
+                <div className={`p-3.5 rounded-xl border text-xs leading-relaxed ${borderSubtle}`}>
+                  <MathMarkdown content={ansEvaluation.modelTopperAnswer} isDark={isDark} autoDetectLatex />
                 </div>
               )}
             </div>
@@ -1019,7 +1124,7 @@ export const StudyArsenalPanel: React.FC<StudyArsenalPanelProps> = ({
                     <h3 className="text-sm font-semibold mt-0.5">{activeBattle.title}</h3>
                   </div>
                   {battlePlaying && (
-                    <div className="text-xs font-mono tabular-nums text-[#FC4C01] font-semibold">
+                    <div className={`text-xs font-mono tabular-nums font-semibold ${textPrimary}`}>
                       {(battleElapsedMs / 1000).toFixed(1)}s
                     </div>
                   )}
@@ -1045,7 +1150,7 @@ export const StudyArsenalPanel: React.FC<StudyArsenalPanelProps> = ({
                       <span>Score: {battleScore}</span>
                     </div>
                     <div className="text-sm font-semibold leading-snug">
-                      {activeBattle.questions[battleQIdx].question}
+                      <MathText text={activeBattle.questions[battleQIdx].question} />
                     </div>
                     <div className="space-y-2">
                       {activeBattle.questions[battleQIdx].options.map((opt, oIdx) => {
@@ -1067,7 +1172,7 @@ export const StudyArsenalPanel: React.FC<StudyArsenalPanelProps> = ({
                             disabled={battleSelectedOpt !== null}
                             className={`w-full p-3 rounded-xl border text-left text-xs transition-all cursor-pointer ${btnStyle}`}
                           >
-                            {opt}
+                            <MathText text={opt} />
                           </button>
                         );
                       })}
@@ -1118,7 +1223,7 @@ export const StudyArsenalPanel: React.FC<StudyArsenalPanelProps> = ({
                       className="py-2 flex items-center justify-between text-xs"
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
-                        <span className={`w-5 font-mono tabular-nums ${idx === 0 ? 'text-[#FC4C01] font-bold' : textMuted}`}>
+                        <span className={`w-5 font-mono tabular-nums ${idx === 0 ? `${textPrimary} font-bold` : textMuted}`}>
                           #{idx + 1}
                         </span>
                         <span className="font-medium truncate">{ent.playerName}</span>
@@ -1198,7 +1303,7 @@ export const StudyArsenalPanel: React.FC<StudyArsenalPanelProps> = ({
 
               <div className="w-full h-1.5 rounded-full bg-neutral-500/15 overflow-hidden">
                 <div
-                  className="h-full bg-[#FC4C01] transition-all duration-300"
+                  className={`h-full transition-all duration-300 ${isDark ? 'bg-white' : 'bg-black'}`}
                   style={{ width: `${activeCourse.progressPercent}%` }}
                 />
               </div>
@@ -1214,14 +1319,14 @@ export const StudyArsenalPanel: React.FC<StudyArsenalPanelProps> = ({
                       >
                         <div className="space-y-1 min-w-0 flex-1">
                           <div className="text-xs font-semibold">
-                            {mod.moduleNumber}. {mod.title}{' '}
+                            {mod.moduleNumber}. <MathText text={mod.title} />{' '}
                             <span className={`font-normal font-mono ${textMuted}`}>
                               ({mod.durationLabel})
                             </span>
                           </div>
                           <ul className={`text-[11px] space-y-0.5 pl-4 list-disc ${textMuted}`}>
                             {mod.keyTakeaways.map((kt, i) => (
-                              <li key={i}>{kt}</li>
+                              <li key={i}><MathText text={kt} /></li>
                             ))}
                           </ul>
                         </div>
@@ -1257,7 +1362,7 @@ export const StudyArsenalPanel: React.FC<StudyArsenalPanelProps> = ({
                       className={`p-3.5 rounded-xl border space-y-2 ${borderSubtle}`}
                     >
                       <div className="text-xs font-semibold">
-                        {qIdx + 1}. {q.question}
+                        {qIdx + 1}. <MathText text={q.question} />
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         {q.options.map((opt, oIdx) => {
@@ -1285,13 +1390,15 @@ export const StudyArsenalPanel: React.FC<StudyArsenalPanelProps> = ({
                                   : borderSubtle
                               }`}
                             >
-                              {opt}
+                              <MathText text={opt} />
                             </button>
                           );
                         })}
                       </div>
                       {finalTestSubmitted && (
-                        <div className={`text-[11px] pt-1 ${textMuted}`}>{q.explanation}</div>
+                        <div className={`text-[11px] pt-1 ${textMuted}`}>
+                          <MathText text={q.explanation} />
+                        </div>
                       )}
                     </div>
                   ))}
@@ -1396,10 +1503,10 @@ export const StudyArsenalPanel: React.FC<StudyArsenalPanelProps> = ({
                       >
                         <div className="space-y-1">
                           <div className={`text-[11px] font-mono ${textMuted}`}>
-                            Q{q.number} · <span className="text-[#FC4C01] font-semibold">{q.marks} Marks</span> · {q.probabilityTag}
+                            Q{q.number} · <span className={`font-semibold ${textPrimary}`}>{q.marks} Marks</span> · {q.probabilityTag}
                           </div>
                           <div className="text-xs sm:text-sm font-medium leading-snug">
-                            {q.question}
+                            <MathText text={q.question} />
                           </div>
                         </div>
                         <ChevronDown
@@ -1415,13 +1522,15 @@ export const StudyArsenalPanel: React.FC<StudyArsenalPanelProps> = ({
                             <div className="font-semibold mb-1">Key Points</div>
                             <ul className={`list-disc pl-4 space-y-0.5 ${textMuted}`}>
                               {q.keyPoints.map((pt, i) => (
-                                <li key={i}>{pt}</li>
+                                <li key={i}><MathText text={pt} /></li>
                               ))}
                             </ul>
                           </div>
                           <div>
                             <div className="font-semibold mb-0.5">Model Answer</div>
-                            <p className={`leading-relaxed ${textMuted}`}>{q.modelAnswer}</p>
+                            <div className={`leading-relaxed ${textMuted}`}>
+                              <MathMarkdown content={q.modelAnswer} isDark={isDark} autoDetectLatex />
+                            </div>
                           </div>
                           {q.marks >= 5 && (
                             <div className="pt-1">
@@ -1503,11 +1612,13 @@ export const StudyArsenalPanel: React.FC<StudyArsenalPanelProps> = ({
                 {cheatSheet.formulas.map((f, i) => (
                   <div
                     key={i}
-                    className={`p-3 rounded-xl border space-y-1 ${borderSubtle}`}
+                    className={`p-3 rounded-xl border space-y-1.5 ${borderSubtle}`}
                   >
-                    <div className="text-xs font-medium">{f.name}</div>
-                    <div className="text-xs font-mono font-semibold text-[#FC4C01]">{f.expression}</div>
-                    <div className={`text-[11px] ${textMuted}`}>{f.variables}</div>
+                    <div className="text-xs font-medium"><MathText text={f.name} /></div>
+                    <div className={`text-xs ${textPrimary}`}>
+                      <MathFormula formula={f.expression} displayMode />
+                    </div>
+                    <div className={`text-[11px] ${textMuted}`}><MathText text={f.variables} /></div>
                   </div>
                 ))}
               </div>
@@ -1517,8 +1628,8 @@ export const StudyArsenalPanel: React.FC<StudyArsenalPanelProps> = ({
                   <div className="text-xs font-semibold">Definitions</div>
                   {cheatSheet.definitions.map((d, i) => (
                     <div key={i} className="text-xs leading-relaxed">
-                      <span className="font-semibold">{d.term}: </span>
-                      <span className={textMuted}>{d.definition}</span>
+                      <span className="font-semibold"><MathText text={d.term} />: </span>
+                      <span className={textMuted}><MathText text={d.definition} /></span>
                     </div>
                   ))}
                 </div>
@@ -1527,13 +1638,13 @@ export const StudyArsenalPanel: React.FC<StudyArsenalPanelProps> = ({
                   <div className="text-xs font-semibold">Key Points &amp; Exam Traps</div>
                   <ul className={`text-xs space-y-1 list-disc pl-4 ${textMuted}`}>
                     {cheatSheet.keyPoints.map((kp, i) => (
-                      <li key={i}>{kp}</li>
+                      <li key={i}><MathText text={kp} /></li>
                     ))}
                   </ul>
                   <div className="pt-1 space-y-1">
                     {cheatSheet.examTraps.map((t, i) => (
-                      <div key={i} className="text-[11px] text-[#FC4C01]">
-                        • {t}
+                      <div key={i} className={`text-[11px] font-medium ${textPrimary}`}>
+                        • <MathText text={t} />
                       </div>
                     ))}
                   </div>
@@ -1592,6 +1703,20 @@ export const StudyArsenalPanel: React.FC<StudyArsenalPanelProps> = ({
                     const targetX = isLeft ? 175 : 685;
                     const targetY = 85 + row * 115;
                     const active = selectedBranchId === branch.id;
+                    const titleColor = active
+                      ? isDark
+                        ? '#09090b'
+                        : '#ffffff'
+                      : isDark
+                      ? '#f4f4f5'
+                      : '#0f172a';
+                    const subColor = active
+                      ? isDark
+                        ? '#52525b'
+                        : '#d4d4d8'
+                      : isDark
+                      ? '#a1a1aa'
+                      : '#64748b';
                     return (
                       <g key={branch.id}>
                         <path
@@ -1599,7 +1724,7 @@ export const StudyArsenalPanel: React.FC<StudyArsenalPanelProps> = ({
                             isLeft ? 290 : 570
                           } ${targetY}, ${targetX} ${targetY}`}
                           fill="none"
-                          stroke={active ? '#FC4C01' : isDark ? '#3f3f46' : '#cbd5e1'}
+                          stroke={active ? (isDark ? '#ffffff' : '#09090b') : isDark ? '#3f3f46' : '#cbd5e1'}
                           strokeWidth={active ? 2.4 : 1.5}
                         />
                         <g
@@ -1608,39 +1733,53 @@ export const StudyArsenalPanel: React.FC<StudyArsenalPanelProps> = ({
                         >
                           <rect
                             x={targetX - 145}
-                            y={targetY - 32}
+                            y={targetY - 34}
                             width={290}
-                            height={64}
+                            height={68}
                             rx={12}
                             fill={
                               active
-                                ? '#FC4C01'
+                                ? isDark
+                                  ? '#ffffff'
+                                  : '#09090b'
                                 : isDark
                                 ? '#18181b'
                                 : '#ffffff'
                             }
-                            stroke={active ? '#FC4C01' : isDark ? '#3f3f46' : '#cbd5e1'}
+                            stroke={active ? (isDark ? '#ffffff' : '#09090b') : isDark ? '#3f3f46' : '#cbd5e1'}
                             strokeWidth={1.5}
                           />
-                          <text
-                            x={targetX}
-                            y={targetY - 6}
-                            textAnchor="middle"
-                            fill={active ? '#ffffff' : isDark ? '#f4f4f5' : '#0f172a'}
-                            fontSize="12"
-                            fontWeight="bold"
-                          >
-                            {branch.title.slice(0, 34)}
-                          </text>
-                          <text
-                            x={targetX}
-                            y={targetY + 14}
-                            textAnchor="middle"
-                            fill={active ? '#ffedd5' : '#9ca3af'}
-                            fontSize="10"
-                          >
-                            {branch.children.map((c) => c.label).join(' · ').slice(0, 42)}
-                          </text>
+                          <foreignObject x={targetX - 135} y={targetY - 28} width={270} height={56}>
+                            <div
+                              style={{
+                                textAlign: 'center',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                justifyContent: 'center',
+                                height: '100%',
+                                overflow: 'hidden',
+                              }}
+                            >
+                              <SvgLatex
+                                text={branch.title}
+                                style={{
+                                  fontSize: '12px',
+                                  fontWeight: 700,
+                                  lineHeight: 1.25,
+                                  color: titleColor,
+                                }}
+                              />
+                              <SvgLatex
+                                text={branch.children.map((c) => c.label).slice(0, 2).join(' · ')}
+                                style={{
+                                  fontSize: '10px',
+                                  lineHeight: 1.25,
+                                  marginTop: '3px',
+                                  color: subColor,
+                                }}
+                              />
+                            </div>
+                          </foreignObject>
                         </g>
                       </g>
                     );
@@ -1655,16 +1794,28 @@ export const StudyArsenalPanel: React.FC<StudyArsenalPanelProps> = ({
                       rx={16}
                       fill={isDark ? '#ffffff' : '#111113'}
                     />
-                    <text
-                      x={430}
-                      y={184}
-                      textAnchor="middle"
-                      fill={isDark ? '#000000' : '#ffffff'}
-                      fontSize="13"
-                      fontWeight="bold"
-                    >
-                      {mindMap.rootTitle.slice(0, 26)}
-                    </text>
+                    <foreignObject x={325} y={148} width={210} height={64}>
+                      <div
+                        style={{
+                          textAlign: 'center',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          height: '100%',
+                          overflow: 'hidden',
+                        }}
+                      >
+                        <SvgLatex
+                          text={mindMap.rootTitle}
+                          style={{
+                            fontSize: '13px',
+                            fontWeight: 700,
+                            lineHeight: 1.25,
+                            color: isDark ? '#000000' : '#ffffff',
+                          }}
+                        />
+                      </div>
+                    </foreignObject>
                   </g>
                 </svg>
               </div>
@@ -1677,16 +1828,16 @@ export const StudyArsenalPanel: React.FC<StudyArsenalPanelProps> = ({
                       key={b.id}
                       onClick={() => setSelectedBranchId(b.id)}
                       className={`p-3.5 rounded-2xl border transition-all cursor-pointer space-y-1.5 ${
-                        active ? 'border-[#FC4C01]' : bgCard
+                        active ? (isDark ? 'border-white' : 'border-black') : bgCard
                       }`}
                     >
-                      <div className="text-xs font-semibold">{b.title}</div>
-                      <p className={`text-[11px] ${textMuted}`}>{b.summary}</p>
+                      <div className="text-xs font-semibold"><MathText text={b.title} /></div>
+                      <p className={`text-[11px] ${textMuted}`}><MathText text={b.summary} /></p>
                       <div className="space-y-1 pt-1">
                         {b.children.map((ch) => (
                           <div key={ch.id} className="text-xs">
-                            <span className="font-medium">• {ch.label}: </span>
-                            <span className={textMuted}>{ch.detail}</span>
+                            <span className="font-medium">• <MathText text={ch.label} />: </span>
+                            <span className={textMuted}><MathText text={ch.detail} /></span>
                           </div>
                         ))}
                       </div>
@@ -1807,6 +1958,48 @@ export const StudyArsenalPanel: React.FC<StudyArsenalPanelProps> = ({
           )}
         </div>
       )}
+
+      {/* Unified Prompt Input Bar Connected to Study Tutor */}
+      {onAskTutor && (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const q = tutorDraft.trim();
+            if (!q) return;
+            const prefix =
+              activeFeature === 'answer_writing' && ansQuestion.trim()
+                ? `[Answer Grader · Question: ${ansQuestion.trim()}]\n\n`
+                : activeFeature === 'cheat_sheet' && cheatSheet
+                ? `[Cheat Sheet · ${cheatSheet.title}]\n\n`
+                : activeFeature === 'mind_map' && mindMap
+                ? `[Mind Map · ${mindMap.rootTitle}]\n\n`
+                : activeFeature === 'code_extractor' && codeFiles[activeCodeFileIdx]
+                ? `[Code Extractor · ${codeFiles[activeCodeFileIdx].filename}]\n\n`
+                : `[${activeFeatureLabel} · ${effectiveTitle}]\n\n`;
+            setTutorDraft('');
+            onAskTutor(`${prefix}${q}`, effectiveTitle);
+          }}
+          className={`flex items-center gap-2 p-2 pl-4 rounded-2xl border ${bgCard}`}
+          data-testid="arsenal-tutor-prompt-bar"
+        >
+          <input
+            type="text"
+            value={tutorDraft}
+            onChange={(e) => setTutorDraft(e.target.value)}
+            placeholder={`Ask Study Tutor about ${activeFeatureLabel} (${effectiveTitle})...`}
+            className="flex-1 min-w-0 bg-transparent border-0 text-xs sm:text-sm outline-none placeholder:text-neutral-500"
+          />
+          <button
+            type="submit"
+            disabled={!tutorDraft.trim()}
+            className={`px-3.5 py-2 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-40 whitespace-nowrap shrink-0 ${primaryBtn}`}
+          >
+            <Send className="w-3.5 h-3.5" />
+            <span>Ask Tutor</span>
+          </button>
+        </form>
+      )}
+      </div>
     </div>
   );
 };

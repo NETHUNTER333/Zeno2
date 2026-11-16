@@ -711,12 +711,8 @@ export const LegalAndInfoPages: React.FC<LegalAndInfoPagesProps> = ({
         isDark ? 'bg-black text-white' : 'bg-[#fafafa] text-[#09090b]'
       }`}
     >
-      {/* Top Navigation Bar (OpenAI Policy Style) */}
-      <header
-        className={`sticky top-0 z-30 border-b px-4 sm:px-10 py-3.5 flex items-center justify-between gap-4 backdrop-blur-md ${
-          isDark ? 'bg-black/95 border-white/10' : 'bg-white/95 border-black/10'
-        }`}
-      >
+      {/* Top Navigation Bar */}
+      <header className="z-30 px-4 sm:px-10 py-3.5 bg-transparent flex items-center justify-between gap-4 shrink-0">
         <div className="flex items-center gap-3 shrink-0">
           <button
             type="button"

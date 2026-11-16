@@ -249,6 +249,14 @@ export function resolveSpaClientRouteMeta(pathname: string): SpaRouteMeta | null
       canonicalPath: '/',
     };
   }
+  if (clean === '/hitaishi' || clean.startsWith('/hitaishi/') || clean === '/stage' || clean.startsWith('/stage/')) {
+    return {
+      title: 'Hitaishi Stage — AI VTuber Studio · Kinich',
+      description:
+        'Hitaishi AI VTuber Studio: 2D & 3D interactive characters, real-time voice & lip-sync, face tracking, multi-character stage banter, and OBS output.',
+      canonicalPath: '/hitaishi',
+    };
+  }
   if (
     clean === '/chat' ||
     clean.startsWith('/chat/') ||
@@ -273,7 +281,9 @@ export function isKnownSpaClientRoute(pathname: string): boolean {
     clean.startsWith('/src/') ||
     clean.startsWith('/@') ||
     clean.startsWith('/node_modules/') ||
-    clean.startsWith('/assets/')
+    clean.startsWith('/assets/') ||
+    clean.startsWith('/hitaishi-characters/') ||
+    clean.startsWith('/hitaishi-assets/')
   ) {
     return true;
   }

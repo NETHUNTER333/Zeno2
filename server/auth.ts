@@ -9,15 +9,24 @@ import {
   type AppOptions,
 } from 'firebase-admin/app';
 import { getAuth as getAdminAuth, type DecodedIdToken } from 'firebase-admin/auth';
-import { getFirestore as getAdminFirestore } from 'firebase-admin/firestore';
+import { getFirestore as getRawAdminFirestore, type Firestore } from 'firebase-admin/firestore';
 import {
   getFirebaseProjectId,
+  getFirestoreDatabaseId,
   isFirebaseCheckRevokedEnabled,
   isStrictAuthRequired,
   sendNormalizedError,
 } from './config';
 
-export { getAdminFirestore };
+export function getAdminFirestore(
+  app: FirebaseAdminApp = getOrInitFirebaseAdmin(),
+  databaseId: string = getFirestoreDatabaseId()
+): Firestore {
+  if (databaseId && databaseId !== '(default)') {
+    return getRawAdminFirestore(app, databaseId);
+  }
+  return getRawAdminFirestore(app);
+}
 
 export interface VerifiedAuthContext {
   uid: string;

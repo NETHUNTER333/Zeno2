@@ -1,15 +1,30 @@
 import fs from 'fs';
 import path from 'path';
 import type { Request, Response, NextFunction } from 'express';
-import { resolveTrustedClientIp, sendNormalizedError } from './config';
+import {
+  getDataDir,
+  getRedisUrl,
+  isTestRuntime as configIsTestRuntime,
+  resolveTrustedClientIp,
+  sendNormalizedError,
+} from './config';
+import {
+  canUseServerFirestore,
+  getServerFirestoreAdapter,
+  hashBucketKey,
+  logFirestoreSyncWarning,
+  SERVER_COLLECTIONS,
+  type ServerFirestoreAdapter,
+} from './firestorePersistence';
 
 /**
- * DEPLOYMENT NOTE — Process-Local vs. Horizontally Scaled Rate Limiting & Quota Ledger:
- * - By default, Zeno uses `InMemorySlidingWindowStore` + `InMemoryTokenBucketGuard` in single-instance deployments,
- *   along with a persistent server-side daily quota ledger (`.insta/zeno_quota_ledger.json`) and Firestore sync
- *   (`/users/{userId}/quotas/{YYYY-MM-DD}`).
- * - When horizontally scaled with `REDIS_URL`, `RedisSlidingWindowStore` executes an atomic Lua sliding-window
- *   + token-bucket script across all instances.
+ * DEPLOYMENT NOTE — Horizontally Scaled Rate Limiting & Quota Ledger:
+ * - When `REDIS_URL` is configured, `RedisSlidingWindowStore` executes an atomic Lua sliding-window
+ *   script across all instances.
+ * - When `REDIS_URL` is absent and Firebase Firestore is available, `FirestoreSlidingWindowStore`
+ *   provides transactional cross-instance sliding-window enforcement automatically.
+ * - Single-instance / local dev uses `InMemorySlidingWindowStore` plus persistent disk ledger
+ *   (`$DATA_DIR/zeno_quota_ledger.json`) and Firestore sync (`/users/{userId}/quotas/{YYYY-MM-DD}`).
  * - `FailSafeRateLimiter` guarantees that if the shared store becomes unavailable, requests NEVER fail open to
  *   unlimited access—they either fall back to a strict process-local emergency sliding window (`failMode: 'fallback'`)
  *   or reject with 503 (`failMode: 'closed'`).
@@ -295,6 +310,107 @@ export async function createRedisRateLimitStoreFromEnv(
   return new RedisSlidingWindowStore(client as unknown as RedisEvalClient);
 }
 
+/**
+ * Distributed Firestore-backed sliding-window store using atomic Firestore transactions.
+ * Used automatically when `REDIS_URL` is not configured on multi-instance Cloud Run / container hosts.
+ */
+export class FirestoreSlidingWindowStore implements RateLimitStore {
+  private readonly adapterOverride?: ServerFirestoreAdapter;
+  private readonly keyPrefix: string;
+
+  constructor(adapterOverride?: ServerFirestoreAdapter, keyPrefix = 'zeno:rl:') {
+    this.adapterOverride = adapterOverride;
+    this.keyPrefix = keyPrefix;
+  }
+
+  private resolveAdapter(): ServerFirestoreAdapter {
+    const adapter = this.adapterOverride || getServerFirestoreAdapter();
+    if (!adapter) {
+      throw new Error('Firestore adapter is not configured for distributed rate limiting');
+    }
+    return adapter;
+  }
+
+  async incrementAndCheck(
+    key: string,
+    windowMs: number,
+    maxRequests: number,
+    nowMs = Date.now()
+  ): Promise<RateLimitCheckResult> {
+    const adapter = this.resolveAdapter();
+    const docId = hashBucketKey(`${this.keyPrefix}${key}`);
+    const windowStart = nowMs - windowMs;
+
+    return adapter.runTransaction(async (tx) => {
+      const existing = await tx.get(SERVER_COLLECTIONS.RATE_LIMITS, docId);
+      const rawTimestamps = Array.isArray(existing?.timestamps)
+        ? (existing.timestamps as unknown[]).map(Number).filter((ts) => Number.isFinite(ts) && ts > windowStart)
+        : [];
+      rawTimestamps.sort((a, b) => a - b);
+
+      if (rawTimestamps.length >= maxRequests) {
+        tx.set(
+          SERVER_COLLECTIONS.RATE_LIMITS,
+          docId,
+          {
+            keyHash: docId,
+            timestamps: rawTimestamps,
+            updatedAt: nowMs,
+            expiresAt: nowMs + windowMs,
+          },
+          false
+        );
+        const oldestInWindow = rawTimestamps[0] || nowMs;
+        const resetAtMs = oldestInWindow + windowMs;
+        const retryAfterSec = Math.max(1, Math.ceil((resetAtMs - nowMs) / 1000));
+        return {
+          allowed: false,
+          limit: maxRequests,
+          remaining: 0,
+          resetAtMs,
+          retryAfterSec,
+        };
+      }
+
+      rawTimestamps.push(nowMs);
+      tx.set(
+        SERVER_COLLECTIONS.RATE_LIMITS,
+        docId,
+        {
+          keyHash: docId,
+          timestamps: rawTimestamps,
+          updatedAt: nowMs,
+          expiresAt: nowMs + windowMs,
+        },
+        false
+      );
+
+      const oldestInWindow = rawTimestamps[0] || nowMs;
+      const resetAtMs = oldestInWindow + windowMs;
+      return {
+        allowed: true,
+        limit: maxRequests,
+        remaining: Math.max(0, maxRequests - rawTimestamps.length),
+        resetAtMs,
+        retryAfterSec: 0,
+      };
+    });
+  }
+
+  async reset(key?: string): Promise<void> {
+    if (!key) return;
+    const adapter = this.adapterOverride || getServerFirestoreAdapter();
+    if (!adapter) return;
+    const docId = hashBucketKey(`${this.keyPrefix}${key}`);
+    await adapter.setDoc(
+      SERVER_COLLECTIONS.RATE_LIMITS,
+      docId,
+      { keyHash: docId, timestamps: [], updatedAt: Date.now(), expiresAt: Date.now() },
+      false
+    );
+  }
+}
+
 export type RateLimitFailMode = 'fallback' | 'closed';
 
 let primaryStore: RateLimitStore = new InMemorySlidingWindowStore();
@@ -303,14 +419,41 @@ let configuredFailMode: RateLimitFailMode =
   process.env.RATE_LIMIT_FAIL_MODE === 'closed' ? 'closed' : 'fallback';
 let customTierPolicies: Record<RateLimitTier, TierPolicy> = { ...DEFAULT_TIER_POLICIES };
 
-if ((process.env.REDIS_URL || '').trim()) {
-  createRedisRateLimitStoreFromEnv()
-    .then((store) => {
-      if (store) primaryStore = store;
-    })
-    .catch(() => {
-      // FailSafeRateLimiter continues protecting requests
-    });
+export async function initializeDistributedRateLimiter(): Promise<'redis' | 'firestore' | 'memory'> {
+  const redisUrl = getRedisUrl();
+  if (redisUrl) {
+    try {
+      const store = await createRedisRateLimitStoreFromEnv(redisUrl);
+      if (store) {
+        primaryStore = store;
+        return 'redis';
+      }
+    } catch {
+      // Fall through to Firestore or emergency in-memory store
+    }
+  }
+  if (canUseServerFirestore()) {
+    primaryStore = new FirestoreSlidingWindowStore();
+    return 'firestore';
+  }
+  primaryStore = new InMemorySlidingWindowStore();
+  return 'memory';
+}
+
+if (!configIsTestRuntime()) {
+  if (getRedisUrl()) {
+    createRedisRateLimitStoreFromEnv()
+      .then((store) => {
+        if (store) primaryStore = store;
+      })
+      .catch(() => {
+        if (canUseServerFirestore()) {
+          primaryStore = new FirestoreSlidingWindowStore();
+        }
+      });
+  } else if (canUseServerFirestore()) {
+    primaryStore = new FirestoreSlidingWindowStore();
+  }
 }
 
 export function setPrimaryRateLimitStore(store: RateLimitStore): void {
@@ -576,8 +719,6 @@ const SERVER_FIRE_MODELS = new Set<string>([
   'fgw-code-limitless-free',
   'fgw/code-limitless:free',
   'crow-code-limitless:free',
-  'fgw-deepseek-v4.1-flash-uncensored-free',
-  'fgw/deepseek-v4.1-flash-uncensored:free',
   'fgw-deepseek-v4-flash-uncensored-free',
   'fgw/deepseek-v4-flash-uncensored:free',
   'fgw-qwen3.8-27b-uncensored-free',
@@ -665,12 +806,22 @@ export interface ServerDailyQuotaSnapshot extends ServerDailyQuotaRecord {
 
 const FREE_QUOTA_WINDOW_MS = 5 * 60 * 60 * 1000; // 5 hours rolling reset for free models
 
-const QUOTA_LEDGER_FILE = path.resolve(process.cwd(), '.insta', 'zeno_quota_ledger.json');
+function getQuotaLedgerFilePath(): string {
+  if ((process.env.DATA_DIR || process.env.KINICH_DATA_DIR || '').trim()) {
+    return path.join(getDataDir(), 'zeno_quota_ledger.json');
+  }
+  const legacyInsta = path.resolve(process.cwd(), '.insta', 'zeno_quota_ledger.json');
+  if (fs.existsSync(legacyInsta)) {
+    return legacyInsta;
+  }
+  return path.join(getDataDir(), 'zeno_quota_ledger.json');
+}
+
 const quotaRecordsByPrincipal = new Map<string, ServerDailyQuotaRecord>();
 const planByPrincipal = new Map<string, { plan: SubscriptionPlanTier; billingCycle: 'monthly' | 'yearly' }>();
 
 function isTestRuntime(): boolean {
-  return process.env.NODE_ENV === 'test' || process.env.VITEST === 'true';
+  return configIsTestRuntime();
 }
 
 export function getUtcDateKey(now = new Date()): string {
@@ -685,8 +836,9 @@ export function getNextUtcMidnightIso(now = new Date()): string {
 function loadQuotaLedgerFromDisk(): void {
   if (isTestRuntime()) return;
   try {
-    if (!fs.existsSync(QUOTA_LEDGER_FILE)) return;
-    const raw = fs.readFileSync(QUOTA_LEDGER_FILE, 'utf8');
+    const ledgerFile = getQuotaLedgerFilePath();
+    if (!fs.existsSync(ledgerFile)) return;
+    const raw = fs.readFileSync(ledgerFile, 'utf8');
     const parsed = JSON.parse(raw);
     if (parsed && typeof parsed === 'object') {
       if (parsed.records && typeof parsed.records === 'object') {
@@ -712,7 +864,8 @@ function loadQuotaLedgerFromDisk(): void {
 function persistQuotaLedgerToDisk(): void {
   if (isTestRuntime()) return;
   try {
-    const dir = path.dirname(QUOTA_LEDGER_FILE);
+    const ledgerFile = getQuotaLedgerFilePath();
+    const dir = path.dirname(ledgerFile);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
@@ -728,12 +881,95 @@ function persistQuotaLedgerToDisk(): void {
       plansObj[k] = p;
     }
     fs.writeFileSync(
-      QUOTA_LEDGER_FILE,
+      ledgerFile,
       JSON.stringify({ updatedAt: Date.now(), records: recordsObj, plans: plansObj }, null, 2),
       'utf8'
     );
   } catch {
     // Non-fatal in read-only environments
+  }
+}
+
+async function syncQuotaRecordToFirestore(rec: ServerDailyQuotaRecord): Promise<void> {
+  if (!rec.uid) return;
+  const adapter = getServerFirestoreAdapter();
+  if (!adapter) return;
+  try {
+    await adapter.setDoc(
+      `users/${rec.uid}/quotas`,
+      rec.quotaDate,
+      {
+        quotaDate: rec.quotaDate,
+        userId: rec.uid,
+        plan: rec.plan,
+        billingCycle: rec.billingCycle,
+        messagesUsed: rec.messagesUsed,
+        filesUploaded: rec.filesUploaded,
+        searchesUsed: rec.searchesUsed,
+        deepResearchUsed: rec.deepResearchUsed,
+        pdfStudyUsed: rec.pdfStudyUsed,
+        tokensUsed: rec.tokensUsed,
+        updatedAt: rec.updatedAt,
+        ...(typeof rec.windowStartAt === 'number' ? { windowStartAt: rec.windowStartAt } : {}),
+      },
+      true
+    );
+  } catch (err) {
+    logFirestoreSyncWarning('quotaWrite', err);
+  }
+}
+
+export async function hydrateServerQuotaFromFirestore(req: Request): Promise<void> {
+  const uid = req.auth?.uid || null;
+  if (!uid) return;
+  const adapter = getServerFirestoreAdapter();
+  if (!adapter) return;
+
+  const today = getUtcDateKey();
+  const principalKey = `uid:${uid}`;
+  try {
+    const remote = await adapter.getDoc(`users/${uid}/quotas`, today);
+    if (!remote) return;
+
+    const existing = quotaRecordsByPrincipal.get(principalKey);
+    const remotePlan = normalizePlanTier(remote.plan);
+    const remoteCycle = remote.billingCycle === 'yearly' ? 'yearly' : 'monthly';
+    const remoteWindowStart =
+      typeof remote.windowStartAt === 'number' && Number.isFinite(remote.windowStartAt)
+        ? remote.windowStartAt
+        : undefined;
+    const isRemoteFreeExpired =
+      remotePlan === 'free' &&
+      typeof remoteWindowStart === 'number' &&
+      Date.now() - remoteWindowStart >= FREE_QUOTA_WINDOW_MS;
+
+    if (isRemoteFreeExpired) return;
+
+    const merged: ServerDailyQuotaRecord = {
+      quotaDate: today,
+      principalKey,
+      uid,
+      plan: existing?.plan || remotePlan,
+      billingCycle: existing?.billingCycle || remoteCycle,
+      messagesUsed: Math.max(existing?.quotaDate === today ? existing.messagesUsed : 0, Number(remote.messagesUsed) || 0),
+      filesUploaded: Math.max(existing?.quotaDate === today ? existing.filesUploaded : 0, Number(remote.filesUploaded) || 0),
+      searchesUsed: Math.max(existing?.quotaDate === today ? existing.searchesUsed : 0, Number(remote.searchesUsed) || 0),
+      deepResearchUsed: Math.max(
+        existing?.quotaDate === today ? existing.deepResearchUsed : 0,
+        Number(remote.deepResearchUsed) || 0
+      ),
+      pdfStudyUsed: Math.max(existing?.quotaDate === today ? existing.pdfStudyUsed : 0, Number(remote.pdfStudyUsed) || 0),
+      tokensUsed: Math.max(existing?.quotaDate === today ? existing.tokensUsed : 0, Number(remote.tokensUsed) || 0),
+      updatedAt: Math.max(existing?.updatedAt || 0, Number(remote.updatedAt) || Date.now()),
+      windowStartAt: existing?.windowStartAt || remoteWindowStart || Date.now(),
+    };
+
+    quotaRecordsByPrincipal.set(principalKey, merged);
+    if (!planByPrincipal.has(principalKey)) {
+      planByPrincipal.set(principalKey, { plan: remotePlan, billingCycle: remoteCycle });
+    }
+  } catch (err) {
+    logFirestoreSyncWarning('quotaHydrate', err);
   }
 }
 
@@ -937,6 +1173,7 @@ export function syncServerQuotaFromClient(
 
   quotaRecordsByPrincipal.set(principalKey, rec);
   persistQuotaLedgerToDisk();
+  void syncQuotaRecordToFirestore(rec);
 
   return getServerQuotaSnapshot(req);
 }
@@ -968,6 +1205,7 @@ export function upgradeServerSubscriptionPlan(
   }
   quotaRecordsByPrincipal.set(principalKey, rec);
   persistQuotaLedgerToDisk();
+  void syncQuotaRecordToFirestore(rec);
 
   return getServerQuotaSnapshot(req);
 }
@@ -1154,5 +1392,6 @@ export function recordServerQuotaConsumption(
   }
 
   persistQuotaLedgerToDisk();
+  void syncQuotaRecordToFirestore(rec);
   return getServerQuotaSnapshot(req);
 }

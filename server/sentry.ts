@@ -47,12 +47,17 @@ function sanitizeBackendObject(obj: any, depth = 0): any {
 }
 
 export function initBackendSentry() {
-  if (!dsn) {
-    console.warn('[Sentry Backend] SENTRY_DSN not configured in environment variables.');
+  const isTest = process.env.NODE_ENV === 'test' || process.env.VITEST === 'true';
+  if (!dsn && !isTest) {
+    const levelNote = isProd
+      ? '[Sentry Backend] SENTRY_DSN is not configured in production — error telemetry disabled.'
+      : '[Sentry Backend] SENTRY_DSN not configured (local dev mode).';
+    console.warn(levelNote);
   }
 
   Sentry.init({
     dsn: dsn || undefined,
+    enabled: Boolean(dsn),
     environment,
     release,
     tracesSampleRate: 0.1,

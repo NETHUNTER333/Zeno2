@@ -66,7 +66,7 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'fgw/deepseek-v4.1-flash-uncensored:free',
     supportsVision: false,
     contextLength: '1M',
-    requiredTier: 'fire',
+    requiredTier: 'spark',
   },
   {
     id: 'fgw-deepseek-v4-flash-uncensored-free',
@@ -1507,7 +1507,6 @@ const FIRE_MODEL_IDS = new Set([
   'ar-pareto-code-router',
   'fgw-limitless-free',
   'fgw-code-limitless-free',
-  'fgw-deepseek-v4.1-flash-uncensored-free',
   'fgw-deepseek-v4-flash-uncensored-free',
   'fgw-qwen3.8-27b-uncensored-free',
   'fgw-deepseek-v4-flash-0731-thinking-free',
@@ -1544,7 +1543,25 @@ export function getModelRequiredTier(model: ModelOption): 'free' | 'spark' | 'fi
   return 'spark';
 }
 
+export function getPreferredDefaultModel(): ModelOption {
+  const prefId = UserAccountStore.getPersonalization().defaultModelId;
+  if (prefId) {
+    const found = GROK_MODELS.find((m) => m.id === prefId);
+    if (found && UserAccountStore.canUseModel(getModelRequiredTier(found))) {
+      return found;
+    }
+  }
+  return GROK_MODELS[0];
+}
+
 export function getDefaultVisionModel(): ModelOption {
+  const prefVisionId = UserAccountStore.getPersonalization().defaultVisionModelId;
+  if (prefVisionId) {
+    const preferred = GROK_MODELS.find((m) => m.id === prefVisionId && m.supportsVision);
+    if (preferred && UserAccountStore.canUseModel(getModelRequiredTier(preferred))) {
+      return preferred;
+    }
+  }
   return (
     GROK_MODELS.find((m) => m.supportsVision && UserAccountStore.canUseModel(getModelRequiredTier(m))) ||
     GROK_MODELS.find((m) => m.supportsVision) ||
@@ -1618,10 +1635,10 @@ export const GrokModelPicker: React.FC<GrokModelPickerProps> = ({
 
   const triggerClasses =
     variant === 'header'
-      ? `flex items-center gap-1.5 h-7.5 sm:h-8 px-2.5 sm:px-3 rounded-full border backdrop-blur-xl transition-all cursor-pointer font-medium text-xs sm:text-[13px] select-none ${
+      ? `flex items-center gap-1.5 h-7.5 sm:h-8 px-2.5 sm:px-3 rounded-full border transition-colors cursor-pointer font-medium text-xs sm:text-[13px] select-none ${
           isDark
-            ? 'bg-neutral-900/60 hover:bg-neutral-800/75 border-white/[0.12] text-white shadow-xs'
-            : 'bg-white/80 hover:bg-white border-black/[0.1] text-zinc-900 shadow-xs'
+            ? 'bg-[#09090b] hover:bg-white/[0.08] border-white/[0.14] text-white'
+            : 'bg-white hover:bg-black/[0.05] border-black/[0.1] text-zinc-900'
         }`
       : `flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs transition-colors cursor-pointer ${
           isDark ? 'text-white/80 hover:text-white' : 'text-black/75 hover:text-black'

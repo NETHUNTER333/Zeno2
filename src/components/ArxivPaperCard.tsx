@@ -214,11 +214,15 @@ export const ArxivPaperCard: React.FC<ArxivPaperCardProps> = ({
           href={paper.absUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="opacity-50 hover:opacity-100 hover:underline flex items-center gap-0.5 ml-auto"
+          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border font-medium transition-colors ml-auto ${
+            isDark
+              ? 'bg-white/[0.04] hover:bg-white/[0.1] border-white/15 text-neutral-200'
+              : 'bg-black/[0.03] hover:bg-black/[0.08] border-black/15 text-neutral-800'
+          }`}
           title="Open raw arXiv web page"
         >
           <span>arXiv Site</span>
-          <ExternalLink className="w-2.5 h-2.5" />
+          <ExternalLink className="w-3.5 h-3.5" />
         </a>
       </div>
 
@@ -294,10 +298,10 @@ export const ArxivPaperCard: React.FC<ArxivPaperCardProps> = ({
                     href={repo.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 font-medium hover:underline text-[#007aff]"
+                    className="inline-flex items-center gap-1 text-xs font-semibold hover:underline text-[#007aff]"
                   >
                     <span>View Repository</span>
-                    <ExternalLink className="w-2.5 h-2.5 opacity-70" />
+                    <ExternalLink className="w-3.5 h-3.5" />
                   </a>
                 </div>
               </div>

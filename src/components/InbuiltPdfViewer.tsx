@@ -38,7 +38,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
-import { MathMarkdown } from './MathMarkdown';
+import { MathMarkdown, MathText, MathFormula } from './MathMarkdown';
 import { speakTextWithSmallestAi, stopSmallestSpeech } from '../lib/smallestAi';
 import { getAuthHeaders } from '../lib/firebase';
 import { ArxivPaper } from '../types';
@@ -811,11 +811,7 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
         )}
 
         {/* Compact Single-Row Top Header Bar */}
-        <div
-          className={`px-3 sm:px-5 pt-[max(0.5rem,env(safe-area-inset-top))] pb-2.5 border-b flex items-center justify-between gap-2 shrink-0 ${
-            isDark ? 'bg-[#0b0c10] border-white/[0.08]' : 'bg-white border-black/[0.08]'
-          }`}
-        >
+        <div className="px-3 sm:px-5 pt-[max(0.5rem,env(safe-area-inset-top))] pb-2.5 bg-transparent flex items-center justify-between gap-2 shrink-0">
           {/* Left: Back Button + Truncated Title */}
           <div className="flex items-center gap-2 min-w-0 flex-1">
             <button
@@ -850,10 +846,10 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
               <button
                 type="button"
                 onClick={() => setShowFeatureDropdown((prev) => !prev)}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[12px] font-medium tracking-tight transition-all cursor-pointer select-none whitespace-nowrap backdrop-blur-2xl ${
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[12px] font-medium tracking-tight transition-colors cursor-pointer select-none whitespace-nowrap ${
                   isDark
-                    ? 'bg-neutral-900/75 hover:bg-neutral-800/85 border-white/[0.16] text-white shadow-[0_8px_24px_rgba(0,0,0,0.45)]'
-                    : 'bg-white/85 hover:bg-neutral-100 border-black/[0.1] text-[#0d0d0d] shadow-[0_4px_16px_rgba(0,0,0,0.06)]'
+                    ? 'bg-white/[0.04] hover:bg-white/[0.09] border-white/[0.14] text-white'
+                    : 'bg-black/[0.03] hover:bg-black/[0.07] border-black/[0.1] text-[#0d0d0d]'
                 }`}
               >
                 <span>
@@ -1466,7 +1462,7 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
                                 >
                                   {qIdx + 1}.
                                 </span>
-                                <MathMarkdown content={q.question} isDark={isDark} inline />
+                                <MathMarkdown content={q.question} isDark={isDark} inline autoDetectLatex />
                               </div>
                               {q.pageRef && (
                                 <span
@@ -1522,7 +1518,7 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
                                         {String.fromCharCode(65 + oIdx)}.
                                       </span>
                                       <div className="leading-relaxed min-w-0">
-                                        <MathMarkdown content={opt} isDark={isDark} inline />
+                                        <MathMarkdown content={opt} isDark={isDark} inline autoDetectLatex />
                                       </div>
                                     </div>
 
@@ -1549,7 +1545,7 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
                                     : 'bg-[#f8f9fa] border-black/[0.07] text-neutral-700'
                                 }`}
                               >
-                                <MathMarkdown content={q.explanation} isDark={isDark} inline />
+                                <MathMarkdown content={q.explanation} isDark={isDark} inline autoDetectLatex />
                               </div>
                             )}
 
@@ -1752,6 +1748,7 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
                               <MathMarkdown
                                 content={isCardFlipped ? currentCard.back : currentCard.front}
                                 isDark={isDark}
+                                autoDetectLatex
                               />
                             </div>
                           </div>
@@ -1882,7 +1879,7 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
                           isDark ? 'text-neutral-100' : 'text-neutral-900'
                         }`}
                       >
-                        <MathMarkdown content={studyBundle.summary.overview} isDark={isDark} />
+                        <MathMarkdown content={studyBundle.summary.overview} isDark={isDark} autoDetectLatex />
                       </div>
                     </div>
 
@@ -1908,7 +1905,7 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
                               isDark ? 'text-neutral-200' : 'text-neutral-800'
                             }`}
                           >
-                            <MathMarkdown content={point} isDark={isDark} inline />
+                            <MathMarkdown content={point} isDark={isDark} inline autoDetectLatex />
                           </div>
                         </div>
                       ))}
@@ -1925,7 +1922,9 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
                           }`}
                         >
                           <div className="flex items-center justify-between gap-2 mb-1">
-                            <span className="text-xs font-semibold">{sec.title}</span>
+                            <span className="text-xs font-semibold">
+                              <MathText text={sec.title} />
+                            </span>
                             <span
                               className={`text-[10px] font-mono tabular-nums ${
                                 isDark ? 'text-neutral-500' : 'text-neutral-400'
@@ -1939,7 +1938,7 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
                               isDark ? 'text-neutral-400' : 'text-neutral-600'
                             }`}
                           >
-                            <MathMarkdown content={sec.summary} isDark={isDark} inline />
+                            <MathMarkdown content={sec.summary} isDark={isDark} inline autoDetectLatex />
                           </div>
                         </div>
                       ))}
@@ -2014,7 +2013,7 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
                               </button>
                             </div>
                             <div className="prose-grok max-w-none text-xs sm:text-sm leading-relaxed">
-                              <MathMarkdown content={copilotResponse} isDark={isDark} />
+                              <MathMarkdown content={copilotResponse} isDark={isDark} autoDetectLatex />
                             </div>
                           </div>
                         )}
@@ -2033,7 +2032,9 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
                           }`}
                         >
                           <div className="flex items-center justify-between gap-2 mb-1.5">
-                            <h4 className="text-xs sm:text-sm font-semibold">{concept.term}</h4>
+                            <h4 className="text-xs sm:text-sm font-semibold">
+                              <MathText text={concept.term} />
+                            </h4>
                             {concept.pageRef && (
                               <span
                                 className={`text-[10px] font-mono tabular-nums ${
@@ -2047,11 +2048,11 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
 
                           <div className="space-y-1.5 text-xs leading-relaxed">
                             <div className={isDark ? 'text-neutral-200' : 'text-neutral-800'}>
-                              <MathMarkdown content={concept.definition} isDark={isDark} inline />
+                              <MathMarkdown content={concept.definition} isDark={isDark} inline autoDetectLatex />
                             </div>
                             {concept.mechanism && concept.mechanism !== concept.definition && (
                               <div className={isDark ? 'text-neutral-400' : 'text-neutral-600'}>
-                                <MathMarkdown content={concept.mechanism} isDark={isDark} inline />
+                                <MathMarkdown content={concept.mechanism} isDark={isDark} inline autoDetectLatex />
                               </div>
                             )}
                           </div>
@@ -2077,20 +2078,18 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
                               : 'bg-[#f8f9fb] border-black/[0.08]'
                           }`}
                         >
-                          <div className="text-xs font-semibold mb-2">{item.label}</div>
+                          <div className="text-xs font-semibold mb-2">
+                            <MathText text={item.label} />
+                          </div>
                           <div
                             className={`text-xs px-3 py-2 rounded-xl mb-2 overflow-x-auto ${
                               isDark ? 'bg-white/[0.04] text-white' : 'bg-black/[0.035] text-black'
                             }`}
                           >
-                            <MathMarkdown
-                              content={
-                                item.expression.includes('$')
-                                  ? item.expression
-                                  : `$${item.expression}$`
-                              }
-                              isDark={isDark}
-                              inline
+                            <MathFormula
+                              formula={item.expression}
+                              displayMode
+                              className="justify-start"
                             />
                           </div>
                           <div
@@ -2098,7 +2097,7 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
                               isDark ? 'text-neutral-300' : 'text-neutral-700'
                             }`}
                           >
-                            <MathMarkdown content={item.meaning} isDark={isDark} inline />
+                            <MathMarkdown content={item.meaning} isDark={isDark} inline autoDetectLatex />
                           </div>
                         </div>
                       ))}
@@ -2116,7 +2115,7 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
                         <div key={idx} className="flex items-start gap-2 text-xs leading-relaxed">
                           <span className="font-mono opacity-45 shrink-0">{idx + 1}.</span>
                           <div className="min-w-0">
-                            <MathMarkdown content={tip} isDark={isDark} inline />
+                            <MathMarkdown content={tip} isDark={isDark} inline autoDetectLatex />
                           </div>
                         </div>
                       ))}
@@ -2188,7 +2187,7 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
                             }`}
                           >
                             <div className="prose-grok max-w-none text-xs sm:text-sm leading-relaxed">
-                              <MathMarkdown content={turn.content} isDark={isDark} />
+                              <MathMarkdown content={turn.content} isDark={isDark} autoDetectLatex />
                             </div>
                           </div>
                         ))
