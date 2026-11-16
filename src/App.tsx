@@ -3020,11 +3020,23 @@ export default function App() {
                       }`}
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
-                        <img
-                          src="/hitaishi-assets/characters/n01/avatar.webp"
-                          alt="Hitaishi Avatar"
-                          className="w-6 h-6 rounded-full object-cover ring-2 ring-white dark:ring-zinc-900 shrink-0"
-                        />
+                        <div className="flex items-center -space-x-2 shrink-0">
+                          <img
+                            src="/hitaishi-assets/characters/n01/avatar.webp"
+                            alt="Ruri"
+                            className="w-6 h-6 rounded-full object-cover ring-2 ring-white dark:ring-zinc-900 shrink-0"
+                          />
+                          <img
+                            src="/hitaishi-assets/characters/d03/avatar.webp"
+                            alt="Nana"
+                            className="w-6 h-6 rounded-full object-cover ring-2 ring-white dark:ring-zinc-900 shrink-0"
+                          />
+                          <img
+                            src="/hitaishi-assets/characters/n02/avatar.webp"
+                            alt="Konatsu"
+                            className="w-6 h-6 rounded-full object-cover ring-2 ring-white dark:ring-zinc-900 shrink-0"
+                          />
+                        </div>
                         <div className="flex items-center gap-2 min-w-0">
                           <span className="inline-flex items-center gap-1.5 text-[13px] font-bold tracking-tight shrink-0">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
@@ -3240,11 +3252,23 @@ export default function App() {
                         }`}
                       >
                         <div className="flex items-center gap-2.5 min-w-0">
-                          <img
-                            src="/hitaishi-assets/characters/n01/avatar.webp"
-                            alt="Hitaishi Avatar"
-                            className="w-5 h-5 rounded-full object-cover ring-2 ring-white dark:ring-zinc-900 shrink-0"
-                          />
+                          <div className="flex items-center -space-x-2 shrink-0">
+                            <img
+                              src="/hitaishi-assets/characters/n01/avatar.webp"
+                              alt="Ruri"
+                              className="w-5 h-5 rounded-full object-cover ring-2 ring-white dark:ring-zinc-900 shrink-0"
+                            />
+                            <img
+                              src="/hitaishi-assets/characters/d03/avatar.webp"
+                              alt="Nana"
+                              className="w-5 h-5 rounded-full object-cover ring-2 ring-white dark:ring-zinc-900 shrink-0"
+                            />
+                            <img
+                              src="/hitaishi-assets/characters/n02/avatar.webp"
+                              alt="Konatsu"
+                              className="w-5 h-5 rounded-full object-cover ring-2 ring-white dark:ring-zinc-900 shrink-0"
+                            />
+                          </div>
                           <div className="flex items-center gap-2 min-w-0">
                             <span className="inline-flex items-center gap-1.5 text-xs font-bold tracking-tight shrink-0">
                               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />

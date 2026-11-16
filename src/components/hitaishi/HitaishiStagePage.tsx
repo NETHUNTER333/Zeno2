@@ -126,7 +126,7 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({ onBack }) 
     activeBackground.id === 'sky-breeze' ||
     activeBackground.id === 'lavender-dream';
 
-  // Stop any current speech immediately (used by Stop button & Barge-In interruption)
+  // Stop any current speech immediately
   const stopCurrentSpeech = useCallback(() => {
     if (lipSyncTimerRef.current) {
       window.clearInterval(lipSyncTimerRef.current);
@@ -264,7 +264,7 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({ onBack }) 
           }
         }
       } catch {
-        // Fall through to browser speechSynthesis
+        // Fall through
       }
 
       speakWithFallbackSynth(lineText);
@@ -418,7 +418,7 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({ onBack }) 
     ]
   );
 
-  // ================= LIVE DUPLEX VOICE MODE =================
+  // Live Duplex Voice Mode
   const startDuplexListening = useCallback(async () => {
     const SpeechRecognitionAPI =
       typeof window !== 'undefined'
@@ -457,7 +457,6 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({ onBack }) 
             }
           }
 
-          // Barge-in interruption if user speaks while character is speaking
           if (
             (interim.trim().length > 2 || finalTranscript.trim().length > 0) &&
             isSpeakingRef.current
@@ -474,11 +473,9 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({ onBack }) 
           }
         };
 
-        recognition.onerror = (event: any) => {
-          if (event?.error === 'not-allowed') {
-            setLiveDuplexActive(false);
-            setIsListeningMic(false);
-          }
+        recognition.onerror = () => {
+          setLiveDuplexActive(false);
+          setIsListeningMic(false);
         };
 
         recognition.onend = () => {
@@ -500,11 +497,10 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({ onBack }) 
         recognition.start();
         return;
       } catch {
-        // Fall through to MediaRecorder
+        // Fall through
       }
     }
 
-    // MediaRecorder fallback
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const recorder = new MediaRecorder(stream);
@@ -580,7 +576,7 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({ onBack }) 
     }
   }, [liveDuplexActive, startDuplexListening, stopDuplexListening]);
 
-  // Keyboard hotkeys for expressions (1-4, 0) & actions (Q-T) when not typing
+  // Keyboard hotkeys
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
@@ -610,7 +606,7 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({ onBack }) 
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [updateCharacter]);
 
-  // Custom .vrm / .livliv / .png import from Settings
+  // Custom model import
   const handleCustomAvatarFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -676,7 +672,7 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({ onBack }) 
     character.movementInput === 'face' || character.movementInput === 'face-replay';
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#09080E] text-white select-none overflow-hidden font-sans">
+    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#07060A] text-white select-none overflow-hidden font-sans">
       {/* Hidden custom model uploader */}
       <input
         ref={fileInputRef}
@@ -686,9 +682,9 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({ onBack }) 
         className="hidden"
       />
 
-      {/* ================= FULL-BLEED 9:16 COMPANION STAGE ================= */}
+      {/* ================= FULL-BLEED 9:16 PREMIUM COMPANION STAGE ================= */}
       <div
-        className="relative w-full h-full sm:max-w-[490px] sm:aspect-[9/16] sm:max-h-[96dvh] sm:rounded-[32px] sm:border sm:border-white/10 sm:shadow-[0_24px_90px_rgba(0,0,0,0.75)] overflow-hidden flex flex-col"
+        className="relative w-full h-full sm:max-w-[490px] sm:aspect-[9/16] sm:max-h-[96dvh] sm:rounded-[36px] sm:border sm:border-white/12 sm:shadow-[0_30px_100px_rgba(0,0,0,0.85)] overflow-hidden flex flex-col"
         style={{
           background:
             activeBackground.type === 'solid' ||
@@ -696,39 +692,35 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({ onBack }) 
             activeBackground.type === 'greenscreen'
               ? activeBackground.value
               : activeBackground.id === 'cozy-twilight'
-                ? 'radial-gradient(circle at 50% 28%, #2E2244 0%, #191526 54%, #0D0B14 100%)'
+                ? 'radial-gradient(circle at 50% 26%, #291D3F 0%, #151122 58%, #09080F 100%)'
                 : activeBackground.type === 'transparent'
                   ? 'repeating-conic-gradient(#27272a 0% 25%, #18181b 0% 50%) 50% / 24px 24px'
-                  : 'linear-gradient(180deg, #22173A 0%, #342152 55%, #191229 100%)',
+                  : 'linear-gradient(180deg, #1E1533 0%, #2A1C44 55%, #120E1E 100%)',
         }}
       >
-        {/* Cozy Twilight Ambient Room Atmosphere */}
+        {/* Ambient Room Atmosphere */}
         {(activeBackground.id === 'cozy-twilight' ||
           activeBackground.id === 'cozy-night-room') && (
           <div className="absolute inset-0 pointer-events-none overflow-hidden">
-            {/* Soft character-colored halo glow */}
             <div
-              className="absolute top-[16%] left-1/2 -translate-x-1/2 w-[340px] h-[340px] rounded-full blur-[95px] opacity-30 transition-colors duration-700"
+              className="absolute top-[18%] left-1/2 -translate-x-1/2 w-[380px] h-[380px] rounded-full blur-[110px] opacity-25 transition-colors duration-700"
               style={{
                 background: activeCatalogMeta?.accentColor || '#8B5CF6',
               }}
             />
-            {/* Warm bedside bokeh accents */}
-            <div className="absolute right-[10%] top-[44%] w-24 h-24 rounded-full bg-amber-300/20 blur-2xl" />
-            <div className="absolute left-[12%] top-[28%] w-20 h-20 rounded-full bg-indigo-400/15 blur-2xl" />
-            <div className="absolute right-[16%] top-[48%] w-2 h-2 rounded-full bg-amber-200/70 shadow-[0_0_14px_#FDE68A]" />
-            <div className="absolute right-[21%] top-[51%] w-1.5 h-1.5 rounded-full bg-amber-100/60 shadow-[0_0_10px_#FDE68A]" />
+            <div className="absolute right-[12%] top-[42%] w-28 h-28 rounded-full bg-amber-300/15 blur-3xl" />
+            <div className="absolute left-[14%] top-[30%] w-24 h-24 rounded-full bg-purple-400/15 blur-3xl" />
           </div>
         )}
 
-        {/* ================= MINIMAL FLOATING TOP HEADER ================= */}
-        <header className="relative z-30 h-14 px-4 pt-2 flex items-center justify-between shrink-0">
+        {/* ================= PREMIUM FLOATING TOP HEADER ================= */}
+        <header className="relative z-30 h-16 px-5 pt-3 flex items-center justify-between shrink-0">
           {/* Left: Back + Settings Gear */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5">
             <button
               type="button"
               onClick={onBack}
-              className="w-10 h-10 rounded-full bg-black/35 hover:bg-black/55 backdrop-blur-xl border border-white/15 text-white flex items-center justify-center transition-colors cursor-pointer"
+              className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/18 backdrop-blur-2xl border border-white/15 text-white flex items-center justify-center transition-all shadow-sm cursor-pointer"
               title="Back"
             >
               <ArrowLeft className="w-4 h-4" />
@@ -739,26 +731,24 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({ onBack }) 
                 setCharDropdownOpen(false);
                 setSettingsOpen(true);
               }}
-              className="w-10 h-10 rounded-full bg-black/35 hover:bg-black/55 backdrop-blur-xl border border-white/15 text-white flex items-center justify-center transition-colors cursor-pointer"
-              title="Companion & Stage Settings"
+              className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/18 backdrop-blur-2xl border border-white/15 text-white flex items-center justify-center transition-all shadow-sm cursor-pointer"
+              title="Companion Settings"
             >
               <Settings className="w-4 h-4" />
             </button>
           </div>
 
-          {/* Center: Clean Minimal Brand */}
+          {/* Center: Minimal Elegant Brand */}
           <span
-            className={`text-lg font-bold tracking-tight ${
-              isLightBackground
-                ? 'text-zinc-900'
-                : 'text-white/95 drop-shadow-[0_2px_8px_rgba(0,0,0,0.45)]'
+            className={`text-[18px] font-bold tracking-wider font-['Outfit'] ${
+              isLightBackground ? 'text-zinc-900' : 'text-transparent bg-clip-text bg-gradient-to-r from-white via-white/95 to-white/70'
             }`}
           >
             hitaishi
           </span>
 
-          {/* Right: Mute + Circular Avatar Character Selector Trigger */}
-          <div className="flex items-center gap-2 relative">
+          {/* Right: Mute + Circular Avatar Selector Dropdown Trigger */}
+          <div className="flex items-center gap-2.5 relative">
             <button
               type="button"
               onClick={() => {
@@ -766,10 +756,10 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({ onBack }) 
                 setAudioMuted(nextMuted);
                 if (nextMuted) stopCurrentSpeech();
               }}
-              className={`w-9 h-9 rounded-full backdrop-blur-xl border flex items-center justify-center transition-colors cursor-pointer ${
+              className={`w-10 h-10 rounded-full backdrop-blur-2xl border flex items-center justify-center transition-all shadow-sm cursor-pointer ${
                 audioMuted
-                  ? 'bg-rose-500/80 border-rose-300/40 text-white'
-                  : 'bg-black/35 hover:bg-black/55 border-white/15 text-white/90'
+                  ? 'bg-rose-500/85 border-rose-300/50 text-white'
+                  : 'bg-white/10 hover:bg-white/18 border-white/15 text-white/90'
               }`}
               title={audioMuted ? 'Unmute Voice' : 'Mute Voice'}
             >
@@ -783,8 +773,8 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({ onBack }) 
             <button
               type="button"
               onClick={() => setCharDropdownOpen((o) => !o)}
-              className="relative w-10 h-10 rounded-full ring-2 ring-white/40 hover:ring-white/80 overflow-hidden bg-zinc-900 shadow-lg transition-all cursor-pointer"
-              title={`Switch Character (${character.name})`}
+              className="relative w-10 h-10 rounded-full ring-2 ring-white/30 hover:ring-white/75 overflow-hidden bg-zinc-900 shadow-md transition-all cursor-pointer"
+              title={`Switch Companion (${character.name})`}
             >
               <img
                 src={character.avatarUrl}
@@ -793,7 +783,7 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({ onBack }) 
               />
             </button>
 
-            {/* ================= SLEEK CHARACTER SELECTOR DROPDOWN ================= */}
+            {/* ================= PREMIUM CHARACTER SELECTOR DROPDOWN ================= */}
             <AnimatePresence>
               {charDropdownOpen && (
                 <>
@@ -802,15 +792,15 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({ onBack }) 
                     onClick={() => setCharDropdownOpen(false)}
                   />
                   <motion.div
-                    initial={{ opacity: 0, y: -8, scale: 0.96 }}
+                    initial={{ opacity: 0, y: -10, scale: 0.95 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: -6, scale: 0.96 }}
-                    transition={{ type: 'spring', stiffness: 320, damping: 26 }}
-                    className="absolute right-0 top-12 z-50 w-72 sm:w-80 max-h-[68dvh] rounded-2xl bg-zinc-950/90 backdrop-blur-2xl border border-white/15 shadow-[0_20px_60px_rgba(0,0,0,0.65)] flex flex-col overflow-hidden text-white"
+                    exit={{ opacity: 0, y: -6, scale: 0.95 }}
+                    transition={{ type: 'spring', stiffness: 340, damping: 26 }}
+                    className="absolute right-0 top-12 z-50 w-76 sm:w-84 max-h-[70dvh] rounded-3xl bg-zinc-950/95 backdrop-blur-3xl border border-white/15 shadow-[0_24px_70px_rgba(0,0,0,0.75)] flex flex-col overflow-hidden text-white"
                   >
-                    <div className="px-3.5 py-2.5 border-b border-white/10 flex items-center justify-between">
-                      <span className="text-xs font-semibold text-white/90">
-                        Select Character
+                    <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between">
+                      <span className="text-xs font-semibold tracking-wide text-white/80">
+                        Select Companion
                       </span>
                       <button
                         type="button"
@@ -822,23 +812,22 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({ onBack }) 
                       </button>
                     </div>
 
-                    {/* Category Tabs */}
-                    <div className="p-2 pb-1">
-                      <div className="grid grid-cols-3 gap-1 p-0.5 rounded-xl bg-white/8">
+                    <div className="p-2.5 pb-1">
+                      <div className="grid grid-cols-3 gap-1 p-1 rounded-2xl bg-white/6 border border-white/10">
                         {(
                           [
                             { id: 'all', label: 'All' },
-                            { id: '2.5d-half', label: 'Upper Body' },
-                            { id: '2.5d-full', label: 'Full Body' },
+                            { id: '2.5d-half', label: 'Upper' },
+                            { id: '2.5d-full', label: 'Full' },
                           ] as const
                         ).map((tab) => (
                           <button
                             key={tab.id}
                             type="button"
                             onClick={() => setSelectorCategory(tab.id)}
-                            className={`py-1 rounded-lg text-[11px] font-medium transition-colors cursor-pointer ${
+                            className={`py-1.5 rounded-xl text-xs font-medium transition-all cursor-pointer ${
                               selectorCategory === tab.id
-                                ? 'bg-white text-zinc-950 font-semibold'
+                                ? 'bg-white text-zinc-950 font-semibold shadow-xs'
                                 : 'text-white/70 hover:text-white'
                             }`}
                           >
@@ -848,8 +837,7 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({ onBack }) 
                       </div>
                     </div>
 
-                    {/* Character List */}
-                    <div className="p-2 overflow-y-auto grid grid-cols-3 gap-2">
+                    <div className="p-3 overflow-y-auto grid grid-cols-3 gap-2.5">
                       {filteredCatalog.map((item) => {
                         const selected = character.catalogId === item.id;
                         return (
@@ -857,13 +845,13 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({ onBack }) 
                             key={item.id}
                             type="button"
                             onClick={() => handleSelectCatalogCharacter(item)}
-                            className={`group flex flex-col items-center p-1.5 rounded-xl border transition-all cursor-pointer ${
+                            className={`group flex flex-col items-center p-2 rounded-2xl border transition-all cursor-pointer ${
                               selected
-                                ? 'bg-white/15 border-white/50'
-                                : 'bg-white/5 border-transparent hover:bg-white/10'
+                                ? 'bg-white/15 border-white/50 shadow-md ring-1 ring-white/40'
+                                : 'bg-white/5 border-white/8 hover:bg-white/10'
                             }`}
                           >
-                            <div className="relative w-14 h-14 rounded-full overflow-hidden mb-1 border border-white/15">
+                            <div className="relative w-14 h-14 rounded-full overflow-hidden mb-1.5 border border-white/15 shadow-inner">
                               <img
                                 src={item.avatarUrl}
                                 alt={item.name}
@@ -875,7 +863,7 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({ onBack }) 
                                 </span>
                               )}
                             </div>
-                            <span className="text-[11px] font-medium text-white truncate max-w-full">
+                            <span className="text-[11px] font-semibold text-white truncate max-w-full">
                               {item.name}
                             </span>
                           </button>
@@ -900,12 +888,12 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({ onBack }) 
           />
         </div>
 
-        {/* ================= SEAMLESS BOTTOM GRADIENT SCRIM ================= */}
-        <div className="absolute inset-x-0 bottom-0 h-56 bg-gradient-to-t from-black/85 via-black/45 to-transparent pointer-events-none z-20" />
+        {/* ================= ELEGANT BOTTOM GRADIENT SCRIM ================= */}
+        <div className="absolute inset-x-0 bottom-0 h-60 bg-gradient-to-t from-black/90 via-black/45 to-transparent pointer-events-none z-20" />
 
-        {/* ================= BOTTOM SUBTITLES (PURE READABLE TEXT ON SCREEN) + GLASS PROMPT BAR ================= */}
-        <div className="mt-auto relative z-30 px-4 pb-[max(14px,env(safe-area-inset-bottom))] pt-2 flex flex-col gap-3">
-          {/* Pure Floating Subtitle Text at Bottom — Zero clunky card/box */}
+        {/* ================= BOTTOM SUBTITLES & PREMIUM GLASS INPUT BAR ================= */}
+        <div className="mt-auto relative z-30 px-5 pb-[max(18px,env(safe-area-inset-bottom))] pt-2 flex flex-col gap-3.5">
+          {/* Bottom Subtitle Text */}
           <AnimatePresence mode="wait">
             {captionsEnabled &&
               (interimTranscript || isGeneratingTurn || character.currentSubtitle) && (
@@ -933,7 +921,7 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({ onBack }) 
                       <span>{character.name} is thinking...</span>
                     </div>
                   ) : (
-                    <p className="text-[15px] sm:text-base font-medium text-white leading-snug tracking-[0.01em] drop-shadow-[0_2px_12px_rgba(0,0,0,0.95)] max-w-[95%] mx-auto">
+                    <p className="text-[15px] sm:text-base font-medium text-white leading-snug tracking-[0.01em] drop-shadow-[0_2px_14px_rgba(0,0,0,0.95)] max-w-[95%] mx-auto">
                       {character.currentSubtitle}
                     </p>
                   )}
@@ -941,13 +929,12 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({ onBack }) 
               )}
           </AnimatePresence>
 
-          {/* Sleek Glassmorphic Bottom Prompt Input Bar */}
+          {/* Premium Glassmorphic Bottom Prompt Input Bar */}
           <form
             onSubmit={handleSendMessage}
-            className="flex items-center gap-2 w-full"
+            className="flex items-center gap-2.5 w-full"
           >
-            {/* Rounded Glassmorphic Input Pill */}
-            <div className="flex-1 h-12 rounded-full bg-white/12 backdrop-blur-2xl border border-white/18 focus-within:border-white/40 focus-within:bg-white/16 pl-4 pr-2 flex items-center gap-2 shadow-[0_8px_32px_rgba(0,0,0,0.45)] transition-all">
+            <div className="flex-1 h-13 rounded-full bg-white/10 backdrop-blur-3xl border border-white/20 focus-within:border-white/45 focus-within:bg-white/15 pl-5 pr-2 flex items-center gap-2 shadow-[0_10px_40px_rgba(0,0,0,0.5)] transition-all">
               <input
                 type="text"
                 value={chatInput}
@@ -957,16 +944,16 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({ onBack }) 
                     ? isListeningMic
                       ? `Listening to you...`
                       : `Voice active · Speak or type...`
-                    : `Type to ${character.name}...`
+                    : `Message ${character.name}...`
                 }
-                className="flex-1 bg-transparent text-sm text-white placeholder:text-white/55 focus:outline-none min-w-0"
+                className="flex-1 bg-transparent text-sm font-medium text-white placeholder:text-white/50 focus:outline-none min-w-0"
               />
 
               {chatInput.trim() ? (
                 <button
                   type="submit"
                   disabled={isGeneratingTurn}
-                  className="w-8 h-8 rounded-full bg-white hover:bg-zinc-100 disabled:opacity-50 text-zinc-950 flex items-center justify-center transition-transform active:scale-95 cursor-pointer shrink-0"
+                  className="w-9 h-9 rounded-full bg-white hover:bg-zinc-100 disabled:opacity-50 text-zinc-950 flex items-center justify-center transition-transform active:scale-95 cursor-pointer shrink-0 shadow-sm"
                   title="Send"
                 >
                   <ArrowUp className="w-4 h-4 stroke-[2.5]" />
@@ -975,7 +962,7 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({ onBack }) 
                 <button
                   type="button"
                   onClick={stopCurrentSpeech}
-                  className="w-8 h-8 rounded-full bg-white/15 hover:bg-white/25 text-white flex items-center justify-center transition-colors cursor-pointer shrink-0"
+                  className="w-9 h-9 rounded-full bg-white/15 hover:bg-white/25 text-white flex items-center justify-center transition-colors cursor-pointer shrink-0"
                   title="Stop speaking"
                 >
                   <Square className="w-3.5 h-3.5 fill-current" />
@@ -983,7 +970,7 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({ onBack }) 
               ) : null}
             </div>
 
-            {/* Circular Glass Camera / Face Tracking Toggle Button */}
+            {/* Circular Glass Camera Tracking Toggle */}
             <button
               type="button"
               onClick={() =>
@@ -991,10 +978,10 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({ onBack }) 
                   movementInput: isFaceTracking ? 'auto' : 'face',
                 })
               }
-              className={`w-12 h-12 rounded-full backdrop-blur-2xl border flex items-center justify-center transition-all cursor-pointer shrink-0 shadow-[0_8px_28px_rgba(0,0,0,0.4)] ${
+              className={`w-13 h-13 rounded-full backdrop-blur-3xl border flex items-center justify-center transition-all cursor-pointer shrink-0 shadow-[0_10px_32px_rgba(0,0,0,0.45)] ${
                 isFaceTracking
-                  ? 'bg-sky-500/80 border-sky-300/60 text-white'
-                  : 'bg-white/12 hover:bg-white/20 border-white/18 text-white/85'
+                  ? 'bg-sky-500/85 border-sky-300/70 text-white'
+                  : 'bg-white/10 hover:bg-white/18 border-white/20 text-white/85'
               }`}
               title={isFaceTracking ? 'Disable Camera Tracking' : 'Enable Camera Tracking'}
             >
@@ -1005,14 +992,14 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({ onBack }) 
               )}
             </button>
 
-            {/* Circular Glass Live Duplex Microphone Button */}
+            {/* Circular Glass Live Duplex Mic Button */}
             <button
               type="button"
               onClick={handleToggleLiveDuplex}
-              className={`w-12 h-12 rounded-full backdrop-blur-2xl border flex items-center justify-center transition-all cursor-pointer shrink-0 shadow-[0_8px_28px_rgba(0,0,0,0.4)] ${
+              className={`w-13 h-13 rounded-full backdrop-blur-3xl border flex items-center justify-center transition-all cursor-pointer shrink-0 shadow-[0_10px_32px_rgba(0,0,0,0.45)] ${
                 liveDuplexActive
-                  ? 'bg-emerald-500/90 border-emerald-300/70 text-white ring-4 ring-emerald-400/25 animate-pulse'
-                  : 'bg-white/12 hover:bg-white/20 border-white/18 text-white/90'
+                  ? 'bg-emerald-500/90 border-emerald-300/75 text-white ring-4 ring-emerald-400/30 animate-pulse'
+                  : 'bg-white/10 hover:bg-white/18 border-white/20 text-white/90'
               }`}
               title={
                 liveDuplexActive
@@ -1029,7 +1016,7 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({ onBack }) 
           </form>
         </div>
 
-        {/* ================= FROSTED GLASS SETTINGS DRAWER ================= */}
+        {/* ================= PREMIUM REFINED SETTINGS DRAWER ================= */}
         <AnimatePresence>
           {settingsOpen && (
             <>
@@ -1038,24 +1025,24 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({ onBack }) 
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 onClick={() => setSettingsOpen(false)}
-                className="fixed inset-0 z-40 bg-black/55 backdrop-blur-xs"
+                className="fixed inset-0 z-40 bg-black/60 backdrop-blur-xs"
               />
               <motion.aside
                 initial={{ x: '-100%' }}
                 animate={{ x: 0 }}
                 exit={{ x: '-100%' }}
-                transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                className="fixed inset-y-0 left-0 z-50 w-80 max-w-[88vw] bg-zinc-950/92 backdrop-blur-2xl border-r border-white/12 text-white flex flex-col overflow-hidden shadow-2xl"
+                transition={{ type: 'spring', stiffness: 320, damping: 28 }}
+                className="fixed inset-y-0 left-0 z-50 w-84 max-w-[90vw] bg-zinc-950/95 backdrop-blur-3xl border-r border-white/15 text-white flex flex-col overflow-hidden shadow-[20px_0_60px_rgba(0,0,0,0.8)]"
               >
-                <div className="px-4 py-3.5 border-b border-white/10 flex items-center justify-between">
-                  <div className="flex items-center gap-2.5 min-w-0">
+                <div className="px-5 py-4 border-b border-white/10 flex items-center justify-between">
+                  <div className="flex items-center gap-3 min-w-0">
                     <img
                       src={character.avatarUrl}
                       alt={character.name}
-                      className="w-8 h-8 rounded-full object-cover border border-white/20 shrink-0"
+                      className="w-9 h-9 rounded-full object-cover border border-white/25 shrink-0 shadow-sm"
                     />
                     <div className="min-w-0">
-                      <div className="text-sm font-semibold truncate">
+                      <div className="text-sm font-semibold tracking-tight truncate">
                         {character.name}
                       </div>
                       <div className="text-[11px] text-white/50 truncate">
@@ -1066,31 +1053,31 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({ onBack }) 
                   <button
                     type="button"
                     onClick={() => setSettingsOpen(false)}
-                    className="p-1.5 rounded-full hover:bg-white/10 text-white/70 hover:text-white cursor-pointer"
+                    className="p-2 rounded-full hover:bg-white/10 text-white/70 hover:text-white cursor-pointer transition-colors"
                   >
                     <X className="w-4 h-4" />
                   </button>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-4 space-y-5">
+                <div className="flex-1 overflow-y-auto p-5 space-y-6">
                   {/* Captions & Voice */}
-                  <div className="space-y-3">
+                  <div className="space-y-4">
                     <label className="flex items-center justify-between cursor-pointer">
-                      <span className="text-xs font-medium text-white/85">
+                      <span className="text-xs font-medium text-white/90">
                         Show bottom captions
                       </span>
                       <input
                         type="checkbox"
                         checked={captionsEnabled}
                         onChange={(e) => setCaptionsEnabled(e.target.checked)}
-                        className="accent-sky-400 w-4 h-4 cursor-pointer"
+                        className="accent-sky-400 w-4 h-4 rounded cursor-pointer"
                       />
                     </label>
 
-                    <div className="space-y-1">
-                      <div className="flex justify-between text-[11px] text-white/65">
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between text-[11px] text-white/60">
                         <span>Voice Volume</span>
-                        <span>{Math.round(character.voiceVolume * 100)}%</span>
+                        <span className="font-mono">{Math.round(character.voiceVolume * 100)}%</span>
                       </div>
                       <input
                         type="range"
@@ -1101,14 +1088,14 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({ onBack }) 
                         onChange={(e) =>
                           updateCharacter({ voiceVolume: parseFloat(e.target.value) })
                         }
-                        className="w-full accent-sky-400 cursor-pointer"
+                        className="w-full accent-sky-400 cursor-pointer h-1.5 bg-white/10 rounded-lg"
                       />
                     </div>
 
-                    <div className="space-y-1">
-                      <div className="flex justify-between text-[11px] text-white/65">
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between text-[11px] text-white/60">
                         <span>Voice Speed</span>
-                        <span>{character.voiceSpeed.toFixed(1)}x</span>
+                        <span className="font-mono">{character.voiceSpeed.toFixed(1)}x</span>
                       </div>
                       <input
                         type="range"
@@ -1119,17 +1106,17 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({ onBack }) 
                         onChange={(e) =>
                           updateCharacter({ voiceSpeed: parseFloat(e.target.value) })
                         }
-                        className="w-full accent-sky-400 cursor-pointer"
+                        className="w-full accent-sky-400 cursor-pointer h-1.5 bg-white/10 rounded-lg"
                       />
                     </div>
                   </div>
 
                   {/* Camera Framing */}
-                  <div className="space-y-2.5 pt-3 border-t border-white/10">
-                    <div className="text-[11px] font-semibold text-white/55">
+                  <div className="space-y-3 pt-4 border-t border-white/10">
+                    <div className="text-[11px] font-semibold tracking-wider uppercase text-white/45">
                       Camera Framing
                     </div>
-                    <div className="grid grid-cols-3 gap-1.5">
+                    <div className="grid grid-cols-3 gap-1.5 p-1 rounded-2xl bg-white/6 border border-white/8">
                       {(
                         [
                           { id: 'frame', label: 'Close' },
@@ -1147,10 +1134,10 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({ onBack }) 
                               offsetY: opt.id === 'whole' ? -0.04 : 0,
                             })
                           }
-                          className={`py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                          className={`py-1.5 rounded-xl text-xs font-medium transition-all cursor-pointer ${
                             character.fit === opt.id
-                              ? 'bg-white text-zinc-950 font-semibold'
-                              : 'bg-white/8 text-white/75 hover:bg-white/15'
+                              ? 'bg-white text-zinc-950 font-semibold shadow-sm'
+                              : 'text-white/70 hover:text-white'
                           }`}
                         >
                           {opt.label}
@@ -1158,10 +1145,10 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({ onBack }) 
                       ))}
                     </div>
 
-                    <div className="space-y-1 pt-1">
-                      <div className="flex justify-between text-[11px] text-white/65">
+                    <div className="space-y-1.5 pt-1">
+                      <div className="flex justify-between text-[11px] text-white/60">
                         <span>Zoom</span>
-                        <span>{Math.round(character.zoom * 100)}%</span>
+                        <span className="font-mono">{Math.round(character.zoom * 100)}%</span>
                       </div>
                       <input
                         type="range"
@@ -1172,26 +1159,26 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({ onBack }) 
                         onChange={(e) =>
                           updateCharacter({ zoom: parseFloat(e.target.value) })
                         }
-                        className="w-full accent-sky-400 cursor-pointer"
+                        className="w-full accent-sky-400 cursor-pointer h-1.5 bg-white/10 rounded-lg"
                       />
                     </div>
 
                     <label className="flex items-center justify-between cursor-pointer pt-1">
-                      <span className="text-xs text-white/80">Mirror horizontally</span>
+                      <span className="text-xs text-white/85">Mirror horizontally</span>
                       <input
                         type="checkbox"
                         checked={character.flipHorizontal}
                         onChange={(e) =>
                           updateCharacter({ flipHorizontal: e.target.checked })
                         }
-                        className="accent-sky-400 w-4 h-4 cursor-pointer"
+                        className="accent-sky-400 w-4 h-4 rounded cursor-pointer"
                       />
                     </label>
                   </div>
 
-                  {/* Test Facial Expressions & Actions */}
-                  <div className="space-y-2 pt-3 border-t border-white/10">
-                    <div className="text-[11px] font-semibold text-white/55">
+                  {/* Expressions & Gestures */}
+                  <div className="space-y-3 pt-4 border-t border-white/10">
+                    <div className="text-[11px] font-semibold tracking-wider uppercase text-white/45">
                       Expressions
                     </div>
                     <div className="flex flex-wrap gap-1.5">
@@ -1206,10 +1193,10 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({ onBack }) 
                           key={exp.id || 'neutral'}
                           type="button"
                           onClick={() => updateCharacter({ activeExpression: exp.id })}
-                          className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                          className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all cursor-pointer ${
                             character.activeExpression === exp.id
-                              ? 'bg-white text-zinc-950 font-semibold'
-                              : 'bg-white/8 text-white/75 hover:bg-white/15'
+                              ? 'bg-white text-zinc-950 font-semibold shadow-xs'
+                              : 'bg-white/8 hover:bg-white/15 text-white/80'
                           }`}
                         >
                           {exp.label}
@@ -1217,7 +1204,7 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({ onBack }) 
                       ))}
                     </div>
 
-                    <div className="text-[11px] font-semibold text-white/55 pt-1">
+                    <div className="text-[11px] font-semibold tracking-wider uppercase text-white/45 pt-1">
                       Gestures
                     </div>
                     <div className="flex flex-wrap gap-1.5">
@@ -1232,7 +1219,7 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({ onBack }) 
                               activeAction: { id: act, seq: Date.now() },
                             })
                           }
-                          className="px-2.5 py-1 rounded-lg bg-white/8 hover:bg-white/15 text-xs font-medium text-white/80 capitalize cursor-pointer"
+                          className="px-3 py-1.5 rounded-xl bg-white/8 hover:bg-white/15 text-xs font-medium text-white/85 capitalize cursor-pointer transition-colors"
                         >
                           {act}
                         </button>
@@ -1240,13 +1227,13 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({ onBack }) 
                     </div>
                   </div>
 
-                  {/* Background Ambience */}
-                  <div className="space-y-2 pt-3 border-t border-white/10">
+                  {/* Scene Ambience */}
+                  <div className="space-y-3 pt-4 border-t border-white/10">
                     <div className="flex items-center justify-between text-[11px]">
-                      <span className="font-semibold text-white/55">Scene</span>
-                      <span className="text-white/75">{activeBackground.label}</span>
+                      <span className="font-semibold tracking-wider uppercase text-white/45">Scene</span>
+                      <span className="text-white/80 font-medium">{activeBackground.label}</span>
                     </div>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-wrap gap-2.5">
                       {HITAISHI_BACKGROUNDS.map((bg) => (
                         <button
                           key={bg.id}
@@ -1259,20 +1246,20 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({ onBack }) 
                                 ? 'repeating-conic-gradient(#52525b 0% 25%, #27272a 0% 50%) 50% / 10px 10px'
                                 : bg.swatch,
                           }}
-                          className={`w-6 h-6 rounded-full border transition-transform cursor-pointer ${
+                          className={`w-7 h-7 rounded-full border transition-transform cursor-pointer ${
                             backgroundId === bg.id
-                              ? 'ring-2 ring-white ring-offset-2 ring-offset-zinc-950 scale-110 border-white'
-                              : 'border-white/25 hover:scale-105'
+                              ? 'ring-2 ring-white ring-offset-2 ring-offset-zinc-950 scale-110 border-white shadow-md'
+                              : 'border-white/20 hover:scale-105'
                           }`}
                         />
                       ))}
                     </div>
                   </div>
 
-                  {/* Persona & Custom Upload */}
-                  <div className="space-y-2 pt-3 border-t border-white/10">
+                  {/* Persona & Custom Import */}
+                  <div className="space-y-3 pt-4 border-t border-white/10">
                     <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-semibold text-white/55">
+                      <span className="text-[11px] font-semibold tracking-wider uppercase text-white/45">
                         Persona
                       </span>
                       {chatHistory.length > 0 && (
@@ -1291,14 +1278,14 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({ onBack }) 
                       onChange={(e) =>
                         updateCharacter({ persona: e.target.value })
                       }
-                      className="w-full rounded-xl bg-white/8 border border-white/12 p-2.5 text-xs text-white/90 focus:outline-none focus:border-white/35"
+                      className="w-full rounded-2xl bg-white/6 border border-white/12 p-3 text-xs text-white/90 focus:outline-none focus:border-white/40 leading-relaxed"
                     />
                     <button
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
-                      className="w-full py-2 rounded-xl bg-white/10 hover:bg-white/15 border border-white/12 text-xs font-medium text-white flex items-center justify-center gap-1.5 cursor-pointer"
+                      className="w-full py-2.5 rounded-2xl bg-white/10 hover:bg-white/16 border border-white/15 text-xs font-semibold text-white flex items-center justify-center gap-2 cursor-pointer shadow-sm transition-all"
                     >
-                      <Upload className="w-3.5 h-3.5" />
+                      <Upload className="w-4 h-4 text-sky-300" />
                       <span>Import Custom .VRM / .LIVLIV</span>
                     </button>
                   </div>
