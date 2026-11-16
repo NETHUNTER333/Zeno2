@@ -3030,24 +3030,14 @@ export default function App() {
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                             Hitaishi
                           </span>
-                          <span
-                            className={`text-[11.5px] truncate ${
-                              isDark ? 'text-zinc-400' : 'text-zinc-600'
-                            }`}
-                          >
-                            2D &amp; 3D AI Avatar Stage · Character Studio
-                          </span>
                         </div>
                       </div>
                       <span
-                        className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold shrink-0 transition-transform group-hover:translate-x-0.5 ${
-                          isDark
-                            ? 'bg-blue-500/20 text-blue-300 border border-blue-400/30'
-                            : 'bg-blue-600 text-white'
+                        className={`text-xs font-semibold ${
+                          isDark ? 'text-zinc-400 group-hover:text-white' : 'text-zinc-500 group-hover:text-zinc-900'
                         }`}
                       >
-                        <span>Open Stage</span>
-                        <span>→</span>
+                        Hitaishi Stage
                       </span>
                     </button>
 
@@ -3260,24 +3250,14 @@ export default function App() {
                               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                               Hitaishi
                             </span>
-                            <span
-                              className={`text-[11px] truncate ${
-                                isDark ? 'text-zinc-400' : 'text-zinc-600'
-                              }`}
-                            >
-                              2D &amp; 3D AI Avatar Stage · Character Studio
-                            </span>
                           </div>
                         </div>
                         <span
-                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-semibold shrink-0 transition-transform group-hover:translate-x-0.5 ${
-                            isDark
-                              ? 'bg-blue-500/20 text-blue-300 border border-blue-400/30'
-                              : 'bg-blue-600 text-white'
+                          className={`text-xs font-semibold ${
+                            isDark ? 'text-zinc-400 group-hover:text-white' : 'text-zinc-500 group-hover:text-zinc-900'
                           }`}
                         >
-                          <span>Stage</span>
-                          <span>→</span>
+                          Hitaishi Stage
                         </span>
                       </button>
                       <div className="w-full relative z-10">
