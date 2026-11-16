@@ -54,11 +54,22 @@ import {
 } from '../lib/userAccountStore';
 import { SUPPORTED_STUDY_LANGUAGES } from '../lib/studyLoopStore';
 import { StudyLanguageDropdown } from './CustomSearchSelect';
-import { UserProfile } from '../types';
+import { UserProfile, KinichReferralStatus } from '../types';
 import { ModelOption } from './GrokModelPicker';
 import { ChatThread } from './Sidebar';
 import { DeleteAccountButton } from './DeleteAccountButton';
 import { Skeleton, ModalSkeleton } from './Skeleton';
+import {
+  fetchUserReferralDashboard,
+  ReferralDashboardResponse,
+} from '../lib/referralClient';
+import {
+  fetchMyReferralStatus,
+  REFERRAL_8_REWARD_TIERS,
+  getEightReferralTrackerState,
+  claimEightReferralTier,
+  EightReferralTrackerState,
+} from '../lib/growthStore';
 
 const PricingModal = lazy(() =>
   import('./PricingModal').then((m) => ({ default: m.PricingModal }))
@@ -750,6 +761,410 @@ export const RefundPolicySection: React.FC<{
   );
 };
 
+export const ReferralsAndRewardsSection: React.FC<{
+  isDark: boolean;
+}> = ({ isDark }) => {
+  const [dashboardData, setDashboardData] = useState<ReferralDashboardResponse | null>(null);
+  const [referralStatus, setReferralStatus] = useState<KinichReferralStatus | null>(null);
+  const [eightRefState, setEightRefState] = useState<EightReferralTrackerState>(() =>
+    getEightReferralTrackerState()
+  );
+  const [loading, setLoading] = useState<boolean>(true);
+  const [copiedLink, setCopiedLink] = useState<boolean>(false);
+  const [claimNotice, setClaimNotice] = useState<string | null>(null);
+
+  const loadReferralsAndRewards = async () => {
+    setLoading(true);
+    try {
+      const [dash, status] = await Promise.all([
+        fetchUserReferralDashboard().catch(() => null),
+        fetchMyReferralStatus().catch(() => null),
+      ]);
+      if (dash) setDashboardData(dash);
+      if (status) setReferralStatus(status);
+      setEightRefState(getEightReferralTrackerState());
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadReferralsAndRewards();
+    const handleSync = () => {
+      setEightRefState(getEightReferralTrackerState());
+      void loadReferralsAndRewards();
+    };
+    window.addEventListener('kinich-growth-updated', handleSync);
+    window.addEventListener('kinich-account-updated', handleSync);
+    return () => {
+      window.removeEventListener('kinich-growth-updated', handleSync);
+      window.removeEventListener('kinich-account-updated', handleSync);
+    };
+  }, []);
+
+  const referralList = Array.isArray(dashboardData?.referrals) ? dashboardData!.referrals : [];
+  const serverRewards = Array.isArray(dashboardData?.rewards) ? dashboardData!.rewards : [];
+
+  const successfulReferralsCount = Math.max(
+    Number(dashboardData?.stats?.qualified ?? 0),
+    Number(referralStatus?.qualifiedActionsCount ?? 0),
+    Number(referralStatus?.validatedSignupsCount ?? 0),
+    eightRefState.count,
+    referralList.filter((r) => r.status === 'qualified' || r.status === 'rewarded').length
+  );
+
+  const totalInvitedCount = Math.max(
+    Number(dashboardData?.stats?.invited ?? 0),
+    successfulReferralsCount,
+    referralList.length
+  );
+
+  const pendingReferralsCount = Math.max(
+    0,
+    totalInvitedCount - successfulReferralsCount,
+    referralList.filter((r) => r.status !== 'qualified' && r.status !== 'rewarded').length
+  );
+
+  const pendingMilestoneTiers = REFERRAL_8_REWARD_TIERS.filter(
+    (tier) => !eightRefState.claimedTiers.includes(tier.targetReferrals)
+  );
+  const readyToClaimCount = pendingMilestoneTiers.filter(
+    (tier) => successfulReferralsCount >= tier.targetReferrals
+  ).length;
+
+  const inviteUrl =
+    dashboardData?.link || referralStatus?.referralUrl || eightRefState.inviteUrl;
+  const referralCode =
+    dashboardData?.code || referralStatus?.referralCode || eightRefState.code;
+
+  return (
+    <div
+      data-testid="account-referrals-rewards-section"
+      className={`p-5 sm:p-6 rounded-2xl border space-y-5 transition-all ${
+        isDark
+          ? 'bg-white/[0.02] border-white/10 text-white'
+          : 'bg-white border-black/15 text-[#18181b] shadow-xs'
+      }`}
+    >
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <div className="w-9 h-9 rounded-xl bg-[#FC4C01]/15 border border-[#FC4C01]/35 flex items-center justify-center text-[#FC4C01]">
+            <Gift className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className="text-sm sm:text-base font-bold tracking-tight">
+                Successful Referrals &amp; Pending Rewards
+              </h3>
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase bg-[#FC4C01]/15 text-[#FC4C01] border border-[#FC4C01]/30">
+                Code: {referralCode}
+              </span>
+            </div>
+            <p className={`text-xs mt-0.5 ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
+              View your referred signups, qualification status, and pending milestone rewards.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              navigator.clipboard.writeText(inviteUrl).catch(() => {});
+              setCopiedLink(true);
+              setTimeout(() => setCopiedLink(false), 2000);
+            }}
+            className="px-3.5 py-2 rounded-xl bg-[#FC4C01] hover:bg-[#e04300] text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer transition-colors"
+          >
+            {copiedLink ? <Check className="w-3.5 h-3.5" /> : <Gift className="w-3.5 h-3.5" />}
+            <span>{copiedLink ? 'Copied Invite Link' : 'Copy Invite Link'}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => void loadReferralsAndRewards()}
+            disabled={loading}
+            className={`p-2 rounded-xl border transition-colors cursor-pointer ${
+              isDark
+                ? 'border-white/15 hover:bg-white/10 text-neutral-300'
+                : 'border-black/15 hover:bg-neutral-100 text-neutral-700'
+            }`}
+            title="Refresh referrals & rewards"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
+      </div>
+
+      {/* Summary KPI Strip */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div
+          className={`p-3.5 rounded-xl border ${
+            isDark ? 'bg-black/40 border-white/10' : 'bg-neutral-50 border-black/10'
+          }`}
+        >
+          <div className="text-[11px] font-medium text-neutral-400">Successful Referrals</div>
+          <div className="text-lg font-bold font-mono text-emerald-400 mt-0.5">
+            {successfulReferralsCount}
+          </div>
+          <div className="text-[10px] text-neutral-500 mt-0.5">
+            Verified &amp; qualified signups
+          </div>
+        </div>
+
+        <div
+          className={`p-3.5 rounded-xl border ${
+            isDark ? 'bg-black/40 border-white/10' : 'bg-neutral-50 border-black/10'
+          }`}
+        >
+          <div className="text-[11px] font-medium text-neutral-400">Pending Referrals</div>
+          <div className="text-lg font-bold font-mono text-amber-400 mt-0.5">
+            {pendingReferralsCount}
+          </div>
+          <div className="text-[10px] text-neutral-500 mt-0.5">
+            Awaiting first core action
+          </div>
+        </div>
+
+        <div
+          className={`p-3.5 rounded-xl border ${
+            isDark ? 'bg-black/40 border-white/10' : 'bg-neutral-50 border-black/10'
+          }`}
+        >
+          <div className="text-[11px] font-medium text-neutral-400">Pending Rewards</div>
+          <div className="text-lg font-bold font-mono text-[#FC4C01] mt-0.5">
+            {pendingMilestoneTiers.length}
+            {readyToClaimCount > 0 ? ` (${readyToClaimCount} Claimable)` : ''}
+          </div>
+          <div className="text-[10px] text-neutral-500 mt-0.5">
+            {eightRefState.claimedTiers.length} of {REFERRAL_8_REWARD_TIERS.length} tiers claimed
+          </div>
+        </div>
+      </div>
+
+      {claimNotice && (
+        <div className="p-3 rounded-xl border border-[#FC4C01]/40 bg-[#FC4C01]/10 text-xs font-medium flex items-center justify-between gap-2">
+          <span>{claimNotice}</span>
+          <button
+            type="button"
+            onClick={() => setClaimNotice(null)}
+            className="text-[11px] opacity-75 hover:opacity-100 cursor-pointer"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* Two-Column / Stacked Breakdown: Successful Referrals List & Pending Rewards List */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Column 1: Successful & Pending Referrals List */}
+        <div
+          className={`p-4 rounded-xl border space-y-3 ${
+            isDark ? 'bg-black/30 border-white/10' : 'bg-neutral-50/70 border-black/10'
+          }`}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <h4 className="text-xs font-bold uppercase tracking-wider opacity-80">
+              Referral Signups ({referralList.length || successfulReferralsCount})
+            </h4>
+            <span className="text-[11px] text-neutral-400">
+              {successfulReferralsCount} qualified
+            </span>
+          </div>
+
+          {referralList.length > 0 ? (
+            <div className="space-y-2 max-h-60 overflow-y-auto slim-scrollbar pr-1">
+              {referralList.map((ref) => {
+                const isQualified =
+                  ref.status === 'qualified' ||
+                  ref.status === 'rewarded' ||
+                  Boolean(ref.qualifiedAt);
+                return (
+                  <div
+                    key={ref.id}
+                    className={`p-3 rounded-xl border flex items-center justify-between gap-3 text-xs ${
+                      isDark
+                        ? 'bg-white/[0.02] border-white/10'
+                        : 'bg-white border-black/10'
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <div className="font-mono font-semibold truncate">
+                        User {ref.referredUserId ? ref.referredUserId.slice(0, 12) : ref.id.slice(0, 10)}
+                      </div>
+                      <div className="text-[11px] text-neutral-400 mt-0.5">
+                        Joined{' '}
+                        {ref.createdAt
+                          ? new Date(ref.createdAt).toLocaleDateString('en-US', {
+                              month: 'short',
+                              day: 'numeric',
+                              year: 'numeric',
+                            })
+                          : 'Recently'}
+                      </div>
+                    </div>
+
+                    <span
+                      className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase shrink-0 ${
+                        isQualified
+                          ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                          : 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                      }`}
+                    >
+                      {isQualified ? 'Successful' : 'Pending'}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          ) : successfulReferralsCount > 0 ? (
+            <div className="space-y-2">
+              {Array.from({ length: Math.min(successfulReferralsCount, 8) }).map((_, idx) => (
+                <div
+                  key={idx}
+                  className={`p-3 rounded-xl border flex items-center justify-between gap-3 text-xs ${
+                    isDark ? 'bg-white/[0.02] border-white/10' : 'bg-white border-black/10'
+                  }`}
+                >
+                  <div>
+                    <div className="font-semibold">Referred Friend #{idx + 1}</div>
+                    <div className="text-[11px] text-neutral-400">
+                      Verified invite via code {referralCode}
+                    </div>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                    Successful
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div
+              className={`p-5 rounded-xl border text-center space-y-1.5 ${
+                isDark ? 'bg-white/[0.01] border-white/5' : 'bg-white border-black/5'
+              }`}
+            >
+              <div className="text-xs font-semibold">No referrals recorded yet</div>
+              <p className="text-[11px] text-neutral-400">
+                Share your invite link above to earn bonus prompts, uploads, and study sessions.
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Column 2: Pending & Claimed Milestone Rewards */}
+        <div
+          className={`p-4 rounded-xl border space-y-3 ${
+            isDark ? 'bg-black/30 border-white/10' : 'bg-neutral-50/70 border-black/10'
+          }`}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <h4 className="text-xs font-bold uppercase tracking-wider opacity-80">
+              Pending &amp; Claimed Rewards
+            </h4>
+            <span className="text-[11px] text-neutral-400">
+              {pendingMilestoneTiers.length} pending
+            </span>
+          </div>
+
+          <div className="space-y-2">
+            {REFERRAL_8_REWARD_TIERS.map((tier) => {
+              const isClaimed = eightRefState.claimedTiers.includes(tier.targetReferrals);
+              const isUnlocked = successfulReferralsCount >= tier.targetReferrals;
+              const remaining = Math.max(0, tier.targetReferrals - successfulReferralsCount);
+
+              return (
+                <div
+                  key={tier.targetReferrals}
+                  className={`p-3 rounded-xl border flex items-center justify-between gap-3 text-xs ${
+                    isUnlocked && !isClaimed
+                      ? 'border-[#FC4C01]/50 bg-[#FC4C01]/[0.06]'
+                      : isDark
+                      ? 'bg-white/[0.02] border-white/10'
+                      : 'bg-white border-black/10'
+                  }`}
+                >
+                  <div className="space-y-0.5 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold">
+                        {tier.targetReferrals}{' '}
+                        {tier.targetReferrals === 1 ? 'Referral' : 'Referrals'}
+                      </span>
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                          isClaimed
+                            ? 'bg-emerald-500/15 text-emerald-400'
+                            : isUnlocked
+                            ? 'bg-[#FC4C01]/20 text-[#FC4C01]'
+                            : 'bg-amber-500/15 text-amber-400'
+                        }`}
+                      >
+                        {isClaimed
+                          ? 'Claimed'
+                          : isUnlocked
+                          ? 'Pending Claim'
+                          : `Pending (${remaining} more)`}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-neutral-400 truncate">
+                      +{tier.bonusMessages} Prompts · +{tier.bonusUploads} Uploads · +
+                      {tier.bonusQuizzes} Quizzes
+                    </div>
+                  </div>
+
+                  {isClaimed ? (
+                    <span className="text-xs font-semibold text-emerald-400 shrink-0">
+                      Claimed ✓
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const res = claimEightReferralTier(tier.targetReferrals);
+                        setEightRefState(res.state);
+                        setClaimNotice(res.message);
+                        setTimeout(() => setClaimNotice(null), 4000);
+                      }}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer shrink-0 transition-colors ${
+                        isUnlocked
+                          ? 'bg-[#FC4C01] hover:bg-[#e04300] text-white'
+                          : isDark
+                          ? 'border border-white/15 bg-white/5 hover:bg-white/10 text-neutral-300'
+                          : 'border border-black/15 bg-neutral-100 hover:bg-neutral-200 text-neutral-700'
+                      }`}
+                    >
+                      Claim
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+
+            {serverRewards.map((rw) => (
+              <div
+                key={rw.id}
+                className={`p-3 rounded-xl border flex items-center justify-between gap-3 text-xs ${
+                  isDark ? 'bg-white/[0.02] border-white/10' : 'bg-white border-black/10'
+                }`}
+              >
+                <div className="min-w-0">
+                  <div className="font-bold truncate">{rw.reason || 'Referral Bonus Credit'}</div>
+                  <div className="text-[11px] text-neutral-400">
+                    +{rw.days || 7} days bonus access
+                  </div>
+                </div>
+                <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shrink-0">
+                  Credited
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 interface AccountWorkspacePageProps {
   onBackToChat: () => void;
   initialTab?: AccountTab;
@@ -1238,6 +1653,7 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
 
                 {isAuthenticatedUser ? (
                   <>
+                    <ReferralsAndRewardsSection isDark={isDark} />
                     <RefundPolicySection isDark={isDark} />
                     <CancelSubscriptionSection isDark={isDark} />
                     <Suspense
@@ -1252,28 +1668,31 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
                     </Suspense>
                   </>
                 ) : (
-                  <div
-                    className={`p-6 rounded-2xl border text-center space-y-3 ${
-                      isDark ? 'bg-white/[0.02] border-white/10' : 'bg-white border-black/10 shadow-xs'
-                    }`}
-                  >
-                    <p className="text-sm font-semibold">Sign in to manage billing &amp; subscriptions</p>
-                    <p className="text-xs text-neutral-400 max-w-md mx-auto">
-                      You are browsing as a Guest. Sign in with Google or Email to subscribe to Spark or Fire, view invoices, or request refunds.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        window.dispatchEvent(
-                          new CustomEvent('kinich-open-auth', {
-                            detail: { reason: 'Sign in to manage your account and billing' },
-                          })
-                        )
-                      }
-                      className="px-4 py-2 rounded-xl bg-[#FC4C01] hover:bg-[#e04300] text-white text-xs font-semibold cursor-pointer transition-colors"
+                  <div className="space-y-6">
+                    <ReferralsAndRewardsSection isDark={isDark} />
+                    <div
+                      className={`p-6 rounded-2xl border text-center space-y-3 ${
+                        isDark ? 'bg-white/[0.02] border-white/10' : 'bg-white border-black/10 shadow-xs'
+                      }`}
                     >
-                      Sign in with Google or Email
-                    </button>
+                      <p className="text-sm font-semibold">Sign in to manage billing &amp; subscriptions</p>
+                      <p className="text-xs text-neutral-400 max-w-md mx-auto">
+                        You are browsing as a Guest. Sign in with Google or Email to subscribe to Spark or Fire, view invoices, or request refunds.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          window.dispatchEvent(
+                            new CustomEvent('kinich-open-auth', {
+                              detail: { reason: 'Sign in to manage your account and billing' },
+                            })
+                          )
+                        }
+                        className="px-4 py-2 rounded-xl bg-[#FC4C01] hover:bg-[#e04300] text-white text-xs font-semibold cursor-pointer transition-colors"
+                      >
+                        Sign in with Google or Email
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -1443,6 +1862,9 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
                     </button>
                   </div>
                 )}
+
+                {/* Successful Referrals & Pending Rewards Section */}
+                <ReferralsAndRewardsSection isDark={isDark} />
 
                 {/* Daily Streak & Reminder Notification Settings Card */}
                 <div

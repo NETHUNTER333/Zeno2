@@ -10,6 +10,14 @@ import { auth, getAuthHeaders } from '../lib/firebase';
 import { DodoStatusModal } from './DodoStatusModal';
 import { cancelUserSubscription, requestSubscriptionRefund } from '../lib/billing';
 import { CustomSearchSelect } from './CustomSearchSelect';
+import {
+  PlanSwitchBillingToggle,
+  PopSaveBadge,
+  RollingDigitPrice,
+  RollingBillingLine,
+  ExtraFeatureRow,
+  MorphUpgradeButton,
+} from './motion/PlanSwitchMotion';
 
 export interface PricingModalProps {
   isOpen: boolean;
@@ -72,23 +80,6 @@ const FALLBACK_COUNTRIES = [
   { code: 'GR', name: 'Greece', flag: '🇬🇷', currency: 'EUR', symbol: '€' },
 ];
 
-const PRICE_TABLE: Record<
-  string,
-  {
-    spark: { monthly: string; yearly: string; monthlyEquiv: string };
-    fire: { monthly: string; yearly: string; monthlyEquiv: string };
-  }
-> = {
-  USD: {
-    spark: { monthly: '$3/mo', yearly: '$29/yr', monthlyEquiv: '$2.42/mo' },
-    fire: { monthly: '$7/mo', yearly: '$67/yr', monthlyEquiv: '$5.58/mo' },
-  },
-  INR: {
-    spark: { monthly: '₹99/mo + GST', yearly: '₹949/yr + GST', monthlyEquiv: '₹79/mo' },
-    fire: { monthly: '₹249/mo + GST', yearly: '₹2,399/yr + GST', monthlyEquiv: '₹200/mo' },
-  },
-};
-
 export const PricingModal: React.FC<PricingModalProps> = ({
   isOpen,
   onClose,
@@ -116,13 +107,6 @@ export const PricingModal: React.FC<PricingModalProps> = ({
       return 'IN';
     }
   });
-
-  const getPriceTable = () => {
-    const c = countries.find((x) => x.code === selectedCountry);
-    const cur = c?.currency || 'USD';
-    return PRICE_TABLE[cur] || PRICE_TABLE.USD;
-  };
-  const pt = getPriceTable();
 
   const [billingMe, setBillingMe] = useState<any | null>(null);
   const [checkoutBusyPlan, setCheckoutBusyPlan] = useState<'spark' | 'fire' | null>(null);
@@ -488,43 +472,12 @@ export const PricingModal: React.FC<PricingModalProps> = ({
             }))}
           />
 
-          {/* Compact Annual / Monthly Toggle */}
-          <div
-            className={`inline-flex items-center p-0.5 rounded-xl border ${
-              isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-zinc-100 border-zinc-200'
-            }`}
-          >
-            <button
-              type="button"
-              onClick={() => setBillingCycle('annual')}
-              className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                billingCycle === 'annual'
-                  ? isDark
-                    ? 'bg-white text-black'
-                    : 'bg-zinc-900 text-white'
-                  : isDark
-                  ? 'text-zinc-400 hover:text-white'
-                  : 'text-zinc-600 hover:text-zinc-900'
-              }`}
-            >
-              Annual -20%
-            </button>
-            <button
-              type="button"
-              onClick={() => setBillingCycle('monthly')}
-              className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                billingCycle === 'monthly'
-                  ? isDark
-                    ? 'bg-white text-black'
-                    : 'bg-zinc-900 text-white'
-                  : isDark
-                  ? 'text-zinc-400 hover:text-white'
-                  : 'text-zinc-600 hover:text-zinc-900'
-              }`}
-            >
-              Monthly
-            </button>
-          </div>
+          {/* DesignBookmark Plan Switch Stretchy Toggle */}
+          <PlanSwitchBillingToggle
+            billingCycle={billingCycle}
+            onChange={(next) => setBillingCycle(next)}
+            isDark={isDark}
+          />
         </div>
       </div>
 
@@ -664,7 +617,6 @@ export const PricingModal: React.FC<PricingModalProps> = ({
                 '5 web searches / day',
                 '3 Deep Research runs / day',
                 '5 Study sessions / day',
-                '20 Vault items (100 MB)',
               ].map((feat) => (
                 <li key={feat} className="flex items-center gap-2">
                   <Check
@@ -681,7 +633,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
 
         {/* Card 2: Spark */}
         <div
-          className={`rounded-2xl border p-5 flex flex-col justify-between transition-all ${
+          className={`rounded-[24px] border p-5 flex flex-col justify-between transition-all ${
             currentPlan === 'spark'
               ? 'border-[#FC4C01] ring-1 ring-[#FC4C01]/30 ' +
                 (isDark ? 'bg-zinc-900' : 'bg-white shadow-sm')
@@ -693,46 +645,62 @@ export const PricingModal: React.FC<PricingModalProps> = ({
           <div>
             <div className="flex items-center justify-between gap-2 mb-3">
               <h2 className="text-lg font-bold tracking-tight">Spark</h2>
-              <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-md bg-[#FC4C01]/15 text-[#FC4C01]">
-                {currentPlan === 'spark' ? 'Current' : '10x Quotas'}
-              </span>
-            </div>
-
-            <div className="mb-5">
-              <div className="flex items-baseline gap-1.5">
-                <span className="text-3xl font-bold tracking-tight">
-                  {billingCycle === 'annual' ? pt.spark.yearly : pt.spark.monthly}
+              <div className="flex items-center gap-1.5">
+                <PopSaveBadge visible={billingCycle === 'annual'} label="Save 20%" />
+                <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-md bg-[#FC4C01]/15 text-[#FC4C01]">
+                  {currentPlan === 'spark' ? 'Current' : '10x Quotas'}
                 </span>
-                {billingCycle === 'annual' && (
-                  <span className={`text-xs ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
-                    ({pt.spark.monthlyEquiv})
-                  </span>
-                )}
               </div>
             </div>
 
-            <button
-              type="button"
+            <div className="mb-4 space-y-1">
+              <RollingDigitPrice
+                prefix={selectedCountry === 'IN' ? '₹' : '$'}
+                amount={
+                  selectedCountry === 'IN'
+                    ? billingCycle === 'annual'
+                      ? 79
+                      : 99
+                    : billingCycle === 'annual'
+                    ? 2
+                    : 3
+                }
+                suffix="/mo"
+              />
+              <RollingBillingLine
+                text={
+                  billingCycle === 'annual'
+                    ? selectedCountry === 'IN'
+                      ? 'Billed ₹949 yearly + GST'
+                      : 'Billed $29 yearly ($2.42/mo)'
+                    : 'Billed monthly, cancel anytime'
+                }
+                isDark={isDark}
+              />
+            </div>
+
+            <MorphUpgradeButton
+              state={
+                checkoutBusyPlan === 'spark'
+                  ? 'busy'
+                  : currentPlan === 'spark'
+                  ? 'done'
+                  : 'idle'
+              }
+              idleLabel={currentPlan === 'fire' ? 'Switch to Spark' : 'Upgrade to Spark'}
+              doneLabel="You're on Spark"
               onClick={() => handleSelectPlan('spark')}
-              disabled={checkoutBusyPlan !== null || currentPlan === 'spark'}
-              className={`w-full py-2.5 px-4 rounded-xl text-xs font-semibold transition-all mb-5 ${
-                currentPlan === 'spark'
-                  ? 'bg-[#FC4C01]/20 text-[#FC4C01] cursor-default'
-                  : isDark
-                  ? 'bg-white hover:bg-zinc-200 text-black cursor-pointer'
-                  : 'bg-zinc-900 hover:bg-zinc-800 text-white cursor-pointer'
-              }`}
-            >
-              {checkoutBusyPlan === 'spark'
-                ? 'Opening Checkout...'
-                : currentPlan === 'spark'
-                ? 'Current Plan'
-                : currentPlan === 'fire'
-                ? 'Switch to Spark'
-                : 'Upgrade to Spark'}
-            </button>
+              disabled={checkoutBusyPlan !== null && checkoutBusyPlan !== 'spark'}
+              variant="spark"
+              isDark={isDark}
+            />
 
             <ul className="space-y-2.5 text-xs">
+              <ExtraFeatureRow
+                visible={billingCycle === 'annual'}
+                label="Two months free"
+                isDark={isDark}
+              />
               {[
                 '1,500 prompts / day',
                 '250 file uploads / day',
@@ -740,7 +708,6 @@ export const PricingModal: React.FC<PricingModalProps> = ({
                 '100 Deep Research runs / day',
                 '200 Study sessions / day',
                 'GLM 4.7 Flash, Kimi K2.5 & Qwen3 30B',
-                '10 GB Cloud Vault',
               ].map((feat) => (
                 <li key={feat} className="flex items-center gap-2">
                   <Check className="w-3.5 h-3.5 shrink-0 text-[#FC4C01]" />
@@ -753,7 +720,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
 
         {/* Card 3: Fire */}
         <div
-          className={`rounded-2xl border p-5 flex flex-col justify-between transition-all ${
+          className={`rounded-[24px] border p-5 flex flex-col justify-between transition-all ${
             currentPlan === 'fire'
               ? 'border-[#FC4C01] ring-1 ring-[#FC4C01]/40 ' +
                 (isDark ? 'bg-zinc-900' : 'bg-white shadow-sm')
@@ -764,43 +731,63 @@ export const PricingModal: React.FC<PricingModalProps> = ({
         >
           <div>
             <div className="flex items-center justify-between gap-2 mb-3">
-              <h2 className="text-lg font-bold tracking-tight">Fire</h2>
-              <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-md bg-[#FC4C01] text-white">
-                {currentPlan === 'fire' ? 'Current' : 'All Models'}
-              </span>
-            </div>
-
-            <div className="mb-5">
-              <div className="flex items-baseline gap-1.5">
-                <span className="text-3xl font-bold tracking-tight">
-                  {billingCycle === 'annual' ? pt.fire.yearly : pt.fire.monthly}
+              <h2 className="text-lg font-bold tracking-tight">Fire 🔥</h2>
+              <div className="flex items-center gap-1.5">
+                <PopSaveBadge visible={billingCycle === 'annual'} label="Save 20%" />
+                <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-md bg-[#FC4C01] text-white">
+                  {currentPlan === 'fire' ? 'Current' : 'All Models'}
                 </span>
-                {billingCycle === 'annual' && (
-                  <span className={`text-xs ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
-                    ({pt.fire.monthlyEquiv})
-                  </span>
-                )}
               </div>
             </div>
 
-            <button
-              type="button"
+            <div className="mb-4 space-y-1">
+              <RollingDigitPrice
+                prefix={selectedCountry === 'IN' ? '₹' : '$'}
+                amount={
+                  selectedCountry === 'IN'
+                    ? billingCycle === 'annual'
+                      ? 200
+                      : 249
+                    : billingCycle === 'annual'
+                    ? 6
+                    : 7
+                }
+                suffix="/mo"
+              />
+              <RollingBillingLine
+                text={
+                  billingCycle === 'annual'
+                    ? selectedCountry === 'IN'
+                      ? 'Billed ₹2,399 yearly + GST'
+                      : 'Billed $67 yearly ($5.58/mo)'
+                    : 'Billed monthly, cancel anytime'
+                }
+                isDark={isDark}
+              />
+            </div>
+
+            <MorphUpgradeButton
+              state={
+                checkoutBusyPlan === 'fire'
+                  ? 'busy'
+                  : currentPlan === 'fire'
+                  ? 'done'
+                  : 'idle'
+              }
+              idleLabel="Upgrade to Fire"
+              doneLabel="You're on Fire 🔥"
               onClick={() => handleSelectPlan('fire')}
-              disabled={checkoutBusyPlan !== null || currentPlan === 'fire'}
-              className={`w-full py-2.5 px-4 rounded-xl text-xs font-semibold transition-all mb-5 ${
-                currentPlan === 'fire'
-                  ? 'bg-[#FC4C01]/20 text-[#FC4C01] cursor-default'
-                  : 'bg-[#FC4C01] hover:bg-[#e04300] text-white cursor-pointer'
-              }`}
-            >
-              {checkoutBusyPlan === 'fire'
-                ? 'Opening Checkout...'
-                : currentPlan === 'fire'
-                ? 'Current Plan'
-                : 'Upgrade to Fire'}
-            </button>
+              disabled={checkoutBusyPlan !== null && checkoutBusyPlan !== 'fire'}
+              variant="fire"
+              isDark={isDark}
+            />
 
             <ul className="space-y-2.5 text-xs">
+              <ExtraFeatureRow
+                visible={billingCycle === 'annual'}
+                label="Two months free"
+                isDark={isDark}
+              />
               {[
                 '5,000 prompts / day',
                 '1,000 file uploads / day',
@@ -809,7 +796,6 @@ export const PricingModal: React.FC<PricingModalProps> = ({
                 '500 Study sessions / day',
                 'All Frontier Models (GPT-6 Astra, DeepSeek R1)',
                 'Personal Study Agents & Morning Brief',
-                '30 GB Cloud Vault',
               ].map((feat) => (
                 <li key={feat} className="flex items-center gap-2">
                   <Check className="w-3.5 h-3.5 shrink-0 text-[#FC4C01]" />

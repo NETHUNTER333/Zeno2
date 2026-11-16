@@ -1636,7 +1636,8 @@ export default function App() {
     const currentUsage = UserAccountStore.getUsage();
     const currentPlanNorm = UserAccountStore.getNormalizedPlan();
     if (currentUsage.messagesUsed >= currentUsage.messageLimit) {
-      setFreeQuotaWindow(UserAccountStore.getFreeQuotaWindowInfo());
+      const windowInfo = UserAccountStore.getFreeQuotaWindowInfo();
+      setFreeQuotaWindow(windowInfo);
       if (currentPlanNorm === 'free') {
         setQuotaLimitModalOpen(true);
       } else {
@@ -2614,23 +2615,24 @@ export default function App() {
   };
 
   return (
-    <div
-      className={`app-viewport-shell relative isolate flex h-[100dvh] w-full max-w-[100vw] overflow-hidden font-sans select-text transition-colors duration-200 ${
-        isDark
-          ? bgGradientMode === 'off'
-            ? 'bg-[#000000] text-white'
-            : 'text-white'
-          : bgGradientMode === 'off'
-          ? 'bg-[#ffffff] text-[#000000]'
-          : 'text-[#000000]'
-      }`}
-    >
-      <PullToRefresh isDark={isDark} />
-      <ModelRadiantBackground
-        modelId={selectedModel.id}
-        theme={theme}
-        mode={bgGradientMode}
-      />
+    <>
+      <div
+        className={`app-viewport-shell relative isolate flex h-[100dvh] w-full max-w-[100vw] overflow-hidden font-sans select-text transition-colors duration-200 ${
+          isDark
+            ? bgGradientMode === 'off'
+              ? 'bg-[#000000] text-white'
+              : 'text-white'
+            : bgGradientMode === 'off'
+            ? 'bg-[#ffffff] text-[#000000]'
+            : 'text-[#000000]'
+        }`}
+      >
+        <PullToRefresh isDark={isDark} />
+        <ModelRadiantBackground
+          modelId={selectedModel.id}
+          theme={theme}
+          mode={bgGradientMode}
+        />
       {legalOr404Route ? (
         <div className="flex-1 w-full h-full overflow-y-auto relative z-10">
           <LegalAndInfoPages
@@ -3780,5 +3782,6 @@ export default function App() {
         </div>
       )}
     </div>
+    </>
   );
 }

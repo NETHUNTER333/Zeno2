@@ -1001,23 +1001,25 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         </div>
 
         {/* Text Input Field */}
-        <textarea
-          ref={textareaRef}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={handleKeyDown}
-          onPaste={handlePaste}
-          placeholder={
-            attachments.length > 0
-              ? `Ask about your ${attachments.length} ${attachments.length === 1 ? 'upload' : 'uploads'}...`
-              : placeholder
-          }
-          rows={1}
-          dir="auto"
-          className={`flex-1 min-h-[24px] max-h-32 resize-none bg-transparent py-0.5 text-[14px] leading-5 outline-none font-sans font-normal ${
-            isDark ? 'text-white placeholder-[#71717a]' : 'text-neutral-900 placeholder-[#71717a]'
-          }`}
-        />
+        <div className="relative flex-1 min-w-0 flex items-center">
+          <textarea
+            ref={textareaRef}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
+            placeholder={
+              attachments.length > 0
+                ? `Ask about your ${attachments.length} ${attachments.length === 1 ? 'upload' : 'uploads'}...`
+                : placeholder
+            }
+            rows={1}
+            dir="auto"
+            className={`w-full min-h-[24px] max-h-32 resize-none bg-transparent py-0.5 text-[14px] leading-5 outline-none font-sans font-normal ${
+              isDark ? 'text-white placeholder-[#71717a]' : 'text-neutral-900 placeholder-[#71717a]'
+            }`}
+          />
+        </div>
 
         {/* Right Action Cluster (History + Send/Stop) */}
         <div className="flex items-center gap-1.5 shrink-0 select-none">

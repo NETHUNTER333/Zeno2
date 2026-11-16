@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Play, Pause, X, Loader2, Volume2, ChevronDown, Check } from 'lucide-react';
 import {
   speakTextWithSmallestAi,
   stopSmallestSpeech,
+  sanitizeTtsSpeechText,
   TTS_LANGUAGES,
   TTS_PLAYBACK_SPEEDS,
   TtsVoiceGender,
@@ -15,6 +16,7 @@ import {
   setSavedTtsSpeed,
   setActiveTtsPlaybackSpeed,
 } from '../lib/smallestAi';
+import { ReadAlongText } from './motion/ReadAlongText';
 
 interface TtsPopupProps {
   text: string;
@@ -25,11 +27,15 @@ interface TtsPopupProps {
 export const TtsPopup: React.FC<TtsPopupProps> = ({ text, onClose, isDark = true }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [activeWordIndex, setActiveWordIndex] = useState(-1);
   const [ttsLang, setTtsLang] = useState<string>(() => getSavedTtsLanguage());
   const [ttsGender, setTtsGender] = useState<TtsVoiceGender>(() => getSavedTtsGender());
   const [ttsSpeed, setTtsSpeed] = useState<TtsPlaybackSpeed>(() => getSavedTtsSpeed());
   const [isLangMenuOpen, setIsLangMenuOpen] = useState(false);
   const langMenuRef = useRef<HTMLDivElement>(null);
+
+  const cleanSpokenText = useMemo(() => sanitizeTtsSpeechText(text), [text]);
+  const wordsList = useMemo(() => cleanSpokenText.split(' ').filter(Boolean), [cleanSpokenText]);
 
   useEffect(() => {
     return () => {
@@ -67,11 +73,13 @@ export const TtsPopup: React.FC<TtsPopupProps> = ({ text, onClose, isDark = true
   const startSpeech = (
     langOverride?: string,
     genderOverride?: TtsVoiceGender,
-    speedOverride?: TtsPlaybackSpeed
+    speedOverride?: TtsPlaybackSpeed,
+    startWordIdx = 0
   ) => {
     stopSmallestSpeech();
     setIsPlaying(false);
     setLoading(true);
+    setActiveWordIndex(startWordIdx);
     speakTextWithSmallestAi(
       text,
       langOverride ?? ttsLang,
@@ -82,6 +90,7 @@ export const TtsPopup: React.FC<TtsPopupProps> = ({ text, onClose, isDark = true
       () => {
         setLoading(false);
         setIsPlaying(false);
+        setActiveWordIndex(-1);
       },
       () => {
         setLoading(false);
@@ -89,9 +98,21 @@ export const TtsPopup: React.FC<TtsPopupProps> = ({ text, onClose, isDark = true
       },
       genderOverride ?? ttsGender,
       undefined,
-      speedOverride ?? ttsSpeed
+      speedOverride ?? ttsSpeed,
+      (prog) => {
+        setActiveWordIndex(prog.wordIndex);
+      },
+      startWordIdx
     );
   };
+
+  // Auto-start Read Along immediately when popup opens
+  useEffect(() => {
+    if (cleanSpokenText) {
+      startSpeech(ttsLang, ttsGender, ttsSpeed, 0);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleSpeedChange = (newSpeed: TtsPlaybackSpeed) => {
     setTtsSpeed(newSpeed);
@@ -103,7 +124,7 @@ export const TtsPopup: React.FC<TtsPopupProps> = ({ text, onClose, isDark = true
       'speechSynthesis' in window &&
       window.speechSynthesis.speaking
     ) {
-      startSpeech(ttsLang, ttsGender, newSpeed);
+      startSpeech(ttsLang, ttsGender, newSpeed, Math.max(0, activeWordIndex));
     }
   };
 
@@ -112,21 +133,25 @@ export const TtsPopup: React.FC<TtsPopupProps> = ({ text, onClose, isDark = true
       stopSmallestSpeech();
       setIsPlaying(false);
       setLoading(false);
+      setActiveWordIndex(-1);
       return;
     }
-    startSpeech(ttsLang, ttsGender, ttsSpeed);
+    startSpeech(ttsLang, ttsGender, ttsSpeed, 0);
   };
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
-      onClick={onClose}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 backdrop-blur-sm p-4"
+      onClick={() => {
+        stopSmallestSpeech();
+        onClose();
+      }}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className={`w-full max-w-sm p-4 rounded-xl border shadow-xl space-y-3 animate-in fade-in zoom-in-95 duration-150 ${
+        className={`w-full max-w-md p-4 rounded-2xl border shadow-2xl space-y-3 animate-in fade-in zoom-in-95 duration-150 ${
           isDark
-            ? 'bg-[#121215] border-white/10 text-white'
+            ? 'bg-[#141418] border-white/10 text-white'
             : 'bg-white border-neutral-200 text-neutral-900'
         }`}
       >
@@ -134,7 +159,16 @@ export const TtsPopup: React.FC<TtsPopupProps> = ({ text, onClose, isDark = true
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-2">
             <Volume2 className="w-4 h-4 opacity-80" />
-            <span className="font-semibold text-xs">Read Aloud</span>
+            <span className="font-semibold text-xs">Read Aloud · Live Segment</span>
+            {activeWordIndex >= 0 && wordsList.length > 0 && (
+              <span
+                className={`text-[10px] font-mono px-2 py-0.5 rounded-full ${
+                  isDark ? 'bg-white/10 text-neutral-300' : 'bg-neutral-100 text-neutral-700'
+                }`}
+              >
+                {activeWordIndex + 1}/{wordsList.length}
+              </span>
+            )}
           </div>
           <button
             type="button"
@@ -147,6 +181,26 @@ export const TtsPopup: React.FC<TtsPopupProps> = ({ text, onClose, isDark = true
           >
             <X className="w-3.5 h-3.5" />
           </button>
+        </div>
+
+        {/* DesignBookmark Read Along Live Segment View */}
+        <div
+          className={`rounded-xl p-3.5 max-h-44 overflow-y-auto scrollbar-thin border ${
+            isDark
+              ? 'bg-[#1c1c21] border-white/[0.07]'
+              : 'bg-[#f7f7f6] border-black/[0.06]'
+          }`}
+        >
+          <ReadAlongText
+            text={cleanSpokenText || 'No readable text in this message.'}
+            activeWordIndex={activeWordIndex}
+            isPlaying={isPlaying}
+            isDark={isDark}
+            className="text-[15px] sm:text-[16px]"
+            onWordClick={(wordIdx) => {
+              startSpeech(ttsLang, ttsGender, ttsSpeed, wordIdx);
+            }}
+          />
         </div>
 
         {/* Gender & Language Selector */}
@@ -167,7 +221,7 @@ export const TtsPopup: React.FC<TtsPopupProps> = ({ text, onClose, isDark = true
                     setTtsGender(g);
                     setSavedTtsGender(g);
                     if (isPlaying || loading) {
-                      startSpeech(ttsLang, g, ttsSpeed);
+                      startSpeech(ttsLang, g, ttsSpeed, Math.max(0, activeWordIndex));
                     }
                   }}
                   className={`py-1 rounded text-xs font-medium transition-colors cursor-pointer capitalize ${
@@ -225,7 +279,7 @@ export const TtsPopup: React.FC<TtsPopupProps> = ({ text, onClose, isDark = true
                           setSavedTtsLanguage(lang.code);
                           setIsLangMenuOpen(false);
                           if (isPlaying || loading) {
-                            startSpeech(lang.code, ttsGender, ttsSpeed);
+                            startSpeech(lang.code, ttsGender, ttsSpeed, Math.max(0, activeWordIndex));
                           }
                         }}
                         className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded text-xs transition-colors cursor-pointer ${
@@ -297,12 +351,12 @@ export const TtsPopup: React.FC<TtsPopupProps> = ({ text, onClose, isDark = true
           ) : isPlaying ? (
             <>
               <Pause className="w-3.5 h-3.5 fill-current" />
-              <span>Pause</span>
+              <span>Stop</span>
             </>
           ) : (
             <>
               <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
-              <span>Play</span>
+              <span>Read Aloud</span>
             </>
           )}
         </button>

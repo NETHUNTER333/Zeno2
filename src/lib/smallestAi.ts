@@ -143,7 +143,36 @@ export function setActiveTtsPlaybackSpeed(speed: TtsPlaybackSpeed) {
   }
 }
 
+export interface TtsWordProgress {
+  wordIndex: number;
+  charIndex: number;
+  totalWords: number;
+  currentWord: string;
+}
+
+export function sanitizeTtsSpeechText(text: string): string {
+  return String(text || '')
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\[\d+\]/g, '')
+    .replace(/https?:\/\/\S+/g, '')
+    .replace(/[#*_~>|]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 1200);
+}
+
+let activeProgressRafId: number | null = null;
+function clearProgressRaf() {
+  if (activeProgressRafId !== null && typeof cancelAnimationFrame !== 'undefined') {
+    cancelAnimationFrame(activeProgressRafId);
+    activeProgressRafId = null;
+  }
+}
+
 export function stopSmallestSpeech() {
+  clearProgressRaf();
   loadedPhononModule?.stopPhononSpeech();
   if (activeAbortController) {
     try {
@@ -240,8 +269,21 @@ async function shiftBlobToMaleVoiceIfNeeded(blob: Blob, shouldShift: boolean): P
   }
 }
 
+function buildWordCumulativeOffsets(words: string[]): number[] {
+  const weights = words.map((w) => Math.max(2, w.replace(/[^a-zA-Z0-9]/g, '').length + 1.5));
+  const total = weights.reduce((a, b) => a + b, 0) || 1;
+  const cum: number[] = [];
+  let acc = 0;
+  for (const w of weights) {
+    acc += w;
+    cum.push(acc / total);
+  }
+  return cum;
+}
+
 /**
- * Speak text using Rumik AI Silk / Gemini / Neural TTS (/api/tts) in the user's preferred language and Male/Female voice.
+ * Speak text using Rumik AI Silk / Gemini / Neural TTS (/api/tts) in the user's preferred language and Male/Female voice,
+ * with live word-level progress tracking for the Read Along pill highlighter.
  */
 export async function speakTextWithSmallestAi(
   text: string,
@@ -251,33 +293,63 @@ export async function speakTextWithSmallestAi(
   onError?: (err: any) => void,
   selectedGender?: TtsVoiceGender,
   onAudioUrlReady?: (audioUrl: string) => void,
-  selectedSpeed?: TtsPlaybackSpeed
+  selectedSpeed?: TtsPlaybackSpeed,
+  onWordProgress?: (progress: TtsWordProgress) => void,
+  startWordIndex = 0
 ): Promise<void> {
   stopSmallestSpeech();
 
-  const cleanText = text
-    .replace(/<think>[\s\S]*?<\/think>/gi, '')
-    .replace(/```[\s\S]*?```/g, ' ')
-    .replace(/`([^`]+)`/g, '$1')
-    .replace(/\[\d+\]/g, '')
-    .replace(/https?:\/\/\S+/g, '')
-    .replace(/[#*_~>|]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 1200);
+  const fullCleanText = sanitizeTtsSpeechText(text);
+  if (!fullCleanText) return;
 
+  const allWords = fullCleanText.split(' ').filter(Boolean);
+  const clampedStartWord = Math.max(0, Math.min(allWords.length - 1, startWordIndex));
+  const subWords = allWords.slice(clampedStartWord);
+  const cleanText = subWords.join(' ');
   if (!cleanText) return;
 
   const language =
     selectedLangCode && selectedLangCode !== 'auto'
       ? selectedLangCode
       : getSavedTtsLanguage();
-  const gender: TtsVoiceGender = selectedGender === 'male' || (!selectedGender && getSavedTtsGender() === 'male') ? 'male' : 'female';
+  const gender: TtsVoiceGender =
+    selectedGender === 'male' || (!selectedGender && getSavedTtsGender() === 'male')
+      ? 'male'
+      : 'female';
   const speed: TtsPlaybackSpeed = selectedSpeed || getSavedTtsSpeed();
   const bcp47 = TTS_LANGUAGES.find((l) => l.code === language)?.bcp47 || 'en-US';
 
   const controller = new AbortController();
   activeAbortController = controller;
+
+  const startSyntheticWordTracker = (getDurationSec: () => number, getElapsedSec: () => number) => {
+    if (!onWordProgress || subWords.length === 0) return;
+    const cumOffsets = buildWordCumulativeOffsets(subWords);
+    let lastEmitted = -1;
+
+    const tick = () => {
+      if (controller.signal.aborted) return;
+      const dur = getDurationSec();
+      const elapsed = getElapsedSec();
+      const ratio = dur > 0 ? Math.max(0, Math.min(0.999, elapsed / dur)) : 0;
+      let idx = cumOffsets.findIndex((c) => ratio <= c);
+      if (idx === -1) idx = subWords.length - 1;
+      const globalIdx = clampedStartWord + idx;
+      if (globalIdx !== lastEmitted) {
+        lastEmitted = globalIdx;
+        onWordProgress({
+          wordIndex: globalIdx,
+          charIndex: 0,
+          totalWords: allWords.length,
+          currentWord: allWords[globalIdx] || '',
+        });
+      }
+      if (activeAudioElement && !activeAudioElement.paused && !activeAudioElement.ended) {
+        activeProgressRafId = requestAnimationFrame(tick);
+      }
+    };
+    activeProgressRafId = requestAnimationFrame(tick);
+  };
 
   try {
     const authHeaders = await getAuthHeaders();
@@ -325,17 +397,38 @@ export async function speakTextWithSmallestAi(
       } catch {}
       activeAudioElement = audio;
 
+      audio.onplay = () => {
+        const estimatedDur = Math.max(1.2, subWords.length * 0.36);
+        startSyntheticWordTracker(
+          () => (Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : estimatedDur),
+          () => audio.currentTime || 0
+        );
+      };
+
       audio.onended = () => {
+        clearProgressRaf();
         URL.revokeObjectURL(audioUrl);
         activeAudioElement = null;
         activeAudioBaseRate = 1;
         onEnd?.();
       };
       audio.onerror = () => {
+        clearProgressRaf();
         URL.revokeObjectURL(audioUrl);
         activeAudioElement = null;
         activeAudioBaseRate = 1;
-        fallbackWebSpeech(cleanText, bcp47, gender, onStart, onEnd, onError, speed);
+        fallbackWebSpeech(
+          cleanText,
+          bcp47,
+          gender,
+          onStart,
+          onEnd,
+          onError,
+          speed,
+          onWordProgress,
+          clampedStartWord,
+          allWords
+        );
       };
 
       onStart?.();
@@ -354,12 +447,63 @@ export async function speakTextWithSmallestAi(
   if (gender === 'female' && isEnglish && isPhononRuntimeSupported()) {
     const phononMod = await getPhononModule();
     if (phononMod.isPhononSupported()) {
-      const handled = await phononMod.speakWithPhonon(cleanText, { onStart, onEnd, onError });
+      const startTime = performance.now();
+      const totalEstimatedMs = Math.max(1200, (subWords.length * 360) / speed);
+      let phononActive = true;
+      const cumOffsets = buildWordCumulativeOffsets(subWords);
+      let lastIdx = -1;
+      const pumpPhonon = () => {
+        if (!phononActive || controller.signal.aborted) return;
+        const ratio = Math.max(0, Math.min(0.999, (performance.now() - startTime) / totalEstimatedMs));
+        let idx = cumOffsets.findIndex((c) => ratio <= c);
+        if (idx === -1) idx = subWords.length - 1;
+        const globalIdx = clampedStartWord + idx;
+        if (globalIdx !== lastIdx) {
+          lastIdx = globalIdx;
+          onWordProgress?.({
+            wordIndex: globalIdx,
+            charIndex: 0,
+            totalWords: allWords.length,
+            currentWord: allWords[globalIdx] || '',
+          });
+        }
+        if (ratio < 0.99) {
+          activeProgressRafId = requestAnimationFrame(pumpPhonon);
+        }
+      };
+
+      const handled = await phononMod.speakWithPhonon(cleanText, {
+        onStart: () => {
+          onStart?.();
+          activeProgressRafId = requestAnimationFrame(pumpPhonon);
+        },
+        onEnd: () => {
+          phononActive = false;
+          clearProgressRaf();
+          onEnd?.();
+        },
+        onError: (e) => {
+          phononActive = false;
+          clearProgressRaf();
+          onError?.(e);
+        },
+      });
       if (handled) return;
     }
   }
 
-  fallbackWebSpeech(cleanText, bcp47, gender, onStart, onEnd, onError, speed);
+  fallbackWebSpeech(
+    cleanText,
+    bcp47,
+    gender,
+    onStart,
+    onEnd,
+    onError,
+    speed,
+    onWordProgress,
+    clampedStartWord,
+    allWords
+  );
 }
 
 function fallbackWebSpeech(
@@ -369,7 +513,10 @@ function fallbackWebSpeech(
   onStart?: () => void,
   onEnd?: () => void,
   onError?: (err: any) => void,
-  speed: TtsPlaybackSpeed = 1
+  speed: TtsPlaybackSpeed = 1,
+  onWordProgress?: (progress: TtsWordProgress) => void,
+  startWordOffset = 0,
+  allWords: string[] = []
 ) {
   if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
     window.speechSynthesis.cancel();
@@ -401,9 +548,81 @@ function fallbackWebSpeech(
       utterance.rate = Math.max(0.5, Math.min(2.2, Number((1.0 * speed).toFixed(2))));
     }
 
-    utterance.onstart = () => onStart?.();
-    utterance.onend = () => onEnd?.();
+    // Build character start offsets for sub-words to map Web Speech boundary events accurately
+    const subWords = text.split(' ').filter(Boolean);
+    const wordCharStarts: number[] = [];
+    let cursor = 0;
+    for (const w of subWords) {
+      wordCharStarts.push(cursor);
+      cursor += w.length + 1;
+    }
+
+    let boundarySeen = false;
+    let fallbackTimer: ReturnType<typeof setInterval> | null = null;
+    const clearTimer = () => {
+      if (fallbackTimer) {
+        clearInterval(fallbackTimer);
+        fallbackTimer = null;
+      }
+    };
+
+    utterance.onboundary = (event: any) => {
+      if (typeof event.charIndex === 'number' && onWordProgress) {
+        boundarySeen = true;
+        clearTimer();
+        let subIdx = 0;
+        for (let i = wordCharStarts.length - 1; i >= 0; i--) {
+          if (event.charIndex >= wordCharStarts[i]) {
+            subIdx = i;
+            break;
+          }
+        }
+        const globalIdx = startWordOffset + subIdx;
+        onWordProgress({
+          wordIndex: globalIdx,
+          charIndex: event.charIndex,
+          totalWords: allWords.length || subWords.length,
+          currentWord: allWords[globalIdx] || subWords[subIdx] || '',
+        });
+      }
+    };
+
+    utterance.onstart = () => {
+      onStart?.();
+      if (onWordProgress && subWords.length > 0) {
+        onWordProgress({
+          wordIndex: startWordOffset,
+          charIndex: 0,
+          totalWords: allWords.length || subWords.length,
+          currentWord: allWords[startWordOffset] || subWords[0] || '',
+        });
+        const startedAt = performance.now();
+        const cumOffsets = buildWordCumulativeOffsets(subWords);
+        const estDurationMs = Math.max(1000, (subWords.length * 360) / speed);
+        fallbackTimer = setInterval(() => {
+          if (boundarySeen) {
+            clearTimer();
+            return;
+          }
+          const ratio = Math.max(0, Math.min(0.999, (performance.now() - startedAt) / estDurationMs));
+          let idx = cumOffsets.findIndex((c) => ratio <= c);
+          if (idx === -1) idx = subWords.length - 1;
+          const globalIdx = startWordOffset + idx;
+          onWordProgress({
+            wordIndex: globalIdx,
+            charIndex: 0,
+            totalWords: allWords.length || subWords.length,
+            currentWord: allWords[globalIdx] || subWords[idx] || '',
+          });
+        }, 90);
+      }
+    };
+    utterance.onend = () => {
+      clearTimer();
+      onEnd?.();
+    };
     utterance.onerror = (e) => {
+      clearTimer();
       onEnd?.();
       onError?.(e);
     };

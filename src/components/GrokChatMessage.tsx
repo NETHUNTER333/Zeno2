@@ -2908,7 +2908,9 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                 >
                   <TtsPopup
                     text={message.content || ''}
-                    onClose={() => setShowTtsPopup(false)}
+                    onClose={() => {
+                      setShowTtsPopup(false);
+                    }}
                     isDark={isDark}
                   />
                 </Suspense>
