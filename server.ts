@@ -6060,6 +6060,32 @@ app.post('/api/tts', async (req, res) => {
       }
     }
 
+    // Tier 1.3: HuggingFace Prahaladha/hima-tts-nano-te TTS for Indic & Multilingual Speech Synthesis
+    if (isIndianLang || ['telugu', 'hindi', 'tamil', 'kannada', 'malayalam', 'bengali'].includes(language)) {
+      try {
+        const hfRes = await fetch('https://api-inference.huggingface.co/models/Prahaladha/hima-tts-nano-te', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(process.env.HUGGINGFACE_API_KEY ? { Authorization: `Bearer ${process.env.HUGGINGFACE_API_KEY}` } : {}),
+          },
+          body: JSON.stringify({ inputs: textToSpeak }),
+          signal: AbortSignal.timeout(6500),
+        });
+        if (hfRes.ok) {
+          const arrayBuffer = await hfRes.arrayBuffer();
+          if (arrayBuffer.byteLength > 100) {
+            res.setHeader('Content-Type', hfRes.headers.get('content-type') || 'audio/wav');
+            res.setHeader('X-Zeno-Voice-Engine', 'hima-tts-nano-te');
+            res.setHeader('Cache-Control', 'no-store');
+            return res.send(Buffer.from(arrayBuffer));
+          }
+        }
+      } catch {
+        // Fall through to Gemini TTS
+      }
+    }
+
     // Tier 1.5: Google Gemini Native Neural TTS (distinct Male 'Charon' vs Female 'Kore' voice across all languages)
     const ttsGeminiClient =
       geminiClient ||

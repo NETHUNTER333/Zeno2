@@ -241,7 +241,7 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({ onBack }) 
           body: JSON.stringify({
             text: lineText,
             gender,
-            language: 'english',
+            language: character.voiceLanguage || 'english',
           }),
         });
 
@@ -1108,6 +1108,35 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({ onBack }) 
                         }
                         className="w-full accent-sky-400 cursor-pointer h-1.5 bg-white/10 rounded-lg"
                       />
+                    </div>
+
+                    <div className="space-y-1.5 pt-1">
+                      <div className="flex justify-between text-[11px] text-white/60">
+                        <span>Voice &amp; Subtitle Language</span>
+                        <span className="text-sky-300 capitalize">{character.voiceLanguage || 'english'}</span>
+                      </div>
+                      <select
+                        value={character.voiceLanguage || 'english'}
+                        onChange={(e) => updateCharacter({ voiceLanguage: e.target.value })}
+                        className="w-full h-10 px-3 rounded-xl bg-white/10 border border-white/15 text-xs font-medium text-white focus:outline-none focus:border-sky-400 cursor-pointer"
+                      >
+                        <option value="english" className="bg-zinc-900 text-white">English (US/UK)</option>
+                        <option value="hinglish" className="bg-zinc-900 text-white">Hinglish (Hindi-English mix)</option>
+                        <option value="telugu" className="bg-zinc-900 text-white">Telugu (తెలుగు)</option>
+                        <option value="hindi" className="bg-zinc-900 text-white">Hindi (हिन्दी)</option>
+                        <option value="tamil" className="bg-zinc-900 text-white">Tamil (தமிழ்)</option>
+                        <option value="kannada" className="bg-zinc-900 text-white">Kannada (ಕನ್ನಡ)</option>
+                        <option value="malayalam" className="bg-zinc-900 text-white">Malayalam (മലയാളം)</option>
+                        <option value="bengali" className="bg-zinc-900 text-white">Bengali (বাংলা)</option>
+                        <option value="marathi" className="bg-zinc-900 text-white">Marathi (मराठी)</option>
+                        <option value="gujarati" className="bg-zinc-900 text-white">Gujarati (ગુજરાતી)</option>
+                        <option value="punjabi" className="bg-zinc-900 text-white">Punjabi (ਪੰਜਾਬੀ)</option>
+                        <option value="spanish" className="bg-zinc-900 text-white">Spanish (Español)</option>
+                        <option value="french" className="bg-zinc-900 text-white">French (Français)</option>
+                        <option value="german" className="bg-zinc-900 text-white">German (Deutsch)</option>
+                        <option value="arabic" className="bg-zinc-900 text-white">Arabic (العربية)</option>
+                        <option value="japanese" className="bg-zinc-900 text-white">Japanese (日本語)</option>
+                      </select>
                     </div>
                   </div>
 

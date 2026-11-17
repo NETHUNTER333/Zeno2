@@ -73,6 +73,7 @@ export interface HitaishiStageCharacter {
   activeAction: { id: 'nod' | 'shake' | 'tilt' | 'hop' | 'shy'; seq: number } | null;
   isAway: boolean;
   mouthOpen: number;
+  voiceLanguage?: string;
 }
 
 export interface HitaishiStageProp {
@@ -643,6 +644,7 @@ export function createStageCharacterFromCatalog(
     activeAction: null,
     isAway: false,
     mouthOpen: 0,
+    voiceLanguage: 'english',
   };
 }
 
