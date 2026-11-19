@@ -1213,8 +1213,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <Zap className="w-3.5 h-3.5 text-[#FC4C01] fill-[#FC4C01]/20 shrink-0" />
                     <span>
                       {planCheck === 'fire'
-                        ? 'Pro Plan ($7/mo)'
-                        : 'Upgrade to Pro - $7/mo'}
+                        ? 'Fire Unlimited ($9/mo)'
+                        : 'Upgrade to Fire - $9/mo'}
                     </span>
                   </span>
                   <span

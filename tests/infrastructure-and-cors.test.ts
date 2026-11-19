@@ -305,11 +305,10 @@ describe('Infrastructure, Shared Firestore Persistence, Env Defaults & Strict CO
     });
   });
 
-  describe('4. Spark ($3/mo) Uncensored Model & Firebase Web Config', () => {
-    it('classifies DeepSeek V4.1 Uncensored as Spark ($3/mo) on both backend and UI model catalog', async () => {
+  describe('4. Spark ($3/mo) Vision Model & Firebase Web Config', () => {
+    it('permanently excludes uncensored models from the UI catalog and classifies Spark vision models accurately', async () => {
       const { classifyServerModelTier, canPlanUseModelTier } = await import('../server/rateLimiter');
-      expect(classifyServerModelTier('fgw/deepseek-v4.1-flash-uncensored:free')).toBe('spark');
-      expect(classifyServerModelTier('fgw-deepseek-v4.1-flash-uncensored-free')).toBe('spark');
+      expect(classifyServerModelTier('fgw/qwen-3.8-max:free')).toBe('fire');
       expect(canPlanUseModelTier('free', 'spark')).toBe(false);
       expect(canPlanUseModelTier('spark', 'spark')).toBe(true);
       expect(canPlanUseModelTier('fire', 'spark')).toBe(true);
@@ -318,9 +317,8 @@ describe('Infrastructure, Shared Firestore Persistence, Env Defaults & Strict CO
         path.resolve(process.cwd(), 'src/components/GrokModelPicker.tsx'),
         'utf8'
       );
-      expect(pickerSource).toMatch(
-        /id:\s*'fgw-deepseek-v4\.1-flash-uncensored-free'[\s\S]*?requiredTier:\s*'spark'/
-      );
+      expect(pickerSource).not.toMatch(/uncensored|limitless/i);
+      expect(pickerSource).toMatch(/id:\s*'fgw-qwen-3\.8-vl-72b-vision'[\s\S]*?requiredTier:\s*'spark'/);
     });
 
     it('keeps firebase-applet-config.json aligned with the sustained-chiller-36tp2 web app and named Firestore DB', () => {

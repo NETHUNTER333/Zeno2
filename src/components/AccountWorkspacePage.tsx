@@ -1332,7 +1332,7 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
     { id: 'profile', label: 'Profile & Account', icon: <User className="w-4 h-4" /> },
     { id: 'models', label: 'Model Settings', icon: <Cpu className="w-4 h-4 text-[#FC4C01]" /> },
     { id: 'billing', label: 'Billing & Refunds', icon: <Receipt className="w-4 h-4 text-[#FC4C01]" /> },
-    { id: 'pricing', label: 'Plans & Pricing ($3 / $7)', icon: <Zap className="w-4 h-4 text-[#FC4C01]" /> },
+    { id: 'pricing', label: 'Plans & Pricing ($3 / $9)', icon: <Zap className="w-4 h-4 text-[#FC4C01]" /> },
     { id: 'preferences', label: 'App Preferences', icon: <SlidersHorizontal className="w-4 h-4" /> },
     { id: 'chats_projects', label: 'Chat History & Export', icon: <FolderOpen className="w-4 h-4" /> },
   ];
@@ -2822,7 +2822,7 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
                   <div>
                     <div className="text-sm font-semibold">AI Model &amp; System Prompts</div>
                     <div className="text-xs text-neutral-400 mt-0.5">
-                      Configure Regular vs. Uncensored system prompts, temperature, reasoning effort, and default models.
+                      Configure system prompts, temperature, reasoning effort, and default AI models.
                     </div>
                   </div>
                   <button
@@ -3071,11 +3071,11 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
                         </span>
                       </div>
                       <div className="text-[11px] text-neutral-400 mt-0.5">
-                        Explicit image/video pulls and prohibited uploads are blocked; 18+ unfiltered text chat is supported on Uncensored models.
+                        Explicit image/video pulls and prohibited uploads are automatically filtered across all models.
                       </div>
                     </div>
                     <div className="text-[10px] font-mono text-neutral-400 px-2.5 py-1 rounded-md bg-neutral-800/60 border border-neutral-700/60">
-                      18+ Verified
+                      Protected
                     </div>
                   </div>
                 </div>

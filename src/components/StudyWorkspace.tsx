@@ -47,6 +47,11 @@ import {
   Bookmark,
   FolderOpen,
   MapPin,
+  Atom,
+  Compass,
+  Sigma,
+  Activity,
+  ArrowUpRight,
 } from 'lucide-react';
 import { ViewOnMap } from './watermelon/view-on-map';
 import { ThinkingOrb } from 'thinking-orbs';
@@ -72,6 +77,9 @@ import { StudyLoopPanel } from './StudyLoopPanel';
 import { StudyArsenalPanel } from './StudyArsenalPanel';
 import { StudyPhysicsVisualizeLab } from './StudyPhysicsVisualizeLab';
 import { StudySketchTutor } from './StudySketchTutor';
+import { StudyFocusTimer } from './StudyFocusTimer';
+import { StudyFormulaScratchpad } from './StudyFormulaScratchpad';
+import type { CommandStudyLabMode } from './CommandPaletteModal';
 import { StudyLanguageDropdown } from './CustomSearchSelect';
 import {
   StudyLoopStore,
@@ -81,6 +89,10 @@ import {
   type StudyLanguage,
   type RecallGrade,
 } from '../lib/studyLoopStore';
+import {
+  openHitaishiWithWorkspaceScope,
+  saveStudyWorkspaceToHitaishiBridge,
+} from '../lib/hitaishiWorkspaceBridge';
 
 export interface StudyWorkspaceProps {
   initialVideo?: YouTubeVideoInfo | null;
@@ -89,6 +101,12 @@ export interface StudyWorkspaceProps {
     pdfName?: string;
     extractedText?: string;
   } | null;
+  initialLabMode?: {
+    mode: CommandStudyLabMode;
+    title: string;
+    seq: number;
+  } | null;
+  initialOpenFormulasSeq?: number;
   onBackToChat: () => void;
   isDark?: boolean;
   onAskKinich?: (prompt: string) => void;
@@ -393,6 +411,8 @@ export function buildDetailedStatementBreakdown(
 export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
   initialVideo,
   initialPdf,
+  initialLabMode,
+  initialOpenFormulasSeq,
   onBackToChat,
   isDark = true,
   onOpenPricing,
@@ -438,6 +458,8 @@ export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
     return false;
   });
   const [showHomeStudyLoop, setShowHomeStudyLoop] = useState<boolean>(false);
+  const [formulaScratchpadOpen, setFormulaScratchpadOpen] = useState<boolean>(false);
+  const lastHandledLabSeqRef = useRef<number>(0);
   const [fullPageFeature, setFullPageFeature] = useState<{
     type: WorkspaceTabType;
     title: string;
@@ -645,6 +667,74 @@ export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
   const userProfile = useMemo(() => UserAccountStore.getProfile(), []);
   const displayName = userProfile?.displayName?.split(' ')[0] || 'Wake';
 
+  // Live sync active Study Space materials to Hitaishi Workspace Bridge
+  useEffect(() => {
+    const bundleCards = Array.isArray((studyBundle as any)?.flashcards)
+      ? (studyBundle as any).flashcards.map((f: any) => ({
+          front: String(f.front || f.question || ''),
+          back: String(f.back || f.answer || ''),
+        }))
+      : [];
+    const allCards = [
+      ...customFlashcards.map((f) => ({ front: f.front, back: f.back })),
+      ...bundleCards,
+    ].slice(0, 20);
+
+    const quizList = Array.isArray((studyBundle as any)?.quiz)
+      ? (studyBundle as any).quiz.slice(0, 12).map((q: any) => ({
+          question: String(q.question || ''),
+          options: Array.isArray(q.options) ? q.options.map(String) : undefined,
+          answer:
+            typeof q.correctIndex === 'number' && Array.isArray(q.options)
+              ? String(q.options[q.correctIndex] || '')
+              : String(q.answer || ''),
+        }))
+      : [];
+
+    const summaryText =
+      editableSummaryText ||
+      aiExhaustiveSummary ||
+      (studyBundle as any)?.summary ||
+      rawSourceText.slice(0, 1800) ||
+      '';
+
+    const takeaways = Array.isArray((studyBundle as any)?.keyTakeaways)
+      ? (studyBundle as any).keyTakeaways.map(String)
+      : [];
+
+    saveStudyWorkspaceToHitaishiBridge({
+      title: resolvedTitle || 'Study Space',
+      sourceType,
+      videoId: activeVideoId || undefined,
+      summary: summaryText,
+      keyTakeaways: takeaways,
+      flashcards: allCards,
+      quizQuestions: quizList,
+      userNotes,
+      studyChatTurns: chatTurns.slice(-12).map((t) => ({
+        role: t.role,
+        content: t.content,
+      })),
+      spacesList: spaces.slice(0, 12).map((s) => ({
+        id: s.id,
+        name: s.name,
+        sourceType: s.sourceType,
+      })),
+    });
+  }, [
+    activeVideoId,
+    aiExhaustiveSummary,
+    chatTurns,
+    customFlashcards,
+    editableSummaryText,
+    rawSourceText,
+    resolvedTitle,
+    sourceType,
+    spaces,
+    studyBundle,
+    userNotes,
+  ]);
+
   useEffect(() => {
     if (!loadingContent) {
       setLoadingElapsedSec(0);
@@ -836,6 +926,25 @@ export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
       returnTo: viewMode,
     });
   };
+
+  useEffect(() => {
+    if (!initialLabMode || !initialLabMode.seq) return;
+    if (lastHandledLabSeqRef.current === initialLabMode.seq) return;
+    lastHandledLabSeqRef.current = initialLabMode.seq;
+    launchDeepTutorMode(initialLabMode.mode, initialLabMode.title);
+  }, [initialLabMode]);
+
+  useEffect(() => {
+    if (initialOpenFormulasSeq && initialOpenFormulasSeq > 0) {
+      setFormulaScratchpadOpen(true);
+    }
+  }, [initialOpenFormulasSeq]);
+
+  useEffect(() => {
+    const onOpenFormulas = () => setFormulaScratchpadOpen(true);
+    window.addEventListener('kinich-open-formula-scratchpad', onOpenFormulas);
+    return () => window.removeEventListener('kinich-open-formula-scratchpad', onOpenFormulas);
+  }, []);
 
   const closeTab = (tabId: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -2789,19 +2898,60 @@ ${fullTranscriptText}`;
               <span className="font-semibold text-sm tracking-tight">Study Space</span>
             </div>
 
-            {(activeVideoId || studyBundle) && (
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <StudyFocusTimer isDark={isDark} />
+
               <button
                 type="button"
-                onClick={() => setViewMode('workspace')}
-                className={`h-8 px-3.5 rounded-full border text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer active:scale-95 ${
+                onClick={() => setFormulaScratchpadOpen(true)}
+                className={`h-8 px-2.5 sm:px-3 rounded-full border text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer active:scale-95 ${
                   isDark
-                    ? 'bg-white text-black border-white hover:bg-neutral-200'
-                    : 'bg-black text-white border-black hover:bg-neutral-800'
+                    ? 'bg-white/[0.04] hover:bg-white/[0.09] border-white/[0.12] text-neutral-200 hover:text-white'
+                    : 'bg-black/[0.03] hover:bg-black/[0.07] border-black/[0.12] text-neutral-800 hover:text-black'
                 }`}
+                title="STEM Formula Sheet & Study Scratchpad"
               >
-                <span>Resume Workspace</span>
+                <Sigma className="w-3.5 h-3.5 shrink-0" />
+                <span className="hidden sm:inline">Formulas</span>
               </button>
-            )}
+
+              <button
+                type="button"
+                onClick={() =>
+                  openHitaishiWithWorkspaceScope(
+                    'study',
+                    `Help me study my Study Space "${resolvedTitle || 'Study Space'}".`
+                  )
+                }
+                className={`h-8 px-2.5 sm:px-3 rounded-full border text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer active:scale-95 ${
+                  isDark
+                    ? 'bg-white/[0.05] hover:bg-white/[0.11] border-white/[0.14] text-white'
+                    : 'bg-black/[0.04] hover:bg-black/[0.08] border-black/[0.12] text-black'
+                }`}
+                title="Study with Hitaishi Voice Companion"
+              >
+                <img
+                  src="/hitaishi-assets/characters/n01/avatar.webp"
+                  alt="Hitaishi"
+                  className="w-4 h-4 rounded-full object-cover"
+                />
+                <span className="hidden sm:inline">Hitaishi</span>
+              </button>
+
+              {(activeVideoId || studyBundle) && (
+                <button
+                  type="button"
+                  onClick={() => setViewMode('workspace')}
+                  className={`h-8 px-3.5 rounded-full border text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer active:scale-95 ${
+                    isDark
+                      ? 'bg-white text-black border-white hover:bg-neutral-200'
+                      : 'bg-black text-white border-black hover:bg-neutral-800'
+                  }`}
+                >
+                  <span>Resume Workspace</span>
+                </button>
+              )}
+            </div>
           </header>
 
           <div className="max-w-2xl w-full mx-auto px-3 sm:px-5 py-3 space-y-3.5">
@@ -2947,54 +3097,87 @@ ${fullTranscriptText}`;
               </div>
             </form>
 
-            {/* Quick Launch Bar for Visual Whiteboard & Study Labs */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-0.5" data-testid="study-home-deeptutor-bar">
+            {/* Studio Tools Grid: Visual Whiteboard & Interactive Study Labs */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 pt-1" data-testid="study-home-deeptutor-bar">
               {[
                 {
                   mode: 'sketch_tutor' as const,
                   title: 'Visual Whiteboard',
                   sub: 'Drawn lessons & audio',
+                  Icon: Pencil,
                 },
                 {
                   mode: 'visualize' as const,
                   title: 'Physics Lab',
                   sub: 'Interactive simulation',
+                  Icon: Atom,
                 },
                 {
                   mode: 'diagram' as const,
                   title: 'Concept Diagram',
                   sub: 'Flows & SVG export',
+                  Icon: Network,
                 },
                 {
                   mode: 'mastery_path' as const,
                   title: 'Mastery Path',
                   sub: 'Skill checkpoints',
+                  Icon: Compass,
                 },
                 {
                   mode: 'deep_solve' as const,
                   title: 'Deep Solve',
                   sub: 'Step-by-step proofs',
+                  Icon: Sigma,
                 },
                 {
                   mode: 'plotter' as const,
                   title: 'Curve Plotter',
                   sub: 'y(x) function graph',
+                  Icon: Activity,
                 },
-              ].map((card) => (
-                <button
-                  key={card.mode}
-                  type="button"
-                  onClick={() => launchDeepTutorMode(card.mode, card.title)}
-                  className={`px-3.5 py-2.5 rounded-xl border text-left transition-colors cursor-pointer ${
-                    isDark
-                      ? 'bg-[#121215] border-white/[0.08] hover:border-white/[0.25] text-neutral-100'
-                      : 'bg-white border-black/[0.08] hover:border-black/[0.25] text-neutral-900'
-                  }`}
-                >
-                  <div className="text-xs font-semibold truncate">{card.title}</div>
-                  <div className={`text-[11px] truncate ${textMuted}`}>{card.sub}</div>
-                </button>
-              ))}
+              ].map((card) => {
+                const Icon = card.Icon;
+                return (
+                  <button
+                    key={card.mode}
+                    type="button"
+                    onClick={() => launchDeepTutorMode(card.mode, card.title)}
+                    className={`group relative min-h-[82px] px-3.5 py-3 rounded-2xl border text-left flex flex-col justify-between gap-2.5 transition-all duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] active:scale-[0.985] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 ${
+                      isDark
+                        ? 'bg-[#121215] border-white/[0.08] hover:border-white/[0.22] hover:bg-[#17171b] text-neutral-100 focus-visible:ring-white/40 focus-visible:ring-offset-[#09090b]'
+                        : 'bg-white border-black/[0.08] hover:border-black/[0.2] hover:bg-[#fafafa] text-neutral-900 shadow-[0_1px_2px_rgba(0,0,0,0.03)] focus-visible:ring-black/30 focus-visible:ring-offset-white'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span
+                        className={`size-7 rounded-lg flex items-center justify-center transition-colors ${
+                          isDark
+                            ? 'bg-white/[0.06] text-neutral-300 group-hover:bg-white/[0.12] group-hover:text-white'
+                            : 'bg-black/[0.045] text-neutral-700 group-hover:bg-black/[0.08] group-hover:text-black'
+                        }`}
+                      >
+                        <Icon className="w-3.5 h-3.5" strokeWidth={1.9} />
+                      </span>
+                      <ArrowUpRight
+                        className={`w-3.5 h-3.5 transition-transform duration-150 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 ${
+                          isDark
+                            ? 'text-neutral-600 group-hover:text-neutral-300'
+                            : 'text-neutral-400 group-hover:text-neutral-700'
+                        }`}
+                      />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold tracking-tight leading-snug truncate">
+                        {card.title}
+                      </div>
+                      <div className={`text-xs leading-snug truncate mt-0.5 ${textMuted}`}>
+                        {card.sub}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
 
             {typeof window !== 'undefined' && window.location.pathname.startsWith('/battle/') && (
@@ -3358,6 +3541,45 @@ ${fullTranscriptText}`;
             </div>
 
             <div className="flex items-center gap-1.5 shrink-0">
+              <StudyFocusTimer isDark={isDark} />
+
+              <button
+                type="button"
+                onClick={() => setFormulaScratchpadOpen(true)}
+                className={`h-8 px-2.5 sm:px-3 rounded-full border text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
+                  isDark
+                    ? 'bg-white/[0.04] hover:bg-white/[0.09] border-white/[0.12] text-neutral-200 hover:text-white'
+                    : 'bg-black/[0.03] hover:bg-black/[0.07] border-black/[0.12] text-neutral-800 hover:text-black'
+                }`}
+                title="STEM Formula Sheet & Study Scratchpad"
+              >
+                <Sigma className="w-3.5 h-3.5 shrink-0" />
+                <span className="hidden sm:inline">Formulas</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  openHitaishiWithWorkspaceScope(
+                    'study',
+                    `Quiz me or help me study "${resolvedTitle || 'this topic'}" from my Study Space!`
+                  )
+                }
+                className={`h-8 px-2.5 sm:px-3 rounded-full border text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
+                  isDark
+                    ? 'bg-white/[0.05] hover:bg-white/[0.11] border-white/[0.14] text-white'
+                    : 'bg-black/[0.04] hover:bg-black/[0.08] border-black/[0.12] text-black'
+                }`}
+                title="Voice study session with Hitaishi Companion"
+              >
+                <img
+                  src="/hitaishi-assets/characters/n01/avatar.webp"
+                  alt="Hitaishi"
+                  className="w-4 h-4 rounded-full object-cover"
+                />
+                <span className="hidden sm:inline">Hitaishi</span>
+              </button>
+
               {(activeVideoId || pdfUrl || rawSourceText) && (
                 <button
                   type="button"
@@ -6822,6 +7044,22 @@ ${fullTranscriptText}`;
           </div>
         </div>
       )}
+
+      <StudyFormulaScratchpad
+        isOpen={formulaScratchpadOpen}
+        onClose={() => setFormulaScratchpadOpen(false)}
+        isDark={isDark}
+        onDeriveFormula={(prompt) => {
+          setFormulaScratchpadOpen(false);
+          setFullPageFeature(null);
+          setViewMode('workspace');
+          openOrFocusTab('chat', 'Tutor');
+          handleSendStudyChat(prompt, {
+            topicOverride: 'Formula Derivation',
+            resetContext: true,
+          });
+        }}
+      />
     </div>
   );
 };

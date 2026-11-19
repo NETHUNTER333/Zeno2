@@ -617,6 +617,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
                 '5 web searches / day',
                 '3 Deep Research runs / day',
                 '5 Study sessions / day',
+                'Hitaishi Live Voice & 3D Companion (Standard)',
               ].map((feat) => (
                 <li key={feat} className="flex items-center gap-2">
                   <Check
@@ -707,7 +708,8 @@ export const PricingModal: React.FC<PricingModalProps> = ({
                 '750 web searches / day',
                 '100 Deep Research runs / day',
                 '200 Study sessions / day',
-                'GLM 4.7 Flash, Kimi K2.5, Qwen3 30B & DeepSeek V4.1 Uncensored',
+                'Hitaishi Live 3D Voice Companion (300 turns/day)',
+                'Spark Reasoning & Vision Models',
               ].map((feat) => (
                 <li key={feat} className="flex items-center gap-2">
                   <Check className="w-3.5 h-3.5 shrink-0 text-[#FC4C01]" />
@@ -735,7 +737,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
               <div className="flex items-center gap-1.5">
                 <PopSaveBadge visible={billingCycle === 'annual'} label="Save 20%" />
                 <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-md bg-[#FC4C01] text-white">
-                  {currentPlan === 'fire' ? 'Current' : 'All Models'}
+                  {currentPlan === 'fire' ? 'Current' : 'Unlimited'}
                 </span>
               </div>
             </div>
@@ -749,8 +751,8 @@ export const PricingModal: React.FC<PricingModalProps> = ({
                       ? 200
                       : 249
                     : billingCycle === 'annual'
-                    ? 6
-                    : 7
+                    ? 7
+                    : 9
                 }
                 suffix="/mo"
               />
@@ -759,7 +761,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
                   billingCycle === 'annual'
                     ? selectedCountry === 'IN'
                       ? 'Billed ₹2,399 yearly + GST'
-                      : 'Billed $67 yearly ($5.58/mo)'
+                      : 'Billed $86 yearly ($7.17/mo)'
                     : 'Billed monthly, cancel anytime'
                 }
                 isDark={isDark}
@@ -789,12 +791,12 @@ export const PricingModal: React.FC<PricingModalProps> = ({
                 isDark={isDark}
               />
               {[
-                '5,000 prompts / day',
-                '1,000 file uploads / day',
-                '2,500 web searches / day',
-                '300 Deep Research reports / day',
-                '500 Study sessions / day',
-                'All Frontier Models (GPT-6 Astra, DeepSeek R1)',
+                'Unlimited prompts & messages',
+                'Unlimited file & PDF uploads',
+                'Unlimited web searches & Deep Research',
+                'Unlimited Study sessions & Vault storage',
+                'Unlimited Hitaishi Live 3D Voice Companion',
+                'All Frontier & Vision Models',
                 'Personal Study Agents & Morning Brief',
               ].map((feat) => (
                 <li key={feat} className="flex items-center gap-2">
@@ -821,7 +823,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
       >
         <div className="flex items-center justify-between gap-2 mb-3">
           <span className={`text-xs font-semibold ${isDark ? 'text-zinc-300' : 'text-zinc-700'}`}>
-            Daily Usage ({currentPlan.toUpperCase()})
+            Daily Usage ({currentPlan === 'fire' ? 'FIRE · UNLIMITED' : currentPlan.toUpperCase()})
           </span>
           <button
             type="button"
@@ -864,7 +866,10 @@ export const PricingModal: React.FC<PricingModalProps> = ({
               limit: effectivePdfStudyLimit,
             },
           ].map((stat) => {
-            const pct = Math.min(100, Math.round((stat.used / Math.max(1, stat.limit)) * 100));
+            const isUnlimited = currentPlan === 'fire' || stat.limit >= 999999;
+            const pct = isUnlimited
+              ? Math.min(100, Math.round((stat.used / 500) * 100))
+              : Math.min(100, Math.round((stat.used / Math.max(1, stat.limit)) * 100));
             return (
               <div
                 key={stat.label}
@@ -875,7 +880,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
                 <div className="flex items-center justify-between gap-1 text-[11px] mb-1">
                   <span className={isDark ? 'text-zinc-400' : 'text-zinc-500'}>{stat.label}</span>
                   <span className="font-mono font-semibold">
-                    {stat.used}/{stat.limit}
+                    {isUnlimited ? `${stat.used}/∞` : `${stat.used}/${stat.limit}`}
                   </span>
                 </div>
                 <div

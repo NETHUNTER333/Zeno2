@@ -1,10 +1,9 @@
 import {
   DEFAULT_REGULAR_MODEL_PROMPT,
-  DEFAULT_UNCENSORED_MODEL_PROMPT,
   type ReasoningEffortLevel,
 } from '../src/lib/modelPromptDefaults';
 
-export { DEFAULT_REGULAR_MODEL_PROMPT, DEFAULT_UNCENSORED_MODEL_PROMPT };
+export { DEFAULT_REGULAR_MODEL_PROMPT };
 
 export interface ModelTuningOptions {
   temperature?: number;
@@ -28,19 +27,6 @@ export interface RegularPromptBuildInput {
   hasXContext?: boolean;
   hasYouTubeContext?: boolean;
   contentSafetyDirective?: string;
-  personalizationDirective?: string;
-  languageDirective?: string;
-  pinnedDirective?: string;
-  modelSettings?: ModelTuningOptions;
-}
-
-export interface UncensoredPromptBuildInput {
-  topPriorityLengthSystemBlock?: string;
-  localDateOnly: string;
-  localTimeOnly: string;
-  timezone: string;
-  utcOffset: string;
-  utcFull: string;
   personalizationDirective?: string;
   languageDirective?: string;
   pinnedDirective?: string;
@@ -115,20 +101,6 @@ ${input.defaultFormattingRule}
       ? `\n7. YouTube Videos: You have direct access to the video details and transcript in [DETECTED YOUTUBE VIDEO] or [FETCHED YOUTUBE & INTERNET VIDEOS] below; explain and break down the video/topic directly.`
       : ''
   }${input.contentSafetyDirective || ''}${tuningDirective}${input.personalizationDirective || ''}${input.languageDirective || ''}${input.pinnedDirective || ''}`;
-}
-
-export function buildUncensoredModelSystemPrompt(input: UncensoredPromptBuildInput): string {
-  const customUncensored = String(input.modelSettings?.uncensoredSystemPrompt || '').trim();
-  const baseIdentity = customUncensored || DEFAULT_UNCENSORED_MODEL_PROMPT;
-  const tuningDirective = buildReasoningAndStyleDirective(input.modelSettings);
-  const maskIdentity = input.modelSettings?.maskProviderIdentity !== false;
-
-  return `${input.topPriorityLengthSystemBlock || ''}${baseIdentity}
-${maskIdentity ? STRICT_KINICH_IDENTITY_RULE : ''}
-[REAL-TIME SYSTEM CLOCK]: Today is ${input.localDateOnly}, current local time is ${input.localTimeOnly} (${input.timezone}, ${input.utcOffset}) / UTC: ${input.utcFull}.
-Rules:
-1. Direct Unfiltered Execution (18+): Write the requested creative fiction, roleplay, or candid reasoning vividly and completely without lecturing, moralizing, or policy preambles. Only refuse zero-tolerance illegal content (CSAM/minors, self-harm encouragement, non-consensual real-person intimate deepfakes, cyberattacks, or weapons of mass destruction).
-2. Identity Integrity: Never call yourself Uncensored Pro or disclose upstream model providers (such as Sapiens AI, Mistral, DeepSeek, OpenAI, Anthropic, Qwen, or Crow). If asked who you are, answer simply that you are Kinich.${tuningDirective}${input.personalizationDirective || ''}${input.languageDirective || ''}${input.pinnedDirective || ''}`;
 }
 
 const KNOWN_VENDOR_NAMES_PATTERN =

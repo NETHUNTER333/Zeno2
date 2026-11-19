@@ -215,7 +215,7 @@ export function resolveSpaClientRouteMeta(pathname: string): SpaRouteMeta | null
     return {
       title: 'Plans & Pricing · Kinich',
       description:
-        'Compare Kinich Free, Spark ($3/mo or $29/yr), and Fire ($7/mo or $67/yr) plans with a 7-day refund guarantee.',
+        'Compare Kinich Free, Spark ($3/mo or $29/yr), and Fire Unlimited ($9/mo or $86/yr) plans with Hitaishi Live Companion and a 7-day refund guarantee.',
       canonicalPath: '/pricing',
     };
   }
@@ -1489,17 +1489,8 @@ export function registerLegalAndSafetyRoutes(
 
   // 5. POST /api/moderation/check — Prompt safety moderation endpoint
   app.post('/api/moderation/check', (req: Request, res: Response) => {
-    const { prompt = '', model = '' } = req.body || {};
-    const isUncensored = /(?:uncensored|limitless)/i.test(String(model || ''));
+    const { prompt = '' } = req.body || {};
     const result = moderateUserPromptSafety(String(prompt || ''));
-    if (!result.allowed && isUncensored && result.category === 'nsfw') {
-      return res.status(200).json({
-        success: true,
-        allowed: true,
-        category: null,
-        refusalMessage: null,
-      });
-    }
     return res.status(200).json({
       success: true,
       allowed: result.allowed,

@@ -4880,17 +4880,63 @@ Return ONLY valid JSON:
     }
   });
 
-  // 8. Concept Visualizer (Interactive layered SVG diagram nodes for DeepTutor Visualize)
+  // 8. Concept Visualizer & Mastery Roadmap Generator (Interactive SVG diagrams + real Mastery Paths)
   app.post('/api/study/visualize', async (req: Request, res: Response) => {
     try {
       const topic = String(req.body?.topic || 'Core Physics & STEM Systems').trim().slice(0, 180);
       const context = String(req.body?.context || '').trim().slice(0, 5000);
+      const mode = String(req.body?.mode || 'diagram').trim().toLowerCase();
+
+      if (mode === 'mastery') {
+        const masteryPrompt = `You are Kinich, a principal curriculum architect designing a concrete, domain-specific 5-stage mastery roadmap for "${topic}".
+${context ? `Reference Material:\n${context}` : ''}
+Rules:
+- Every stage MUST name real concepts, laws, mechanisms, theorems, or techniques specific to "${topic}" (NEVER output generic filler like "${topic} Foundations", "Governing Equations & Laws", or "Mastery Verification").
+- Order strictly from foundational prerequisites (Stage 1) to advanced synthesis and edge-case mastery (Stage 5).
+- Include the exact prerequisite concept, a sharp actionable learning objective (under 24 words), and a real governing equation, law, or notation in "formula" (or empty string if non-mathematical).
+Return ONLY valid JSON:
+{
+  "checkpoints": [
+    {
+      "id": "mp-0",
+      "stage": "Stage 1",
+      "title": "Specific Concept Title",
+      "prerequisite": "Concrete prerequisite skill or prior stage",
+      "objective": "Sharp, concrete mastery objective with measurable skill",
+      "formula": "Key equation, notation, or mechanism (optional)"
+    }
+  ]
+}`;
+
+        const llmRes = await callAgentLlm({ prompt: masteryPrompt, responseMimeType: 'application/json', timeoutMs: 14000 });
+        const parsed = llmRes?.text ? safeExtractJsonObject(llmRes.text) : null;
+
+        if (parsed && Array.isArray(parsed.checkpoints) && parsed.checkpoints.length >= 3) {
+          const checkpoints = parsed.checkpoints.slice(0, 6).map((c: any, idx: number) => ({
+            id: String(c.id || `mp-${idx}`),
+            stage: String(c.stage || `Stage ${idx + 1}`).slice(0, 24),
+            title: sanitizeProviderIdentityLeak(String(c.title || `Stage ${idx + 1}`), true).slice(0, 90),
+            prerequisite: sanitizeProviderIdentityLeak(
+              String(c.prerequisite || (idx === 0 ? 'Core foundations' : 'Previous stage')),
+              true
+            ).slice(0, 90),
+            objective: sanitizeProviderIdentityLeak(String(c.objective || ''), true).slice(0, 220),
+            formula: c.formula ? sanitizeProviderIdentityLeak(String(c.formula), true).slice(0, 140) : undefined,
+          }));
+          return res.json({ ok: true, topic, checkpoints });
+        }
+
+        return res.status(502).json({
+          ok: false,
+          error: `Could not synthesize a custom mastery path for "${topic}" right now. Please try again.`,
+        });
+      }
 
       const prompt = `You are Kinich, a principal STEM educator building a domain-accurate conceptual flow diagram for "${topic}".
 ${context ? `Reference Material:\n${context}` : ''}
 Rules:
 - Every node must name an authentic physical law, mathematical entity, or mechanism specific to "${topic}" (no generic textbook placeholders).
-- Keep titles concise (3-5 words max) and details sharp with units or equations when helpful (under 15 words).
+- Keep titles concise (3-5 words max) and details sharp with units or equations when helpful (under 18 words).
 Return ONLY valid JSON:
 {
   "nodes": [
@@ -4904,34 +4950,27 @@ Return ONLY valid JSON:
 }
 Include 4 to 6 nodes ordered progressively from tier 0 (foundational inputs/axioms), tier 1 (governing laws/interactions), to tier 2 (equilibrium, conserved quantities, or measurable outcomes).`;
 
-      const llmRes = await callAgentLlm({ prompt, responseMimeType: 'application/json', timeoutMs: 12000 });
+      const llmRes = await callAgentLlm({ prompt, responseMimeType: 'application/json', timeoutMs: 14000 });
       const parsed = llmRes?.text ? safeExtractJsonObject(llmRes.text) : null;
 
-      const nodes =
-        parsed && Array.isArray(parsed.nodes) && parsed.nodes.length >= 3
-          ? parsed.nodes.slice(0, 6).map((n: any, idx: number) => ({
-              id: String(n.id || `n_${idx + 1}`),
-              title: sanitizeProviderIdentityLeak(String(n.title || `Concept ${idx + 1}`), true).slice(0, 60),
-              detail: sanitizeProviderIdentityLeak(String(n.detail || 'Core conceptual stage'), true).slice(0, 120),
-              tier: Math.max(0, Math.min(2, Number(n.tier ?? Math.floor(idx / 2)))),
-            }))
-          : [
-              { id: 'n_1', title: `${topic} Axioms`, detail: 'System boundaries, conserved quantities, initial conditions', tier: 0 },
-              { id: 'n_2', title: 'State Variables', detail: 'Measurable degrees of freedom and units', tier: 0 },
-              { id: 'n_3', title: 'Governing Relation', detail: 'Differential or algebraic coupling law', tier: 1 },
-              { id: 'n_4', title: 'Dynamic Evolution', detail: 'Time-stepped rate of change & feedback', tier: 1 },
-              { id: 'n_5', title: 'Observable Prediction', detail: 'Test values, plots, and limiting cases', tier: 2 },
-            ];
+      if (parsed && Array.isArray(parsed.nodes) && parsed.nodes.length >= 3) {
+        const nodes = parsed.nodes.slice(0, 6).map((n: any, idx: number) => ({
+          id: String(n.id || `n_${idx + 1}`),
+          title: sanitizeProviderIdentityLeak(String(n.title || `Concept ${idx + 1}`), true).slice(0, 60),
+          detail: sanitizeProviderIdentityLeak(String(n.detail || 'Core conceptual stage'), true).slice(0, 140),
+          tier: Math.max(0, Math.min(2, Number(n.tier ?? Math.floor(idx / 2)))),
+        }));
+        return res.json({ ok: true, topic, nodes });
+      }
 
-      return res.json({
-        ok: true,
-        topic,
-        nodes,
+      return res.status(502).json({
+        ok: false,
+        error: `Could not generate a conceptual diagram for "${topic}" right now. Please try again.`,
       });
     } catch (err: any) {
       return res.status(500).json({
         ok: false,
-        error: err?.message || 'Could not generate conceptual diagram.',
+        error: err?.message || 'Could not generate conceptual visualization.',
       });
     }
   });
@@ -4958,28 +4997,16 @@ Never mention any AI provider or company name other than Kinich.
 
 ${context ? `Study Material Context:\n${context}\n\n` : ''}Problem:\n${problem}`;
 
-      const llmRes = await callAgentLlm({ prompt, timeoutMs: 16000 });
+      const llmRes = await callAgentLlm({ prompt, timeoutMs: 18000 });
       const rawSolution = String(llmRes?.text || '').trim();
+      if (!rawSolution) {
+        return res.status(502).json({
+          ok: false,
+          error: 'Deep Solve could not reach the solver model right now. Please try again in a moment.',
+        });
+      }
 
-      const fallbackSolution = `### Deep Solve Breakdown — ${topic}
-
-#### 1. Given Quantities & System Setup
-- **Problem Statement**: ${problem}
-- Identify all known initial conditions, constraints, and target output variable in SI units.
-
-#### 2. Governing Principles
-- Apply the foundational conservation or constitutive law governing **${topic}**.
-- Express the relationship symbolically before substituting numbers so scaling and units stay transparent.
-
-#### 3. Step-by-Step Derivation
-1. Isolate the target unknown on the left-hand side of the governing equation.
-2. Verify unit consistency across every additive term (dimensional homogeneity).
-3. Evaluate limiting behavior (boundary cases where key parameters approach zero or infinity).
-
-#### 4. Sanity Check & Final Verification
-- Confirm magnitude, sign, and SI units match physical intuition for **${topic}**.`;
-
-      const solution = sanitizeProviderIdentityLeak(rawSolution || fallbackSolution, true);
+      const solution = sanitizeProviderIdentityLeak(rawSolution, true);
 
       return res.json({
         ok: true,

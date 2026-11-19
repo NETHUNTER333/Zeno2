@@ -2,7 +2,10 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowLeft,
   ArrowRight,
+  ArrowUp,
   Check,
+  ChevronDown,
+  Download,
   Eraser,
   Highlighter,
   Image as ImageIcon,
@@ -14,10 +17,11 @@ import {
   Pencil,
   Play,
   RotateCcw,
-  Send,
   Trash2,
+  Undo2,
   Volume2,
   VolumeX,
+  X,
 } from 'lucide-react';
 import {
   CartesianGrid,
@@ -330,14 +334,16 @@ function drawCommandProgress(
     }
     const chars = Math.max(1, Math.ceil(safeText.length * p));
     const slice = safeText.slice(0, chars);
-    ctx.font = `${cmd.bold ? '700' : '500'} ${cmd.size || 18}px "Plus Jakarta Sans", "DM Sans", sans-serif`;
+    const fontSize = Math.max(14, cmd.size || 18);
+    ctx.font = `${cmd.bold ? '700' : '500'} ${fontSize}px "Plus Jakarta Sans", "DM Sans", sans-serif`;
     ctx.fillStyle = adaptBoardColor(cmd.color, isDark, 'stroke');
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
-    ctx.fillText(slice, cmd.x, cmd.y);
+    const maxTextWidth = Math.max(80, LOGICAL_W - cmd.x - 16);
+    ctx.fillText(slice, cmd.x, cmd.y, maxTextWidth);
     const m = ctx.measureText(slice);
     ctx.restore();
-    return { penX: cmd.x + m.width, penY: cmd.y - 6 };
+    return { penX: Math.min(LOGICAL_W - 16, cmd.x + Math.min(m.width, maxTextWidth)), penY: cmd.y - 6 };
   }
 
   ctx.restore();
@@ -386,9 +392,32 @@ export const StudySketchTutor: React.FC<StudySketchTutorProps> = ({
   const [matchedIds, setMatchedIds] = useState<Record<string, boolean>>({});
   const [wrongPairFlash, setWrongPairFlash] = useState<string | null>(null);
   const [brokenImages, setBrokenImages] = useState<Record<string, boolean>>({});
+  const [lightboxImage, setLightboxImage] = useState<FetchedLessonImage | null>(null);
+  const [canvasViewport, setCanvasViewport] = useState<{ w: number; h: number }>({ w: 800, h: 450 });
 
+  const boardWrapRef = useRef<HTMLDivElement | null>(null);
   const boardCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const boardTransformRef = useRef<{ scale: number; offsetX: number; offsetY: number }>({
+    scale: 1,
+    offsetX: 0,
+    offsetY: 0,
+  });
   const activeStep = lesson.steps[stepIdx] || lesson.steps[0];
+
+  useEffect(() => {
+    const el = boardWrapRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const updateSize = () => {
+      const rect = el.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        setCanvasViewport({ w: Math.round(rect.width), h: Math.round(rect.height) });
+      }
+    };
+    updateSize();
+    const ro = new ResizeObserver(updateSize);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   useEffect(() => {
     setStepIdx(0);
@@ -450,31 +479,49 @@ export const StudySketchTutor: React.FC<StudySketchTutorProps> = ({
     const canvas = boardCanvasRef.current;
     if (!canvas || !activeStep) return;
     const dpr = typeof window !== 'undefined' ? Math.min(2, window.devicePixelRatio || 1) : 1;
-    canvas.width = LOGICAL_W * dpr;
-    canvas.height = LOGICAL_H * dpr;
+    const cssW = Math.max(240, canvas.clientWidth || canvasViewport.w || LOGICAL_W);
+    const cssH = Math.max(180, canvas.clientHeight || canvasViewport.h || LOGICAL_H);
+    const targetW = Math.floor(cssW * dpr);
+    const targetH = Math.floor(cssH * dpr);
+    if (canvas.width !== targetW || canvas.height !== targetH) {
+      canvas.width = targetW;
+      canvas.height = targetH;
+    }
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+
+    // Uniform aspect-preserving fit so diagrams & text never stretch on mobile or ultrawide screens
+    const scale = Math.min(cssW / LOGICAL_W, cssH / LOGICAL_H);
+    const offsetX = (cssW - LOGICAL_W * scale) / 2;
+    const offsetY = (cssH - LOGICAL_H * scale) / 2;
+    boardTransformRef.current = { scale, offsetX, offsetY };
 
     ctx.save();
     ctx.scale(dpr, dpr);
 
+    // Full-viewport clean board surface & subtle uniform grid
     ctx.fillStyle = isDark ? '#09090b' : '#ffffff';
-    ctx.fillRect(0, 0, LOGICAL_W, LOGICAL_H);
+    ctx.fillRect(0, 0, cssW, cssH);
 
-    ctx.strokeStyle = isDark ? 'rgba(255,255,255,0.03)' : 'rgba(15,23,42,0.035)';
+    ctx.strokeStyle = isDark ? 'rgba(255,255,255,0.032)' : 'rgba(15,23,42,0.04)';
     ctx.lineWidth = 1;
-    for (let x = 40; x < LOGICAL_W; x += 40) {
+    const gridStep = Math.max(24, Math.round(40 * scale));
+    for (let x = offsetX % gridStep; x < cssW; x += gridStep) {
       ctx.beginPath();
       ctx.moveTo(x, 0);
-      ctx.lineTo(x, LOGICAL_H);
+      ctx.lineTo(x, cssH);
       ctx.stroke();
     }
-    for (let y = 40; y < LOGICAL_H; y += 40) {
+    for (let y = offsetY % gridStep; y < cssH; y += gridStep) {
       ctx.beginPath();
       ctx.moveTo(0, y);
-      ctx.lineTo(LOGICAL_W, y);
+      ctx.lineTo(cssW, y);
       ctx.stroke();
     }
+
+    // Enter uniform logical 800x450 coordinate space
+    ctx.translate(offsetX, offsetY);
+    ctx.scale(scale, scale);
 
     const cmds = activeStep.drawCommands || [];
     const total = Math.max(1, cmds.length);
@@ -519,13 +566,15 @@ export const StudySketchTutor: React.FC<StudySketchTutorProps> = ({
     }
 
     ctx.restore();
-  }, [activeStep, animProgress, isDark, studentStrokes]);
+  }, [activeStep, animProgress, isDark, studentStrokes, canvasViewport]);
 
   const toLogicalCoords = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
+    const { scale, offsetX, offsetY } = boardTransformRef.current;
+    const safeScale = Math.max(0.05, scale);
     return {
-      x: ((e.clientX - rect.left) / Math.max(1, rect.width)) * LOGICAL_W,
-      y: ((e.clientY - rect.top) / Math.max(1, rect.height)) * LOGICAL_H,
+      x: (e.clientX - rect.left - offsetX) / safeScale,
+      y: (e.clientY - rect.top - offsetY) / safeScale,
     };
   };
 
@@ -570,6 +619,50 @@ export const StudySketchTutor: React.FC<StudySketchTutorProps> = ({
   const handleBoardPointerUp = () => {
     activeStrokeRef.current = null;
   };
+
+  const handleUndoStroke = useCallback(() => {
+    setStudentStrokes((prev) => (prev.length > 0 ? prev.slice(0, -1) : prev));
+  }, []);
+
+  const handleExportBoardPng = useCallback(() => {
+    const canvas = boardCanvasRef.current;
+    if (!canvas) return;
+    try {
+      const dataUrl = canvas.toDataURL('image/png');
+      const slug = (lesson.title || 'whiteboard')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '')
+        .slice(0, 48);
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = `${slug || 'whiteboard'}-step-${stepIdx + 1}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch {}
+  }, [lesson.title, stepIdx]);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'z' || e.shiftKey) return;
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      if (studentStrokes.length > 0) {
+        e.preventDefault();
+        handleUndoStroke();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [handleUndoStroke, studentStrokes.length]);
 
   const loadPreset = useCallback(async (key: SketchPresetKey) => {
     const presetLesson = getPresetSketchLesson(key);
@@ -777,7 +870,6 @@ export const StudySketchTutor: React.FC<StudySketchTutorProps> = ({
   };
 
   const pageBg = isDark ? 'bg-[#09090b] text-neutral-100' : 'bg-[#ffffff] text-neutral-900';
-  const surface = isDark ? 'bg-[#121215] border-white/[0.08] text-neutral-100' : 'bg-white border-black/[0.08] text-neutral-900';
   const muted = isDark ? 'text-neutral-400' : 'text-neutral-500';
   const subtleDivider = isDark ? 'border-white/[0.08]' : 'border-black/[0.08]';
   const primaryBtn = isDark
@@ -793,40 +885,74 @@ export const StudySketchTutor: React.FC<StudySketchTutorProps> = ({
     [projSpeed, projAngle, projGravity]
   );
 
+  const activePresetKey = SKETCH_PRESETS.find((p) => lesson.id === `preset_${p.key}`)?.key || '';
+  const composerSurface = isDark
+    ? 'bg-[#121216] border-white/[0.12] focus-within:border-white/30 shadow-[0_8px_30px_rgba(0,0,0,0.35)]'
+    : 'bg-white border-black/[0.12] focus-within:border-black/30 shadow-[0_8px_28px_rgba(0,0,0,0.06)]';
+  const stageSurface = isDark
+    ? 'bg-[#101013] border-white/[0.09]'
+    : 'bg-[#fafafa] border-black/[0.09]';
+
   return (
     <div className={`w-full min-h-full flex flex-col max-w-full overflow-x-hidden ${pageBg}`}>
-      {/* Slim Full-Width Header */}
-      <header className="h-12 px-3 sm:px-5 bg-transparent flex items-center justify-between gap-2 shrink-0">
-        <div className="flex items-center gap-2.5 min-w-0">
+      {/* Clean Top Bar */}
+      <header className={`h-14 px-4 sm:px-6 border-b ${subtleDivider} flex items-center justify-between gap-3 shrink-0`}>
+        <div className="flex items-center gap-3 min-w-0">
           {onBack && (
             <button
               type="button"
               onClick={onBack}
               data-testid="sketch-back-btn"
-              className={`h-7 px-2.5 rounded-lg border text-xs font-medium inline-flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap shrink-0 ${ghostBtn}`}
+              className={`h-9 px-3 rounded-xl border text-[13px] font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0 ${ghostBtn}`}
             >
-              <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
+              <ArrowLeft className="w-4 h-4 shrink-0" />
               <span>Back</span>
             </button>
           )}
-          <h1 className="text-sm font-semibold tracking-tight truncate">
-            {lesson.title || 'Visual Whiteboard'}
-          </h1>
+          <div className="min-w-0">
+            <h1 className="text-base sm:text-lg font-semibold tracking-tight truncate">
+              {lesson.title || 'Visual Whiteboard'}
+            </h1>
+          </div>
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          <span className={`text-xs truncate hidden sm:inline max-w-[180px] ${muted}`}>
-            {lesson.subject}
-          </span>
+          {/* Clean Lesson Preset Selector */}
+          <div className="relative">
+            <select
+              aria-label="Choose visual lesson preset"
+              value={activePresetKey}
+              onChange={(e) => {
+                const key = e.target.value as SketchPresetKey;
+                if (key) void loadPreset(key);
+              }}
+              className={`h-9 pl-3 pr-8 rounded-xl border text-[13px] font-medium appearance-none outline-none cursor-pointer transition-colors max-w-[165px] sm:max-w-[220px] ${
+                isDark
+                  ? 'bg-[#141418] border-white/[0.12] text-neutral-200 hover:border-white/25'
+                  : 'bg-white border-black/[0.12] text-neutral-800 hover:border-black/25'
+              }`}
+            >
+              <option value="" disabled>
+                Example lessons
+              </option>
+              {SKETCH_PRESETS.map((p) => (
+                <option key={p.key} value={p.key} className={isDark ? 'bg-[#141418] text-white' : 'bg-white text-black'}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className={`w-4 h-4 pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 ${muted}`} />
+          </div>
+
           <div className="relative">
             <button
               type="button"
               onClick={() => setMoreMenuOpen((v) => !v)}
               aria-label="Whiteboard options"
               data-testid="sketch-more-menu-btn"
-              className={`size-7 rounded-lg border inline-flex items-center justify-center transition-colors cursor-pointer ${ghostBtn}`}
+              className={`size-9 rounded-xl border inline-flex items-center justify-center transition-colors cursor-pointer ${ghostBtn}`}
             >
-              <MoreVertical className="w-3.5 h-3.5" />
+              <MoreVertical className="w-4 h-4" />
             </button>
             {moreMenuOpen && (
               <div
@@ -882,272 +1008,291 @@ export const StudySketchTutor: React.FC<StudySketchTutorProps> = ({
         </div>
       </header>
 
-      {/* Full-Width Prompt + Preset Bar */}
-      <div className={`px-3 sm:px-5 py-2.5 border-b space-y-2 ${subtleDivider}`}>
+      {/* Main Content Container */}
+      <div className="w-full max-w-[1380px] mx-auto px-4 sm:px-6 py-5 space-y-6 pb-20">
+        {/* Dominant Flagship Whiteboard Stage */}
+        <section className={`rounded-2xl border overflow-hidden flex flex-col ${stageSurface}`}>
+          {/* Clean Stage Toolbar */}
+          <div className={`px-4 py-2.5 border-b ${subtleDivider} flex flex-wrap items-center justify-between gap-3`}>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (animProgress >= 1) {
+                    setAnimProgress(0);
+                    setIsPlaying(true);
+                  } else {
+                    setIsPlaying((p) => !p);
+                  }
+                }}
+                className={`h-8 px-3.5 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors ${primaryBtn}`}
+              >
+                {isPlaying && animProgress < 1 ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+                <span>{animProgress >= 1 ? 'Replay' : isPlaying ? 'Pause' : 'Play'}</span>
+              </button>
+
+              <div className={`inline-flex items-center rounded-xl border p-0.5 ${subtleDivider}`}>
+                <button
+                  type="button"
+                  disabled={stepIdx <= 0}
+                  onClick={() => {
+                    setStepIdx((i) => Math.max(0, i - 1));
+                    setAnimProgress(0);
+                    setIsPlaying(true);
+                  }}
+                  className="size-7 rounded-lg inline-flex items-center justify-center disabled:opacity-30 hover:bg-current/5 cursor-pointer transition-colors"
+                  aria-label="Previous step"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                </button>
+                <span className={`px-2.5 text-xs font-mono tabular-nums ${muted}`}>
+                  {stepIdx + 1} / {lesson.steps.length}
+                </span>
+                <button
+                  type="button"
+                  disabled={stepIdx >= lesson.steps.length - 1}
+                  onClick={() => {
+                    setStepIdx((i) => Math.min(lesson.steps.length - 1, i + 1));
+                    setAnimProgress(0);
+                    setIsPlaying(true);
+                  }}
+                  className="size-7 rounded-lg inline-flex items-center justify-center disabled:opacity-30 hover:bg-current/5 cursor-pointer transition-colors"
+                  aria-label="Next step"
+                >
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setPlaySpeed((s) => (s === 1 ? 1.5 : s === 1.5 ? 2 : 1))}
+                className={`h-8 px-2.5 rounded-xl border text-xs font-mono tabular-nums cursor-pointer transition-colors ${ghostBtn}`}
+              >
+                {playSpeed}x
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className={`inline-flex items-center gap-0.5 p-0.5 rounded-xl border ${subtleDivider}`}>
+                {(['cursor', 'pen', 'highlighter', 'eraser'] as const).map((tool) => {
+                  const active = drawTool === tool;
+                  const Icon =
+                    tool === 'cursor'
+                      ? MousePointer
+                      : tool === 'pen'
+                      ? Pencil
+                      : tool === 'highlighter'
+                      ? Highlighter
+                      : Eraser;
+                  return (
+                    <button
+                      key={tool}
+                      type="button"
+                      onClick={() => setDrawTool(tool)}
+                      title={`Tool: ${tool}`}
+                      aria-label={`Tool: ${tool}`}
+                      className={`size-7 rounded-lg inline-flex items-center justify-center cursor-pointer transition-colors ${
+                        active
+                          ? isDark
+                            ? 'bg-white text-black'
+                            : 'bg-black text-white'
+                          : muted
+                      }`}
+                    >
+                      <Icon className="w-3.5 h-3.5" />
+                    </button>
+                  );
+                })}
+              </div>
+
+              {studentStrokes.length > 0 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleUndoStroke}
+                    title="Undo last stroke (⌘Z)"
+                    aria-label="Undo last stroke"
+                    className={`size-8 rounded-xl border inline-flex items-center justify-center cursor-pointer ${ghostBtn}`}
+                  >
+                    <Undo2 className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStudentStrokes([])}
+                    title="Clear annotations"
+                    aria-label="Clear annotations"
+                    className={`size-8 rounded-xl border inline-flex items-center justify-center cursor-pointer ${ghostBtn}`}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void requestVisualLesson('Check my annotation on the whiteboard and guide the next step', {
+                        isFollowUp: true,
+                        withSketchNote: true,
+                      })
+                    }
+                    className={`h-8 px-3 rounded-xl text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer ${primaryBtn}`}
+                  >
+                    Check Sketch
+                  </button>
+                </>
+              )}
+
+              <button
+                type="button"
+                onClick={handleExportBoardPng}
+                title="Save whiteboard snapshot (PNG)"
+                aria-label="Save whiteboard snapshot"
+                className={`size-8 rounded-xl border inline-flex items-center justify-center cursor-pointer transition-colors ${ghostBtn}`}
+              >
+                <Download className="w-3.5 h-3.5" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSpeakEnabled((s) => !s)}
+                title={speakEnabled ? 'Mute narration' : 'Read step aloud'}
+                aria-label={speakEnabled ? 'Mute narration' : 'Read step aloud'}
+                className={`size-8 rounded-xl border inline-flex items-center justify-center cursor-pointer transition-colors ${
+                  speakEnabled
+                    ? isDark
+                      ? 'bg-white text-black border-white'
+                      : 'bg-black text-white border-black'
+                    : ghostBtn
+                }`}
+              >
+                {speakEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
+              </button>
+            </div>
+          </div>
+
+          {/* Large Aspect-Preserving Interactive Drawing Canvas */}
+          <div ref={boardWrapRef} className="relative w-full h-[270px] sm:h-[440px] lg:h-[580px]">
+            <canvas
+              ref={boardCanvasRef}
+              onPointerDown={handleBoardPointerDown}
+              onPointerMove={handleBoardPointerMove}
+              onPointerUp={handleBoardPointerUp}
+              onPointerLeave={handleBoardPointerUp}
+              className={`w-full h-full block touch-none ${
+                drawTool === 'cursor' ? 'cursor-default' : 'cursor-crosshair'
+              }`}
+            />
+          </div>
+
+          {/* Interactive Step Progress Rail (Zero Horizontal Scrollbar) */}
+          <div className={`px-4 sm:px-5 py-3.5 border-t ${subtleDivider} space-y-2.5`}>
+            <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${Math.max(1, lesson.steps.length)}, minmax(0, 1fr))` }}>
+              {lesson.steps.map((s, idx) => {
+                const isCurrent = idx === stepIdx;
+                const isPast = idx < stepIdx;
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => {
+                      setStepIdx(idx);
+                      setAnimProgress(0);
+                      setIsPlaying(true);
+                    }}
+                    title={`Step ${idx + 1}: ${s.title}`}
+                    aria-label={`Go to step ${idx + 1}`}
+                    className="group py-1.5 cursor-pointer flex items-center"
+                  >
+                    <span
+                      className={`h-1.5 w-full rounded-full transition-colors ${
+                        isCurrent
+                          ? isDark
+                            ? 'bg-white'
+                            : 'bg-black'
+                          : isPast
+                          ? isDark
+                            ? 'bg-white/40 group-hover:bg-white/60'
+                            : 'bg-black/35 group-hover:bg-black/55'
+                          : isDark
+                          ? 'bg-white/12 group-hover:bg-white/25'
+                          : 'bg-black/12 group-hover:bg-black/25'
+                      }`}
+                    />
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="text-[15px] sm:text-base font-semibold tracking-tight min-w-0">
+                <span className={`font-mono tabular-nums mr-2 text-[13px] ${muted}`}>
+                  {String(stepIdx + 1).padStart(2, '0')}.
+                </span>
+                <MathText text={activeStep?.title || lesson.title} />
+              </div>
+              {activeStep?.keyFormula && (
+                <div className="text-[13px] sm:text-sm font-semibold shrink-0">
+                  <MathFormula formula={activeStep.keyFormula} />
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+
+        {/* Signature Modern Prompt Composer (Generate New Board) */}
         <form
           onSubmit={(e) => {
             e.preventDefault();
             void requestVisualLesson(promptInput);
           }}
-          className="flex items-center gap-2 w-full"
+          className={`rounded-2xl border p-2 pl-4 flex items-center gap-2.5 transition-all ${composerSurface}`}
         >
+          <Pencil className={`w-4 h-4 shrink-0 ${muted}`} />
           <input
             type="text"
             value={promptInput}
             onChange={(e) => setPromptInput(e.target.value)}
-            placeholder="Teach any concept visually..."
-            className={`flex-1 min-w-0 px-3 py-1.5 rounded-lg border text-xs outline-none transition-colors ${
-              isDark
-                ? 'bg-[#121215] border-white/12 focus:border-white/35 text-white placeholder:text-neutral-500'
-                : 'bg-white border-black/12 focus:border-black/35 text-black placeholder:text-neutral-400'
-            }`}
+            placeholder="Teach any topic visually..."
+            className="flex-1 min-w-0 bg-transparent text-[15px] outline-none placeholder:text-neutral-400 dark:placeholder:text-neutral-500"
           />
           <button
             type="submit"
             disabled={loadingLesson || !promptInput.trim()}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer inline-flex items-center gap-1.5 disabled:opacity-40 transition-colors ${primaryBtn}`}
+            aria-label="Generate visual lesson"
+            className={`size-9 rounded-full inline-flex items-center justify-center shrink-0 cursor-pointer disabled:opacity-35 transition-colors ${primaryBtn}`}
           >
-            {loadingLesson ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
-            <span>Generate</span>
+            {loadingLesson ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowUp className="w-4 h-4" />}
           </button>
         </form>
 
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 slim-scrollbar">
-          {SKETCH_PRESETS.map((p) => {
-            const active = lesson.id === `preset_${p.key}`;
-            return (
-              <button
-                key={p.key}
-                type="button"
-                onClick={() => void loadPreset(p.key)}
-                className={`px-2.5 py-1 rounded-md border text-xs font-medium whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
-                  active
-                    ? isDark
-                      ? 'bg-white text-black border-white font-semibold'
-                      : 'bg-black text-white border-black font-semibold'
-                    : ghostBtn
-                }`}
-              >
-                {p.label}
-              </button>
-            );
-          })}
-        </div>
-
         {lessonError && (
-          <div className={`text-xs ${muted}`}>{lessonError}</div>
+          <div className={`text-[13px] ${muted}`}>{lessonError}</div>
         )}
-      </div>
 
-      {/* Edge-to-Edge Full-Page Whiteboard Stage */}
-      <section className="w-full flex flex-col">
-        <div className={`px-3 sm:px-5 py-1.5 border-b ${subtleDivider} flex flex-wrap items-center justify-between gap-2`}>
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <button
-              type="button"
-              onClick={() => {
-                if (animProgress >= 1) {
-                  setAnimProgress(0);
-                  setIsPlaying(true);
-                } else {
-                  setIsPlaying((p) => !p);
-                }
-              }}
-              className={`px-2.5 py-1 rounded-md text-xs font-semibold inline-flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer ${primaryBtn}`}
-            >
-              {isPlaying && animProgress < 1 ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-              <span>{animProgress >= 1 ? 'Replay' : isPlaying ? 'Pause' : 'Play'}</span>
-            </button>
-
-            <button
-              type="button"
-              disabled={stepIdx <= 0}
-              onClick={() => {
-                setStepIdx((i) => Math.max(0, i - 1));
-                setAnimProgress(0);
-                setIsPlaying(true);
-              }}
-              className={`p-1.5 rounded-md border disabled:opacity-35 cursor-pointer ${ghostBtn}`}
-              aria-label="Previous step"
-            >
-              <ArrowLeft className="w-3.5 h-3.5" />
-            </button>
-
-            <button
-              type="button"
-              disabled={stepIdx >= lesson.steps.length - 1}
-              onClick={() => {
-                setStepIdx((i) => Math.min(lesson.steps.length - 1, i + 1));
-                setAnimProgress(0);
-                setIsPlaying(true);
-              }}
-              className={`p-1.5 rounded-md border disabled:opacity-35 cursor-pointer ${ghostBtn}`}
-              aria-label="Next step"
-            >
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
-
-            <span className={`text-xs font-mono tabular-nums px-1 ${muted}`}>
-              {stepIdx + 1}/{lesson.steps.length}
-            </span>
-
-            <button
-              type="button"
-              onClick={() => setPlaySpeed((s) => (s === 1 ? 1.5 : s === 1.5 ? 2 : 1))}
-              className={`px-2 py-1 rounded-md border text-[11px] font-mono tabular-nums cursor-pointer ${ghostBtn}`}
-            >
-              {playSpeed}x
-            </button>
-          </div>
-
-          <div className="flex items-center gap-1 flex-wrap">
-            {(['cursor', 'pen', 'highlighter', 'eraser'] as const).map((tool) => {
-              const active = drawTool === tool;
-              const Icon =
-                tool === 'cursor'
-                  ? MousePointer
-                  : tool === 'pen'
-                  ? Pencil
-                  : tool === 'highlighter'
-                  ? Highlighter
-                  : Eraser;
-              return (
-                <button
-                  key={tool}
-                  type="button"
-                  onClick={() => setDrawTool(tool)}
-                  title={`Tool: ${tool}`}
-                  className={`p-1.5 rounded-md border cursor-pointer transition-colors ${
-                    active
-                      ? isDark
-                        ? 'bg-white text-black border-white'
-                        : 'bg-black text-white border-black'
-                      : ghostBtn
-                  }`}
-                >
-                  <Icon className="w-3.5 h-3.5" />
-                </button>
-              );
-            })}
-
-            {studentStrokes.length > 0 && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => setStudentStrokes([])}
-                  title="Clear student sketch"
-                  className={`p-1.5 rounded-md border cursor-pointer ${ghostBtn}`}
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    void requestVisualLesson('Check my annotation on the whiteboard and guide the next step', {
-                      isFollowUp: true,
-                      withSketchNote: true,
-                    })
-                  }
-                  className={`px-2.5 py-1 rounded-md text-[11px] font-semibold whitespace-nowrap shrink-0 cursor-pointer ${primaryBtn}`}
-                >
-                  Check Sketch
-                </button>
-              </>
-            )}
-
-            <button
-              type="button"
-              onClick={() => setSpeakEnabled((s) => !s)}
-              title={speakEnabled ? 'Mute step audio' : 'Read step aloud'}
-              className={`p-1.5 rounded-md border cursor-pointer ${
-                speakEnabled
-                  ? isDark
-                    ? 'bg-white text-black border-white'
-                    : 'bg-black text-white border-black'
-                  : ghostBtn
-              }`}
-            >
-              {speakEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
-            </button>
-          </div>
-        </div>
-
-        {/* Full-Bleed Edge-to-Edge Canvas */}
-        <div className="relative w-full">
-          <canvas
-            ref={boardCanvasRef}
-            onPointerDown={handleBoardPointerDown}
-            onPointerMove={handleBoardPointerMove}
-            onPointerUp={handleBoardPointerUp}
-            onPointerLeave={handleBoardPointerUp}
-            className={`w-full aspect-[16/9] max-h-[60vh] block touch-none ${
-              drawTool === 'cursor' ? 'cursor-default' : 'cursor-crosshair'
-            }`}
-          />
-        </div>
-
-        {/* Step Navigation + Formula Strip */}
-        <div className={`px-3 sm:px-5 py-2 border-t border-b ${subtleDivider} flex items-center justify-between gap-2 flex-wrap`}>
-          <div className="flex items-center gap-1 overflow-x-auto slim-scrollbar">
-            {lesson.steps.map((s, idx) => (
-              <button
-                key={s.id}
-                type="button"
-                onClick={() => {
-                  setStepIdx(idx);
-                  setAnimProgress(0);
-                  setIsPlaying(true);
-                }}
-                className={`px-2.5 py-1 rounded-md text-xs font-medium whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
-                  idx === stepIdx
-                    ? isDark
-                      ? 'bg-white/12 text-white font-semibold'
-                      : 'bg-black/10 text-black font-semibold'
-                    : muted
-                }`}
-              >
-                Step {idx + 1}
-              </button>
-            ))}
-          </div>
-          {activeStep?.keyFormula && (
-            <div className="text-xs font-semibold overflow-x-auto scrollbar-none">
-              <MathFormula formula={activeStep.keyFormula} />
-            </div>
-          )}
-        </div>
-      </section>
-
-      {/* Flat Below-Canvas Notes, Modules, and Bubble-Free Q&A */}
-      <div className="w-full px-3 sm:px-5 py-4 pb-16 space-y-5">
+        {/* Step Explanation & Highlights */}
         {activeStep && (
-          <div className="space-y-2.5">
+          <div className="space-y-3 max-w-4xl">
             <div className="flex items-center justify-between gap-2">
-              <span className={`text-xs font-mono tabular-nums ${muted}`}>
-                Step {stepIdx + 1} of {lesson.steps.length}
+              <span className={`text-[13px] font-medium ${muted}`}>
+                {lesson.subject} · Step {stepIdx + 1} of {lesson.steps.length}
               </span>
               {onStartQuiz && (
                 <button
                   type="button"
                   onClick={onStartQuiz}
-                  className={`text-xs font-medium hover:underline cursor-pointer ${muted}`}
+                  className={`text-[13px] font-medium hover:underline cursor-pointer ${muted}`}
                 >
                   Practice Quiz →
                 </button>
               )}
             </div>
 
-            <h2 className="text-sm sm:text-base font-semibold tracking-tight">
-              <MathText text={activeStep.title} />
-            </h2>
-            <div className={`text-xs sm:text-sm leading-relaxed ${isDark ? 'text-neutral-300' : 'text-neutral-700'}`}>
+            <div className={`text-sm sm:text-[15px] leading-7 ${isDark ? 'text-neutral-200' : 'text-neutral-800'}`}>
               <MathMarkdown content={activeStep.explanation} isDark={isDark} autoDetectLatex />
             </div>
 
             {activeStep.highlights && activeStep.highlights.length > 0 && (
-              <ul className="space-y-1 text-xs pt-1">
+              <ul className="space-y-2 text-sm sm:text-[15px] leading-relaxed pt-1">
                 {activeStep.highlights.map((h, idx) => (
-                  <li key={idx} className="flex items-start gap-2">
+                  <li key={idx} className="flex items-start gap-2.5">
                     <span className={muted}>·</span>
                     <span><MathText text={h} /></span>
                   </li>
@@ -1158,22 +1303,22 @@ export const StudySketchTutor: React.FC<StudySketchTutorProps> = ({
         )}
 
         {lesson.geometry && (
-          <div className={`pt-4 border-t space-y-4 ${subtleDivider}`} data-testid="sketch-geometry-widget">
+          <div className={`pt-6 border-t space-y-4 ${subtleDivider}`} data-testid="sketch-geometry-widget">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h3 className="text-sm font-semibold">{lesson.geometry.title}</h3>
-              <span className="text-xs font-semibold overflow-x-auto scrollbar-none">
+              <h3 className="text-base font-semibold tracking-tight">{lesson.geometry.title}</h3>
+              <span className="text-sm font-semibold">
                 <MathFormula
                   formula={`${geoA}^2 + ${geoB}^2 = ${(geoA * geoA + geoB * geoB).toFixed(1)} \\implies c = ${geoC}\\,\\text{${lesson.geometry.unit}}`}
                 />
               </span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center">
-              <div className="space-y-3">
-                <label className="block space-y-1 text-xs">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+              <div className="lg:col-span-5 space-y-4">
+                <label className="block space-y-1.5 text-[13px]">
                   <div className="flex justify-between font-mono tabular-nums">
                     <span>Leg a (Vertical)</span>
-                    <span>{geoA} {lesson.geometry.unit}</span>
+                    <span className="font-semibold">{geoA} {lesson.geometry.unit}</span>
                   </div>
                   <input
                     type="range"
@@ -1182,13 +1327,13 @@ export const StudySketchTutor: React.FC<StudySketchTutorProps> = ({
                     step={0.5}
                     value={geoA}
                     onChange={(e) => setGeoA(Number(e.target.value))}
-                    className="w-full accent-black dark:accent-white cursor-pointer"
+                    className="w-full h-1.5 rounded-full accent-black dark:accent-white cursor-pointer"
                   />
                 </label>
-                <label className="block space-y-1 text-xs">
+                <label className="block space-y-1.5 text-[13px]">
                   <div className="flex justify-between font-mono tabular-nums">
                     <span>Leg b (Horizontal)</span>
-                    <span>{geoB} {lesson.geometry.unit}</span>
+                    <span className="font-semibold">{geoB} {lesson.geometry.unit}</span>
                   </div>
                   <input
                     type="range"
@@ -1197,85 +1342,90 @@ export const StudySketchTutor: React.FC<StudySketchTutorProps> = ({
                     step={0.5}
                     value={geoB}
                     onChange={(e) => setGeoB(Number(e.target.value))}
-                    className="w-full accent-black dark:accent-white cursor-pointer"
+                    className="w-full h-1.5 rounded-full accent-black dark:accent-white cursor-pointer"
                   />
                 </label>
-                <div className={`text-xs font-mono tabular-nums space-y-1 pt-1 ${muted}`}>
-                  <div>Area a²: {(geoA * geoA).toFixed(2)}</div>
-                  <div>Area b²: {(geoB * geoB).toFixed(2)}</div>
+                <div className={`grid grid-cols-3 gap-2 pt-2 text-[13px] font-mono tabular-nums ${muted}`}>
+                  <div>a² = {(geoA * geoA).toFixed(1)}</div>
+                  <div>b² = {(geoB * geoB).toFixed(1)}</div>
                   <div className={`font-semibold ${isDark ? 'text-white' : 'text-black'}`}>
-                    Area c²: {(geoA * geoA + geoB * geoB).toFixed(2)}
+                    c² = {(geoA * geoA + geoB * geoB).toFixed(1)}
                   </div>
                 </div>
               </div>
 
-              <svg viewBox="0 0 280 215" className="w-full h-48" role="img" aria-label="Dynamic right triangle">
-                {(() => {
-                  const scale = 135 / Math.max(geoA, geoB, 5);
-                  const px = 64;
-                  const py = 172;
-                  const w = geoB * scale;
-                  const h = geoA * scale;
-                  const inkCol = isDark ? '#f4f4f5' : '#0f172a';
-                  const secCol = isDark ? '#94a3b8' : '#475569';
-                  return (
-                    <>
-                      <polygon
-                        points={`${px},${py - h} ${px},${py} ${px + w},${py}`}
-                        fill={isDark ? 'rgba(244,244,245,0.1)' : 'rgba(15,23,42,0.06)'}
-                        stroke={inkCol}
-                        strokeWidth="2.2"
-                      />
-                      <rect x={px} y={py - 12} width={12} height={12} fill="none" stroke={secCol} strokeWidth="1.4" />
-                      <foreignObject x={4} y={py - h / 2 - 14} width={54} height={28}>
-                        <div
-                          style={{ textAlign: 'right', color: secCol, fontSize: '11px', fontWeight: 700 }}
-                        >
-                          <SvgLatex text={`$a = ${geoA}$`} />
-                        </div>
-                      </foreignObject>
-                      <foreignObject x={px + w / 2 - 36} y={py + 4} width={72} height={28}>
-                        <div
-                          style={{ textAlign: 'center', color: secCol, fontSize: '11px', fontWeight: 700 }}
-                        >
-                          <SvgLatex text={`$b = ${geoB}$`} />
-                        </div>
-                      </foreignObject>
-                      <foreignObject x={px + w / 2 + 4} y={py - h / 2 - 22} width={132} height={32}>
-                        <div
-                          style={{ color: inkCol, fontSize: '11.5px', fontWeight: 700 }}
-                        >
-                          <SvgLatex text={`$c = \\sqrt{a^2+b^2} = ${geoC}$`} />
-                        </div>
-                      </foreignObject>
-                    </>
-                  );
-                })()}
-              </svg>
+              <div className={`lg:col-span-7 rounded-2xl border p-4 ${stageSurface}`}>
+                <svg viewBox="0 0 360 240" className="w-full h-60 sm:h-64" role="img" aria-label="Dynamic right triangle">
+                  {(() => {
+                    const scale = 148 / Math.max(geoA, geoB, 5);
+                    const px = 84;
+                    const py = 192;
+                    const w = Math.max(24, geoB * scale);
+                    const h = Math.max(24, geoA * scale);
+                    const inkCol = isDark ? '#f4f4f5' : '#0f172a';
+                    const secCol = isDark ? '#94a3b8' : '#475569';
+                    const hypX = Math.min(200, px + w / 2 + 10);
+                    const hypY = Math.max(16, Math.min(py - 44, py - h / 2 - 22));
+                    return (
+                      <>
+                        <polygon
+                          points={`${px},${py - h} ${px},${py} ${px + w},${py}`}
+                          fill={isDark ? 'rgba(244,244,245,0.1)' : 'rgba(15,23,42,0.06)'}
+                          stroke={inkCol}
+                          strokeWidth="2.4"
+                          strokeLinejoin="round"
+                        />
+                        <rect x={px} y={py - 14} width={14} height={14} fill="none" stroke={secCol} strokeWidth="1.5" />
+                        <foreignObject x={6} y={Math.max(10, py - h / 2 - 14)} width={70} height={30}>
+                          <div
+                            style={{ textAlign: 'right', color: secCol, fontSize: '13px', fontWeight: 700 }}
+                          >
+                            <SvgLatex text={`$a = ${geoA}$`} />
+                          </div>
+                        </foreignObject>
+                        <foreignObject x={Math.max(40, px + w / 2 - 42)} y={py + 8} width={88} height={30}>
+                          <div
+                            style={{ textAlign: 'center', color: secCol, fontSize: '13px', fontWeight: 700 }}
+                          >
+                            <SvgLatex text={`$b = ${geoB}$`} />
+                          </div>
+                        </foreignObject>
+                        <foreignObject x={hypX} y={hypY} width={152} height={34}>
+                          <div
+                            style={{ color: inkCol, fontSize: '13px', fontWeight: 700 }}
+                          >
+                            <SvgLatex text={`$c = ${geoC}$`} />
+                          </div>
+                        </foreignObject>
+                      </>
+                    );
+                  })()}
+                </svg>
+              </div>
             </div>
           </div>
         )}
 
         {lesson.graph && (
-          <div className={`pt-4 border-t space-y-3 ${subtleDivider}`} data-testid="sketch-graph-widget">
+          <div className={`pt-6 border-t space-y-4 ${subtleDivider}`} data-testid="sketch-graph-widget">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <h3 className="text-sm font-semibold">{lesson.graph.title}</h3>
-                <p className={`text-xs ${muted}`}>
+              <div className="space-y-0.5">
+                <h3 className="text-base font-semibold tracking-tight">{lesson.graph.title}</h3>
+                <p className={`text-[13px] ${muted}`}>
                   <MathFormula formula={lesson.graph.formula} />
                 </p>
               </div>
-              <span className="text-xs font-mono tabular-nums font-semibold">
+              <span className="text-[13px] font-mono tabular-nums font-semibold">
                 Range {(projectilePoints[projectilePoints.length - 1]?.x || 0).toFixed(1)} m · Peak{' '}
                 {Math.max(...projectilePoints.map((p) => p.y)).toFixed(1)} m
               </span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-              <label className="space-y-1">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-[13px]">
+              <label className="space-y-1.5">
                 <div className="flex justify-between font-mono tabular-nums">
                   <span>Speed v₀</span>
-                  <span>{projSpeed} m/s</span>
+                  <span className="font-semibold">{projSpeed} m/s</span>
                 </div>
                 <input
                   type="range"
@@ -1284,13 +1434,13 @@ export const StudySketchTutor: React.FC<StudySketchTutorProps> = ({
                   step={1}
                   value={projSpeed}
                   onChange={(e) => setProjSpeed(Number(e.target.value))}
-                  className="w-full accent-black dark:accent-white cursor-pointer"
+                  className="w-full h-1.5 rounded-full accent-black dark:accent-white cursor-pointer"
                 />
               </label>
-              <label className="space-y-1">
+              <label className="space-y-1.5">
                 <div className="flex justify-between font-mono tabular-nums">
                   <span>Angle θ</span>
-                  <span>{projAngle}°</span>
+                  <span className="font-semibold">{projAngle}°</span>
                 </div>
                 <input
                   type="range"
@@ -1299,13 +1449,13 @@ export const StudySketchTutor: React.FC<StudySketchTutorProps> = ({
                   step={1}
                   value={projAngle}
                   onChange={(e) => setProjAngle(Number(e.target.value))}
-                  className="w-full accent-black dark:accent-white cursor-pointer"
+                  className="w-full h-1.5 rounded-full accent-black dark:accent-white cursor-pointer"
                 />
               </label>
-              <label className="space-y-1">
+              <label className="space-y-1.5">
                 <div className="flex justify-between font-mono tabular-nums">
                   <span>Gravity g</span>
-                  <span>{projGravity} m/s²</span>
+                  <span className="font-semibold">{projGravity} m/s²</span>
                 </div>
                 <input
                   type="range"
@@ -1314,48 +1464,51 @@ export const StudySketchTutor: React.FC<StudySketchTutorProps> = ({
                   step={0.2}
                   value={projGravity}
                   onChange={(e) => setProjGravity(Number(e.target.value))}
-                  className="w-full accent-black dark:accent-white cursor-pointer"
+                  className="w-full h-1.5 rounded-full accent-black dark:accent-white cursor-pointer"
                 />
               </label>
             </div>
 
-            <div className="h-52 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={projectilePoints} margin={{ top: 8, right: 16, left: 0, bottom: 8 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'} />
-                  <XAxis dataKey="x" stroke="#71717a" tick={{ fontSize: 11 }} />
-                  <YAxis stroke="#71717a" tick={{ fontSize: 11 }} />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: isDark ? '#18181b' : '#ffffff',
-                      borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)',
-                      fontSize: '12px',
-                    }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="y"
-                    stroke={isDark ? '#f4f4f5' : '#09090b'}
-                    strokeWidth={2.5}
-                    dot={false}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+            <div className={`rounded-2xl border p-4 ${stageSurface}`}>
+              <div className="h-72 sm:h-80 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={projectilePoints} margin={{ top: 8, right: 16, left: 0, bottom: 8 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'} />
+                    <XAxis dataKey="x" stroke="#71717a" tick={{ fontSize: 12 }} />
+                    <YAxis stroke="#71717a" tick={{ fontSize: 12 }} />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: isDark ? '#18181b' : '#ffffff',
+                        borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)',
+                        borderRadius: '12px',
+                        fontSize: '13px',
+                      }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="y"
+                      stroke={isDark ? '#f4f4f5' : '#09090b'}
+                      strokeWidth={2.5}
+                      dot={false}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
             </div>
           </div>
         )}
 
         {safeVocabPairs.length > 0 && (
-          <div className={`pt-4 border-t space-y-3 ${subtleDivider}`} data-testid="sketch-vocab-widget">
+          <div className={`pt-6 border-t space-y-3.5 ${subtleDivider}`} data-testid="sketch-vocab-widget">
             <div className="flex items-center justify-between gap-2">
               <div>
-                <h3 className="text-sm font-semibold">Vocabulary Matching</h3>
-                <p className={`text-xs ${muted}`}>
+                <h3 className="text-base font-semibold tracking-tight">Vocabulary Matching</h3>
+                <p className={`text-[13px] ${muted}`}>
                   Pair each term with its translation.
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-xs font-mono tabular-nums font-semibold">
+                <span className="text-[13px] font-mono tabular-nums font-semibold">
                   {Object.keys(matchedIds).length}/{safeVocabPairs.length} Matched
                 </span>
                 <button
@@ -1364,23 +1517,23 @@ export const StudySketchTutor: React.FC<StudySketchTutorProps> = ({
                     setMatchedIds({});
                     setSelectedSourceId(null);
                   }}
-                  className={`p-1.5 rounded-lg border cursor-pointer ${ghostBtn}`}
+                  className={`size-9 rounded-xl border inline-flex items-center justify-center cursor-pointer ${ghostBtn}`}
                   title="Reset matching drill"
                 >
-                  <RotateCcw className="w-3.5 h-3.5" />
+                  <RotateCcw className="w-4 h-4" />
                 </button>
               </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-2">
+              <div className="space-y-2.5">
                 {safeVocabPairs.map((pair) => {
                   const matched = Boolean(matchedIds[pair.id]);
                   const selected = selectedSourceId === pair.id;
                   return (
                     <div
                       key={pair.id}
-                      className={`flex items-center justify-between gap-2 p-2.5 rounded-lg border text-xs transition-colors ${
+                      className={`flex items-center justify-between gap-2 p-3.5 rounded-xl border text-sm transition-colors ${
                         matched
                           ? isDark
                             ? 'border-white/25 bg-white/[0.08] text-white'
@@ -1401,7 +1554,7 @@ export const StudySketchTutor: React.FC<StudySketchTutorProps> = ({
                         className="flex-1 text-left cursor-pointer disabled:cursor-default"
                       >
                         <div className="font-semibold">{pair.source}</div>
-                        {pair.phonetic && <div className={`text-[11px] font-mono ${muted}`}>{pair.phonetic}</div>}
+                        {pair.phonetic && <div className={`text-xs font-mono mt-0.5 ${muted}`}>{pair.phonetic}</div>}
                       </button>
                       <button
                         type="button"
@@ -1409,14 +1562,14 @@ export const StudySketchTutor: React.FC<StudySketchTutorProps> = ({
                         className={`p-1.5 rounded-lg cursor-pointer ${muted} hover:opacity-100`}
                         title={`Pronounce ${pair.source}`}
                       >
-                        <Volume2 className="w-3.5 h-3.5" />
+                        <Volume2 className="w-4 h-4" />
                       </button>
                     </div>
                   );
                 })}
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-2.5">
                 {shuffledTargets.map((pair) => {
                   const matched = Boolean(matchedIds[pair.id]);
                   const isWrong = wrongPairFlash === pair.id;
@@ -1426,7 +1579,7 @@ export const StudySketchTutor: React.FC<StudySketchTutorProps> = ({
                       type="button"
                       disabled={matched}
                       onClick={() => handleMatchTarget(pair.id)}
-                      className={`w-full p-2.5 rounded-lg border text-left text-xs transition-colors flex items-center justify-between cursor-pointer disabled:cursor-default ${
+                      className={`w-full p-3.5 rounded-xl border text-left text-sm transition-colors flex items-center justify-between cursor-pointer disabled:cursor-default ${
                         matched
                           ? isDark
                             ? 'border-white/25 bg-white/[0.08] text-white font-semibold'
@@ -1441,10 +1594,10 @@ export const StudySketchTutor: React.FC<StudySketchTutorProps> = ({
                       <div>
                         <div className="font-medium">{pair.target}</div>
                         {matched && pair.example && (
-                          <div className={`text-[11px] font-normal ${muted}`}>{pair.example}</div>
+                          <div className={`text-xs font-normal mt-0.5 ${muted}`}>{pair.example}</div>
                         )}
                       </div>
-                      {matched && <Check className="w-3.5 h-3.5 shrink-0" />}
+                      {matched && <Check className="w-4 h-4 shrink-0" />}
                     </button>
                   );
                 })}
@@ -1454,52 +1607,62 @@ export const StudySketchTutor: React.FC<StudySketchTutorProps> = ({
         )}
 
         {lesson.images && lesson.images.length > 0 && (
-          <div className={`pt-4 border-t space-y-3 ${subtleDivider}`} data-testid="sketch-images-widget">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold">Reference Gallery</h3>
-              <span className={`text-xs ${muted}`}>{lesson.images.length} images</span>
+          <div className={`pt-6 border-t space-y-3.5 ${subtleDivider}`} data-testid="sketch-images-widget">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-base font-semibold tracking-tight">Reference Diagrams</h3>
+              <span className={`text-[13px] ${muted}`}>{lesson.images.length} visual references</span>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
               {lesson.images.map((img, i) => {
                 const key = `${img.imageUrl}_${i}`;
                 const failed = Boolean(brokenImages[key]);
                 return (
-                  <div
+                  <button
                     key={key}
-                    className={`rounded-lg border overflow-hidden flex flex-col ${subtleDivider} ${
-                      isDark ? 'bg-black/30' : 'bg-neutral-50'
+                    type="button"
+                    onClick={() => !failed && setLightboxImage(img)}
+                    className={`group rounded-2xl border overflow-hidden flex flex-col text-left transition-all cursor-pointer ${subtleDivider} ${
+                      isDark
+                        ? 'bg-[#121216] hover:border-white/25'
+                        : 'bg-white hover:border-black/25 shadow-[0_1px_2px_rgba(0,0,0,0.03)]'
                     }`}
                   >
-                    <div className="aspect-[4/3] w-full overflow-hidden flex items-center justify-center bg-neutral-500/10">
+                    <div
+                      className={`aspect-[16/10] w-full p-2.5 overflow-hidden flex items-center justify-center ${
+                        isDark ? 'bg-white/[0.96]' : 'bg-[#f8f8f9]'
+                      }`}
+                    >
                       {!failed ? (
                         <img
                           src={img.thumbnailUrl || img.imageUrl}
                           alt={img.title}
                           referrerPolicy="no-referrer"
                           onError={() => setBrokenImages((prev) => ({ ...prev, [key]: true }))}
-                          className="w-full h-full object-cover"
+                          className="w-full h-full object-contain transition-transform duration-200 group-hover:scale-[1.02]"
                         />
                       ) : (
                         <div className={`flex flex-col items-center justify-center p-3 text-center gap-1.5 ${muted}`}>
                           <ImageIcon className="w-5 h-5" />
-                          <span className="text-[11px] line-clamp-2">{img.title}</span>
+                          <span className="text-xs line-clamp-2">{img.title}</span>
                         </div>
                       )}
                     </div>
-                    <div className="p-2 text-[11px] leading-snug line-clamp-2 font-medium">
-                      {img.title}
+                    <div className={`px-3.5 py-2.5 border-t ${subtleDivider}`}>
+                      <p className="text-[13px] leading-snug font-medium line-clamp-2">
+                        {img.title}
+                      </p>
                     </div>
-                  </div>
+                  </button>
                 );
               })}
             </div>
           </div>
         )}
 
-        {/* Bubble-Free Follow-Up Section */}
-        <div className={`pt-4 border-t space-y-3 ${subtleDivider}`}>
+        {/* Follow-Up Conversation & Elevated Composer */}
+        <div className={`pt-6 border-t space-y-4 ${subtleDivider}`}>
           <div className="flex items-center justify-between gap-2">
-            <h3 className="text-sm font-semibold">Follow-Up</h3>
+            <h3 className="text-base font-semibold tracking-tight">Continue Exploring</h3>
             {onAskTutor && (
               <button
                 type="button"
@@ -1509,36 +1672,39 @@ export const StudySketchTutor: React.FC<StudySketchTutorProps> = ({
                     lesson.title
                   )
                 }
-                className={`text-xs font-medium hover:underline inline-flex items-center gap-1 cursor-pointer ${muted}`}
+                className={`text-[13px] font-medium hover:underline inline-flex items-center gap-1 cursor-pointer ${muted}`}
               >
                 <span>Open in Study Tutor</span>
-                <ArrowRight className="w-3 h-3" />
+                <ArrowRight className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
 
-          <div className={`divide-y ${isDark ? 'divide-white/[0.08]' : 'divide-black/[0.08]'}`}>
-            {turns.map((t) => (
-              <div key={t.id} className="py-2.5 text-xs sm:text-sm leading-relaxed space-y-1">
-                <div className={`text-[11px] font-medium ${t.role === 'user' ? muted : ''}`}>
-                  {t.role === 'user' ? 'You' : 'Tutor'}
+          {turns.length > 0 && (
+            <div className={`divide-y ${isDark ? 'divide-white/[0.08]' : 'divide-black/[0.08]'}`}>
+              {turns.map((t) => (
+                <div key={t.id} className="py-3.5 text-sm sm:text-[15px] leading-relaxed space-y-1.5">
+                  <div className={`text-xs font-semibold tracking-tight ${t.role === 'user' ? muted : ''}`}>
+                    {t.role === 'user' ? 'You' : 'Whiteboard Tutor'}
+                  </div>
+                  <MathMarkdown content={t.text} isDark={isDark} autoDetectLatex />
                 </div>
-                <MathMarkdown content={t.text} isDark={isDark} autoDetectLatex />
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
 
           {lesson.followUpSuggestions && lesson.followUpSuggestions.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 pt-1">
+            <div className={`divide-y border-t border-b ${isDark ? 'divide-white/[0.07]' : 'divide-black/[0.07]'} ${subtleDivider}`}>
               {lesson.followUpSuggestions.map((s, idx) => (
                 <button
                   key={idx}
                   type="button"
                   disabled={loadingLesson}
                   onClick={() => void requestVisualLesson(s, { isFollowUp: true })}
-                  className={`px-3 py-1.5 rounded-lg border text-left text-xs transition-colors cursor-pointer ${ghostBtn}`}
+                  className="w-full py-3 px-1 text-left text-sm sm:text-[15px] flex items-center justify-between gap-3 hover:opacity-75 transition-opacity cursor-pointer disabled:opacity-40"
                 >
-                  <MathText text={s} />
+                  <span className="min-w-0 leading-snug"><MathText text={s} /></span>
+                  <ArrowRight className={`w-4 h-4 shrink-0 ${muted}`} />
                 </button>
               ))}
             </div>
@@ -1549,31 +1715,64 @@ export const StudySketchTutor: React.FC<StudySketchTutorProps> = ({
               e.preventDefault();
               void requestVisualLesson(followUpInput, { isFollowUp: true });
             }}
-            className="flex items-center gap-2 pt-1"
+            className={`rounded-2xl border p-2 pl-4 flex items-center gap-2.5 transition-all ${composerSurface}`}
           >
             <input
               type="text"
               value={followUpInput}
               onChange={(e) => setFollowUpInput(e.target.value)}
-              placeholder="Ask a follow-up..."
-              className={`flex-1 min-w-0 px-3 py-2 rounded-lg border text-xs outline-none ${
-                isDark
-                  ? 'bg-[#121215] border-white/12 focus:border-white/35 text-white placeholder:text-neutral-500'
-                  : 'bg-white border-black/12 focus:border-black/35 text-black placeholder:text-neutral-400'
-              }`}
+              placeholder="Ask a follow-up or redraw..."
+              className="flex-1 min-w-0 bg-transparent text-[15px] outline-none placeholder:text-neutral-400 dark:placeholder:text-neutral-500"
             />
             <button
               type="submit"
               disabled={loadingLesson || !followUpInput.trim()}
-              className={`px-3.5 py-2 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 disabled:opacity-40 cursor-pointer shrink-0 ${primaryBtn}`}
+              className={`size-9 rounded-full inline-flex items-center justify-center disabled:opacity-35 cursor-pointer shrink-0 transition-colors ${primaryBtn}`}
               aria-label="Send follow-up"
             >
-              {loadingLesson ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-              <span>Send</span>
+              {loadingLesson ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowUp className="w-4 h-4" />}
             </button>
           </form>
         </div>
       </div>
+
+      {/* Reference Diagram Lightbox Modal */}
+      {lightboxImage && (
+        <div
+          className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4"
+          onClick={() => setLightboxImage(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label={lightboxImage.title}
+        >
+          <div
+            className={`w-full max-w-3xl rounded-2xl border overflow-hidden shadow-2xl ${
+              isDark ? 'bg-[#121216] border-white/15 text-white' : 'bg-white border-black/15 text-black'
+            }`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className={`px-4 py-3 border-b ${subtleDivider} flex items-center justify-between gap-3`}>
+              <p className="text-sm font-semibold truncate">{lightboxImage.title}</p>
+              <button
+                type="button"
+                onClick={() => setLightboxImage(null)}
+                aria-label="Close diagram preview"
+                className={`size-8 rounded-lg border inline-flex items-center justify-center cursor-pointer shrink-0 ${ghostBtn}`}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-4 bg-white flex items-center justify-center max-h-[75vh] overflow-auto">
+              <img
+                src={lightboxImage.imageUrl || lightboxImage.thumbnailUrl}
+                alt={lightboxImage.title}
+                referrerPolicy="no-referrer"
+                className="max-w-full max-h-[68vh] object-contain"
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

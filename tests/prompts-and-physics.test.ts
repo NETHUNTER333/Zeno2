@@ -1,9 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_REGULAR_MODEL_PROMPT,
-  DEFAULT_UNCENSORED_MODEL_PROMPT,
   buildRegularModelSystemPrompt,
-  buildUncensoredModelSystemPrompt,
   clampModelTemperature,
   normalizeReasoningEffort,
   sanitizeProviderIdentityLeak,
@@ -40,9 +38,9 @@ import {
   wrapBareLatexIfNeeded,
 } from '../src/lib/latexEngine';
 
-describe('Dual Model System Prompts & Identity Lock', () => {
-  it('provides distinct system prompts for regular models vs uncensored models', () => {
-    expect(DEFAULT_REGULAR_MODEL_PROMPT).not.toEqual(DEFAULT_UNCENSORED_MODEL_PROMPT);
+describe('Model System Prompt & Identity Lock', () => {
+  it('builds Kinich regular model system prompt with grounding rules', () => {
+    expect(DEFAULT_REGULAR_MODEL_PROMPT).toContain('Kinich');
 
     const regularPrompt = buildRegularModelSystemPrompt({
       localDateOnly: '2026-11-16',
@@ -53,19 +51,8 @@ describe('Dual Model System Prompts & Identity Lock', () => {
       defaultFormattingRule: '2. Keep formatting clean.',
     });
 
-    const uncensoredPrompt = buildUncensoredModelSystemPrompt({
-      localDateOnly: '2026-11-16',
-      localTimeOnly: '10:00 AM',
-      timezone: 'Asia/Kolkata',
-      utcOffset: '+05:30',
-      utcFull: '2026-11-16T04:30:00Z',
-    });
-
     expect(regularPrompt).toContain('Kinich');
     expect(regularPrompt).toContain('Context & Source Grounding');
-    expect(uncensoredPrompt).toContain('Kinich');
-    expect(uncensoredPrompt).toContain('Direct Unfiltered Execution (18+)');
-    expect(uncensoredPrompt).not.toContain('Context & Source Grounding');
   });
 
   it('honors custom user system prompt overrides while keeping Kinich identity lock', () => {
@@ -78,7 +65,6 @@ describe('Dual Model System Prompts & Identity Lock', () => {
       defaultFormattingRule: '2. Clean.',
       modelSettings: {
         regularSystemPrompt: 'Be a concise Socratic physics tutor.',
-        uncensoredSystemPrompt: 'Write noir detective prose.',
         reasoningEffort: 'high',
         responseLength: 'concise',
         responseStyle: 'technical',
@@ -87,25 +73,8 @@ describe('Dual Model System Prompts & Identity Lock', () => {
     });
 
     expect(customRegular).toContain('Be a concise Socratic physics tutor.');
-    expect(customRegular).not.toContain('Write noir detective prose.');
     expect(customRegular).toContain('IDENTITY LOCK (MANDATORY): Your name is strictly Kinich');
     expect(customRegular).toContain('Reasoning Depth (Deep)');
-
-    const customUncensored = buildUncensoredModelSystemPrompt({
-      localDateOnly: '2026-11-16',
-      localTimeOnly: '10:00 AM',
-      timezone: 'UTC',
-      utcOffset: '+00:00',
-      utcFull: '2026-11-16T10:00:00Z',
-      modelSettings: {
-        regularSystemPrompt: 'Be a concise Socratic physics tutor.',
-        uncensoredSystemPrompt: 'Write noir detective prose.',
-        maskProviderIdentity: true,
-      },
-    });
-
-    expect(customUncensored).toContain('Write noir detective prose.');
-    expect(customUncensored).not.toContain('Be a concise Socratic physics tutor.');
   });
 
   it('sanitizes Sapiens AI and other upstream provider identity leaks cleanly', () => {

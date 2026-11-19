@@ -1,5 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Layers, Plus, X, MessageSquare, CheckCircle2, Clock, ArrowUpRight, Sparkles } from 'lucide-react';
+import {
+  openHitaishiWithWorkspaceScope,
+  saveSideChatTasksToHitaishiBridge,
+} from '../lib/hitaishiWorkspaceBridge';
 
 interface SideTaskTab {
   id: string;
@@ -43,6 +47,10 @@ export const SideChatWorkspace: React.FC<SideChatWorkspaceProps> = ({
   ]);
   const [activeTaskId, setActiveTaskId] = useState<string>('task-2');
   const [newSubTaskPrompt, setNewSubTaskPrompt] = useState('');
+
+  useEffect(() => {
+    saveSideChatTasksToHitaishiBridge(tasks);
+  }, [tasks]);
 
   if (!isOpen) return null;
 
@@ -90,15 +98,43 @@ export const SideChatWorkspace: React.FC<SideChatWorkspaceProps> = ({
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={onClose}
-            className={`p-1.5 rounded-full transition-colors cursor-pointer ${
-              isDark ? 'hover:bg-white/10 text-neutral-300' : 'hover:bg-black/5 text-neutral-700'
-            }`}
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                openHitaishiWithWorkspaceScope(
+                  'sidechat',
+                  activeTask
+                    ? `Help me review my SideChat subtask "${activeTask.title}".`
+                    : undefined
+                );
+              }}
+              className={`h-8 px-3 rounded-full border text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
+                isDark
+                  ? 'bg-white/[0.06] hover:bg-white/[0.12] border-white/15 text-white'
+                  : 'bg-black/[0.04] hover:bg-black/[0.08] border-black/12 text-black'
+              }`}
+              title="Discuss SideChat tasks with Hitaishi Companion"
+            >
+              <img
+                src="/hitaishi-assets/characters/n01/avatar.webp"
+                alt="Hitaishi"
+                className="w-4 h-4 rounded-full object-cover"
+              />
+              <span>Hitaishi</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={onClose}
+              className={`p-1.5 rounded-full transition-colors cursor-pointer ${
+                isDark ? 'hover:bg-white/10 text-neutral-300' : 'hover:bg-black/5 text-neutral-700'
+              }`}
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Tab Bar (Manus AI Style Tabs) */}

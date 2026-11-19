@@ -67,6 +67,8 @@ export const PROTECTED_API_ROUTES = [
 
 export const OPTIONAL_AUTH_API_ROUTES = [
   '/chat',
+  '/hitaishi/companion',
+  '/hitaishi/status',
   '/summarize',
   '/tts',
   '/smallest/stt',

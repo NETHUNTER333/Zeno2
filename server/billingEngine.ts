@@ -362,7 +362,7 @@ export const PLAN_CATALOG: Record<
     plan: 'spark',
     interval: 'monthly',
     name: 'Kinich Spark (Monthly)',
-    description: 'Kinich Spark AI subscription — 1,500 daily messages, 250 daily uploads, Spark models & DeepSeek V4.1 Uncensored.',
+    description: 'Kinich Spark AI subscription — 1,500 daily messages, 250 daily uploads, Hitaishi Live 3D Voice Companion, and Spark reasoning & vision models.',
     usdPriceCents: 300, // $3.00
     usdDisplay: '$3/month',
     inrPriceCents: 9900, // ₹99.00
@@ -377,7 +377,7 @@ export const PLAN_CATALOG: Record<
     plan: 'spark',
     interval: 'yearly',
     name: 'Kinich Spark (Yearly)',
-    description: 'Kinich Spark AI annual subscription — save 19% ($29/year).',
+    description: 'Kinich Spark AI annual subscription with Hitaishi Live 3D Voice Companion — save 19% ($29/year).',
     usdPriceCents: 2900, // $29.00
     usdDisplay: '$29/year',
     inrPriceCents: 94900, // ₹949.00
@@ -391,10 +391,10 @@ export const PLAN_CATALOG: Record<
     key: 'fire_monthly',
     plan: 'fire',
     interval: 'monthly',
-    name: 'Kinich Fire (Monthly)',
-    description: 'Kinich Fire frontier AI subscription — 5,000 daily messages, all personal study agents, frontier models, and priority compute.',
-    usdPriceCents: 700, // $7.00
-    usdDisplay: '$7/month',
+    name: 'Kinich Fire Unlimited (Monthly)',
+    description: 'Kinich Fire Unlimited AI subscription — unlimited messages, uploads, Deep Research, Hitaishi Live 3D Voice Companion, personal study agents, and all frontier & vision models.',
+    usdPriceCents: 900, // $9.00
+    usdDisplay: '$9/month',
     inrPriceCents: 24900, // ₹249.00
     inrDisplay: '₹249/month',
     paymentFrequencyCount: 1,
@@ -406,10 +406,10 @@ export const PLAN_CATALOG: Record<
     key: 'fire_yearly',
     plan: 'fire',
     interval: 'yearly',
-    name: 'Kinich Fire (Yearly)',
-    description: 'Kinich Fire frontier AI annual subscription — save 20% ($67/year).',
-    usdPriceCents: 6700, // $67.00
-    usdDisplay: '$67/year',
+    name: 'Kinich Fire Unlimited (Yearly)',
+    description: 'Kinich Fire Unlimited annual subscription with Hitaishi Live 3D Voice Companion — save 20% ($86/year).',
+    usdPriceCents: 8600, // $86.00
+    usdDisplay: '$86/year',
     inrPriceCents: 239900, // ₹2,399.00
     inrDisplay: '₹2,399/year',
     paymentFrequencyCount: 1,
@@ -432,7 +432,7 @@ export const CURRENCY_PRICE_TABLE: Record<
     currency: 'USD',
     symbol: '$',
     spark: { monthly: 3, yearly: 29, monthlyEquiv: 2.42 },
-    fire: { monthly: 7, yearly: 67, monthlyEquiv: 5.58 },
+    fire: { monthly: 9, yearly: 86, monthlyEquiv: 7.17 },
   },
   INR: {
     currency: 'INR',

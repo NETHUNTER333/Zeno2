@@ -145,6 +145,26 @@
     {
       "source": "/p/(.*)",
       "destination": "/index.html"
+    },
+    {
+      "source": "/hitaishi",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/hitaishi/:path*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/stage",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/stage/:path*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/hitaishi-assets/characters/:path*",
+      "destination": "/hitaishi-characters/:path*"
     }
   ],
   "headers": [

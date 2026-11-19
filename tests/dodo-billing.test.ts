@@ -58,8 +58,8 @@ describe('Dodo Payments Billing Engine & Webhook State Machine', () => {
 
     const usFireYearly = await previewPlanPriceForCountry('fire', 'yearly', 'US');
     expect(usFireYearly.currency).toBe('USD');
-    expect(usFireYearly.usdReferencePrice).toBe(67);
-    expect(usFireYearly.formattedSubtotal).toContain('$67');
+    expect(usFireYearly.usdReferencePrice).toBe(86);
+    expect(usFireYearly.formattedSubtotal).toContain('$86');
   });
 
   it('transitions user entitlement across subscription.active, cancelled, refund, and dispute', () => {

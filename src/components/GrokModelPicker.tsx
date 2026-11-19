@@ -33,58 +33,67 @@ export const GROK_MODELS: ModelOption[] = [
     requiredTier: 'free',
   },
   {
-    id: 'fgw-uncensored-free',
-    name: 'Uncensored Pro',
-    description: 'Unfiltered reasoning & chat (Free)',
-    geminiModel: 'fgw/uncensored:free',
-    supportsVision: false,
-    contextLength: '128K',
-    requiredTier: 'free',
-  },
-  {
-    id: 'fgw-limitless-free',
-    name: 'Limitless Pro',
-    description: 'Unrestricted deep reasoning',
-    geminiModel: 'fgw/limitless:free',
-    supportsVision: false,
-    contextLength: '128K',
-    requiredTier: 'fire',
-  },
-  {
-    id: 'fgw-code-limitless-free',
-    name: 'Code Limitless',
-    description: 'Unrestricted code synthesis',
-    geminiModel: 'fgw/code-limitless:free',
-    supportsVision: false,
-    contextLength: '128K',
-    requiredTier: 'fire',
-  },
-  {
-    id: 'fgw-deepseek-v4.1-flash-uncensored-free',
-    name: 'DeepSeek V4.1 Uncensored',
-    description: 'Unfiltered fast reasoning',
-    geminiModel: 'fgw/deepseek-v4.1-flash-uncensored:free',
-    supportsVision: false,
+    id: 'fgw-qwen-3.8-vl-72b-vision',
+    name: 'Qwen 3.8 VL 72B Vision',
+    description: 'High-res visual & OCR analysis',
+    geminiModel: 'fgw/qwen-3.8-max:free',
+    supportsVision: true,
     contextLength: '1M',
     requiredTier: 'spark',
   },
   {
-    id: 'fgw-deepseek-v4-flash-uncensored-free',
-    name: 'DeepSeek V4 Uncensored',
-    description: 'Unfiltered analytical logic',
-    geminiModel: 'fgw/deepseek-v4-flash-uncensored:free',
-    supportsVision: false,
+    id: 'fgw-pixtral-large-2-vision',
+    name: 'Pixtral Large 2 Vision',
+    description: 'Frontier multimodal vision',
+    geminiModel: 'fgw/nvidia/mistral-large-4-1t-a52b:free',
+    supportsVision: true,
+    contextLength: '512K',
+    requiredTier: 'fire',
+  },
+  {
+    id: 'fgw-llama-4-maverick-vision',
+    name: 'Llama 4 Maverick Vision',
+    description: 'Native multimodal MoE vision',
+    geminiModel: 'fgw/nemotron-3.5-super-vl:free',
+    supportsVision: true,
+    contextLength: '1M',
+    requiredTier: 'spark',
+  },
+  {
+    id: 'radox-gpt-6-omni-vision',
+    name: 'GPT-6 Omni Vision',
+    description: 'Deep visual & diagram reasoning',
+    geminiModel: 'radox/gpt-5.6-luna',
+    supportsVision: true,
     contextLength: '1M',
     requiredTier: 'fire',
   },
   {
-    id: 'fgw-qwen3.8-27b-uncensored-free',
-    name: 'Qwen 3.8 27B Uncensored',
-    description: 'Unfiltered 27B instruction',
-    geminiModel: 'fgw/qwen3.8-27b-uncensored:free',
-    supportsVision: false,
-    contextLength: '256K',
+    id: 'itera-gemini-4-ultra-vision',
+    name: 'Gemini 4 Ultra Vision',
+    description: '2M context multimodal vision',
+    geminiModel: 'itera/gemini/gemini-4-argon',
+    supportsVision: true,
+    contextLength: '2M',
     requiredTier: 'fire',
+  },
+  {
+    id: 'intern-internvl-3.5-78b-vision',
+    name: 'InternVL 3.5 78B Vision',
+    description: 'Scientific & document vision',
+    geminiModel: 'intern/deepseek-v4-flash-vision',
+    supportsVision: true,
+    contextLength: '1M',
+    requiredTier: 'spark',
+  },
+  {
+    id: 'fgw-glm-5.3v-pro-vision',
+    name: 'GLM 5.3V Pro Vision',
+    description: 'Fast visual reasoning & UI',
+    geminiModel: 'fgw/glm-5.3-flash:free',
+    supportsVision: true,
+    contextLength: '1M',
+    requiredTier: 'spark',
   },
   {
     id: 'fgw-deepseek-v4.1-flash-free',
@@ -280,15 +289,6 @@ export const GROK_MODELS: ModelOption[] = [
     name: 'GPT-OSS 20B+',
     description: 'Open-weights reasoning',
     geminiModel: 'fgw/openai/gpt-oss-20b:free',
-    supportsVision: false,
-    contextLength: '128K',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-gpt-oss-safeguard-20b-free',
-    name: 'GPT-OSS Safeguard 20B',
-    description: 'Aligned 20B synthesis',
-    geminiModel: 'fgw/openai/gpt-oss-safeguard-20b:free',
     supportsVision: false,
     contextLength: '128K',
     requiredTier: 'spark',
@@ -510,15 +510,6 @@ export const GROK_MODELS: ModelOption[] = [
     requiredTier: 'spark',
   },
   {
-    id: 'fgw-agnes-2.5-flash-free',
-    name: 'Agnes 2.5 Flash',
-    description: 'Lightweight fast chat',
-    geminiModel: 'fgw/agnes-2.5-flash:free',
-    supportsVision: false,
-    contextLength: '128K',
-    requiredTier: 'spark',
-  },
-  {
     id: 'fgw-ernie-5.5-flash-preview-free',
     name: 'Ernie 5.5 Flash',
     description: 'Knowledge-enhanced flash',
@@ -627,15 +618,6 @@ export const GROK_MODELS: ModelOption[] = [
     requiredTier: 'spark',
   },
   {
-    id: 'fgw-crouton-alpha-free',
-    name: 'Crouton Alpha',
-    description: 'Experimental fast reasoning',
-    geminiModel: 'fgw/crouton-alpha:free',
-    supportsVision: false,
-    contextLength: '128K',
-    requiredTier: 'spark',
-  },
-  {
     id: 'fgw-liquid-lfm-2.5-2.6b-free',
     name: 'LFM 2.5 2.6B+',
     description: 'Liquid foundation speed',
@@ -699,15 +681,6 @@ export const GROK_MODELS: ModelOption[] = [
     requiredTier: 'fire',
   },
   {
-    id: 'fgw-hy3-free',
-    name: 'Hunyuan 3',
-    description: 'Fast conversational logic',
-    geminiModel: 'fgw/hy3:free',
-    supportsVision: false,
-    contextLength: '128K',
-    requiredTier: 'spark',
-  },
-  {
     id: 'fgw-solar-mini4-free',
     name: 'Solar Mini 4',
     description: 'Compact high-efficiency pro',
@@ -719,7 +692,7 @@ export const GROK_MODELS: ModelOption[] = [
   {
     id: 'zro-deepseek-v4-flash-0731',
     name: 'DeepSeek V4 (0731)',
-    description: 'Coding & math ($3 Spark)',
+    description: 'Coding & math reasoning',
     geminiModel: 'zro/deepseek-v4-flash-0731',
     supportsVision: false,
     contextLength: '1M',
@@ -728,7 +701,7 @@ export const GROK_MODELS: ModelOption[] = [
   {
     id: 'deepseek-v4.1-flash-free',
     name: 'DeepSeek V4.1',
-    description: 'Instant reasoning ($3 Spark)',
+    description: 'Instant reasoning',
     geminiModel: 'zro/deepseek-v4.1-flash',
     supportsVision: false,
     contextLength: '1M',
@@ -737,7 +710,7 @@ export const GROK_MODELS: ModelOption[] = [
   {
     id: 'itera-qwen3.8-27b-free',
     name: 'Qwen 3.8 27B',
-    description: 'Fast reply & vision ($3 Spark)',
+    description: 'Fast reply & vision',
     geminiModel: 'itera/qwen/qwen3.8-27b',
     supportsVision: true,
     contextLength: '256K',
@@ -746,7 +719,7 @@ export const GROK_MODELS: ModelOption[] = [
   {
     id: 'deepseek-v4-flash-0731-free',
     name: 'DeepSeek V4 Flash',
-    description: 'Analytical reasoning ($3 Spark)',
+    description: 'Analytical reasoning',
     geminiModel: 'zro/deepseek-v4-flash-0731',
     supportsVision: false,
     contextLength: '1M',
@@ -755,7 +728,7 @@ export const GROK_MODELS: ModelOption[] = [
   {
     id: 'glm-5.3-flash-free',
     name: 'GLM 5.3 Flash',
-    description: 'Low-latency vision ($3 Spark)',
+    description: 'Low-latency vision',
     geminiModel: 'zro/glm-5.3-flash',
     supportsVision: true,
     contextLength: '1M',
@@ -766,14 +739,6 @@ export const GROK_MODELS: ModelOption[] = [
     name: 'MiMo V2.6',
     description: 'Fast thinking',
     geminiModel: 'thk/mimo-v2.6-flash:free',
-    supportsVision: false,
-    contextLength: '1M',
-  },
-  {
-    id: 'mimo-v2.5-free',
-    name: 'MiMo V2.5',
-    description: 'High-tier reasoning',
-    geminiModel: 'thk/mimo-v2.5:free',
     supportsVision: false,
     contextLength: '1M',
   },
@@ -1298,14 +1263,6 @@ export const GROK_MODELS: ModelOption[] = [
     contextLength: '1M',
   },
   {
-    id: 'ar-nemotron-3.5-content-safety',
-    name: 'Nemotron Safety VL',
-    description: 'Vision analysis',
-    geminiModel: 'ar/nvidia/nemotron-3.5-content-safety',
-    supportsVision: true,
-    contextLength: '128K',
-  },
-  {
     id: 'ar-nemotron-parse-2.0',
     name: 'Nemotron Parse 2.0',
     description: 'Document parser',
@@ -1426,14 +1383,6 @@ export const GROK_MODELS: ModelOption[] = [
     contextLength: '256K',
   },
   {
-    id: 'ar-apple-foundation-model',
-    name: 'Foundation 3B',
-    description: 'Compact intelligence',
-    geminiModel: 'ar/apple/foundation-model',
-    supportsVision: false,
-    contextLength: '4K',
-  },
-  {
     id: 'ar-glm-4.5-flash',
     name: 'GLM 4.5 Flash',
     description: 'Fast flash',
@@ -1456,14 +1405,6 @@ export const GROK_MODELS: ModelOption[] = [
     geminiModel: 'ar/openrouter/pareto-code',
     supportsVision: true,
     contextLength: '2M',
-  },
-  {
-    id: 'ar-bodybuilder-router',
-    name: 'BodyBuilder',
-    description: 'Structured output',
-    geminiModel: 'ar/openrouter/bodybuilder',
-    supportsVision: false,
-    contextLength: '128K',
   },
   {
     id: 'ar-inception-mercury-decide',
@@ -1505,10 +1446,6 @@ const FIRE_MODEL_IDS = new Set([
   'ar-poolside-laguna-s-2.1',
   'ar-reflection-beam-1.0',
   'ar-pareto-code-router',
-  'fgw-limitless-free',
-  'fgw-code-limitless-free',
-  'fgw-deepseek-v4-flash-uncensored-free',
-  'fgw-qwen3.8-27b-uncensored-free',
   'fgw-deepseek-v4-flash-0731-thinking-free',
   'fgw-gemini-3.1-pro-free',
   'fgw-gemini-3-pro-free',
@@ -1528,12 +1465,14 @@ const FIRE_MODEL_IDS = new Set([
   'fgw-laguna-s-2.1-free',
   'fgw-k2-horizon-375b-free',
   'fgw-hy4-free',
+  'fgw-pixtral-large-2-vision',
+  'radox-gpt-6-omni-vision',
+  'itera-gemini-4-ultra-vision',
 ]);
 
 export const FREE_MODEL_IDS = new Set<string>([
   'zro-deepseek-v4.1-flash',
   'zro-glm-5.3-flash',
-  'fgw-uncensored-free',
 ]);
 
 export function getModelRequiredTier(model: ModelOption): 'free' | 'spark' | 'fire' {
@@ -1620,7 +1559,7 @@ export const GrokModelPicker: React.FC<GrokModelPickerProps> = ({
 
   const triggerPricingPopup = (tier: 'free' | 'spark' | 'fire', modelName: string) => {
     if (tier === 'free') return;
-    const planLabel = tier === 'spark' ? 'Spark ($3/mo)' : 'Fire ($7/mo)';
+    const planLabel = tier === 'spark' ? 'Spark ($3/mo)' : 'Fire ($9/mo Unlimited)';
     const reason = `${modelName} requires the ${planLabel} plan. Upgrade now to unlock it.`;
     if (onOpenPricing) {
       onOpenPricing(tier, reason);
@@ -1681,7 +1620,7 @@ export const GrokModelPicker: React.FC<GrokModelPickerProps> = ({
                   { id: 'all', label: 'All' },
                   { id: 'free', label: 'Free' },
                   { id: 'spark', label: 'Spark ($3)' },
-                  { id: 'fire', label: 'Fire ($7)' },
+                  { id: 'fire', label: 'Fire ($9)' },
                 ] as const
               ).map((tab) => {
                 const active = tierFilter === tab.id;
@@ -1788,7 +1727,7 @@ export const GrokModelPicker: React.FC<GrokModelPickerProps> = ({
                               : 'text-sky-400 bg-sky-500/10 border border-sky-500/20'
                           }`}
                         >
-                          {reqTier === 'free' ? 'Free' : reqTier === 'fire' ? '$7' : '$3'}
+                          {reqTier === 'free' ? 'Free' : reqTier === 'fire' ? '$9' : '$3'}
                         </span>
                       )}
                     </div>

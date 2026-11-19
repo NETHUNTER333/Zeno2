@@ -402,8 +402,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     if (allowedSlots <= 0) {
       const msg =
         currentPlan === 'spark'
-          ? `Daily file upload limit reached (${latestUsage.fileUploadLimit}/250 files used on Spark). Upgrade to Fire ($7/mo) for 1,000 file uploads/day.`
-          : `Please choose a plan to upload files — Spark ($3/mo for 250 uploads/day) or Fire ($7/mo for 1,000 uploads/day).`;
+          ? `Daily file upload limit reached (${latestUsage.fileUploadLimit}/250 files used on Spark). Upgrade to Fire ($9/mo) for Unlimited file uploads.`
+          : `Please choose a plan to upload files — Spark ($3/mo for 250 uploads/day) or Fire ($9/mo for Unlimited uploads).`;
       setUploadLimitWarning(msg);
       openPricingModal(currentPlan === 'spark' ? 'fire' : 'spark', msg);
       return;
@@ -414,8 +414,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       filesToProcess = fileList.slice(0, allowedSlots);
       const msg =
         currentPlan === 'spark'
-          ? `Attached ${allowedSlots} file(s) up to your Spark plan limit (250 uploads/day). Upgrade to Fire ($7/mo) for 1,000 uploads/day.`
-          : `Select Spark ($3/mo) or Fire ($7/mo) to upload more files.`;
+          ? `Attached ${allowedSlots} file(s) up to your Spark plan limit (250 uploads/day). Upgrade to Fire ($9/mo) for Unlimited uploads.`
+          : `Select Spark ($3/mo) or Fire ($9/mo Unlimited) to upload more files.`;
       setUploadLimitWarning(msg);
     } else {
       setUploadLimitWarning(null);
@@ -593,7 +593,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                     : 'bg-[#18181b] text-white hover:bg-neutral-800'
                 }`}
               >
-                Upgrade ($3 Spark / $7 Fire)
+                Upgrade ($3 Spark / $9 Fire)
               </button>
               <button
                 type="button"

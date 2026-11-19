@@ -15,7 +15,6 @@ import {
   DEFAULT_MODEL_TEMPERATURE,
   DEFAULT_REASONING_EFFORT,
   DEFAULT_REGULAR_MODEL_PROMPT,
-  DEFAULT_UNCENSORED_MODEL_PROMPT,
   type ReasoningEffortLevel,
 } from '../lib/modelPromptDefaults';
 import {
@@ -48,12 +47,9 @@ export const ModelSettingsPanel: React.FC<ModelSettingsPanelProps> = ({
     UserAccountStore.getPersonalization()
   );
   const [modelSearch, setModelSearch] = useState('');
-  const [tierFilter, setTierFilter] = useState<'all' | 'free' | 'spark' | 'fire' | 'uncensored'>('all');
+  const [tierFilter, setTierFilter] = useState<'all' | 'free' | 'spark' | 'fire'>('all');
   const [regularPromptDraft, setRegularPromptDraft] = useState<string>(
     () => UserAccountStore.getPersonalization().regularSystemPrompt?.trim() || DEFAULT_REGULAR_MODEL_PROMPT
-  );
-  const [uncensoredPromptDraft, setUncensoredPromptDraft] = useState<string>(
-    () => UserAccountStore.getPersonalization().uncensoredSystemPrompt?.trim() || DEFAULT_UNCENSORED_MODEL_PROMPT
   );
 
   const currentPlan = UserAccountStore.getNormalizedPlan();
@@ -63,8 +59,6 @@ export const ModelSettingsPanel: React.FC<ModelSettingsPanelProps> = ({
     const q = modelSearch.trim().toLowerCase();
     return GROK_MODELS.filter((m) => {
       const tier = getModelRequiredTier(m);
-      const isUncensored = /(?:uncensored|limitless)/i.test(m.id + ' ' + m.name);
-      if (tierFilter === 'uncensored' && !isUncensored) return false;
       if ((tierFilter === 'free' || tierFilter === 'spark' || tierFilter === 'fire') && tier !== tierFilter) {
         return false;
       }
@@ -151,7 +145,7 @@ export const ModelSettingsPanel: React.FC<ModelSettingsPanelProps> = ({
         <div>
           <h2 className="text-xl sm:text-2xl font-bold tracking-tight">Model Settings</h2>
           <p className={`text-xs sm:text-sm mt-1 ${mutedText}`}>
-            Configure default models, reasoning depth, temperature, and dedicated system prompts for regular and uncensored modes.
+            Configure default models, reasoning depth, temperature, and your default system prompt.
           </p>
         </div>
         <div className={`text-xs font-mono tabular-nums ${mutedText}`}>
@@ -443,124 +437,64 @@ export const ModelSettingsPanel: React.FC<ModelSettingsPanelProps> = ({
         </div>
       </div>
 
-      {/* Section 2: Separate System Prompts (Regular vs Uncensored) */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Regular Models System Prompt */}
-        <div className={`p-5 rounded-2xl border flex flex-col justify-between gap-3 ${cardClass}`}>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between gap-2">
-              <div>
-                <div className="text-xs font-bold uppercase tracking-wider text-neutral-400">
-                  Regular Models Prompt
-                </div>
-                <div className={`text-[11px] mt-0.5 ${mutedText}`}>
-                  Applies to standard reasoning, coding, search, and STEM models.
-                </div>
+      {/* Section 2: System Prompt */}
+      <div className={`p-5 rounded-2xl border flex flex-col justify-between gap-3 ${cardClass}`}>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <div className="text-xs font-bold uppercase tracking-wider text-neutral-400">
+                System Prompt
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setRegularPromptDraft(DEFAULT_REGULAR_MODEL_PROMPT);
-                  persistUpdate({ regularSystemPrompt: '' }, 'Regular model prompt reset to Kinich default');
-                }}
-                className={`inline-flex items-center gap-1 text-[11px] font-medium hover:text-[#FC4C01] cursor-pointer ${mutedText}`}
-              >
-                <RotateCcw className="w-3 h-3" />
-                <span>Default</span>
-              </button>
+              <div className={`text-[11px] mt-0.5 ${mutedText}`}>
+                Applies across reasoning, coding, search, vision, and study models.
+              </div>
             </div>
-            <textarea
-              rows={5}
-              value={regularPromptDraft}
-              onChange={(e) => setRegularPromptDraft(e.target.value)}
-              aria-label="Regular Models System Prompt"
-              className={`w-full p-3 rounded-xl border text-xs leading-relaxed outline-none resize-y ${inputClass}`}
-            />
-          </div>
-          <div className="flex items-center justify-between pt-1">
-            <span className={`text-[11px] font-mono tabular-nums ${mutedText}`}>
-              {regularPromptDraft.length} chars
-            </span>
             <button
               type="button"
-              onClick={() =>
-                persistUpdate(
-                  {
-                    regularSystemPrompt:
-                      regularPromptDraft.trim() === DEFAULT_REGULAR_MODEL_PROMPT
-                        ? ''
-                        : regularPromptDraft.trim(),
-                  },
-                  'Regular model prompt saved'
-                )
-              }
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer transition-colors ${
-                isDark
-                  ? 'bg-white text-black hover:bg-neutral-200'
-                  : 'bg-black text-white hover:bg-neutral-800'
-              }`}
+              onClick={() => {
+                setRegularPromptDraft(DEFAULT_REGULAR_MODEL_PROMPT);
+                persistUpdate({ regularSystemPrompt: '' }, 'System prompt reset to Kinich default');
+              }}
+              className={`inline-flex items-center gap-1 text-[11px] font-medium hover:text-[#FC4C01] cursor-pointer ${mutedText}`}
             >
-              <Save className="w-3.5 h-3.5" />
-              <span>Save Prompt</span>
+              <RotateCcw className="w-3 h-3" />
+              <span>Default</span>
             </button>
           </div>
+          <textarea
+            rows={5}
+            value={regularPromptDraft}
+            onChange={(e) => setRegularPromptDraft(e.target.value)}
+            aria-label="System Prompt"
+            className={`w-full p-3 rounded-xl border text-xs leading-relaxed outline-none resize-y ${inputClass}`}
+          />
         </div>
-
-        {/* Uncensored Models System Prompt */}
-        <div className={`p-5 rounded-2xl border flex flex-col justify-between gap-3 ${cardClass}`}>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between gap-2">
-              <div>
-                <div className="text-xs font-bold uppercase tracking-wider text-[#FC4C01]">
-                  Uncensored Models Prompt (18+)
-                </div>
-                <div className={`text-[11px] mt-0.5 ${mutedText}`}>
-                  Applies exclusively to Uncensored Pro, DeepSeek Uncensored, and Limitless models.
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setUncensoredPromptDraft(DEFAULT_UNCENSORED_MODEL_PROMPT);
-                  persistUpdate({ uncensoredSystemPrompt: '' }, 'Uncensored prompt reset to Kinich default');
-                }}
-                className={`inline-flex items-center gap-1 text-[11px] font-medium hover:text-[#FC4C01] cursor-pointer ${mutedText}`}
-              >
-                <RotateCcw className="w-3 h-3" />
-                <span>Default</span>
-              </button>
-            </div>
-            <textarea
-              rows={5}
-              value={uncensoredPromptDraft}
-              onChange={(e) => setUncensoredPromptDraft(e.target.value)}
-              aria-label="Uncensored Models System Prompt"
-              className={`w-full p-3 rounded-xl border text-xs leading-relaxed outline-none resize-y ${inputClass}`}
-            />
-          </div>
-          <div className="flex items-center justify-between pt-1">
-            <span className={`text-[11px] font-mono tabular-nums ${mutedText}`}>
-              {uncensoredPromptDraft.length} chars
-            </span>
-            <button
-              type="button"
-              onClick={() =>
-                persistUpdate(
-                  {
-                    uncensoredSystemPrompt:
-                      uncensoredPromptDraft.trim() === DEFAULT_UNCENSORED_MODEL_PROMPT
-                        ? ''
-                        : uncensoredPromptDraft.trim(),
-                  },
-                  'Uncensored model prompt saved'
-                )
-              }
-              className="px-3.5 py-1.5 rounded-xl bg-[#FC4C01] hover:bg-[#e04300] text-white text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer transition-colors"
-            >
-              <Save className="w-3.5 h-3.5" />
-              <span>Save Prompt</span>
-            </button>
-          </div>
+        <div className="flex items-center justify-between pt-1">
+          <span className={`text-[11px] font-mono tabular-nums ${mutedText}`}>
+            {regularPromptDraft.length} chars
+          </span>
+          <button
+            type="button"
+            onClick={() =>
+              persistUpdate(
+                {
+                  regularSystemPrompt:
+                    regularPromptDraft.trim() === DEFAULT_REGULAR_MODEL_PROMPT
+                      ? ''
+                      : regularPromptDraft.trim(),
+                },
+                'System prompt saved'
+              )
+            }
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer transition-colors ${
+              isDark
+                ? 'bg-white text-black hover:bg-neutral-200'
+                : 'bg-black text-white hover:bg-neutral-800'
+            }`}
+          >
+            <Save className="w-3.5 h-3.5" />
+            <span>Save Prompt</span>
+          </button>
         </div>
       </div>
 
@@ -630,8 +564,7 @@ export const ModelSettingsPanel: React.FC<ModelSettingsPanelProps> = ({
             { id: 'all', label: 'All Models' },
             { id: 'free', label: 'Free Tier' },
             { id: 'spark', label: 'Spark ($3)' },
-            { id: 'fire', label: 'Fire ($7)' },
-            { id: 'uncensored', label: 'Uncensored' },
+            { id: 'fire', label: 'Fire ($9)' },
           ].map((tab) => {
             const active = tierFilter === tab.id;
             return (

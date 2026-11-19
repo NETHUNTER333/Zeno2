@@ -504,17 +504,17 @@ export const PLAN_LIMITS: Record<
   },
   fire: {
     name: 'Fire',
-    priceMonthlyUsd: 7,
-    priceYearlyUsd: 67,
-    fileUploadLimit: 1000, // 1,000 daily file uploads
+    priceMonthlyUsd: 9,
+    priceYearlyUsd: 86,
+    fileUploadLimit: 999999, // Unlimited daily file uploads
     maxFilesPerMessage: 50,
-    messageLimit: 5000, // 5,000 daily AI messages
-    searchLimit: 2500, // 2,500 daily web searches
-    deepResearchLimit: 300, // 300 daily autonomous deep research runs
-    pdfStudyLimit: 500, // 500 daily study sessions
-    tokenLimit: 25000000, // 25M daily tokens
-    toolLimit: 10000, // 10,000 daily agent & tool calls
-    storageBytesLimit: 32212254720, // 30 GB
+    messageLimit: 999999, // Unlimited daily AI messages & Hitaishi voice turns
+    searchLimit: 999999, // Unlimited daily web searches
+    deepResearchLimit: 999999, // Unlimited daily autonomous deep research runs
+    pdfStudyLimit: 999999, // Unlimited daily study sessions
+    tokenLimit: 999999999, // Unlimited daily tokens
+    toolLimit: 999999, // Unlimited daily agent & tool calls
+    storageBytesLimit: 107374182400, // 100 GB
   },
 };
 
@@ -970,7 +970,7 @@ export const UserAccountStore = {
           ? 'Free Tier'
           : plan === 'spark'
           ? 'Spark ($3 USD)'
-          : 'Fire ($7 USD)',
+          : 'Fire ($9 USD · Unlimited)',
     };
     this.saveSubscription(sub);
 

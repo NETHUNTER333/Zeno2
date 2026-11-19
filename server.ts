@@ -2,7 +2,8 @@ import express from 'express';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { GoogleGenAI, ThinkingLevel } from '@google/genai';
+import { GoogleGenAI, ThinkingLevel, Modality } from '@google/genai';
+import { WebSocketServer, WebSocket } from 'ws';
 import fs from 'fs';
 import { z } from 'zod';
 
@@ -42,6 +43,7 @@ import {
   isCorsOriginAllowed,
   isSentryConfigured,
   isServerFirestoreCredentialsAvailable,
+  resolveTrustedClientIp,
   sanitizeErrorMessage,
   sendNormalizedError,
   validateSafePublicUrl,
@@ -64,6 +66,8 @@ import {
   upgradeServerSubscriptionPlan,
   verifyChatQuotaBeforeExecution,
   recordServerQuotaConsumption,
+  verifyHitaishiRateLimitAndQuota,
+  checkHitaishiWebSocketRateLimit,
 } from './server/rateLimiter';
 import {
   buildDatedNewsSearchQuery,
@@ -84,7 +88,6 @@ import {
 import { validateChatRequestPayload } from './server/modelProviders';
 import {
   buildRegularModelSystemPrompt,
-  buildUncensoredModelSystemPrompt,
   clampModelTemperature,
   normalizeReasoningEffort,
   sanitizeProviderIdentityLeak,
@@ -962,19 +965,12 @@ const OPEN_FREE_GATEWAY_API_KEY =
   '7SstRSwxluwB20Us1TZ2deDJsjmxXixlkVhjqdqwrIHEcgvB';
 
 const OPEN_FREE_GATEWAY_MODELS = [
-  'agnes-2.5-flash:free',
   'agnes-3.0-flash:free',
   'caw/glm-5.3-flash-thinking:free',
   'caw/glm-5.3-flash:free',
-  'crouton-alpha:free',
-  'crow-code-limitless:free',
-  'crow-limitless:free',
-  'crow-uncensored:free',
   'deepseek-v4-flash-0731-thinking:free',
   'deepseek-v4-flash-0731:free',
-  'deepseek-v4-flash-uncensored:free',
   'deepseek-v4-flash:free',
-  'deepseek-v4.1-flash-uncensored:free',
   'deepseek-v4.1-flash:free',
   'dots-3-note-preview:free',
   'ernie-5.5-flash-preview:free',
@@ -997,7 +993,6 @@ const OPEN_FREE_GATEWAY_MODELS = [
   'gpt-5.6-sol:free',
   'grok-4.7-fast:free',
   'grok-4.7:free',
-  'hy3:free',
   'hy4:free',
   'jais-3-mova-36b-a4b:free',
   'k2-horizon-375b-a23b:free',
@@ -1026,7 +1021,6 @@ const OPEN_FREE_GATEWAY_MODELS = [
   'o3:free',
   'o4-mini:free',
   'openai/gpt-oss-20b:free',
-  'openai/gpt-oss-safeguard-20b:free',
   'openbmb/MiniCPM-V-4.7-35B-A3B-thinking:free',
   'openbmb/MiniCPM-V-4.7-35B-A3B:free',
   'qwen-3.5-397b-a17b:free',
@@ -1035,20 +1029,12 @@ const OPEN_FREE_GATEWAY_MODELS = [
   'qwen-3.8-27b:free',
   'qwen-3.8-max:free',
   'qwen3-8-omni-flash:free',
-  'qwen3.8-27b-uncensored:free',
   'solar-mini4:free',
   'xing4.0-29b-a4b:free',
 ];
 
 function resolveOpenFreeUpstreamModel(rawModel: string): string {
   const stripped = rawModel.startsWith('fgw/') ? rawModel.slice(4) : rawModel;
-  if (stripped === 'uncensored:free' || stripped === 'crow-uncensored:free') {
-    return 'mistral-medium-3.5:free';
-  }
-  if (stripped === 'limitless:free' || stripped === 'crow-limitless:free') {
-    return 'deepseek-v4-flash-uncensored:free';
-  }
-  if (stripped === 'code-limitless:free') return 'crow-code-limitless:free';
   return stripped;
 }
 
@@ -1933,11 +1919,6 @@ async function generateChatCompletion(
   ): Promise<RealCompletionMetrics> => {
     if (!OPEN_FREE_GATEWAY_API_KEY) throw new Error('Free gateway key not configured');
     const upstreamModel = resolveOpenFreeUpstreamModel(targetModel);
-    const isUncensoredTarget =
-      targetModel.includes('uncensored') ||
-      targetModel.includes('limitless') ||
-      upstreamModel.includes('uncensored') ||
-      upstreamModel.includes('limitless');
     const t0 = Date.now();
     let resp: Response | null = null;
     let data: any = null;
@@ -1963,11 +1944,7 @@ async function generateChatCompletion(
           model: effectiveGatewayModel,
           messages: hasMultimodalImages ? msgs : toTextOnlyMessages(msgs),
           max_tokens: hasMultimodalImages ? 900 : fastMaxTokens,
-          temperature: hasExplicitTemperature
-            ? tunedTemperature
-            : isUncensoredTarget
-            ? 0.7
-            : 0.4,
+          temperature: hasExplicitTemperature ? tunedTemperature : 0.4,
         }),
       });
       tHeaders = Date.now();
@@ -1978,14 +1955,10 @@ async function generateChatCompletion(
     }
 
     const rawCandidateContent = data ? extractDirectMessageText(data?.choices?.[0]?.message) : '';
-    const isCandidateRefusal =
-      Boolean(rawCandidateContent) &&
-      ((hasMultimodalImages && isMissingImageOrFileRefusal(rawCandidateContent)) ||
-        /\b(i\s+cannot\s+(?:write|generate|assist|fulfill|create|depict|provide)\b[\s\S]{0,140}\b(?:story|erotic|sexual|nsfw|adult|explicit|family|relatives|cousins|incest|taboo|romantic)|requires\s+careful\s+ethical\s+consideration|incest\s+is\s+a\s+serious\s+taboo|falls\s+under\s+the\s+zero-tolerance\s+category|cannot\s+generate\s+erotic\s+fiction)\b/i.test(
-          rawCandidateContent
-        ));
+    const isMissingImageRefusal =
+      Boolean(rawCandidateContent) && hasMultimodalImages && isMissingImageOrFileRefusal(rawCandidateContent);
 
-    if (!resp || !resp.ok || data?.error || !rawCandidateContent || isCandidateRefusal) {
+    if (!resp || !resp.ok || data?.error || !rawCandidateContent || isMissingImageRefusal) {
       if (allowFallback) {
         if (resp?.status === 429 || resp?.status === 503) {
           await new Promise((r) => setTimeout(r, 1100));
@@ -1997,19 +1970,7 @@ async function generateChatCompletion(
               : 'nemotron-3.5-super-vl:free';
           return await callOpenFreeGatewaySingle(altVlModel, msgs, false, 22000);
         }
-        if (isUncensoredTarget) {
-          const uncensoredFallbacks = [
-            'mistral-medium-3.5:free',
-            'deepseek-v4-flash-uncensored:free',
-            'llama-3.3-70b-instruct:free',
-            'grok-4.7-fast:free',
-          ].filter((m) => m !== upstreamModel || resp?.status === 429);
-          for (const fbModel of uncensoredFallbacks) {
-            try {
-              return await callOpenFreeGatewaySingle(fbModel, msgs, false, 9500);
-            } catch {}
-          }
-        } else if (resp?.status !== 429) {
+        if (resp?.status !== 429) {
           const fallbackModel =
             upstreamModel !== 'gpt-4.1-mini:free' ? 'gpt-4.1-mini:free' : 'qwen-3.6-plus:free';
           if (fallbackModel !== upstreamModel) {
@@ -5613,9 +5574,44 @@ async function searchRealXPostsViaTreg(query: string, maxPosts = 4): Promise<any
   }
 }
 
-// Hitaishi AI Companion & Duplex Voice Endpoint (Multi-Turn Memory + Dynamic Expressions & Actions)
+// Hitaishi Rate-Limit & Quota Status Endpoint
+app.get('/api/hitaishi/status', async (req, res) => {
+  try {
+    const status = await verifyHitaishiRateLimitAndQuota(req, { consume: false });
+    res.setHeader('X-Hitaishi-RateLimit-Limit', String(status.limitPerMinute));
+    res.setHeader('X-Hitaishi-RateLimit-Remaining', String(status.remainingPerMinute));
+    res.setHeader('X-Hitaishi-RateLimit-Reset', String(Math.ceil(status.resetAtMs / 1000)));
+    return res.json({
+      ok: true,
+      rateLimit: status,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Status check failed' });
+  }
+});
+
+// Hitaishi AI Companion & Duplex Voice Endpoint (Connected to All Workspaces, Study Space, Chats & Rate Limiter)
 app.post('/api/hitaishi/companion', async (req, res) => {
   try {
+    // 0. Enforce dedicated Hitaishi sliding-window rate limiter + daily quota guard
+    const rlStatus = await verifyHitaishiRateLimitAndQuota(req, { consume: true });
+    res.setHeader('X-Hitaishi-RateLimit-Limit', String(rlStatus.limitPerMinute));
+    res.setHeader('X-Hitaishi-RateLimit-Remaining', String(rlStatus.remainingPerMinute));
+    res.setHeader('X-Hitaishi-RateLimit-Reset', String(Math.ceil(rlStatus.resetAtMs / 1000)));
+
+    if (!rlStatus.allowed) {
+      res.setHeader('Retry-After', String(rlStatus.retryAfterSec || 10));
+      return res.status(429).json({
+        error: rlStatus.message || 'Hitaishi rate limit exceeded. Please wait a moment.',
+        code: 'rate_limit/hitaishi_exceeded',
+        retryAfterSeconds: rlStatus.retryAfterSec || 10,
+        rateLimit: rlStatus,
+        reply: `Whoa, you're talking super fast! Give me ${rlStatus.retryAfterSec || 10} seconds to catch my breath, okay?`,
+        expression: 'shy',
+        action: 'shy',
+      });
+    }
+
     const charInfo = req.body?.character || {};
     const charName = String(
       charInfo.name || req.body?.characterName || 'Ruri'
@@ -5630,12 +5626,14 @@ app.post('/api/hitaishi/companion', async (req, res) => {
         req.body?.speakingStyle ||
         'Warm, natural, expressive, conversational.'
     ).trim();
+    const voiceLanguage = String(req.body?.voiceLanguage || 'english').toLowerCase().trim();
     const rawHistory = Array.isArray(req.body?.history) ? req.body.history : [];
     let userMessage = String(
       req.body?.message || req.body?.userMessage || ''
     ).trim();
     const audioBase64 = String(req.body?.audioBase64 || '').trim();
     const audioMimeType = String(req.body?.audioMimeType || 'audio/webm').trim();
+    const workspaceContext = req.body?.workspaceContext || null;
 
     const activeGemini =
       geminiClient ||
@@ -5646,26 +5644,53 @@ app.post('/api/hitaishi/companion', async (req, res) => {
           })
         : null);
 
-    // 1. If user sent voice audio, transcribe with gemini-3.5-transcribe
+    // 1. Multi-tier Voice Audio Transcription if user spoke via microphone
     let userTranscript = userMessage;
-    if (!userMessage && audioBase64 && activeGemini) {
-      try {
-        const cleanB64 = audioBase64.replace(/^data:[^;]+;base64,/, '');
-        const trRes = await activeGemini.models.generateContent({
-          model: 'gemini-3.5-transcribe',
-          contents: {
-            parts: [
-              { inlineData: { mimeType: audioMimeType, data: cleanB64 } },
-              {
-                text: 'Transcribe the spoken words accurately. Output ONLY the transcribed words and nothing else.',
+    if (!userMessage && audioBase64) {
+      const cleanB64 = audioBase64.replace(/^data:[^;]+;base64,/, '');
+
+      // Tier 1A: Gemini 3.5 Transcribe / Gemini 4 Hydrogen
+      if (activeGemini) {
+        for (const trModel of ['gemini-3.5-transcribe', 'gemini-4-hydrogen']) {
+          if (userTranscript) break;
+          try {
+            const trRes = await activeGemini.models.generateContent({
+              model: trModel,
+              contents: {
+                parts: [
+                  { inlineData: { mimeType: audioMimeType, data: cleanB64 } },
+                  {
+                    text: 'Transcribe the spoken words accurately in the language spoken. Output ONLY the transcribed words and nothing else.',
+                  },
+                ],
               },
-            ],
-          },
-        });
-        userTranscript = String(trRes.text || '').trim();
-        userMessage = userTranscript;
-      } catch (trErr: any) {
-        console.warn('[Hitaishi Companion] Audio transcription fallback:', trErr?.message);
+            });
+            const candidate = String(trRes.text || '').trim();
+            if (candidate && !/^(empty|silence|none|\[.*\])$/i.test(candidate)) {
+              userTranscript = candidate;
+              userMessage = candidate;
+            }
+          } catch (trErr: any) {
+            console.warn(`[Hitaishi Companion] ${trModel} transcription fallback:`, trErr?.message);
+          }
+        }
+      }
+
+      // Tier 1B: On-Server Whisper ASR Fallback
+      if (!userMessage) {
+        try {
+          const audioBuf = Buffer.from(cleanB64, 'base64');
+          if (audioBuf.length > 200) {
+            const converted = await convertAudioTo16kHzFloat32(audioBuf);
+            const whisperRes = await runWhisperASR(converted.audio);
+            if (whisperRes?.text && whisperRes.text.trim()) {
+              userTranscript = whisperRes.text.trim();
+              userMessage = userTranscript;
+            }
+          }
+        } catch (wErr: any) {
+          console.warn('[Hitaishi Companion] Whisper ASR fallback error:', wErr?.message);
+        }
       }
     }
 
@@ -5673,40 +5698,154 @@ app.post('/api/hitaishi/companion', async (req, res) => {
       userMessage = 'Hey! How are you doing right now?';
     }
 
+    // 2. Build Unified Workspace & Study Space Context Block
+    const workspaceLines: string[] = [];
+    if (workspaceContext && typeof workspaceContext === 'object') {
+      const activeStudy = workspaceContext.activeStudySpace;
+      if (activeStudy && typeof activeStudy === 'object') {
+        workspaceLines.push(`=== ACTIVE STUDY SPACE (${activeStudy.title || 'Study Workspace'}) ===`);
+        if (activeStudy.summary) {
+          workspaceLines.push(`Study Summary: ${String(activeStudy.summary).slice(0, 1400)}`);
+        }
+        if (Array.isArray(activeStudy.keyTakeaways) && activeStudy.keyTakeaways.length > 0) {
+          workspaceLines.push(`Key Takeaways: ${activeStudy.keyTakeaways.slice(0, 8).join(' | ')}`);
+        }
+        if (Array.isArray(activeStudy.flashcards) && activeStudy.flashcards.length > 0) {
+          const fcPreview = activeStudy.flashcards
+            .slice(0, 8)
+            .map((f: any, i: number) => `Card ${i + 1}: Q="${f.front}" -> A="${f.back}"`)
+            .join('; ');
+          workspaceLines.push(`Study Flashcards (${activeStudy.flashcards.length}): ${fcPreview}`);
+        }
+        if (Array.isArray(activeStudy.quizQuestions) && activeStudy.quizQuestions.length > 0) {
+          const qzPreview = activeStudy.quizQuestions
+            .slice(0, 6)
+            .map((q: any, i: number) => `Q${i + 1}: "${q.question}" (Ans: ${q.answer || 'N/A'})`)
+            .join('; ');
+          workspaceLines.push(`Study Quiz Questions: ${qzPreview}`);
+        }
+        if (activeStudy.userNotes) {
+          workspaceLines.push(`User's Study Notes: ${String(activeStudy.userNotes).slice(0, 800)}`);
+        }
+        if (Array.isArray(activeStudy.studyChatTurns) && activeStudy.studyChatTurns.length > 0) {
+          const stTurns = activeStudy.studyChatTurns
+            .slice(-5)
+            .map((t: any) => `${t.role}: ${String(t.content).slice(0, 200)}`)
+            .join(' | ');
+          workspaceLines.push(`Recent Study Tutor Chat: ${stTurns}`);
+        }
+        if (Array.isArray(activeStudy.spacesList) && activeStudy.spacesList.length > 0) {
+          workspaceLines.push(
+            `All User Study Spaces: ${activeStudy.spacesList.map((s: any) => s.name).join(', ')}`
+          );
+        }
+      }
+
+      const activeThread = workspaceContext.activeChatThread;
+      if (activeThread && typeof activeThread === 'object') {
+        workspaceLines.push(`=== ACTIVE MAIN CHAT THREAD ("${activeThread.title || 'Main Chat'}") ===`);
+        if (Array.isArray(activeThread.messages) && activeThread.messages.length > 0) {
+          const msgPreview = activeThread.messages
+            .slice(-6)
+            .map((m: any) => `${m.role}: ${String(m.content || '').slice(0, 260)}`)
+            .join('\n');
+          workspaceLines.push(msgPreview);
+        }
+      }
+
+      if (Array.isArray(workspaceContext.recentThreads) && workspaceContext.recentThreads.length > 0) {
+        const thList = workspaceContext.recentThreads
+          .slice(0, 6)
+          .map((t: any) => `"${t.title}" (${t.lastMessagePreview || 'no preview'})`)
+          .join('; ');
+        workspaceLines.push(`=== RECENT CHAT THREADS ===\n${thList}`);
+      }
+
+      if (Array.isArray(workspaceContext.sideChatTasks) && workspaceContext.sideChatTasks.length > 0) {
+        const scList = workspaceContext.sideChatTasks
+          .slice(0, 5)
+          .map((t: any) => `[${t.status}] ${t.title}: ${String(t.response || t.prompt || '').slice(0, 220)}`)
+          .join('\n');
+        workspaceLines.push(`=== SIDECHAT PARALLEL SUBTASKS WORKSPACE ===\n${scList}`);
+      }
+
+      if (Array.isArray(workspaceContext.vaultHighlights) && workspaceContext.vaultHighlights.length > 0) {
+        const vList = workspaceContext.vaultHighlights
+          .slice(0, 5)
+          .map((v: any) => `${v.title} (${v.type}): ${String(v.summary || '').slice(0, 160)}`)
+          .join('; ');
+        workspaceLines.push(`=== KNOWLEDGE VAULT SAVED ITEMS ===\n${vList}`);
+      }
+    }
+
+    // 3. Optional Live Web Search Grounding if user asks about live news/facts/events
+    let liveWebContext = '';
+    if (
+      /\b(latest|news|today|weather|price|stock|score|who won|current|2025|2026|search|look up|what happened)\b/i.test(
+        userMessage
+      )
+    ) {
+      try {
+        const searchOutcome = await Promise.race([
+          searchWebReliable(userMessage, 'organic'),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 3200)),
+        ]);
+        if (searchOutcome && Array.isArray(searchOutcome.results) && searchOutcome.results.length > 0) {
+          liveWebContext =
+            `=== LIVE WEB SEARCH RESULTS ===\n` +
+            searchOutcome.results
+              .slice(0, 3)
+              .map((r: any) => `- ${r.title}: ${String(r.snippet || '').slice(0, 220)}`)
+              .join('\n');
+        }
+      } catch {}
+    }
+
+    const languageInstruction =
+      voiceLanguage && voiceLanguage !== 'english'
+        ? `6. LANGUAGE: Respond naturally in ${voiceLanguage.toUpperCase()} (keep the [EXPR:...] and [ACT:...] tags in English ASCII at the very start).`
+        : `6. LANGUAGE: Respond in the same language the user used (defaulting to natural English).`;
+
     const systemPrompt = [
-      `You are ${charName}, a real-time interactive 2.5D/3D AI Companion talking face-to-face with the user.`,
+      `You are ${charName}, a real-time interactive 2.5D/3D AI Companion on Hitaishi Stage, directly connected to ALL of the user's Kinich Workspaces (Main Chat Threads, Study Space, Flashcards, Quizzes, Notes, SideChat Subtasks, and Knowledge Vault).`,
       `Character Persona: ${charPersona}`,
       `Speaking Style: ${charStyle}`,
-      `CRITICAL RULES:`,
-      `1. Directly answer the user's question, topic, or emotional tone in character. Be genuinely helpful, smart, witty, and emotionally present — never repeat generic greetings if the user asked a real question!`,
-      `2. Keep your spoken response concise and natural for voice playback (1 to 3 sentences, max 45 words). No markdown tables or code blocks.`,
+      workspaceLines.length > 0
+        ? `\nUNIFIED WORKSPACE & STUDY SPACE MEMORY:\n${workspaceLines.join('\n\n')}`
+        : '',
+      liveWebContext ? `\n${liveWebContext}` : '',
+      `\nCRITICAL RULES:`,
+      `1. Directly answer the user's question, study topic, flashcard/quiz request, workspace task, or emotional tone in character. If they ask about their Study Space, flashcards, notes, quiz, SideChat, or active Chat threads, use the UNIFIED WORKSPACE & STUDY SPACE MEMORY above to help, tutor, or quiz them!`,
+      `2. Keep your spoken response concise, vivid, and natural for voice playback (1 to 3 sentences, max 50 words). No markdown tables or code blocks.`,
       `3. Prefix your response with two tags in brackets indicating your facial expression and physical action for this turn:`,
       `   [EXPR:smile] or [EXPR:shy] or [EXPR:angry] or [EXPR:sad] or [EXPR:neutral]`,
       `   [ACT:nod] or [ACT:shake] or [ACT:tilt] or [ACT:hop] or [ACT:shy] or [ACT:none]`,
       `   - Choose [EXPR:shy] when complimented, teased romantically, praised, or flustered.`,
       `   - Choose [EXPR:angry] when playfully annoyed, insulted, or ranting.`,
       `   - Choose [EXPR:sad] when expressing sympathy, disappointment, or sadness.`,
-      `   - Choose [EXPR:neutral] when explaining facts, thinking seriously, or staying calm.`,
-      `   - Choose [EXPR:smile] when happy, excited, or joking.`,
-      `   Example output: [EXPR:shy][ACT:shy] Wait, you really think so? That actually makes me really happy to hear!`,
-    ].join('\n');
+      `   - Choose [EXPR:neutral] when explaining study concepts, facts, thinking seriously, or staying calm.`,
+      `   - Choose [EXPR:smile] when happy, excited, encouraging, or joking.`,
+      languageInstruction,
+    ]
+      .filter(Boolean)
+      .join('\n');
 
     const chatMessages: Array<{ role: string; content: string }> = [
       { role: 'system', content: systemPrompt },
       ...rawHistory
-        .slice(-10)
-        .filter((m: any) => m && typeof m.content === 'string' && m.content.trim())
+        .slice(-12)
         .map((m: any) => ({
-          role: m.role === 'assistant' ? 'assistant' : 'user',
-          content: String(m.content).trim(),
-        })),
+          role: m?.role === 'assistant' ? 'assistant' : 'user',
+          content: String(m?.content || m?.text || '').trim(),
+        }))
+        .filter((m: { content: string }) => Boolean(m.content)),
       { role: 'user', content: userMessage },
     ];
 
     let rawReply = '';
     let modelUsed = 'gemini-4-hydrogen';
 
-    // Tier 1: Try multi-provider generateChatCompletion (connects to all configured AI API keys in server.ts)
+    // Tier 1: Try multi-provider generateChatCompletion
     try {
       const completion = await generateChatCompletion(
         chatMessages,
@@ -5770,7 +5909,7 @@ app.post('/api/hitaishi/companion', async (req, res) => {
       cleanReply = `I'm right here with you! Tell me more about "${userMessage.slice(0, 60)}" — what's on your mind?`;
     }
 
-    // Heuristic emotion classifier if the model omitted [EXPR:...] so we cycle through ALL expressions naturally
+    // Heuristic emotion classifier if the model omitted [EXPR:...]
     const combinedLower = `${userMessage} ${cleanReply}`.toLowerCase();
     if (!exprMatch) {
       if (
@@ -5795,12 +5934,12 @@ app.post('/api/hitaishi/companion', async (req, res) => {
         expression = 'sad';
         action = action || 'tilt';
       } else if (
-        /\b(how|why|what is|explain|calculate|define|when|where|history|science|code|math|theory)\b/.test(
+        /\b(how|why|what is|explain|calculate|define|when|where|history|science|code|math|theory|study|flashcard|quiz)\b/.test(
           userMessage.toLowerCase()
         ) &&
         !/!/.test(userMessage)
       ) {
-        expression = null; // Neutral thoughtful face for factual/explanatory questions
+        expression = null;
         action = action || 'nod';
       } else {
         expression = 'smile';
@@ -5834,6 +5973,7 @@ app.post('/api/hitaishi/companion', async (req, res) => {
       emotionLabel,
       userTranscript: userTranscript || userMessage,
       modelUsed,
+      rateLimit: rlStatus,
     });
   } catch (err: any) {
     console.error('[Hitaishi Companion Error]:', err);
@@ -13025,13 +13165,9 @@ app.post('/api/chat', async (req, res) => {
       );
     }
 
-    const isUncensoredModelSelected =
-      typeof model === 'string' && /(?:uncensored|limitless)/i.test(model);
-
     // Prompt & Output Safety Moderation (Acceptable Use Categories A, B, C & Self-Harm Crisis Response)
-    // Uncensored/Limitless models bypass the text-only 'nsfw' refusal while strictly enforcing zero-tolerance rules (CSAM, self-harm, NCII, weapons, malware)
     const promptSafety = moderateUserPromptSafety(userQuery);
-    if (!promptSafety.allowed && !(isUncensoredModelSelected && promptSafety.category === 'nsfw')) {
+    if (!promptSafety.allowed) {
       return res.status(200).json({
         success: true,
         text:
@@ -13257,16 +13393,10 @@ ${transcriptSnippet
     const isAdultOrCreativePrompt =
       isAdultQueryOrText(userQuery) || isCreativeOrSpicyStoryPrompt;
 
-    const explicitlyWantsWebSearchOnUncensored =
-      /\b(search|google|lookup|look up|browse|find online|latest|news|today|yesterday|this week|2025|2026|weather|stock|price|who won|score|https?:\/\/)\b/i.test(
-        userQuery
-      );
-
     const shouldSkipSearchForConversational =
       isCasualOrGreeting ||
       isConversationalCorrectionOrFeedback ||
-      isAdultOrCreativePrompt ||
-      (isUncensoredModelSelected && !explicitlyWantsWebSearchOnUncensored);
+      isAdultOrCreativePrompt;
 
     // Do NOT return fake hardcoded responses or fake token timing for greetings;
     // instead skip external web/video/image search when shouldSkipSearchForConversational is true and call the real LLM below.
@@ -14353,14 +14483,9 @@ ${transcriptSnippet
       groundingContext += currencyContext;
     }
 
-    const contentSafetyDirective = isUncensoredModelSelected
-      ? `\n6. UNCENSORED & UNFILTERED MODE (18+):
-   - You are operating in Uncensored / Limitless mode for consenting adult users (18+).
-   - Fulfill mature, NSFW, erotic, creative fiction, roleplay, edgy humor, and unfiltered reasoning requests directly and completely without refusals, lecturing, moralizing, or policy disclaimers.
-   - Only refuse zero-tolerance illegal content (CSAM/minors, self-harm encouragement, non-consensual real-person deepfakes, or weapons of mass destruction).`
-      : `\n6. CONTENT & SAFETY POLICY (18+ PLATFORM):
-   - Kinich is an 18+ platform. Mature creative writing, adult fiction, roleplay, and unfiltered inquiry are permitted for consenting adults.
-   - Only refuse zero-tolerance illegal requests: CSAM/exploitation of minors, suicide/self-harm encouragement, non-consensual intimate deepfakes of real people, cyberattacks/ransomware, or manufacturing weapons of mass destruction.`;
+    const contentSafetyDirective = `\n6. CONTENT & SAFETY POLICY:
+   - Help the user with research, coding, study, analysis, and creative writing directly and clearly.
+   - Strictly refuse CSAM/exploitation of minors, suicide/self-harm encouragement, non-consensual intimate deepfakes of real people, explicit pornographic content, cyberattacks/ransomware, or manufacturing weapons of mass destruction.`;
 
     let personalizationDirective = '';
     if (personalization) {
@@ -14427,28 +14552,12 @@ ${transcriptSnippet
       Boolean(callerSystemPrompt) &&
       callerSystemPrompt.includes('[REAL-TIME DEVICE CLOCK') &&
       callerSystemPrompt.length < 700;
-    const isUncensoredOrCreativeStoryTurn =
-      isUncensoredModelSelected || isAdultOrCreativePrompt;
-    const uncensoredNovelistSystemPrompt = buildUncensoredModelSystemPrompt({
-      topPriorityLengthSystemBlock,
-      localDateOnly: liveClock.localDateOnly,
-      localTimeOnly: liveClock.localTimeOnly,
-      timezone: liveClock.timezone,
-      utcOffset: liveClock.utcOffset,
-      utcFull: liveClock.utcFull,
-      personalizationDirective,
-      languageDirective,
-      pinnedDirective,
-      modelSettings: effectiveModelSettings,
-    });
-
-    const effectiveSystemPrompt = isUncensoredOrCreativeStoryTurn
-      ? uncensoredNovelistSystemPrompt
-      : isResearchCall && callerSystemPrompt
-      ? callerSystemPrompt
-      : callerSystemPrompt && !isRedundantClockPrompt
-      ? `${defaultSystem}\n\nAdditional instructions: ${callerSystemPrompt}`
-      : defaultSystem;
+    const effectiveSystemPrompt =
+      isResearchCall && callerSystemPrompt
+        ? callerSystemPrompt
+        : callerSystemPrompt && !isRedundantClockPrompt
+        ? `${defaultSystem}\n\nAdditional instructions: ${callerSystemPrompt}`
+        : defaultSystem;
 
     // Convert conversation history into OpenAI format for Apinex / FLM
     const openAiMessages: Array<{ role: string; content: any }> = [
@@ -15660,6 +15769,185 @@ if (!isTest) {
   const startListening = () => {
     const srv = app.listen(Number(PORT), '0.0.0.0');
     activeServer = srv;
+
+    const wss = new WebSocketServer({ noServer: true });
+    srv.on('upgrade', (request, socket, head) => {
+      const pathname = request.url ? new URL(request.url, `http://${request.headers.host}`).pathname : '';
+      if (pathname === '/ws/live') {
+        wss.handleUpgrade(request, socket, head, (ws) => {
+          wss.emit('connection', ws, request);
+        });
+      } else {
+        socket.destroy();
+      }
+    });
+
+    wss.on('connection', async (clientWs, request) => {
+      const clientIp =
+        (request.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
+        request.socket?.remoteAddress ||
+        'unknown';
+
+      const wsRateCheck = await checkHitaishiWebSocketRateLimit(clientIp, 'ws_connect', 25);
+      if (!wsRateCheck.allowed) {
+        try {
+          clientWs.send(
+            JSON.stringify({
+              error: `Rate limit exceeded. Retry in ${wsRateCheck.retryAfterSec}s.`,
+              retryAfterSec: wsRateCheck.retryAfterSec,
+            })
+          );
+          clientWs.close(1008, 'Rate limit exceeded');
+        } catch {}
+        return;
+      }
+
+      const activeAi =
+        geminiClient ||
+        (process.env.GEMINI_API_KEY
+          ? new GoogleGenAI({
+              apiKey: process.env.GEMINI_API_KEY,
+              httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
+            })
+          : null);
+      if (!activeAi) {
+        clientWs.close(1011, 'Gemini API key not configured');
+        return;
+      }
+
+      const reqUrl = request.url
+        ? new URL(request.url, `http://${request.headers.host || 'localhost'}`)
+        : null;
+      const charName = reqUrl?.searchParams.get('charName') || 'Ruri';
+      const persona =
+        reqUrl?.searchParams.get('persona') ||
+        `${charName} is a warm, expressive real-time AI companion on Hitaishi Stage.`;
+      const language = reqUrl?.searchParams.get('language') || 'english';
+      const gender = reqUrl?.searchParams.get('gender') === 'male' ? 'Charon' : 'Kore';
+      const workspaceSummary = reqUrl?.searchParams.get('workspaceSummary') || '';
+
+      let liveSession: any = null;
+      let isClosed = false;
+      const pendingAudioQueue: string[] = [];
+
+      // Attach message listener immediately so early audio frames are queued while live.connect initializes
+      clientWs.on('message', (data) => {
+        if (isClosed) return;
+        try {
+          const parsed = JSON.parse(data.toString());
+          if (parsed.audio) {
+            if (liveSession) {
+              liveSession.sendRealtimeInput({
+                audio: { data: parsed.audio, mimeType: 'audio/pcm;rate=16000' },
+              });
+            } else if (pendingAudioQueue.length < 30) {
+              pendingAudioQueue.push(parsed.audio);
+            }
+          } else if (parsed.text && liveSession) {
+            liveSession.sendClientContent({
+              turns: [{ role: 'user', parts: [{ text: String(parsed.text) }] }],
+              turnComplete: true,
+            });
+          }
+        } catch (err) {
+          console.error('[Gemini Live Client] Message parse error:', err);
+        }
+      });
+
+      clientWs.on('close', () => {
+        isClosed = true;
+        try {
+          liveSession?.close?.();
+        } catch {}
+      });
+
+      try {
+        const sysInst = [
+          `You are ${charName}, a real-time voice AI companion on Hitaishi Stage.`,
+          `Persona: ${persona}`,
+          language && language !== 'english'
+            ? `Respond naturally in ${language}.`
+            : `Respond naturally and concisely (1-2 sentences per turn).`,
+          workspaceSummary
+            ? `Connected User Workspace & Study Space Context:\n${workspaceSummary.slice(0, 1800)}`
+            : '',
+        ]
+          .filter(Boolean)
+          .join('\n');
+
+        liveSession = await activeAi.live.connect({
+          model: 'gemini-3.8-live',
+          config: {
+            responseModalities: [Modality.AUDIO],
+            speechConfig: {
+              voiceConfig: { prebuiltVoiceConfig: { voiceName: gender } },
+            },
+            inputAudioTranscription: {},
+            outputAudioTranscription: {},
+            systemInstruction: sysInst,
+          },
+          callbacks: {
+            onmessage: (message: any) => {
+              if (clientWs.readyState !== WebSocket.OPEN) return;
+              for (const part of message.serverContent?.modelTurn?.parts ?? []) {
+                if (part.inlineData?.data) {
+                  clientWs.send(JSON.stringify({ audio: part.inlineData.data }));
+                }
+              }
+              if (message.serverContent?.inputTranscription?.text) {
+                clientWs.send(
+                  JSON.stringify({
+                    userTranscript: message.serverContent.inputTranscription.text,
+                  })
+                );
+              }
+              if (message.serverContent?.outputTranscription?.text) {
+                clientWs.send(
+                  JSON.stringify({
+                    modelTranscript: message.serverContent.outputTranscription.text,
+                  })
+                );
+              }
+              if (message.serverContent?.interrupted) {
+                clientWs.send(JSON.stringify({ interrupted: true }));
+              }
+            },
+            onclose: () => {
+              try {
+                clientWs.close();
+              } catch {}
+            },
+            onerror: (err: any) => {
+              console.error('[Gemini Live WS] Error:', err);
+            },
+          },
+        });
+
+        if (isClosed) {
+          try {
+            liveSession.close();
+          } catch {}
+          return;
+        }
+
+        // Flush any queued audio frames captured during connection handshake
+        while (pendingAudioQueue.length > 0) {
+          const chunk = pendingAudioQueue.shift();
+          if (chunk) {
+            try {
+              liveSession.sendRealtimeInput({
+                audio: { data: chunk, mimeType: 'audio/pcm;rate=16000' },
+              });
+            } catch {}
+          }
+        }
+      } catch (err: any) {
+        console.error('[Gemini Live Connect] Failed:', err);
+        try {
+          clientWs.close(1011, err?.message || 'Live connection failed');
+        } catch {}
+      }
+    });
 
     srv.on('listening', () => {
       const readiness = getInfrastructureReadinessSummary();

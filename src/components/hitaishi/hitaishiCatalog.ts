@@ -165,13 +165,6 @@ export const HITAISHI_BACKGROUNDS: HitaishiBackgroundOption[] = [
     swatch: '#312E81',
   },
   {
-    id: 'obsidian',
-    label: 'Obsidian Dark',
-    type: 'solid',
-    value: '#09090B',
-    swatch: '#09090B',
-  },
-  {
     id: 'greenscreen',
     label: 'Chroma Green (OBS)',
     type: 'greenscreen',

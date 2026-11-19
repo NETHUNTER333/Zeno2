@@ -162,7 +162,9 @@ export function classifyRouteTier(routePath: string): RateLimitTier {
     routePath === '/chat' ||
     routePath === '/summarize' ||
     routePath === '/pdf/study' ||
-    routePath.startsWith('/study/')
+    routePath.startsWith('/study/') ||
+    routePath === '/hitaishi/companion' ||
+    routePath.startsWith('/hitaishi/')
   ) {
     return 'ai_generation';
   }
@@ -622,14 +624,14 @@ export const SERVER_PLAN_LIMITS: Record<SubscriptionPlanTier, ServerPlanLimits> 
   },
   fire: {
     name: 'Fire',
-    priceMonthly: 7,
-    fileUploadLimit: 1000, // 1,000 daily file uploads
+    priceMonthly: 9,
+    fileUploadLimit: 999_999, // Unlimited daily file uploads
     maxFilesPerMessage: 50,
-    messageLimit: 5000, // 5,000 daily AI messages
-    searchLimit: 2500, // 2,500 daily web searches
-    deepResearchLimit: 300, // 300 daily autonomous deep research runs
-    pdfStudyLimit: 500, // 500 daily study sessions
-    tokenLimit: 25_000_000,
+    messageLimit: 999_999, // Unlimited daily AI messages & Hitaishi turns
+    searchLimit: 999_999, // Unlimited daily web searches
+    deepResearchLimit: 999_999, // Unlimited daily autonomous deep research runs
+    pdfStudyLimit: 999_999, // Unlimited daily study sessions
+    tokenLimit: 999_999_999, // Unlimited daily tokens
   },
 };
 
@@ -648,10 +650,6 @@ const SERVER_FREE_MODELS = new Set<string>([
   'zro/glm-5.3-flash',
   'zro-glm-5.3-flash',
   'glm-5.3-flash',
-  // Uncensored Pro (Free for all users)
-  'fgw-uncensored-free',
-  'fgw/uncensored:free',
-  'crow-uncensored:free',
 ]);
 
 const SERVER_FIRE_MODELS = new Set<string>([
@@ -713,16 +711,6 @@ const SERVER_FIRE_MODELS = new Set<string>([
   'ar/reflection/beam-1.0',
   'ar-pareto-code-router',
   'ar/openrouter/pareto-code',
-  'fgw-limitless-free',
-  'fgw/limitless:free',
-  'crow-limitless:free',
-  'fgw-code-limitless-free',
-  'fgw/code-limitless:free',
-  'crow-code-limitless:free',
-  'fgw-deepseek-v4-flash-uncensored-free',
-  'fgw/deepseek-v4-flash-uncensored:free',
-  'fgw-qwen3.8-27b-uncensored-free',
-  'fgw/qwen3.8-27b-uncensored:free',
   'fgw-deepseek-v4-flash-0731-thinking-free',
   'fgw/deepseek-v4-flash-0731-thinking:free',
   'fgw-gemini-3.1-pro-free',
@@ -761,6 +749,9 @@ const SERVER_FIRE_MODELS = new Set<string>([
   'fgw/k2-horizon-375b-a23b:free',
   'fgw-hy4-free',
   'fgw/hy4:free',
+  'fgw-pixtral-large-2-vision',
+  'radox-gpt-6-omni-vision',
+  'itera-gemini-4-ultra-vision',
 ]);
 
 export function classifyServerModelTier(rawModel: string | undefined): SubscriptionPlanTier {
@@ -1264,10 +1255,10 @@ export function verifyChatQuotaBeforeExecution(
   const { limits, plan } = snapshot;
   const enforceInTest = req.headers['x-zeno-enforce-quota'] === 'true';
 
-  // 1. Model Tier Enforcement (Spark $3 / Fire $7 lock)
+  // 1. Model Tier Enforcement (Spark $3 / Fire $9 lock)
   const requiredModelTier = classifyServerModelTier(options.model);
   if (!canPlanUseModelTier(plan, requiredModelTier)) {
-    const tierLabel = requiredModelTier === 'fire' ? 'Fire ($7/mo)' : 'Spark ($3/mo)';
+    const tierLabel = requiredModelTier === 'fire' ? 'Fire ($9/mo Unlimited)' : 'Spark ($3/mo)';
     return {
       allowed: false,
       statusCode: 403,
@@ -1283,7 +1274,7 @@ export function verifyChatQuotaBeforeExecution(
     return { allowed: true, statusCode: 200, snapshot };
   }
 
-  // 2. Daily Prompt / Message Quota Enforcement (1,500 on Spark, 5,000 on Fire)
+  // 2. Daily Prompt / Message Quota Enforcement (1,500 on Spark, Unlimited on Fire)
   if (snapshot.messagesUsed >= limits.messageLimit) {
     const upgradeTarget: SubscriptionPlanTier = plan === 'spark' ? 'fire' : 'spark';
     return {
@@ -1291,12 +1282,12 @@ export function verifyChatQuotaBeforeExecution(
       statusCode: 429,
       code: 'quota/messages_exceeded',
       requiredTier: upgradeTarget,
-      message: `Daily message limit reached (${snapshot.messagesUsed}/${limits.messageLimit} prompts used on ${limits.name}). Upgrade to Fire ($7/mo) for 5,000 messages/day.`,
+      message: `Daily message limit reached (${snapshot.messagesUsed}/${limits.messageLimit} prompts used on ${limits.name}). Upgrade to Fire ($9/mo) for Unlimited messages.`,
       snapshot,
     };
   }
 
-  // 3. Daily File Upload Quota Enforcement (250 on Spark, 1,000 on Fire)
+  // 3. Daily File Upload Quota Enforcement (250 on Spark, Unlimited on Fire)
   const attachmentsCount = Math.max(0, Number(options.attachmentsCount) || 0);
   if (attachmentsCount > 0) {
     if (attachmentsCount > limits.maxFilesPerMessage) {
@@ -1306,7 +1297,7 @@ export function verifyChatQuotaBeforeExecution(
         statusCode: 429,
         code: 'quota/uploads_exceeded',
         requiredTier: upgradeTarget,
-        message: `Your ${limits.name} plan allows up to ${limits.maxFilesPerMessage} files per message. Upgrade to Fire ($7/mo) for up to 50 files/message (1,000/day).`,
+        message: `Your ${limits.name} plan allows up to ${limits.maxFilesPerMessage} files per message. Upgrade to Fire ($9/mo) for up to 50 files/message (Unlimited/day).`,
         snapshot,
       };
     }
@@ -1317,13 +1308,13 @@ export function verifyChatQuotaBeforeExecution(
         statusCode: 429,
         code: 'quota/uploads_exceeded',
         requiredTier: upgradeTarget,
-        message: `Daily file upload limit reached (${snapshot.filesUploaded}/${limits.fileUploadLimit} files used on ${limits.name}). Upgrade to Fire ($7/mo) for 1,000 uploads/day.`,
+        message: `Daily file upload limit reached (${snapshot.filesUploaded}/${limits.fileUploadLimit} files used on ${limits.name}). Upgrade to Fire ($9/mo) for Unlimited uploads.`,
         snapshot,
       };
     }
   }
 
-  // 4. Deep Research Quota Enforcement (100 on Spark, 300 on Fire)
+  // 4. Deep Research Quota Enforcement (100 on Spark, Unlimited on Fire)
   if (options.isResearchMode && snapshot.deepResearchUsed >= limits.deepResearchLimit) {
     const upgradeTarget: SubscriptionPlanTier = plan === 'spark' ? 'fire' : 'spark';
     return {
@@ -1331,7 +1322,7 @@ export function verifyChatQuotaBeforeExecution(
       statusCode: 429,
       code: 'quota/deep_research_exceeded',
       requiredTier: upgradeTarget,
-      message: `Daily Deep Research limit reached (${snapshot.deepResearchUsed}/${limits.deepResearchLimit} runs used on ${limits.name}). Upgrade to Fire ($7/mo) for 300 autonomous research runs/day.`,
+      message: `Daily Deep Research limit reached (${snapshot.deepResearchUsed}/${limits.deepResearchLimit} runs used on ${limits.name}). Upgrade to Fire ($9/mo) for Unlimited autonomous research runs.`,
       snapshot,
     };
   }
@@ -1395,3 +1386,138 @@ export function recordServerQuotaConsumption(
   void syncQuotaRecordToFirestore(rec);
   return getServerQuotaSnapshot(req);
 }
+
+// ============================================================================
+// HITAISHI COMPANION DEDICATED SLIDING-WINDOW RATE LIMITER & QUOTA GUARD
+// Enforces per-minute voice/text companion burst limits + daily quota ledger
+// ============================================================================
+
+export interface HitaishiRateLimitStatus {
+  allowed: boolean;
+  limitPerMinute: number;
+  remainingPerMinute: number;
+  resetAtMs: number;
+  retryAfterSec: number;
+  dailyUsed: number;
+  dailyLimit: number;
+  dailyRemaining: number;
+  plan: SubscriptionPlanTier;
+  message?: string;
+}
+
+const HITAISHI_WINDOW_MS = 60_000;
+const HITAISHI_UNAUTH_MAX_PER_MIN = 15;
+const HITAISHI_AUTH_MAX_PER_MIN = 35;
+
+export async function verifyHitaishiRateLimitAndQuota(
+  req: Request,
+  options?: { consume?: boolean }
+): Promise<HitaishiRateLimitStatus> {
+  const consume = options?.consume !== false;
+  const uid = req.auth?.uid || null;
+  const clientIp = resolveTrustedClientIp(req);
+  const principalKey = uid ? `uid:${uid}` : `ip:${clientIp}`;
+  const bucketKey = `${principalKey}:hitaishi_companion`;
+  const snapshot = getServerQuotaSnapshot(req);
+  const maxPerMin =
+    snapshot.plan === 'fire'
+      ? 120
+      : uid
+      ? HITAISHI_AUTH_MAX_PER_MIN
+      : HITAISHI_UNAUTH_MAX_PER_MIN;
+  const dailyUsed = snapshot.messagesUsed;
+  const dailyLimit = snapshot.limits.messageLimit;
+  const dailyRemaining = Math.max(0, dailyLimit - dailyUsed);
+
+  if (!consume) {
+    return {
+      allowed: dailyRemaining > 0,
+      limitPerMinute: maxPerMin,
+      remainingPerMinute: maxPerMin,
+      resetAtMs: Date.now() + HITAISHI_WINDOW_MS,
+      retryAfterSec: 0,
+      dailyUsed,
+      dailyLimit,
+      dailyRemaining,
+      plan: snapshot.plan,
+    };
+  }
+
+  let burstCheck: RateLimitCheckResult;
+  try {
+    burstCheck = await primaryStore.incrementAndCheck(
+      bucketKey,
+      HITAISHI_WINDOW_MS,
+      maxPerMin
+    );
+  } catch {
+    burstCheck = await emergencyFallbackStore.incrementAndCheck(
+      bucketKey,
+      HITAISHI_WINDOW_MS,
+      maxPerMin
+    );
+  }
+
+  if (!burstCheck.allowed) {
+    return {
+      allowed: false,
+      limitPerMinute: burstCheck.limit,
+      remainingPerMinute: 0,
+      resetAtMs: burstCheck.resetAtMs,
+      retryAfterSec: burstCheck.retryAfterSec,
+      dailyUsed,
+      dailyLimit,
+      dailyRemaining,
+      plan: snapshot.plan,
+      message: `Hitaishi rate limit reached (${burstCheck.limit}/min). Please wait ${burstCheck.retryAfterSec}s.`,
+    };
+  }
+
+  const enforceInTest = req.headers['x-zeno-enforce-quota'] === 'true';
+  if (!isTestRuntime() || enforceInTest) {
+    if (dailyUsed >= dailyLimit) {
+      return {
+        allowed: false,
+        limitPerMinute: burstCheck.limit,
+        remainingPerMinute: burstCheck.remaining,
+        resetAtMs: burstCheck.resetAtMs,
+        retryAfterSec: 30,
+        dailyUsed,
+        dailyLimit,
+        dailyRemaining: 0,
+        plan: snapshot.plan,
+        message: `Daily Hitaishi & AI message quota reached (${dailyUsed}/${dailyLimit} on ${snapshot.limits.name}). Upgrade your plan for higher daily limits.`,
+      };
+    }
+  }
+
+  const updatedSnapshot = recordServerQuotaConsumption(req, { messages: 1 });
+  return {
+    allowed: true,
+    limitPerMinute: burstCheck.limit,
+    remainingPerMinute: burstCheck.remaining,
+    resetAtMs: burstCheck.resetAtMs,
+    retryAfterSec: 0,
+    dailyUsed: updatedSnapshot.messagesUsed,
+    dailyLimit: updatedSnapshot.limits.messageLimit,
+    dailyRemaining: Math.max(
+      0,
+      updatedSnapshot.limits.messageLimit - updatedSnapshot.messagesUsed
+    ),
+    plan: updatedSnapshot.plan,
+  };
+}
+
+export async function checkHitaishiWebSocketRateLimit(
+  clientIp: string,
+  bucketSuffix = 'ws_connect',
+  maxPerMin = 20
+): Promise<RateLimitCheckResult> {
+  const key = `ip:${clientIp || 'unknown'}:hitaishi_${bucketSuffix}`;
+  try {
+    return await primaryStore.incrementAndCheck(key, HITAISHI_WINDOW_MS, maxPerMin);
+  } catch {
+    return await emergencyFallbackStore.incrementAndCheck(key, HITAISHI_WINDOW_MS, maxPerMin);
+  }
+}
+

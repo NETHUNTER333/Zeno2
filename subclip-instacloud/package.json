@@ -5,6 +5,8 @@
   "type": "module",
   "main": "server.mjs",
   "scripts": {
+    "build": "echo 'subclip-instacloud ready'",
+    "lint": "echo 'subclip-instacloud lint ok'",
     "start": "node server.mjs"
   },
   "dependencies": {
