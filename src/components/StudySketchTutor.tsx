@@ -643,27 +643,6 @@ export const StudySketchTutor: React.FC<StudySketchTutorProps> = ({
     } catch {}
   }, [lesson.title, stepIdx]);
 
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'z' || e.shiftKey) return;
-      const target = e.target as HTMLElement | null;
-      if (
-        target &&
-        (target.tagName === 'INPUT' ||
-          target.tagName === 'TEXTAREA' ||
-          target.isContentEditable)
-      ) {
-        return;
-      }
-      if (studentStrokes.length > 0) {
-        e.preventDefault();
-        handleUndoStroke();
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [handleUndoStroke, studentStrokes.length]);
-
   const loadPreset = useCallback(async (key: SketchPresetKey) => {
     const presetLesson = getPresetSketchLesson(key);
     setLesson(presetLesson);
@@ -1110,7 +1089,7 @@ export const StudySketchTutor: React.FC<StudySketchTutorProps> = ({
                   <button
                     type="button"
                     onClick={handleUndoStroke}
-                    title="Undo last stroke (⌘Z)"
+                    title="Undo last stroke"
                     aria-label="Undo last stroke"
                     className={`size-8 rounded-xl border inline-flex items-center justify-center cursor-pointer ${ghostBtn}`}
                   >

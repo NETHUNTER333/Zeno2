@@ -39,6 +39,26 @@ function zenoStaticPrerenderPlugin() {
         }
         const html404 = renderPrerendered404Html(rawHtml, '/404');
         fs.writeFileSync(path.resolve(distDir, '404.html'), html404, 'utf8');
+
+        // Prune unreferenced upload screenshots from dist so web deploys and Android APKs stay lean
+        const keepAistudioAssets = new Set([
+          'kinich-icon-1024_544040c6.png',
+          'IMG_b19e3948-9e9c-40a0-92b9-9924f87dff0f_d403c7fb.jpg',
+          'IMG_f15b9024-053c-4665-9ad8-fde18e6bca08_1a22887e.jpg',
+        ]);
+        const distAistudioDir = path.resolve(distDir, 'assets', 'aistudio');
+        if (fs.existsSync(distAistudioDir)) {
+          for (const entry of fs.readdirSync(distAistudioDir)) {
+            if (!keepAistudioAssets.has(entry)) {
+              fs.rmSync(path.resolve(distAistudioDir, entry), { recursive: true, force: true });
+            }
+          }
+        }
+        // Remove duplicate legacy hitaishi-characters copy from dist (client uses /hitaishi-assets/characters)
+        const distLegacyCharsDir = path.resolve(distDir, 'hitaishi-characters');
+        if (fs.existsSync(distLegacyCharsDir)) {
+          fs.rmSync(distLegacyCharsDir, { recursive: true, force: true });
+        }
       } catch (err) {
         console.warn('[zeno-static-prerender] Warning:', err);
       }
@@ -61,7 +81,7 @@ export default defineConfig(() => {
       format: 'es' as const,
     },
     build: {
-      sourcemap: 'hidden' as const,
+      sourcemap: false,
       rolldownOptions: {
         output: {
           manualChunks(id: string) {

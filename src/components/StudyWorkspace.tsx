@@ -79,7 +79,6 @@ import { StudyPhysicsVisualizeLab } from './StudyPhysicsVisualizeLab';
 import { StudySketchTutor } from './StudySketchTutor';
 import { StudyFocusTimer } from './StudyFocusTimer';
 import { StudyFormulaScratchpad } from './StudyFormulaScratchpad';
-import type { CommandStudyLabMode } from './CommandPaletteModal';
 import { StudyLanguageDropdown } from './CustomSearchSelect';
 import {
   StudyLoopStore,
@@ -101,12 +100,6 @@ export interface StudyWorkspaceProps {
     pdfName?: string;
     extractedText?: string;
   } | null;
-  initialLabMode?: {
-    mode: CommandStudyLabMode;
-    title: string;
-    seq: number;
-  } | null;
-  initialOpenFormulasSeq?: number;
   onBackToChat: () => void;
   isDark?: boolean;
   onAskKinich?: (prompt: string) => void;
@@ -411,8 +404,6 @@ export function buildDetailedStatementBreakdown(
 export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
   initialVideo,
   initialPdf,
-  initialLabMode,
-  initialOpenFormulasSeq,
   onBackToChat,
   isDark = true,
   onOpenPricing,
@@ -459,7 +450,6 @@ export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
   });
   const [showHomeStudyLoop, setShowHomeStudyLoop] = useState<boolean>(false);
   const [formulaScratchpadOpen, setFormulaScratchpadOpen] = useState<boolean>(false);
-  const lastHandledLabSeqRef = useRef<number>(0);
   const [fullPageFeature, setFullPageFeature] = useState<{
     type: WorkspaceTabType;
     title: string;
@@ -926,25 +916,6 @@ export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
       returnTo: viewMode,
     });
   };
-
-  useEffect(() => {
-    if (!initialLabMode || !initialLabMode.seq) return;
-    if (lastHandledLabSeqRef.current === initialLabMode.seq) return;
-    lastHandledLabSeqRef.current = initialLabMode.seq;
-    launchDeepTutorMode(initialLabMode.mode, initialLabMode.title);
-  }, [initialLabMode]);
-
-  useEffect(() => {
-    if (initialOpenFormulasSeq && initialOpenFormulasSeq > 0) {
-      setFormulaScratchpadOpen(true);
-    }
-  }, [initialOpenFormulasSeq]);
-
-  useEffect(() => {
-    const onOpenFormulas = () => setFormulaScratchpadOpen(true);
-    window.addEventListener('kinich-open-formula-scratchpad', onOpenFormulas);
-    return () => window.removeEventListener('kinich-open-formula-scratchpad', onOpenFormulas);
-  }, []);
 
   const closeTab = (tabId: string, e: React.MouseEvent) => {
     e.stopPropagation();

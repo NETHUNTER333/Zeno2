@@ -159,15 +159,6 @@ export const StudyFormulaScratchpad: React.FC<StudyFormulaScratchpadProps> = ({
     } catch {}
   }, [notes]);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [isOpen, onClose]);
-
   const categories = ['All', 'Mechanics', 'Waves & Optics', 'Electromagnetism', 'Thermodynamics', 'Calculus', 'Linear Algebra'];
 
   const filteredFormulas = useMemo(() => {

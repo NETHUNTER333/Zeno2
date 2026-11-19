@@ -12,7 +12,6 @@ import {
   Compass,
   Bookmark,
   Zap,
-  Search,
 } from 'lucide-react';
 import {
   ChatMessage as ChatMessageType,
@@ -49,10 +48,6 @@ import { AchievementToast } from './components/AchievementToast';
 import { RouteSkeleton, ModalSkeleton } from './components/Skeleton';
 import { GrokChatMessage } from './components/GrokChatMessage';
 import { GoogleSignInButton } from './components/GoogleSignInButton';
-import {
-  CommandPaletteModal,
-  type CommandStudyLabMode,
-} from './components/CommandPaletteModal';
 
 const AccountWorkspacePage = lazy(() =>
   import('./components/AccountWorkspacePage').then((m) => ({ default: m.AccountWorkspacePage }))
@@ -657,25 +652,6 @@ export default function App() {
   const nsfwMode = false;
   const [isResearchMode, setIsResearchMode] = useState(false);
   const [isSideChatOpen, setIsSideChatOpen] = useState(false);
-  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
-  const [pendingStudyLab, setPendingStudyLab] = useState<{
-    mode: CommandStudyLabMode;
-    title: string;
-    seq: number;
-  } | null>(null);
-  const [openFormulasSeq, setOpenFormulasSeq] = useState(0);
-
-  // Global Quick Switcher / Command Palette shortcut (⌘K / Ctrl+K)
-  useEffect(() => {
-    const onGlobalKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault();
-        setIsCommandPaletteOpen((prev) => !prev);
-      }
-    };
-    window.addEventListener('keydown', onGlobalKeyDown);
-    return () => window.removeEventListener('keydown', onGlobalKeyDown);
-  }, []);
 
   // Listen for cross-workspace Hitaishi launches and thread syncs
   useEffect(() => {
@@ -2821,8 +2797,6 @@ export default function App() {
               <Suspense fallback={<RouteSkeleton isDark={isDark} />}>
                 <StudyWorkspace
                   initialVideo={activeStudyVideo}
-                  initialLabMode={pendingStudyLab}
-                  initialOpenFormulasSeq={openFormulasSeq}
                   onBackToChat={() => {
                     if (typeof window !== 'undefined') {
                       const p = window.location.pathname.toLowerCase();
@@ -2887,52 +2861,36 @@ export default function App() {
             <div className="flex-1 min-w-0 flex flex-col h-full overflow-hidden relative z-10">
               {/* Clean Flat Top Controls (Sidebar toggle, Model Picker, Study Studio & New Chat) */}
               <div className="absolute top-[max(0.5rem,env(safe-area-inset-top))] left-3 right-3 sm:left-4 sm:right-4 z-30 flex items-center justify-between gap-2 pointer-events-none">
-                <div className="flex items-center gap-1.5 pointer-events-auto">
-                  <button
-                    onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                    className={`size-8 rounded-xl border flex items-center justify-center transition-colors cursor-pointer active:scale-95 ${
-                      isDark
-                        ? 'bg-[#09090b] hover:bg-white/[0.08] border-white/[0.14] text-white'
-                        : 'bg-white hover:bg-black/[0.05] border-black/[0.1] text-[#000000]'
-                    }`}
-                    title={isSidebarOpen ? 'Close sidebar' : 'Open sidebar'}
-                    aria-label={isSidebarOpen ? 'Close sidebar' : 'Open sidebar'}
+                <button
+                  onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                  className={`pointer-events-auto size-8 rounded-xl border flex items-center justify-center transition-colors cursor-pointer active:scale-95 ${
+                    isDark
+                      ? 'bg-[#09090b] hover:bg-white/[0.08] border-white/[0.14] text-white'
+                      : 'bg-white hover:bg-black/[0.05] border-black/[0.1] text-[#000000]'
+                  }`}
+                  title={isSidebarOpen ? 'Close sidebar' : 'Open sidebar'}
+                  aria-label={isSidebarOpen ? 'Close sidebar' : 'Open sidebar'}
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.9"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="w-4 h-4"
                   >
-                    <svg
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.9"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="w-4 h-4"
-                    >
-                      <rect x="3" y="3" width="18" height="18" rx="4.5" />
-                      <path d="M9.5 3v18" />
-                      <path d="M6 8h1.5" />
-                      <path d="M6 11.5h1.5" />
-                      {isSidebarOpen ? (
-                        <path d="M15.5 9.5 13 12l2.5 2.5" />
-                      ) : (
-                        <path d="M13.5 9.5 16 12l-2.5 2.5" />
-                      )}
-                    </svg>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setIsCommandPaletteOpen(true)}
-                    className={`size-8 rounded-xl border flex items-center justify-center transition-colors cursor-pointer active:scale-95 ${
-                      isDark
-                        ? 'bg-[#09090b] hover:bg-white/[0.08] border-white/[0.14] text-neutral-300 hover:text-white'
-                        : 'bg-white hover:bg-black/[0.05] border-black/[0.1] text-neutral-700 hover:text-black'
-                    }`}
-                    title="Quick Command Palette (⌘K)"
-                    aria-label="Open command palette"
-                  >
-                    <Search className="w-3.5 h-3.5" />
-                  </button>
-                </div>
+                    <rect x="3" y="3" width="18" height="18" rx="4.5" />
+                    <path d="M9.5 3v18" />
+                    <path d="M6 8h1.5" />
+                    <path d="M6 11.5h1.5" />
+                    {isSidebarOpen ? (
+                      <path d="M15.5 9.5 13 12l2.5 2.5" />
+                    ) : (
+                      <path d="M13.5 9.5 16 12l-2.5 2.5" />
+                    )}
+                  </svg>
+                </button>
 
                 {/* Dynamic Island Model Selector */}
                 <div className="pointer-events-auto flex items-center justify-center gap-2">
@@ -4020,71 +3978,6 @@ export default function App() {
           </button>
         </div>
       )}
-      <CommandPaletteModal
-        isOpen={isCommandPaletteOpen}
-        onClose={() => setIsCommandPaletteOpen(false)}
-        isDark={isDark}
-        threads={threads}
-        onNewChat={() => {
-          setCurrentView('chat');
-          handleNewChat();
-        }}
-        onSelectThread={(threadId) => {
-          setCurrentView('chat');
-          handleSelectThread(threadId);
-        }}
-        onOpenStudySpace={(labMode, title) => {
-          setActiveStudyVideo(null);
-          if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/study')) {
-            window.history.pushState({}, '', '/study');
-          }
-          if (labMode) {
-            setPendingStudyLab({
-              mode: labMode,
-              title: title || 'Study Lab',
-              seq: Date.now(),
-            });
-          } else {
-            setPendingStudyLab(null);
-          }
-          setCurrentView('study');
-        }}
-        onOpenHitaishi={() => {
-          if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/hitaishi')) {
-            window.history.pushState({}, '', '/hitaishi');
-          }
-          setCurrentView('hitaishi');
-        }}
-        onToggleSideChat={() => {
-          setCurrentView('chat');
-          setIsSideChatOpen((prev) => !prev);
-        }}
-        onOpenAccount={() => {
-          if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/account')) {
-            window.history.pushState({}, '', '/account');
-          }
-          setCurrentView('account');
-        }}
-        onOpenPricing={() =>
-          setPricingModalState({
-            isOpen: true,
-            highlightPlan: 'spark',
-            limitReason: null,
-          })
-        }
-        onToggleTheme={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}
-        onOpenFormulaScratchpad={() => {
-          setActiveStudyVideo(null);
-          if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/study')) {
-            window.history.pushState({}, '', '/study');
-          }
-          setCurrentView('study');
-          setOpenFormulasSeq((s) => s + 1);
-          if (typeof window !== 'undefined') {
-            window.dispatchEvent(new CustomEvent('kinich-open-formula-scratchpad'));
-          }
-        }}
-      />
     </div>
     </>
   );

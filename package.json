@@ -9,6 +9,7 @@
     "start": "tsx server.ts",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
+    "android:sync": "npm run build && npx cap sync android",
     "lint": "tsc --noEmit",
     "lint:rules": "eslint firestore.rules",
     "test": "vitest run tests/auth-and-rate-limit.test.ts tests/firestore.rules.test.ts tests/search-and-chat-reliability.test.ts tests/staging-and-distributed-rate-limit.test.ts tests/load-and-sse-validation.test.ts tests/staging-rehearsal-and-rollout.test.ts tests/growth-engine.test.ts tests/location-system.test.ts tests/infrastructure-and-cors.test.ts tests/dodo-billing.test.ts tests/referral-system.test.ts tests/prompts-and-physics.test.ts",

@@ -1,0 +1,662 @@
+const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["assets/phononTTS-AIAnaSiB.js","assets/preload-helper-C-oUlkXR.js"])))=>i.map(i=>d[i]);
+import { m as getAuthHeaders } from "./firebase-Df8_wQ36.js";
+import { t as __vitePreload } from "./preload-helper-C-oUlkXR.js";
+//#region src/lib/smallestAi.ts
+var phononModulePromise = null;
+var loadedPhononModule = null;
+function isPhononRuntimeSupported() {
+	return typeof window !== "undefined" && typeof Worker !== "undefined" && typeof WebAssembly === "object" && !!(window.AudioContext || window.webkitAudioContext);
+}
+async function getPhononModule() {
+	if (!phononModulePromise) phononModulePromise = __vitePreload(() => import("./phononTTS-AIAnaSiB.js").then((mod) => {
+		loadedPhononModule = mod;
+		return mod;
+	}), __vite__mapDeps([0,1]));
+	return phononModulePromise;
+}
+var TTS_PLAYBACK_SPEEDS = [
+	.5,
+	1,
+	1.5,
+	2
+];
+var TTS_LANGUAGES = [
+	{
+		code: "english",
+		label: "English",
+		nativeLabel: "EN",
+		bcp47: "en-US"
+	},
+	{
+		code: "hinglish",
+		label: "Hinglish",
+		nativeLabel: "HI · EN",
+		bcp47: "hi-IN"
+	},
+	{
+		code: "hindi",
+		label: "Hindi",
+		nativeLabel: "हिन्दी",
+		bcp47: "hi-IN"
+	},
+	{
+		code: "telugu",
+		label: "Telugu",
+		nativeLabel: "తెలుగు",
+		bcp47: "te-IN"
+	},
+	{
+		code: "tamil",
+		label: "Tamil",
+		nativeLabel: "தமிழ்",
+		bcp47: "ta-IN"
+	},
+	{
+		code: "kannada",
+		label: "Kannada",
+		nativeLabel: "ಕನ್ನಡ",
+		bcp47: "kn-IN"
+	},
+	{
+		code: "malayalam",
+		label: "Malayalam",
+		nativeLabel: "മലയാളം",
+		bcp47: "ml-IN"
+	},
+	{
+		code: "bengali",
+		label: "Bengali",
+		nativeLabel: "বাংলা",
+		bcp47: "bn-IN"
+	},
+	{
+		code: "marathi",
+		label: "Marathi",
+		nativeLabel: "मराठी",
+		bcp47: "mr-IN"
+	},
+	{
+		code: "gujarati",
+		label: "Gujarati",
+		nativeLabel: "ગુજરાતી",
+		bcp47: "gu-IN"
+	},
+	{
+		code: "punjabi",
+		label: "Punjabi",
+		nativeLabel: "ਪੰਜਾਬੀ",
+		bcp47: "pa-IN"
+	},
+	{
+		code: "spanish",
+		label: "Spanish",
+		nativeLabel: "Español",
+		bcp47: "es-ES"
+	},
+	{
+		code: "french",
+		label: "French",
+		nativeLabel: "Français",
+		bcp47: "fr-FR"
+	},
+	{
+		code: "german",
+		label: "German",
+		nativeLabel: "Deutsch",
+		bcp47: "de-DE"
+	},
+	{
+		code: "portuguese",
+		label: "Portuguese",
+		nativeLabel: "Português",
+		bcp47: "pt-BR"
+	},
+	{
+		code: "italian",
+		label: "Italian",
+		nativeLabel: "Italiano",
+		bcp47: "it-IT"
+	},
+	{
+		code: "dutch",
+		label: "Dutch",
+		nativeLabel: "Nederlands",
+		bcp47: "nl-NL"
+	},
+	{
+		code: "polish",
+		label: "Polish",
+		nativeLabel: "Polski",
+		bcp47: "pl-PL"
+	},
+	{
+		code: "swedish",
+		label: "Swedish",
+		nativeLabel: "Svenska",
+		bcp47: "sv-SE"
+	},
+	{
+		code: "norwegian",
+		label: "Norwegian",
+		nativeLabel: "Norsk",
+		bcp47: "nb-NO"
+	},
+	{
+		code: "danish",
+		label: "Danish",
+		nativeLabel: "Dansk",
+		bcp47: "da-DK"
+	},
+	{
+		code: "finnish",
+		label: "Finnish",
+		nativeLabel: "Suomi",
+		bcp47: "fi-FI"
+	},
+	{
+		code: "japanese",
+		label: "Japanese",
+		nativeLabel: "日本語",
+		bcp47: "ja-JP"
+	},
+	{
+		code: "korean",
+		label: "Korean",
+		nativeLabel: "한국어",
+		bcp47: "ko-KR"
+	},
+	{
+		code: "chinese",
+		label: "Chinese",
+		nativeLabel: "中文",
+		bcp47: "zh-TW"
+	},
+	{
+		code: "arabic",
+		label: "Arabic",
+		nativeLabel: "العربية",
+		bcp47: "ar-SA"
+	},
+	{
+		code: "filipino",
+		label: "Filipino",
+		nativeLabel: "Tagalog",
+		bcp47: "fil-PH"
+	},
+	{
+		code: "malay",
+		label: "Malay",
+		nativeLabel: "Bahasa Melayu",
+		bcp47: "ms-MY"
+	},
+	{
+		code: "indonesian",
+		label: "Indonesian",
+		nativeLabel: "Bahasa Indonesia",
+		bcp47: "id-ID"
+	},
+	{
+		code: "thai",
+		label: "Thai",
+		nativeLabel: "ไทย",
+		bcp47: "th-TH"
+	},
+	{
+		code: "vietnamese",
+		label: "Vietnamese",
+		nativeLabel: "Tiếng Việt",
+		bcp47: "vi-VN"
+	},
+	{
+		code: "turkish",
+		label: "Turkish",
+		nativeLabel: "Türkçe",
+		bcp47: "tr-TR"
+	},
+	{
+		code: "hebrew",
+		label: "Hebrew",
+		nativeLabel: "עברית",
+		bcp47: "he-IL"
+	},
+	{
+		code: "swahili",
+		label: "Swahili",
+		nativeLabel: "Kiswahili",
+		bcp47: "sw-KE"
+	},
+	{
+		code: "czech",
+		label: "Czech",
+		nativeLabel: "Čeština",
+		bcp47: "cs-CZ"
+	},
+	{
+		code: "hungarian",
+		label: "Hungarian",
+		nativeLabel: "Magyar",
+		bcp47: "hu-HU"
+	},
+	{
+		code: "romanian",
+		label: "Romanian",
+		nativeLabel: "Română",
+		bcp47: "ro-RO"
+	},
+	{
+		code: "greek",
+		label: "Greek",
+		nativeLabel: "Ελληνικά",
+		bcp47: "el-GR"
+	},
+	{
+		code: "afrikaans",
+		label: "Afrikaans",
+		nativeLabel: "Afrikaans",
+		bcp47: "af-ZA"
+	}
+];
+var LANG_STORAGE_KEY = "kinich_tts_lang";
+var GENDER_STORAGE_KEY = "kinich_tts_gender";
+var SPEED_STORAGE_KEY = "kinich_tts_speed";
+function getSavedTtsLanguage() {
+	try {
+		const saved = localStorage.getItem(LANG_STORAGE_KEY);
+		if (saved && TTS_LANGUAGES.some((l) => l.code === saved)) return saved;
+	} catch {}
+	return "english";
+}
+function setSavedTtsLanguage(langCode) {
+	try {
+		localStorage.setItem(LANG_STORAGE_KEY, langCode);
+		window.dispatchEvent(new CustomEvent("kinich-tts-prefs-changed"));
+	} catch {}
+}
+function getSavedTtsGender() {
+	try {
+		const saved = localStorage.getItem(GENDER_STORAGE_KEY);
+		if (saved === "male" || saved === "female") return saved;
+	} catch {}
+	return "female";
+}
+function setSavedTtsGender(gender) {
+	try {
+		localStorage.setItem(GENDER_STORAGE_KEY, gender);
+		window.dispatchEvent(new CustomEvent("kinich-tts-prefs-changed"));
+	} catch {}
+}
+function getSavedTtsSpeed() {
+	try {
+		const raw = Number(localStorage.getItem(SPEED_STORAGE_KEY));
+		if (raw === .5 || raw === 1 || raw === 1.5 || raw === 2) return raw;
+	} catch {}
+	return 1;
+}
+var activeAudioElement = null;
+var activeAudioBaseRate = 1;
+var activeAbortController = null;
+function setSavedTtsSpeed(speed) {
+	try {
+		localStorage.setItem(SPEED_STORAGE_KEY, String(speed));
+		window.dispatchEvent(new CustomEvent("kinich-tts-prefs-changed"));
+	} catch {}
+	setActiveTtsPlaybackSpeed(speed);
+}
+function setActiveTtsPlaybackSpeed(speed) {
+	if (activeAudioElement) try {
+		activeAudioElement.playbackRate = Number((activeAudioBaseRate * speed).toFixed(2));
+	} catch {}
+}
+function sanitizeTtsSpeechText(text) {
+	return String(text || "").replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/```[\s\S]*?```/g, " ").replace(/`([^`]+)`/g, "$1").replace(/\[\d+\]/g, "").replace(/https?:\/\/\S+/g, "").replace(/[#*_~>|]/g, "").replace(/\s+/g, " ").trim().slice(0, 1200);
+}
+var activeProgressRafId = null;
+function clearProgressRaf() {
+	if (activeProgressRafId !== null && typeof cancelAnimationFrame !== "undefined") {
+		cancelAnimationFrame(activeProgressRafId);
+		activeProgressRafId = null;
+	}
+}
+function stopSmallestSpeech() {
+	clearProgressRaf();
+	loadedPhononModule?.stopPhononSpeech();
+	if (activeAbortController) {
+		try {
+			activeAbortController.abort();
+		} catch {}
+		activeAbortController = null;
+	}
+	if (activeAudioElement) {
+		try {
+			activeAudioElement.pause();
+			activeAudioElement.currentTime = 0;
+		} catch {}
+		activeAudioElement = null;
+	}
+	activeAudioBaseRate = 1;
+	if (typeof window !== "undefined" && "speechSynthesis" in window) window.speechSynthesis.cancel();
+}
+function audioBufferToWavBlob(buffer) {
+	const numChannels = 1;
+	const sampleRate = buffer.sampleRate;
+	const channelData = buffer.getChannelData(0);
+	const numSamples = channelData.length;
+	const wavBuf = /* @__PURE__ */ new ArrayBuffer(44 + numSamples * 2);
+	const view = new DataView(wavBuf);
+	const writeStr = (offset, str) => {
+		for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+	};
+	writeStr(0, "RIFF");
+	view.setUint32(4, 36 + numSamples * 2, true);
+	writeStr(8, "WAVE");
+	writeStr(12, "fmt ");
+	view.setUint32(16, 16, true);
+	view.setUint16(20, 1, true);
+	view.setUint16(22, numChannels, true);
+	view.setUint32(24, sampleRate, true);
+	view.setUint32(28, sampleRate * numChannels * 2, true);
+	view.setUint16(32, 2, true);
+	view.setUint16(34, 16, true);
+	writeStr(36, "data");
+	view.setUint32(40, numSamples * 2, true);
+	let offset = 44;
+	for (let i = 0; i < numSamples; i++) {
+		const s = Math.max(-1, Math.min(1, channelData[i]));
+		view.setInt16(offset, s < 0 ? s * 32768 : s * 32767, true);
+		offset += 2;
+	}
+	return new Blob([wavBuf], { type: "audio/wav" });
+}
+async function shiftBlobToMaleVoiceIfNeeded(blob, shouldShift) {
+	if (!shouldShift || typeof window === "undefined") return blob;
+	try {
+		const AudioCtxCtor = window.AudioContext || window.webkitAudioContext;
+		const OfflineCtxCtor = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+		if (!AudioCtxCtor || !OfflineCtxCtor) return blob;
+		const arrayBuf = await blob.arrayBuffer();
+		const decodeCtx = new AudioCtxCtor();
+		const decoded = await decodeCtx.decodeAudioData(arrayBuf.slice(0));
+		try {
+			await decodeCtx.close();
+		} catch {}
+		const rate = .81;
+		const offlineCtx = new OfflineCtxCtor(1, Math.ceil(decoded.length / rate), decoded.sampleRate);
+		const source = offlineCtx.createBufferSource();
+		source.buffer = decoded;
+		source.playbackRate.value = rate;
+		const lowShelf = offlineCtx.createBiquadFilter();
+		lowShelf.type = "lowshelf";
+		lowShelf.frequency.value = 160;
+		lowShelf.gain.value = 4.5;
+		source.connect(lowShelf);
+		lowShelf.connect(offlineCtx.destination);
+		source.start(0);
+		return audioBufferToWavBlob(await offlineCtx.startRendering());
+	} catch {
+		return blob;
+	}
+}
+function buildWordCumulativeOffsets(words) {
+	const weights = words.map((w) => Math.max(2, w.replace(/[^a-zA-Z0-9]/g, "").length + 1.5));
+	const total = weights.reduce((a, b) => a + b, 0) || 1;
+	const cum = [];
+	let acc = 0;
+	for (const w of weights) {
+		acc += w;
+		cum.push(acc / total);
+	}
+	return cum;
+}
+/**
+* Speak text using Rumik AI Silk / Gemini / Neural TTS (/api/tts) in the user's preferred language and Male/Female voice,
+* with live word-level progress tracking for the Read Along pill highlighter.
+*/
+async function speakTextWithSmallestAi(text, selectedLangCode, onStart, onEnd, onError, selectedGender, onAudioUrlReady, selectedSpeed, onWordProgress, startWordIndex = 0) {
+	stopSmallestSpeech();
+	const fullCleanText = sanitizeTtsSpeechText(text);
+	if (!fullCleanText) return;
+	const allWords = fullCleanText.split(" ").filter(Boolean);
+	const clampedStartWord = Math.max(0, Math.min(allWords.length - 1, startWordIndex));
+	const subWords = allWords.slice(clampedStartWord);
+	const cleanText = subWords.join(" ");
+	if (!cleanText) return;
+	const language = selectedLangCode && selectedLangCode !== "auto" ? selectedLangCode : getSavedTtsLanguage();
+	const gender = selectedGender === "male" || !selectedGender && getSavedTtsGender() === "male" ? "male" : "female";
+	const speed = selectedSpeed || getSavedTtsSpeed();
+	const bcp47 = TTS_LANGUAGES.find((l) => l.code === language)?.bcp47 || "en-US";
+	const controller = new AbortController();
+	activeAbortController = controller;
+	const startSyntheticWordTracker = (getDurationSec, getElapsedSec) => {
+		if (!onWordProgress || subWords.length === 0) return;
+		const cumOffsets = buildWordCumulativeOffsets(subWords);
+		let lastEmitted = -1;
+		const tick = () => {
+			if (controller.signal.aborted) return;
+			const dur = getDurationSec();
+			const elapsed = getElapsedSec();
+			const ratio = dur > 0 ? Math.max(0, Math.min(.999, elapsed / dur)) : 0;
+			let idx = cumOffsets.findIndex((c) => ratio <= c);
+			if (idx === -1) idx = subWords.length - 1;
+			const globalIdx = clampedStartWord + idx;
+			if (globalIdx !== lastEmitted) {
+				lastEmitted = globalIdx;
+				onWordProgress({
+					wordIndex: globalIdx,
+					charIndex: 0,
+					totalWords: allWords.length,
+					currentWord: allWords[globalIdx] || ""
+				});
+			}
+			if (activeAudioElement && !activeAudioElement.paused && !activeAudioElement.ended) activeProgressRafId = requestAnimationFrame(tick);
+		};
+		activeProgressRafId = requestAnimationFrame(tick);
+	};
+	try {
+		const authHeaders = await getAuthHeaders();
+		const response = await fetch("/api/tts", {
+			method: "POST",
+			headers: authHeaders,
+			signal: controller.signal,
+			body: JSON.stringify({
+				text: cleanText,
+				language,
+				gender,
+				speed
+			})
+		});
+		if (controller.signal.aborted) return;
+		if (response.ok) {
+			const rawAudioBlob = await response.blob();
+			if (controller.signal.aborted) return;
+			const needsMaleShift = response.headers.get("X-Kinich-Tts-Pitch-Shift") === "male";
+			const audioBlob = await shiftBlobToMaleVoiceIfNeeded(rawAudioBlob, needsMaleShift);
+			if (controller.signal.aborted) return;
+			const audioUrl = URL.createObjectURL(audioBlob);
+			if (onAudioUrlReady) {
+				onAudioUrlReady(audioUrl);
+				return;
+			}
+			const audio = new Audio(audioUrl);
+			let baseRate = 1;
+			if (needsMaleShift && audioBlob === rawAudioBlob) try {
+				audio.preservesPitch = false;
+				audio.mozPreservesPitch = false;
+				audio.webkitPreservesPitch = false;
+				baseRate = .82;
+			} catch {}
+			activeAudioBaseRate = baseRate;
+			try {
+				audio.playbackRate = Number((baseRate * speed).toFixed(2));
+			} catch {}
+			activeAudioElement = audio;
+			audio.onplay = () => {
+				const estimatedDur = Math.max(1.2, subWords.length * .36);
+				startSyntheticWordTracker(() => Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : estimatedDur, () => audio.currentTime || 0);
+			};
+			audio.onended = () => {
+				clearProgressRaf();
+				URL.revokeObjectURL(audioUrl);
+				activeAudioElement = null;
+				activeAudioBaseRate = 1;
+				onEnd?.();
+			};
+			audio.onerror = () => {
+				clearProgressRaf();
+				URL.revokeObjectURL(audioUrl);
+				activeAudioElement = null;
+				activeAudioBaseRate = 1;
+				fallbackWebSpeech(cleanText, bcp47, gender, onStart, onEnd, onError, speed, onWordProgress, clampedStartWord, allWords);
+			};
+			onStart?.();
+			await audio.play();
+			return;
+		}
+	} catch (err) {
+		if (err?.name === "AbortError") {
+			onEnd?.();
+			return;
+		}
+	}
+	const isEnglish = language === "english" || language === "en" || bcp47.startsWith("en");
+	if (gender === "female" && isEnglish && isPhononRuntimeSupported()) {
+		const phononMod = await getPhononModule();
+		if (phononMod.isPhononSupported()) {
+			const startTime = performance.now();
+			const totalEstimatedMs = Math.max(1200, subWords.length * 360 / speed);
+			let phononActive = true;
+			const cumOffsets = buildWordCumulativeOffsets(subWords);
+			let lastIdx = -1;
+			const pumpPhonon = () => {
+				if (!phononActive || controller.signal.aborted) return;
+				const ratio = Math.max(0, Math.min(.999, (performance.now() - startTime) / totalEstimatedMs));
+				let idx = cumOffsets.findIndex((c) => ratio <= c);
+				if (idx === -1) idx = subWords.length - 1;
+				const globalIdx = clampedStartWord + idx;
+				if (globalIdx !== lastIdx) {
+					lastIdx = globalIdx;
+					onWordProgress?.({
+						wordIndex: globalIdx,
+						charIndex: 0,
+						totalWords: allWords.length,
+						currentWord: allWords[globalIdx] || ""
+					});
+				}
+				if (ratio < .99) activeProgressRafId = requestAnimationFrame(pumpPhonon);
+			};
+			if (await phononMod.speakWithPhonon(cleanText, {
+				onStart: () => {
+					onStart?.();
+					activeProgressRafId = requestAnimationFrame(pumpPhonon);
+				},
+				onEnd: () => {
+					phononActive = false;
+					clearProgressRaf();
+					onEnd?.();
+				},
+				onError: (e) => {
+					phononActive = false;
+					clearProgressRaf();
+					onError?.(e);
+				}
+			})) return;
+		}
+	}
+	fallbackWebSpeech(cleanText, bcp47, gender, onStart, onEnd, onError, speed, onWordProgress, clampedStartWord, allWords);
+}
+function fallbackWebSpeech(text, bcp47, gender, onStart, onEnd, onError, speed = 1, onWordProgress, startWordOffset = 0, allWords = []) {
+	if (typeof window !== "undefined" && "speechSynthesis" in window) {
+		window.speechSynthesis.cancel();
+		const utterance = new SpeechSynthesisUtterance(text);
+		utterance.lang = bcp47;
+		const voices = window.speechSynthesis.getVoices?.() || [];
+		const langPrefix = bcp47.split("-")[0].toLowerCase();
+		const matchingVoices = voices.filter((v) => v.lang?.toLowerCase().startsWith(langPrefix));
+		const voicePool = matchingVoices.length > 0 ? matchingVoices : voices;
+		if (gender === "male") {
+			const maleVoice = voicePool.find((v) => /\b(male|david|daniel|mark|guy|george|james|rishi|arjun|prabhat|madhur|mohan|sundar|karthik|thomas|nicolas|jorge|pablo|stefan|ichiro|naoki|iom|#male)\b/i.test(`${v.name} ${v.voiceURI}`));
+			if (maleVoice) utterance.voice = maleVoice;
+			utterance.pitch = .68;
+			utterance.rate = Math.max(.45, Math.min(2.2, Number((.96 * speed).toFixed(2))));
+		} else {
+			const femaleVoice = voicePool.find((v) => /\b(female|zira|samantha|victoria|karen|moira|tessa|veena|swara|neerja|heera|kalpana|salli|joanna|amy| #female)\b/i.test(`${v.name} ${v.voiceURI}`));
+			if (femaleVoice) utterance.voice = femaleVoice;
+			utterance.pitch = 1.08;
+			utterance.rate = Math.max(.5, Math.min(2.2, Number((1 * speed).toFixed(2))));
+		}
+		const subWords = text.split(" ").filter(Boolean);
+		const wordCharStarts = [];
+		let cursor = 0;
+		for (const w of subWords) {
+			wordCharStarts.push(cursor);
+			cursor += w.length + 1;
+		}
+		let boundarySeen = false;
+		let fallbackTimer = null;
+		const clearTimer = () => {
+			if (fallbackTimer) {
+				clearInterval(fallbackTimer);
+				fallbackTimer = null;
+			}
+		};
+		utterance.onboundary = (event) => {
+			if (typeof event.charIndex === "number" && onWordProgress) {
+				boundarySeen = true;
+				clearTimer();
+				let subIdx = 0;
+				for (let i = wordCharStarts.length - 1; i >= 0; i--) if (event.charIndex >= wordCharStarts[i]) {
+					subIdx = i;
+					break;
+				}
+				const globalIdx = startWordOffset + subIdx;
+				onWordProgress({
+					wordIndex: globalIdx,
+					charIndex: event.charIndex,
+					totalWords: allWords.length || subWords.length,
+					currentWord: allWords[globalIdx] || subWords[subIdx] || ""
+				});
+			}
+		};
+		utterance.onstart = () => {
+			onStart?.();
+			if (onWordProgress && subWords.length > 0) {
+				onWordProgress({
+					wordIndex: startWordOffset,
+					charIndex: 0,
+					totalWords: allWords.length || subWords.length,
+					currentWord: allWords[startWordOffset] || subWords[0] || ""
+				});
+				const startedAt = performance.now();
+				const cumOffsets = buildWordCumulativeOffsets(subWords);
+				const estDurationMs = Math.max(1e3, subWords.length * 360 / speed);
+				fallbackTimer = setInterval(() => {
+					if (boundarySeen) {
+						clearTimer();
+						return;
+					}
+					const ratio = Math.max(0, Math.min(.999, (performance.now() - startedAt) / estDurationMs));
+					let idx = cumOffsets.findIndex((c) => ratio <= c);
+					if (idx === -1) idx = subWords.length - 1;
+					const globalIdx = startWordOffset + idx;
+					onWordProgress({
+						wordIndex: globalIdx,
+						charIndex: 0,
+						totalWords: allWords.length || subWords.length,
+						currentWord: allWords[globalIdx] || subWords[idx] || ""
+					});
+				}, 90);
+			}
+		};
+		utterance.onend = () => {
+			clearTimer();
+			onEnd?.();
+		};
+		utterance.onerror = (e) => {
+			clearTimer();
+			onEnd?.();
+			onError?.(e);
+		};
+		window.speechSynthesis.speak(utterance);
+	} else onEnd?.();
+}
+//#endregion
+export { getSavedTtsSpeed as a, setSavedTtsGender as c, speakTextWithSmallestAi as d, stopSmallestSpeech as f, getSavedTtsLanguage as i, setSavedTtsLanguage as l, TTS_PLAYBACK_SPEEDS as n, sanitizeTtsSpeechText as o, getSavedTtsGender as r, setActiveTtsPlaybackSpeed as s, TTS_LANGUAGES as t, setSavedTtsSpeed as u };
