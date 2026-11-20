@@ -237,6 +237,15 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({
   const micStreamRef = useRef<MediaStream | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const voiceLanguageRef = useRef<string>(character.voiceLanguage || 'english');
+  const lastVoiceActivityAtRef = useRef<number>(0);
+  const lastMicSpeechAtRef = useRef<number>(0);
+  const micSessionHardCapTimerRef = useRef<number | null>(null);
+  const micAutoEndNoticeTimerRef = useRef<number | null>(null);
+  const [micAutoEndCountdown, setMicAutoEndCountdown] = useState<number | null>(null);
+
+  const MIC_SILENCE_AUTO_END_MS = 12_000;
+  const MIC_MAX_SESSION_MS = 180_000;
+  const MIC_PCM_HANGOVER_MS = 1_800;
 
   useEffect(() => {
     voiceLanguageRef.current = character.voiceLanguage || 'english';
@@ -649,13 +658,18 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({
     } catch {}
   }, [triggerAiResponse]);
 
-  const stopDuplexListening = useCallback(() => {
+  const stopDuplexListening = useCallback((autoEndReason?: string) => {
     setLiveDuplexActive(false);
     liveDuplexActiveRef.current = false;
     setIsListeningMic(false);
     setMicVolumeLevel(0);
     setInterimTranscript('');
+    setMicAutoEndCountdown(null);
 
+    if (micSessionHardCapTimerRef.current) {
+      window.clearTimeout(micSessionHardCapTimerRef.current);
+      micSessionHardCapTimerRef.current = null;
+    }
     if (interimDebounceTimerRef.current) {
       window.clearTimeout(interimDebounceTimerRef.current);
       interimDebounceTimerRef.current = null;
@@ -709,7 +723,42 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({
       } catch {}
       liveWsRef.current = null;
     }
+    if (autoEndReason) {
+      setMicStatusError(autoEndReason);
+      if (micAutoEndNoticeTimerRef.current) {
+        window.clearTimeout(micAutoEndNoticeTimerRef.current);
+      }
+      micAutoEndNoticeTimerRef.current = window.setTimeout(() => {
+        setMicStatusError((curr) => (curr === autoEndReason ? null : curr));
+      }, 4500);
+    }
   }, []);
+
+  // Automatically end microphone & Gemini Live billing session if user switches apps, locks phone, or leaves page
+  useEffect(() => {
+    const handleVisibilityOrExit = () => {
+      if (document.hidden && liveDuplexActiveRef.current) {
+        stopDuplexListening('Mic auto-ended when app went to background.');
+      }
+    };
+    const handlePageHide = () => {
+      if (liveDuplexActiveRef.current) {
+        stopDuplexListening();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityOrExit);
+    window.addEventListener('pagehide', handlePageHide);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityOrExit);
+      window.removeEventListener('pagehide', handlePageHide);
+      if (micAutoEndNoticeTimerRef.current) {
+        window.clearTimeout(micAutoEndNoticeTimerRef.current);
+      }
+      if (liveDuplexActiveRef.current) {
+        stopDuplexListening();
+      }
+    };
+  }, [stopDuplexListening]);
 
   // Multi-Engine Live Duplex Voice & Microphone Pipeline:
   // 1. Native sample-rate AudioContext + AnalyserNode (visual mic meter + VAD silence detector)
@@ -718,8 +767,21 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({
   // 4. Gemini Live API WebSocket (/ws/live) when available
   const startDuplexListening = useCallback(async () => {
     setMicStatusError(null);
+    setMicAutoEndCountdown(null);
     stopCurrentSpeech();
     geminiLiveAudioReceivedRef.current = false;
+    const startedAt = Date.now();
+    lastVoiceActivityAtRef.current = startedAt;
+    lastMicSpeechAtRef.current = startedAt;
+
+    if (micSessionHardCapTimerRef.current) {
+      window.clearTimeout(micSessionHardCapTimerRef.current);
+    }
+    micSessionHardCapTimerRef.current = window.setTimeout(() => {
+      if (liveDuplexActiveRef.current) {
+        stopDuplexListening('Mic auto-ended after 3m session limit to prevent billing.');
+      }
+    }, MIC_MAX_SESSION_MS);
 
     const startBrowserSpeechRecognition = () => {
       if (typeof window === 'undefined') return false;
@@ -748,7 +810,11 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({
           }
 
           if (interimText.trim()) {
-            lastRecognitionResultAtRef.current = Date.now();
+            const nowMs = Date.now();
+            lastRecognitionResultAtRef.current = nowMs;
+            lastVoiceActivityAtRef.current = nowMs;
+            lastMicSpeechAtRef.current = nowMs;
+            setMicAutoEndCountdown(null);
             setInterimTranscript(interimText.trim());
             if (isSpeakingRef.current) {
               stopCurrentSpeech();
@@ -775,7 +841,11 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({
               window.clearTimeout(interimDebounceTimerRef.current);
               interimDebounceTimerRef.current = null;
             }
-            lastRecognitionResultAtRef.current = Date.now();
+            const nowMs = Date.now();
+            lastRecognitionResultAtRef.current = nowMs;
+            lastVoiceActivityAtRef.current = nowMs;
+            lastMicSpeechAtRef.current = nowMs;
+            setMicAutoEndCountdown(null);
             const cleanFinal = finalText.trim();
             setInterimTranscript('');
             if (!geminiLiveAudioReceivedRef.current && !isGeneratingTurnRef.current) {
@@ -934,8 +1004,9 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({
 
       setupSegmentRecorder();
 
-      // Real-time microphone RMS volume loop + VAD turn trigger
+      // Real-time microphone RMS volume loop + VAD turn trigger + Silence Auto-End Guard
       const timeDomainBuf = new Float32Array(analyser.fftSize);
+      let lastCountdownShown: number | null = null;
       const pollMicLevel = () => {
         if (!liveDuplexActiveRef.current) return;
         analyser.getFloatTimeDomainData(timeDomainBuf);
@@ -948,6 +1019,32 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({
         setMicVolumeLevel(normalizedLevel);
 
         const now = performance.now();
+        const wallNow = Date.now();
+
+        // Keep silence timer reset while user speaks or AI is replying
+        if (rms > 0.016 || isSpeakingRef.current || isGeneratingTurnRef.current) {
+          lastVoiceActivityAtRef.current = wallNow;
+          if (rms > 0.016) {
+            lastMicSpeechAtRef.current = wallNow;
+          }
+          if (lastCountdownShown !== null) {
+            lastCountdownShown = null;
+            setMicAutoEndCountdown(null);
+          }
+        } else {
+          const idleMs = wallNow - lastVoiceActivityAtRef.current;
+          if (idleMs >= MIC_SILENCE_AUTO_END_MS) {
+            stopDuplexListening('Mic auto-ended after silence to save billing.');
+            return;
+          }
+          const remainingSec = Math.ceil((MIC_SILENCE_AUTO_END_MS - idleMs) / 1000);
+          const nextCountdown = remainingSec <= 5 ? remainingSec : null;
+          if (nextCountdown !== lastCountdownShown) {
+            lastCountdownShown = nextCountdown;
+            setMicAutoEndCountdown(nextCountdown);
+          }
+        }
+
         // Voice Activity Detection threshold
         if (rms > 0.022 && !isSpeakingRef.current && !isGeneratingTurnRef.current) {
           if (!vadHasSpokenRef.current) {
@@ -1009,6 +1106,21 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({
         processor.onaudioprocess = (e) => {
           if (!liveWsRef.current || liveWsRef.current.readyState !== WebSocket.OPEN) return;
           const channelData = e.inputBuffer.getChannelData(0);
+
+          // Silence gate: only stream PCM frames to Gemini Live while speech is active (+ short hangover tail for turn detection)
+          let frameSumSq = 0;
+          for (let i = 0; i < channelData.length; i++) {
+            frameSumSq += channelData[i] * channelData[i];
+          }
+          const frameRms = Math.sqrt(frameSumSq / Math.max(1, channelData.length));
+          const nowMs = Date.now();
+          if (frameRms > 0.014) {
+            lastMicSpeechAtRef.current = nowMs;
+            lastVoiceActivityAtRef.current = nowMs;
+          } else if (nowMs - lastMicSpeechAtRef.current > MIC_PCM_HANGOVER_MS) {
+            return;
+          }
+
           const int16 = downsampleFloat32To16kInt16(channelData, inputCtx.sampleRate);
           const uint8 = new Uint8Array(int16.buffer);
           let binary = '';
@@ -1025,6 +1137,14 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({
         ws.onmessage = (event) => {
           try {
             const msg = JSON.parse(event.data);
+            if (msg.autoEnded) {
+              stopDuplexListening(
+                typeof msg.reason === 'string' && msg.reason.trim()
+                  ? msg.reason
+                  : 'Mic auto-ended to save billing.'
+              );
+              return;
+            }
             if (msg.error && msg.retryAfterSec) {
               setCooldownSeconds(Number(msg.retryAfterSec) || 10);
               return;
@@ -1035,9 +1155,11 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({
               return;
             }
             if (msg.userTranscript) {
+              lastVoiceActivityAtRef.current = Date.now();
               setInterimTranscript(String(msg.userTranscript));
             }
             if (msg.modelTranscript) {
+              lastVoiceActivityAtRef.current = Date.now();
               const text = String(msg.modelTranscript).trim();
               if (text) {
                 setCharacter((prev) => ({
@@ -1047,6 +1169,7 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({
               }
             }
             if (msg.audio) {
+              lastVoiceActivityAtRef.current = Date.now();
               geminiLiveAudioReceivedRef.current = true;
               isSpeakingRef.current = true;
               const binary = atob(msg.audio);
@@ -1120,6 +1243,7 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({
     character.persona,
     character.voiceLanguage,
     stopCurrentSpeech,
+    stopDuplexListening,
     triggerAiResponse,
     workspaceSnapshot.activeChatThread?.title,
     workspaceSnapshot.activeStudySpace?.title,
@@ -1564,7 +1688,9 @@ export const HitaishiStagePage: React.FC<HitaishiStagePageProps> = ({
                     ? `Rate limit cooldown (${cooldownSeconds}s)...`
                     : liveDuplexActive
                       ? isListeningMic
-                        ? `Listening to you... Speak or type`
+                        ? micAutoEndCountdown !== null
+                          ? `Listening... auto-ends in ${micAutoEndCountdown}s`
+                          : `Listening to you... Speak or type`
                         : `Starting microphone...`
                       : `Type to ${character.name}...`
                 }

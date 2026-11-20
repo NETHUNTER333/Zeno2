@@ -15830,12 +15830,80 @@ if (!isTest) {
       let isClosed = false;
       const pendingAudioQueue: string[] = [];
 
+      // Server-side billing protection: auto-end idle or long-running Gemini Live audio sessions
+      const LIVE_IDLE_TIMEOUT_MS = 18_000;
+      const LIVE_MAX_SESSION_MS = 180_000;
+      let lastActivityAt = Date.now();
+
+      const computeBase64Pcm16Rms = (b64: string): number => {
+        try {
+          const buf = Buffer.from(b64, 'base64');
+          const sampleCount = Math.floor(buf.length / 2);
+          if (sampleCount <= 0) return 0;
+          let sumSq = 0;
+          for (let i = 0; i < sampleCount; i++) {
+            const s = buf.readInt16LE(i * 2) / 32768;
+            sumSq += s * s;
+          }
+          return Math.sqrt(sumSq / sampleCount);
+        } catch {
+          return 0;
+        }
+      };
+
+      let idleCheckInterval: ReturnType<typeof setInterval> | null = null;
+      let maxDurationTimer: ReturnType<typeof setTimeout> | null = null;
+
+      const teardownLiveSession = (autoEndReason?: string) => {
+        if (isClosed) return;
+        isClosed = true;
+        if (idleCheckInterval) {
+          clearInterval(idleCheckInterval);
+          idleCheckInterval = null;
+        }
+        if (maxDurationTimer) {
+          clearTimeout(maxDurationTimer);
+          maxDurationTimer = null;
+        }
+        if (autoEndReason && clientWs.readyState === WebSocket.OPEN) {
+          try {
+            clientWs.send(JSON.stringify({ autoEnded: true, reason: autoEndReason }));
+          } catch {}
+        }
+        try {
+          liveSession?.close?.();
+        } catch {}
+        liveSession = null;
+        try {
+          if (clientWs.readyState === WebSocket.OPEN || clientWs.readyState === WebSocket.CONNECTING) {
+            clientWs.close(1000, autoEndReason || 'Session closed');
+          }
+        } catch {}
+      };
+
+      idleCheckInterval = setInterval(() => {
+        if (isClosed) return;
+        if (Date.now() - lastActivityAt >= LIVE_IDLE_TIMEOUT_MS) {
+          teardownLiveSession('Mic auto-ended after silence to prevent billing.');
+        }
+      }, 2000);
+
+      maxDurationTimer = setTimeout(() => {
+        if (!isClosed) {
+          teardownLiveSession('Mic auto-ended after 3m limit to prevent billing.');
+        }
+      }, LIVE_MAX_SESSION_MS);
+
       // Attach message listener immediately so early audio frames are queued while live.connect initializes
       clientWs.on('message', (data) => {
         if (isClosed) return;
         try {
           const parsed = JSON.parse(data.toString());
           if (parsed.audio) {
+            const rms = computeBase64Pcm16Rms(String(parsed.audio));
+            if (rms > 0.012) {
+              lastActivityAt = Date.now();
+            }
             if (liveSession) {
               liveSession.sendRealtimeInput({
                 audio: { data: parsed.audio, mimeType: 'audio/pcm;rate=16000' },
@@ -15844,6 +15912,7 @@ if (!isTest) {
               pendingAudioQueue.push(parsed.audio);
             }
           } else if (parsed.text && liveSession) {
+            lastActivityAt = Date.now();
             liveSession.sendClientContent({
               turns: [{ role: 'user', parts: [{ text: String(parsed.text) }] }],
               turnComplete: true,
@@ -15855,10 +15924,11 @@ if (!isTest) {
       });
 
       clientWs.on('close', () => {
-        isClosed = true;
-        try {
-          liveSession?.close?.();
-        } catch {}
+        teardownLiveSession();
+      });
+
+      clientWs.on('error', () => {
+        teardownLiveSession();
       });
 
       try {
@@ -15888,13 +15958,15 @@ if (!isTest) {
           },
           callbacks: {
             onmessage: (message: any) => {
-              if (clientWs.readyState !== WebSocket.OPEN) return;
+              if (isClosed || clientWs.readyState !== WebSocket.OPEN) return;
               for (const part of message.serverContent?.modelTurn?.parts ?? []) {
                 if (part.inlineData?.data) {
+                  lastActivityAt = Date.now();
                   clientWs.send(JSON.stringify({ audio: part.inlineData.data }));
                 }
               }
               if (message.serverContent?.inputTranscription?.text) {
+                lastActivityAt = Date.now();
                 clientWs.send(
                   JSON.stringify({
                     userTranscript: message.serverContent.inputTranscription.text,
@@ -15902,6 +15974,7 @@ if (!isTest) {
                 );
               }
               if (message.serverContent?.outputTranscription?.text) {
+                lastActivityAt = Date.now();
                 clientWs.send(
                   JSON.stringify({
                     modelTranscript: message.serverContent.outputTranscription.text,
@@ -15909,16 +15982,16 @@ if (!isTest) {
                 );
               }
               if (message.serverContent?.interrupted) {
+                lastActivityAt = Date.now();
                 clientWs.send(JSON.stringify({ interrupted: true }));
               }
             },
             onclose: () => {
-              try {
-                clientWs.close();
-              } catch {}
+              teardownLiveSession();
             },
             onerror: (err: any) => {
               console.error('[Gemini Live WS] Error:', err);
+              teardownLiveSession();
             },
           },
         });
@@ -15943,9 +16016,7 @@ if (!isTest) {
         }
       } catch (err: any) {
         console.error('[Gemini Live Connect] Failed:', err);
-        try {
-          clientWs.close(1011, err?.message || 'Live connection failed');
-        } catch {}
+        teardownLiveSession();
       }
     });
 
