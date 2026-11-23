@@ -81,7 +81,6 @@ export const OPTIONAL_AUTH_API_ROUTES = [
   '/pdf/study',
   '/youtube/study/status',
   '/youtube/study/job',
-  '/youtube/transcript',
   '/study/youtube',
   '/study/topic',
   '/study/synthesize',
