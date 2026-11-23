@@ -11176,6 +11176,86 @@ Requirements:
   }
 });
 
+// POST /api/video/generate — Generate a video from a text prompt via Monid/HeyGen
+app.post('/api/video/generate', async (req, res) => {
+  try {
+    const prompt = String(req.body?.prompt || '').trim();
+    if (!prompt) {
+      return res.status(400).json({ success: false, error: 'Prompt is required' });
+    }
+
+    const resolution = String(req.body?.resolution || '720p').trim();
+    const duration = Math.min(30, Math.max(5, Number(req.body?.duration) || 10));
+
+    const monidKey = process.env.MONID_API_KEY || '';
+    if (!monidKey) {
+      return res.status(503).json({ success: false, error: 'Video generation not configured' });
+    }
+
+    // Start the run
+    const startRes = await fetch('https://api.monid.ai/v1/run', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${monidKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        provider: 'heygen',
+        endpoint: '/promo/v1/video/heygen-video-1-t2v',
+        input: {
+          body: {
+            prompt,
+            resolution: resolution === '720p' ? '768p' : resolution,
+            duration,
+          },
+        },
+      }),
+    });
+
+    if (!startRes.ok) {
+      const errText = await startRes.text();
+      return res.status(502).json({ success: false, error: `Video generation failed: ${errText.slice(0, 200)}` });
+    }
+
+    const startData = await startRes.json();
+    const runId = startData.runId || startData.run_id;
+    if (!runId) {
+      return res.status(502).json({ success: false, error: 'No run ID returned' });
+    }
+
+    // Poll for completion (max 120s)
+    let videoUrl = '';
+    let status = 'RUNNING';
+    const maxWait = 120000;
+    const start = Date.now();
+    while (status === 'RUNNING' && Date.now() - start < maxWait) {
+      await new Promise((r) => setTimeout(r, 5000));
+      const pollRes = await fetch(`https://api.monid.ai/v1/runs/${runId}`, {
+        headers: { 'Authorization': `Bearer ${monidKey}` },
+      });
+      if (pollRes.ok) {
+        const pollData = await pollRes.json();
+        status = pollData.status || 'RUNNING';
+        if (status === 'COMPLETED' && pollData.output?.video_url) {
+          videoUrl = pollData.output.video_url;
+        }
+        if (status === 'FAILED') {
+          return res.status(502).json({ success: false, error: pollData.error || 'Video generation failed' });
+        }
+      }
+    }
+
+    if (!videoUrl) {
+      return res.status(504).json({ success: false, error: 'Video generation timed out' });
+    }
+
+    return res.json({ success: true, videoUrl, runId });
+  } catch (err: any) {
+    console.error('Video generation error:', err);
+    return res.status(500).json({ success: false, error: err?.message || 'Failed to generate video' });
+  }
+});
+
 // POST /api/youtube/transcript — Extract timed transcript & video metadata via InstaCloud Subclip + Innertube
 app.post('/api/youtube/transcript', async (req, res) => {
   try {
