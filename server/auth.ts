@@ -79,7 +79,6 @@ export const OPTIONAL_AUTH_API_ROUTES = [
   '/treg/extract',
   '/arxiv/search',
   '/pdf/study',
-  '/youtube/study',
   '/youtube/study/status',
   '/youtube/study/job',
   '/youtube/transcript',
@@ -118,6 +117,9 @@ export const OPTIONAL_AUTH_API_ROUTES = [
 
 export const PUBLIC_API_ROUTES = [
   '/health',
+  '/youtube/transcript',
+  '/youtube/study',
+  '/study/snap-solve',
   '/admin/health',
   '/webhooks/dodo',
   '/billing/preview',
