@@ -6,6 +6,7 @@ COPY . .
 RUN npm run build
 ENV PORT=3000
 ENV NODE_ENV=production
+ENV REQUIRE_AUTH_FOR_CHAT=false
 ENV DATA_DIR=/app/data
 RUN mkdir -p /app/data
 VOLUME ["/app/data"]

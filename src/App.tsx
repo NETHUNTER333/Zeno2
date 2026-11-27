@@ -151,12 +151,11 @@ import {
   loadSharedThreadFromFirestore,
 } from './lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
+import { apiFetch } from './lib/apiBase';
 
 interface SavedThread extends ChatThread {
   messages: ChatMessageType[];
 }
-
-const INSTACLOUD_API_BASE = 'https://prod-main-zeno-api-c257d4-00gfx3c9932.compute.instacloud-edge.com';
 
 function getClientRealTimeClock() {
   const now = new Date();
@@ -518,23 +517,7 @@ function enforceClientClockInReply(
 }
 
 async function fetchKinichApi(path: string, init?: RequestInit): Promise<Response> {
-  const isStaticHost =
-    typeof window !== 'undefined' &&
-    (window.location.hostname.includes('vercel.app') ||
-      window.location.hostname.includes('netlify.app'));
-  if (isStaticHost) {
-    return fetch(`${INSTACLOUD_API_BASE}${path}`, init);
-  }
-  try {
-    const localRes = await fetch(path, init);
-    const contentType = localRes.headers.get('content-type') || '';
-    if (contentType.includes('application/json')) {
-      return localRes;
-    }
-  } catch (err: any) {
-    if (err?.name === 'AbortError') throw err;
-  }
-  return fetch(`${INSTACLOUD_API_BASE}${path}`, init);
+  return apiFetch(path, init);
 }
 
 const DEFAULT_SUGGESTIONS = [
@@ -2099,6 +2082,12 @@ export default function App() {
       }
 
       if (!response.ok || !data.success) {
+        if (response.status === 401) {
+          setGuestAuthModal({
+            isOpen: true,
+            reason: data?.error || 'Sign in to continue chatting with Kinich.',
+          });
+        }
         if (
           (response.status === 403 || response.status === 429) &&
           typeof data?.code === 'string' &&
@@ -2475,6 +2464,12 @@ export default function App() {
       }
 
       if (!response.ok || !data.success) {
+        if (response.status === 401) {
+          setGuestAuthModal({
+            isOpen: true,
+            reason: data?.error || 'Sign in to continue chatting with Kinich.',
+          });
+        }
         if (
           (response.status === 403 || response.status === 429) &&
           typeof data?.code === 'string' &&
@@ -2676,6 +2671,12 @@ export default function App() {
       }
 
       if (!response.ok || !data.success) {
+        if (response.status === 401) {
+          setGuestAuthModal({
+            isOpen: true,
+            reason: data?.error || 'Sign in to continue chatting with Kinich.',
+          });
+        }
         if (
           (response.status === 403 || response.status === 429) &&
           typeof data?.code === 'string' &&
