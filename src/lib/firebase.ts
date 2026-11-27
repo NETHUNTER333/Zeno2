@@ -143,15 +143,33 @@ function stripUndefined(obj: any): any {
   return cleaned;
 }
 
-export async function getAuthHeaders(extraHeaders: Record<string, string> = {}): Promise<Record<string, string>> {
+async function waitForAuthReady(timeoutMs = 2500): Promise<void> {
+  try {
+    if (auth.currentUser) return;
+    if (typeof (auth as any).authStateReady === 'function') {
+      await Promise.race([
+        (auth as any).authStateReady(),
+        new Promise<void>((resolve) => setTimeout(resolve, timeoutMs)),
+      ]);
+    }
+  } catch {
+    // Ignore hydration errors and fall back to current auth state
+  }
+}
+
+export async function getAuthHeaders(
+  extraHeaders: Record<string, string> = {},
+  options?: { forceRefresh?: boolean; skipContentType?: boolean }
+): Promise<Record<string, string>> {
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
+    ...(options?.skipContentType ? {} : { 'Content-Type': 'application/json' }),
     ...extraHeaders,
   };
   try {
+    await waitForAuthReady();
     const user = auth.currentUser;
     if (user) {
-      const token = await user.getIdToken();
+      const token = await user.getIdToken(Boolean(options?.forceRefresh));
       if (token) {
         headers['Authorization'] = `Bearer ${token}`;
       }

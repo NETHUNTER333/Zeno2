@@ -1051,7 +1051,11 @@ ${fullTranscriptText}`;
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
-        throw new Error(errData?.message || errData?.error || `Server responded with HTTP ${res.status}`);
+        const rawErr = String(errData?.message || errData?.error || '');
+        if (res.status === 401 || /authentication required|bearer/i.test(rawErr)) {
+          throw new Error('Please sign in to generate study materials.');
+        }
+        throw new Error(rawErr || `Server responded with HTTP ${res.status}`);
       }
 
       const data = await res.json();
@@ -1346,8 +1350,10 @@ ${fullTranscriptText}`;
         const qs = new URLSearchParams();
         if (videoId) qs.set('videoId', videoId);
         if (jobId) qs.set('jobId', jobId);
+        const authHeaders = await getAuthHeaders({}, { skipContentType: true });
         const res = await apiFetch(`/api/youtube/study/status?${qs.toString()}`, {
           method: 'GET',
+          headers: authHeaders,
           signal: AbortSignal.timeout(8000),
         });
         if (res.ok) {
@@ -1403,7 +1409,12 @@ ${fullTranscriptText}`;
         }
       } else {
         const errData = await aiRes.json().catch(() => ({}));
-        setStudyError(errData?.message || errData?.error || 'Could not synthesize quiz and flashcards right now. Please tap Retry.');
+        const rawErr = String(errData?.message || errData?.error || '');
+        setStudyError(
+          aiRes.status === 401 || /authentication required|bearer/i.test(rawErr)
+            ? 'Please sign in to generate study materials.'
+            : rawErr || 'Could not synthesize quiz and flashcards right now. Please tap Retry.'
+        );
       }
     } catch {
       setStudyError('Study synthesis timed out. Please tap Retry Generation.');
@@ -1544,14 +1555,19 @@ ${fullTranscriptText}`;
           }
         } else {
           const errData = await aiRes.json().catch(() => ({}));
-          serverStudyError = String(errData?.message || errData?.error || '').trim();
+          const rawErr = String(errData?.message || errData?.error || '').trim();
+          serverStudyError =
+            aiRes.status === 401 || /authentication required|bearer/i.test(rawErr)
+              ? 'Please sign in to generate study materials.'
+              : rawErr;
         }
       } catch {
         // If the POST connection dropped or timed out, check /api/youtube/study/status before failing
         try {
+          const statusHeaders = await getAuthHeaders({}, { skipContentType: true });
           const statusRes = await apiFetch(
             `/api/youtube/study/status?videoId=${encodeURIComponent(normVidId)}`,
-            { method: 'GET', signal: AbortSignal.timeout(6000) }
+            { method: 'GET', headers: statusHeaders, signal: AbortSignal.timeout(6000) }
           );
           if (statusRes.ok) {
             const statusData = await statusRes.json();
@@ -1654,7 +1670,11 @@ ${fullTranscriptText}`;
 
       if (!res.ok) {
         const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson?.message || errJson?.error || `Document synthesis failed with HTTP ${res.status}`);
+        const rawErr = String(errJson?.message || errJson?.error || '');
+        if (res.status === 401 || /authentication required|bearer/i.test(rawErr)) {
+          throw new Error('Please sign in to generate study materials.');
+        }
+        throw new Error(rawErr || `Document synthesis failed with HTTP ${res.status}`);
       }
 
       const data = await res.json();
@@ -4410,6 +4430,25 @@ ${fullTranscriptText}`;
                     }
                   }}
                 />
+                {/sign in|authentication required|bearer/i.test(studyError) && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      window.dispatchEvent(
+                        new CustomEvent('kinich-open-auth', {
+                          detail: { reason: 'Sign in to generate study materials' },
+                        })
+                      )
+                    }
+                    className={`w-full py-2.5 px-4 rounded-full text-xs font-semibold transition cursor-pointer ${
+                      isDark
+                        ? 'bg-white text-black hover:bg-neutral-200'
+                        : 'bg-black text-white hover:bg-neutral-800'
+                    }`}
+                  >
+                    Sign in to Kinich
+                  </button>
+                )}
                 {sourceType === 'youtube' && activeVideoId && (
                   <div className={`p-4 rounded-xl border space-y-2 text-left ${isDark ? 'border-white/[0.1] bg-white/[0.02]' : 'border-black/[0.1] bg-black/[0.02]'}`}>
                     <label className="text-xs font-medium text-neutral-400">Or paste the video transcript</label>

@@ -78,12 +78,6 @@ export const OPTIONAL_AUTH_API_ROUTES = [
   '/treg/search',
   '/treg/extract',
   '/arxiv/search',
-  '/pdf/study',
-  '/youtube/study/status',
-  '/youtube/study/job',
-  '/study/youtube',
-  '/study/topic',
-  '/study/synthesize',
   '/quota/status',
   '/quota/sync',
   '/quota/upgrade',
@@ -121,6 +115,14 @@ export const PUBLIC_API_ROUTES = [
   '/health',
   '/youtube/transcript',
   '/youtube/study',
+  '/youtube/study/status',
+  '/youtube/study/job',
+  '/pdf/study',
+  '/study/youtube',
+  '/study/youtube-search',
+  '/study/topic',
+  '/study/synthesize',
+  '/study/ai-assistant',
   '/study/snap-solve',
   '/admin/health',
   '/webhooks/dodo',
@@ -451,7 +453,7 @@ export async function firebaseAuthMiddleware(req: Request, res: Response, next: 
       res,
       401,
       'auth/missing-token',
-      'Authentication required: provide a valid Firebase Bearer token'
+      'Authentication required. Please sign in to continue.'
     );
   }
 
@@ -467,7 +469,7 @@ export function requireFirebaseAuth(req: Request, res: Response, next: NextFunct
       res,
       401,
       'auth/missing-token',
-      'Authentication required: provide a valid Firebase Bearer token'
+      'Authentication required. Please sign in to continue.'
     );
   }
   return next();

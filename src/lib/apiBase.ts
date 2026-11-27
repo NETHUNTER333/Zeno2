@@ -57,17 +57,61 @@ export function apiUrl(path: string): string {
   return base ? `${base}${cleanPath}` : cleanPath;
 }
 
+function mergeHeaders(base: Record<string, string>, incoming?: HeadersInit): Headers {
+  const merged = new Headers(base);
+  if (incoming) {
+    new Headers(incoming).forEach((value, key) => {
+      merged.set(key, value);
+    });
+  }
+  return merged;
+}
+
+async function resolveOptionalAuthHeader(forceRefresh = false): Promise<string | null> {
+  if (typeof window === 'undefined') return null;
+  try {
+    const { getAuthHeaders } = await import('./firebase');
+    const authHeaders = await getAuthHeaders({}, { forceRefresh, skipContentType: true });
+    return authHeaders['Authorization'] || null;
+  } catch {
+    return null;
+  }
+}
+
 export async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
   const url = apiUrl(path);
+  const headers = mergeHeaders({ Accept: 'application/json' }, init?.headers);
+
+  if (!headers.has('Authorization')) {
+    const authHeader = await resolveOptionalAuthHeader(false);
+    if (authHeader) {
+      headers.set('Authorization', authHeader);
+    }
+  }
+
   const options: RequestInit = {
     ...init,
     credentials: init?.credentials || 'include',
-    headers: {
-      Accept: 'application/json',
-      ...init?.headers,
-    },
+    headers,
   };
-  return fetch(url, options);
+
+  const res = await fetch(url, options);
+
+  // If the server rejected an expired/stale Firebase token, force-refresh once and retry
+  if (res.status === 401 && typeof window !== 'undefined') {
+    const freshAuthHeader = await resolveOptionalAuthHeader(true);
+    if (freshAuthHeader && freshAuthHeader !== headers.get('Authorization')) {
+      const retryHeaders = mergeHeaders({ Accept: 'application/json' }, init?.headers);
+      retryHeaders.set('Authorization', freshAuthHeader);
+      return fetch(url, {
+        ...init,
+        credentials: init?.credentials || 'include',
+        headers: retryHeaders,
+      });
+    }
+  }
+
+  return res;
 }
 
 // Patch window.fetch to route /api/* calls through the backend origin and fall back to zeno-api on static hosts or Capacitor if /api/* returns 404 or network error.
@@ -144,26 +188,4 @@ if (typeof window !== 'undefined' && typeof window.fetch === 'function') {
   } catch (err) {
     console.warn('[apiBase] Could not patch window.fetch:', err);
   }
-}
-
-
-if (typeof window !== 'undefined' && typeof window.fetch === 'function') {
-  const originalFetch = window.fetch.bind(window);
-  window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
-    let url = '';
-    if (typeof input === 'string') url = input;
-    else if (input instanceof URL) url = input.toString();
-    else if (input instanceof Request) url = input.url;
-
-    if (url.startsWith('/api/') || url.startsWith('/api?')) {
-      const base = getBackendBaseUrl();
-      if (base) {
-        const newUrl = `${base}${url}`;
-        if (typeof input === 'string') return originalFetch(newUrl, init);
-        if (input instanceof URL) return originalFetch(new URL(newUrl), init);
-        if (input instanceof Request) return originalFetch(new Request(newUrl, input), init);
-      }
-    }
-    return originalFetch(input, init);
-  };
 }

@@ -162,6 +162,7 @@ export function classifyRouteTier(routePath: string): RateLimitTier {
     routePath === '/chat' ||
     routePath === '/summarize' ||
     routePath === '/pdf/study' ||
+    routePath === '/youtube/study' ||
     routePath.startsWith('/study/') ||
     routePath === '/hitaishi/companion' ||
     routePath.startsWith('/hitaishi/')
