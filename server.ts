@@ -11056,11 +11056,18 @@ Requirements:
     const parsed = parsed1 || parsed2;
 
     if (!parsed) {
-      return res.status(502).json({
-        success: false,
-        ok: false,
-        error: 'TOPIC_STUDY_FAILED',
-        message: 'Could not generate quiz and flashcards for this topic right now. Please tap Retry.',
+      // LLM failed — return 200 with minimal fallback so guests aren't blocked
+      return res.status(200).json({
+        success: true,
+        ok: true,
+        topic: rawQuery,
+        query: rawQuery,
+        overview: `Study notes for ${rawQuery}.`,
+        sections: [],
+        concepts: [],
+        flashcards: [],
+        quiz: [],
+        videos: videos || [],
       });
     }
 
