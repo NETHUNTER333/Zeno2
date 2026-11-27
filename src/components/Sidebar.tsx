@@ -35,6 +35,7 @@ import {
   Layers,
   MessageSquare,
   Upload,
+  Film,
 } from 'lucide-react';
 import { GrokLogo } from './GrokLogo';
 import { ChatMessage, SavedBookmark, KnowledgeVaultItem } from '../types';
@@ -567,6 +568,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
           if (window.innerWidth < 768) onClose();
         },
       });
+      items.push({
+        id: 'action-video-studio',
+        label: 'Video Studio',
+        sublabel: 'Generate AI videos from text prompts',
+        icon: <Film className="w-3.5 h-3.5 text-sky-500" />,
+        onClick: () => {
+          window.dispatchEvent(new CustomEvent('kinich-open-video-gen'));
+          if (window.innerWidth < 768) onClose();
+        },
+      });
 
       if (onOpenGrowthHub) {
         items.push({
@@ -724,11 +735,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
   return (
     <>
       <aside
-        className={`fixed md:static inset-0 md:inset-y-0 left-0 z-50 w-full md:w-72 h-[100dvh] md:h-auto border-r-0 md:border-r backdrop-blur-2xl flex flex-col transition-transform md:transition-all duration-200 ease-in-out select-none ${
+        className={`fixed md:static inset-0 md:inset-y-0 left-0 z-50 w-full md:w-72 lg:w-[280px] xl:w-[296px] shrink-0 h-[100dvh] md:h-auto border-r-0 md:border-r backdrop-blur-2xl flex flex-col transition-transform md:transition-all duration-200 ease-in-out select-none ${
           isDark
             ? 'bg-neutral-950 md:bg-neutral-950/85 border-white/[0.1] text-white'
             : 'bg-white md:bg-white/85 border-black/[0.08] text-[#000000]'
-        } ${isOpen ? 'translate-x-0' : '-translate-x-full md:-ml-72'}`}
+        } ${isOpen ? 'translate-x-0' : '-translate-x-full md:-ml-72 lg:-ml-[280px] xl:-ml-[296px]'}`}
       >
         <div
           className={`p-3.5 border-b flex items-center justify-between ${

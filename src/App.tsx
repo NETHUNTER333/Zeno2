@@ -12,6 +12,11 @@ import {
   Compass,
   Bookmark,
   Zap,
+  Camera,
+  Film,
+  X,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import {
   ChatMessage as ChatMessageType,
@@ -86,6 +91,16 @@ const PublicArtifactView = lazy(() =>
 );
 const SideChatWorkspace = lazy(() =>
   import('./components/SideChatWorkspace').then((m) => ({ default: m.SideChatWorkspace }))
+);
+const InstantSnapSolveModal = lazy(() =>
+  import('./components/InstantSnapSolveModal').then((m) => ({
+    default: m.InstantSnapSolveModal,
+  }))
+);
+const VideoGenerateModal = lazy(() =>
+  import('./components/VideoGenerateModal').then((m) => ({
+    default: m.VideoGenerateModal,
+  }))
 );
 import { DeleteThreadConfirmDialog, DeleteThreadTarget } from './components/DeleteThreadConfirmDialog';
 import {
@@ -604,7 +619,25 @@ export default function App() {
     return null;
   });
 
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.innerWidth >= 1024 : false
+  );
+  const [guestAuthShowPassword, setGuestAuthShowPassword] = useState(false);
+
+  // Auto-adapt sidebar when crossing the desktop/mobile breakpoint on window resize
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    let wasDesktop = window.innerWidth >= 1024;
+    const handleViewportResize = () => {
+      const isDesktopNow = window.innerWidth >= 1024;
+      if (isDesktopNow !== wasDesktop) {
+        wasDesktop = isDesktopNow;
+        setIsSidebarOpen(isDesktopNow);
+      }
+    };
+    window.addEventListener('resize', handleViewportResize, { passive: true });
+    return () => window.removeEventListener('resize', handleViewportResize);
+  }, []);
   const [currentView, setCurrentView] = useState<'chat' | 'account' | 'study' | 'hitaishi'>(() => {
     if (typeof window !== 'undefined') {
       const p = window.location.pathname.toLowerCase();
@@ -743,9 +776,17 @@ export default function App() {
     return { isOpen: isPricingRoute, highlightPlan: undefined, limitReason: null };
   });
   const [quotaLimitModalOpen, setQuotaLimitModalOpen] = useState(false);
+  const [isSnapSolveOpen, setIsSnapSolveOpen] = useState(false);
+  const [isVideoGenOpen, setIsVideoGenOpen] = useState(false);
   const [freeQuotaWindow, setFreeQuotaWindow] = useState(() =>
     UserAccountStore.getFreeQuotaWindowInfo()
   );
+
+  useEffect(() => {
+    const openVideo = () => setIsVideoGenOpen(true);
+    window.addEventListener('kinich-open-video-gen', openVideo);
+    return () => window.removeEventListener('kinich-open-video-gen', openVideo);
+  }, []);
   const [sharedBannerId, setSharedBannerId] = useState<string | null>(null);
 
   const [isSignedIn, setIsSignedIn] = useState(() => {
@@ -1668,10 +1709,20 @@ export default function App() {
     // Automatically detect and persist home city if user states where they live (e.g. "I live in Ramagundam, Telangana")
     detectAndSaveHomeCityFromText(query);
 
+    // Auto-select vision model when user sends an image or file attachment
+    const hasImageAtt = attachments.some((a) => a?.type?.startsWith('image/'));
+    const hasAnyAtt = attachments.length > 0;
+    let activeModel = selectedModel;
+    if (hasAnyAtt && !selectedModel.supportsVision) {
+      activeModel = getDefaultVisionModel();
+      setSelectedModel(activeModel);
+    }
+    const isUnlimitedModel = Boolean(activeModel.unlimited);
+
     // 1. Check 5-hour free model / daily prompt limit and file upload limit
     const currentUsage = UserAccountStore.getUsage();
     const currentPlanNorm = UserAccountStore.getNormalizedPlan();
-    if (currentUsage.messagesUsed >= currentUsage.messageLimit) {
+    if (!isUnlimitedModel && currentUsage.messagesUsed >= currentUsage.messageLimit) {
       const windowInfo = UserAccountStore.getFreeQuotaWindowInfo();
       setFreeQuotaWindow(windowInfo);
       if (currentPlanNorm === 'free') {
@@ -1701,26 +1752,19 @@ export default function App() {
     trackGrowthEvent('first_core_action_completed', { action: 'chat_prompt' });
     claimPendingReferralIfEligible('first_core_action');
 
-    // Auto-select vision model when user sends an image or file attachment
-    const hasImageAtt = attachments.some((a) => a?.type?.startsWith('image/'));
-    const hasAnyAtt = attachments.length > 0;
-    let activeModel = selectedModel;
-    if (hasAnyAtt && !selectedModel.supportsVision) {
-      activeModel = getDefaultVisionModel();
-      setSelectedModel(activeModel);
-    }
-
     // 2. Check if selected model requires Spark ($3) or Fire ($9)
-    const reqModelTier = getModelRequiredTier(activeModel);
-    if (!UserAccountStore.canUseModel(reqModelTier)) {
-      setPricingModalState({
-        isOpen: true,
-        highlightPlan: reqModelTier === 'fire' ? 'fire' : 'spark',
-        limitReason: `${activeModel.name} requires the ${
-          reqModelTier === 'fire' ? 'Fire ($9/mo)' : 'Spark ($3/mo)'
-        } plan. Upgrade now to unlock it.`,
-      });
-      return;
+    if (!isUnlimitedModel) {
+      const reqModelTier = getModelRequiredTier(activeModel);
+      if (!UserAccountStore.canUseModel(reqModelTier)) {
+        setPricingModalState({
+          isOpen: true,
+          highlightPlan: reqModelTier === 'fire' ? 'fire' : 'spark',
+          limitReason: `${activeModel.name} requires the ${
+            reqModelTier === 'fire' ? 'Fire ($9/mo)' : 'Spark ($3/mo)'
+          } plan. Upgrade now to unlock it.`,
+        });
+        return;
+      }
     }
 
     const isCasualOrGreeting =
@@ -2087,7 +2131,7 @@ export default function App() {
           data?.timing?.totalTokens || 450,
           Array.isArray(data.sources) && data.sources.length > 0 ? 1 : 0,
           Array.isArray(data.toolsUsed) ? data.toolsUsed.length : 0,
-          1,
+          isUnlimitedModel ? 0 : 1,
           attachments ? attachments.length : 0
         );
       }
@@ -2860,7 +2904,7 @@ export default function App() {
             /* Main Chat Canvas */
             <div className="flex-1 min-w-0 flex flex-col h-full overflow-hidden relative z-10">
               {/* Clean Flat Top Controls (Sidebar toggle, Model Picker, Study Studio & New Chat) */}
-              <div className="absolute top-[max(0.5rem,env(safe-area-inset-top))] left-3 right-3 sm:left-4 sm:right-4 z-30 flex items-center justify-between gap-2 pointer-events-none">
+              <div className="absolute top-[max(0.5rem,env(safe-area-inset-top))] lg:top-3.5 left-3 right-3 sm:left-4 sm:right-4 lg:left-6 lg:right-6 z-30 flex items-center justify-between gap-2 pointer-events-none">
                 <button
                   onClick={() => setIsSidebarOpen(!isSidebarOpen)}
                   className={`pointer-events-auto size-8 rounded-xl border flex items-center justify-center transition-colors cursor-pointer active:scale-95 ${
@@ -2910,8 +2954,36 @@ export default function App() {
                   />
                 </div>
 
-                {/* Top Right Controls: Study Studio + New Chat Button */}
+                {/* Top Right Controls: Video Studio + Instant Snap & Solve + Study Studio + New Chat Button */}
                 <div className="flex items-center gap-1.5 pointer-events-auto">
+                  <button
+                    type="button"
+                    onClick={() => setIsVideoGenOpen(true)}
+                    className={`pointer-events-auto size-8 rounded-xl border flex items-center justify-center transition-colors cursor-pointer active:scale-95 ${
+                      isDark
+                        ? 'bg-[#09090b] hover:bg-white/[0.08] border-white/[0.14] text-white'
+                        : 'bg-white hover:bg-black/[0.05] border-black/[0.1] text-[#000000]'
+                    }`}
+                    title="Video Studio"
+                    aria-label="Video Studio"
+                    data-testid="chat-video-gen-btn"
+                  >
+                    <Film className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsSnapSolveOpen(true)}
+                    className={`pointer-events-auto size-8 rounded-xl border flex items-center justify-center transition-colors cursor-pointer active:scale-95 ${
+                      isDark
+                        ? 'bg-[#09090b] hover:bg-white/[0.08] border-white/[0.14] text-white'
+                        : 'bg-white hover:bg-black/[0.05] border-black/[0.1] text-[#000000]'
+                    }`}
+                    title="Instant Camera Snap & Solve"
+                    aria-label="Instant Camera Snap and Solve"
+                    data-testid="chat-snap-solve-btn"
+                  >
+                    <Camera className="w-3.5 h-3.5" />
+                  </button>
                   <button
                     type="button"
                     onClick={() => {
@@ -2971,7 +3043,7 @@ export default function App() {
               {/* Content State: Empty vs Thread */}
               {isThreadEmpty ? (
                 /* Empty State: Center logo, Smart Continuation strip, and prompt input anchored at bottom */
-                <div className="flex-1 min-w-0 flex flex-col items-center justify-between px-3 sm:px-4 w-full overflow-y-auto pt-14 sm:pt-16 pb-[max(1rem,env(safe-area-inset-bottom))] sm:pb-8">
+                <div className="flex-1 min-w-0 flex flex-col items-center justify-between px-3 sm:px-4 lg:px-8 w-full overflow-y-auto pt-14 sm:pt-16 pb-[max(1rem,env(safe-area-inset-bottom))] sm:pb-8">
                   {/* Center Area: Clean spacer or exhausted quota fire greeting */}
                   <div className="flex-1 my-auto flex items-center justify-center">
                     {freeQuotaWindow.isExhausted && (
@@ -2991,7 +3063,7 @@ export default function App() {
                   </div>
 
                   {/* Bottom Anchored Area: Prompt Input */}
-                  <div className="w-full max-w-3xl flex flex-col items-center mt-auto">
+                  <div className="w-full max-w-3xl lg:max-w-[50rem] xl:max-w-[54rem] 2xl:max-w-[58rem] flex flex-col items-center mt-auto">
                     {freeQuotaWindow.isExhausted && (
                       <div
                         className={`w-[calc(100%-16px)] sm:w-[calc(100%-24px)] -mb-3 pb-5 pt-3 px-4 rounded-t-[20px] border border-b-0 flex items-start gap-2.5 text-[13.5px] leading-[1.45] transition-all ${
@@ -3056,6 +3128,11 @@ export default function App() {
                       <div className="flex items-center gap-2.5 min-w-0">
                         <div className="flex items-center -space-x-2 shrink-0">
                           <img
+                            src="/assets/aistudio/Screenshot_2026_1123_112035_23a228ec.jpg"
+                            alt="x402"
+                            className="w-6 h-6 rounded-full object-cover ring-2 ring-white dark:ring-zinc-900 shrink-0"
+                          />
+                          <img
                             src="/hitaishi-assets/characters/n01/avatar.webp"
                             alt="Ruri"
                             className="w-6 h-6 rounded-full object-cover ring-2 ring-white dark:ring-zinc-900 shrink-0"
@@ -3065,15 +3142,9 @@ export default function App() {
                             alt="Nana"
                             className="w-6 h-6 rounded-full object-cover ring-2 ring-white dark:ring-zinc-900 shrink-0"
                           />
-                          <img
-                            src="/hitaishi-assets/characters/n02/avatar.webp"
-                            alt="Konatsu"
-                            className="w-6 h-6 rounded-full object-cover ring-2 ring-white dark:ring-zinc-900 shrink-0"
-                          />
                         </div>
                         <div className="flex items-center gap-2 min-w-0">
                           <span className="inline-flex items-center gap-1.5 text-[13px] font-bold tracking-tight shrink-0">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                             Hitaishi
                           </span>
                         </div>
@@ -3145,8 +3216,8 @@ export default function App() {
                 /* Active Thread State with message flow beneath floating prompt */
                 <div className="flex-1 min-w-0 flex flex-col h-full overflow-hidden relative">
                   {/* Scrollable Messages Viewport with bottom padding so content flows beneath the floating composer */}
-                  <div ref={messagesContainerRef} className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden px-3 sm:px-4 pb-36 scrollbar-thin">
-                    <div className="pt-14 sm:pt-16 pb-3 max-w-3xl mx-auto w-full min-w-0">
+                  <div ref={messagesContainerRef} className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden px-3 sm:px-4 lg:px-8 pb-36 scrollbar-thin">
+                    <div className="pt-14 sm:pt-16 pb-3 max-w-3xl lg:max-w-[50rem] xl:max-w-[54rem] 2xl:max-w-[58rem] mx-auto w-full min-w-0">
 
                       {/* Shared Public Thread Read-Only Snapshot Banner */}
                       {sharedBannerId && activeThread && (
@@ -3222,8 +3293,8 @@ export default function App() {
                   />
 
                   {/* Absolute Floating Bottom Composer with no opaque background scrim */}
-                  <div className="absolute bottom-0 inset-x-0 px-3 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:p-4 pointer-events-none z-20">
-                    <div className="max-w-3xl mx-auto w-full pointer-events-auto flex flex-col items-center">
+                  <div className="absolute bottom-0 inset-x-0 px-3 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:p-4 lg:px-8 pointer-events-none z-20">
+                    <div className="max-w-3xl lg:max-w-[50rem] xl:max-w-[54rem] 2xl:max-w-[58rem] mx-auto w-full pointer-events-auto flex flex-col items-center">
                       {freeQuotaWindow.isExhausted && (
                         <div
                           className={`w-[calc(100%-16px)] sm:w-[calc(100%-24px)] -mb-3 pb-5 pt-3 px-4 rounded-t-[20px] border border-b-0 flex items-start gap-2.5 text-[13.5px] leading-[1.45] transition-all ${
@@ -3288,6 +3359,11 @@ export default function App() {
                         <div className="flex items-center gap-2.5 min-w-0">
                           <div className="flex items-center -space-x-2 shrink-0">
                             <img
+                              src="/assets/aistudio/Screenshot_2026_1123_112035_23a228ec.jpg"
+                              alt="x402"
+                              className="w-5 h-5 rounded-full object-cover ring-2 ring-white dark:ring-zinc-900 shrink-0"
+                            />
+                            <img
                               src="/hitaishi-assets/characters/n01/avatar.webp"
                               alt="Ruri"
                               className="w-5 h-5 rounded-full object-cover ring-2 ring-white dark:ring-zinc-900 shrink-0"
@@ -3297,15 +3373,9 @@ export default function App() {
                               alt="Nana"
                               className="w-5 h-5 rounded-full object-cover ring-2 ring-white dark:ring-zinc-900 shrink-0"
                             />
-                            <img
-                              src="/hitaishi-assets/characters/n02/avatar.webp"
-                              alt="Konatsu"
-                              className="w-5 h-5 rounded-full object-cover ring-2 ring-white dark:ring-zinc-900 shrink-0"
-                            />
                           </div>
                           <div className="flex items-center gap-2 min-w-0">
                             <span className="inline-flex items-center gap-1.5 text-xs font-bold tracking-tight shrink-0">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                               Hitaishi
                             </span>
                           </div>
@@ -3799,38 +3869,46 @@ export default function App() {
       {/* Global Content & Safety Report Modal */}
       <ReportContentModal isDark={isDark} />
 
-      {/* Compact In-Place Guest Sign-In Modal / Sheet */}
+      {/* Refined In-Place Guest Sign-In Modal / Sheet */}
       {guestAuthModal.isOpen && (
         <div
           data-testid="guest-signin-modal"
           role="dialog"
           aria-modal="true"
-          className="fixed inset-0 z-[130] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-150"
+          className="fixed inset-0 z-[130] flex items-center justify-center bg-black/65 backdrop-blur-sm p-4 animate-in fade-in duration-150"
           onClick={() => setGuestAuthModal((prev) => ({ ...prev, isOpen: false }))}
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className={`w-full max-w-sm rounded-xl border p-4 shadow-xl space-y-3 ${
+            className={`w-full max-w-sm sm:max-w-[400px] rounded-2xl border p-5 sm:p-6 shadow-2xl space-y-4 ${
               isDark
-                ? 'bg-[#121215] border-white/10 text-white'
-                : 'bg-white border-neutral-200 text-neutral-900'
+                ? 'bg-[#0e0e11] border-white/[0.12] text-white'
+                : 'bg-white border-black/[0.1] text-neutral-950'
             }`}
           >
-            <div className="flex items-start justify-between gap-2">
-              <div className="flex items-center gap-2 min-w-0">
-                <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-                  isDark ? 'bg-white/10 text-white' : 'bg-black/5 text-neutral-900'
-                }`}>
-                  <Bookmark className="w-3.5 h-3.5" />
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <div
+                  className={`size-9 rounded-xl border flex items-center justify-center shrink-0 ${
+                    isDark
+                      ? 'bg-white/[0.05] border-white/10 text-white'
+                      : 'bg-black/[0.03] border-black/10 text-neutral-900'
+                  }`}
+                >
+                  <Bookmark className="w-4 h-4" />
                 </div>
                 <div className="min-w-0">
                   <h3
                     data-testid="guest-signin-modal-title"
-                    className="text-xs font-semibold truncate"
+                    className="text-sm font-semibold tracking-tight truncate"
                   >
                     {guestAuthModal.reason || 'Sign in to Kinich'}
                   </h3>
-                  <p className={`text-[11px] truncate ${isDark ? 'text-neutral-400' : 'text-neutral-500'}`}>
+                  <p
+                    className={`text-xs truncate mt-0.5 ${
+                      isDark ? 'text-neutral-400' : 'text-neutral-500'
+                    }`}
+                  >
                     Sync your vault, notes, and study history.
                   </p>
                 </div>
@@ -3838,25 +3916,36 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setGuestAuthModal((prev) => ({ ...prev, isOpen: false }))}
-                className="p-1 rounded-lg opacity-60 hover:opacity-100 cursor-pointer shrink-0"
+                className={`size-8 rounded-lg flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
+                  isDark
+                    ? 'text-neutral-400 hover:text-white hover:bg-white/[0.07]'
+                    : 'text-neutral-500 hover:text-black hover:bg-black/[0.05]'
+                }`}
                 aria-label="Close sign-in modal"
               >
-                ✕
+                <X className="w-4 h-4" />
               </button>
             </div>
 
             {guestAuthError && (
-              <div className="p-2 rounded-lg border border-red-500/30 bg-red-500/10 text-red-400 text-[11px]">
+              <div
+                role="alert"
+                className={`px-3 py-2.5 rounded-xl border text-xs font-medium ${
+                  isDark
+                    ? 'border-red-500/30 bg-red-500/10 text-red-300'
+                    : 'border-red-200 bg-red-50 text-red-700'
+                }`}
+              >
                 {guestAuthError}
               </div>
             )}
 
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               <GoogleSignInButton
                 testId="modal-google-signin-btn"
                 isDark={isDark}
                 disabled={guestAuthBusy}
-                className="h-9 rounded-lg text-xs"
+                className="h-10 rounded-xl text-xs sm:text-[13px]"
                 beforeSignIn={() => {
                   setGuestAuthError(null);
                   return true;
@@ -3875,10 +3964,10 @@ export default function App() {
                   type="button"
                   data-testid="modal-email-toggle-btn"
                   onClick={() => setShowEmailFormInModal(true)}
-                  className={`w-full h-9 px-3 rounded-lg border text-xs font-medium flex items-center justify-center gap-2 transition-colors cursor-pointer ${
+                  className={`w-full h-10 px-3 rounded-xl border text-xs sm:text-[13px] font-medium flex items-center justify-center gap-2 transition-colors cursor-pointer ${
                     isDark
-                      ? 'border-white/10 bg-white/[0.03] hover:bg-white/[0.06] text-white'
-                      : 'border-neutral-200 bg-neutral-50 hover:bg-neutral-100 text-neutral-900'
+                      ? 'border-white/12 bg-white/[0.04] hover:bg-white/[0.08] text-white'
+                      : 'border-black/12 bg-neutral-50 hover:bg-neutral-100 text-neutral-900'
                   }`}
                 >
                   <span>Continue with Email</span>
@@ -3913,41 +4002,61 @@ export default function App() {
                       setGuestAuthBusy(false);
                     }
                   }}
-                  className="space-y-2 pt-1"
+                  className="space-y-2.5 pt-1"
                 >
                   <input
                     type="email"
+                    autoComplete="email"
                     required
                     value={guestAuthEmail}
                     onChange={(e) => setGuestAuthEmail(e.target.value)}
                     placeholder="you@example.com"
-                    className={`w-full h-9 px-3 rounded-xl border text-xs outline-none ${
+                    className={`w-full h-10 px-3.5 rounded-xl border text-xs sm:text-sm outline-none transition-colors ${
                       isDark
-                        ? 'bg-black/40 border-white/15 text-white placeholder:text-neutral-500'
-                        : 'bg-neutral-50 border-black/15 text-black placeholder:text-neutral-400'
+                        ? 'bg-zinc-900/90 border-white/15 text-white placeholder:text-neutral-500 focus:border-white/35'
+                        : 'bg-neutral-50 border-black/15 text-black placeholder:text-neutral-400 focus:border-black/35'
                     }`}
                   />
-                  <input
-                    type="password"
-                    required
-                    minLength={6}
-                    value={guestAuthPassword}
-                    onChange={(e) => setGuestAuthPassword(e.target.value)}
-                    placeholder="Password (6+ chars)"
-                    className={`w-full h-9 px-3 rounded-xl border text-xs outline-none ${
-                      isDark
-                        ? 'bg-black/40 border-white/15 text-white placeholder:text-neutral-500'
-                        : 'bg-neutral-50 border-black/15 text-black placeholder:text-neutral-400'
-                    }`}
-                  />
+                  <div className="relative">
+                    <input
+                      type={guestAuthShowPassword ? 'text' : 'password'}
+                      autoComplete="current-password"
+                      required
+                      minLength={6}
+                      value={guestAuthPassword}
+                      onChange={(e) => setGuestAuthPassword(e.target.value)}
+                      placeholder="Password (6+ chars)"
+                      className={`w-full h-10 px-3.5 pr-10 rounded-xl border text-xs sm:text-sm outline-none transition-colors ${
+                        isDark
+                          ? 'bg-zinc-900/90 border-white/15 text-white placeholder:text-neutral-500 focus:border-white/35'
+                          : 'bg-neutral-50 border-black/15 text-black placeholder:text-neutral-400 focus:border-black/35'
+                      }`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setGuestAuthShowPassword((prev) => !prev)}
+                      aria-label={guestAuthShowPassword ? 'Hide password' : 'Show password'}
+                      className={`absolute right-1.5 top-1/2 -translate-y-1/2 size-7 rounded-lg flex items-center justify-center cursor-pointer ${
+                        isDark
+                          ? 'text-neutral-400 hover:text-white'
+                          : 'text-neutral-500 hover:text-black'
+                      }`}
+                    >
+                      {guestAuthShowPassword ? (
+                        <EyeOff className="w-3.5 h-3.5" />
+                      ) : (
+                        <Eye className="w-3.5 h-3.5" />
+                      )}
+                    </button>
+                  </div>
                   <button
                     type="submit"
                     data-testid="modal-email-signin-btn"
                     disabled={guestAuthBusy}
-                    className={`w-full h-9 px-4 rounded-xl border text-xs font-semibold transition-colors cursor-pointer ${
+                    className={`w-full h-10 px-4 rounded-xl text-xs sm:text-sm font-semibold transition-colors cursor-pointer ${
                       isDark
-                        ? 'border-white/20 bg-white text-black hover:bg-neutral-200'
-                        : 'border-black/20 bg-black text-white hover:bg-neutral-800'
+                        ? 'bg-white text-black hover:bg-neutral-200'
+                        : 'bg-black text-white hover:bg-neutral-800'
                     }`}
                   >
                     {guestAuthBusy ? 'Signing in…' : 'Sign in with Email'}
@@ -3977,6 +4086,37 @@ export default function App() {
             ✕
           </button>
         </div>
+      )}
+      {isSnapSolveOpen && (
+        <Suspense fallback={null}>
+          <InstantSnapSolveModal
+            isOpen={isSnapSolveOpen}
+            onClose={() => setIsSnapSolveOpen(false)}
+            isDark={isDark}
+            onAskFollowUp={(prompt) => {
+              setIsSnapSolveOpen(false);
+              setCurrentView('chat');
+              void handleSend(prompt);
+            }}
+            onOpenPricing={(highlightPlan, reason) => {
+              setIsSnapSolveOpen(false);
+              setPricingModalState({
+                isOpen: true,
+                highlightPlan: highlightPlan || 'spark',
+                limitReason: reason || null,
+              });
+            }}
+          />
+        </Suspense>
+      )}
+      {isVideoGenOpen && (
+        <Suspense fallback={null}>
+          <VideoGenerateModal
+            isOpen={isVideoGenOpen}
+            onClose={() => setIsVideoGenOpen(false)}
+            isDark={isDark}
+          />
+        </Suspense>
       )}
     </div>
     </>

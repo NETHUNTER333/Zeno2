@@ -52,6 +52,8 @@ import {
   Sigma,
   Activity,
   ArrowUpRight,
+  Camera,
+  Mic2,
 } from 'lucide-react';
 import { ViewOnMap } from './watermelon/view-on-map';
 import { ThinkingOrb } from 'thinking-orbs';
@@ -79,6 +81,10 @@ import { StudyPhysicsVisualizeLab } from './StudyPhysicsVisualizeLab';
 import { StudySketchTutor } from './StudySketchTutor';
 import { StudyFocusTimer } from './StudyFocusTimer';
 import { StudyFormulaScratchpad } from './StudyFormulaScratchpad';
+import { InstantSnapSolveModal } from './InstantSnapSolveModal';
+import { TwoHostPodcastStudio } from './TwoHostPodcastStudio';
+import { ArxivEditorialReader } from './ArxivEditorialReader';
+import { exportAnkiApkg, exportAnkiTxt } from '../lib/ankiExport';
 import { StudyLanguageDropdown } from './CustomSearchSelect';
 import {
   StudyLoopStore,
@@ -131,7 +137,8 @@ export type WorkspaceTabType =
   | 'mastery_path'
   | 'deep_solve'
   | 'plotter'
-  | 'sketch_tutor';
+  | 'sketch_tutor'
+  | 'arxiv_reader';
 
 export interface OpenWorkspaceTab {
   id: string;
@@ -450,16 +457,20 @@ export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
   });
   const [showHomeStudyLoop, setShowHomeStudyLoop] = useState<boolean>(false);
   const [formulaScratchpadOpen, setFormulaScratchpadOpen] = useState<boolean>(false);
+  const [snapSolveModalOpen, setSnapSolveModalOpen] = useState<boolean>(() => isSnapSolveRoute);
   const [fullPageFeature, setFullPageFeature] = useState<{
     type: WorkspaceTabType;
     title: string;
     returnTo: 'home' | 'workspace';
   } | null>(null);
+  const [activeArxivPaperId, setActiveArxivPaperId] = useState<string | null>(null);
 
   useEffect(() => {
     const syncSnapRoute = () => {
       const p = window.location.pathname.toLowerCase();
-      setIsSnapSolveRoute(p === '/snap-solve' || p.startsWith('/snap-solve/'));
+      const matched = p === '/snap-solve' || p.startsWith('/snap-solve/');
+      setIsSnapSolveRoute(matched);
+      if (matched) setSnapSolveModalOpen(true);
     };
     window.addEventListener('popstate', syncSnapRoute);
     return () => window.removeEventListener('popstate', syncSnapRoute);
@@ -498,12 +509,11 @@ export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
   const [openSetMenuId, setOpenSetMenuId] = useState<string | null>(null);
   const [topMoreMenuOpen, setTopMoreMenuOpen] = useState<boolean>(false);
 
-  // Audio Player State
+  // 2-Host Podcast Studio & Anki Export State
   const [podcastOpen, setPodcastOpen] = useState<boolean>(false);
-  const [podcastPlaying, setPodcastPlaying] = useState<boolean>(false);
-  const [podcastSec, setPodcastSec] = useState<number>(16);
-  const [podcastDuration] = useState<number>(121);
-  const [podcastSpeed, setPodcastSpeed] = useState<number>(1);
+  const [ankiMenuOpen, setAnkiMenuOpen] = useState<boolean>(false);
+  const [ankiExporting, setAnkiExporting] = useState<boolean>(false);
+  const [ankiStatusMsg, setAnkiStatusMsg] = useState<string | null>(null);
 
   // Summary TTS & Edit State
   const [isListeningSummary, setIsListeningSummary] = useState<boolean>(false);
@@ -611,6 +621,16 @@ export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
   const [homePromptDraft, setHomePromptDraft] = useState<string>('');
   const [spacesSort, setSpacesSort] = useState<'Newest' | 'Oldest'>('Newest');
   const [openSpaceMenuId, setOpenSpaceMenuId] = useState<string | null>(null);
+  const [homeDropdown, setHomeDropdown] = useState<'tools' | 'add' | 'labs' | null>(null);
+
+  useEffect(() => {
+    if (!homeDropdown) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setHomeDropdown(null);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [homeDropdown]);
 
   const [spaces, setSpaces] = useState<StudySpaceItem[]>(() => {
     try {
@@ -743,19 +763,7 @@ export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
     } catch {}
   }, [spaces]);
 
-  useEffect(() => {
-    if (!podcastPlaying) return;
-    const timer = setInterval(() => {
-      setPodcastSec((prev) => {
-        if (prev >= podcastDuration) {
-          setPodcastPlaying(false);
-          return 0;
-        }
-        return prev + 1;
-      });
-    }, Math.round(1000 / podcastSpeed));
-    return () => clearInterval(timer);
-  }, [podcastPlaying, podcastDuration, podcastSpeed]);
+  // Sync custom flashcards when studyBundle changes
 
   useEffect(() => {
     if (studyBundle?.flashcards) {
@@ -833,6 +841,7 @@ export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
     'mind_map',
     'code_extractor',
     'map',
+    'arxiv_reader',
   ]);
 
   const openOrFocusTab = (type: WorkspaceTabType, customTitle?: string, moduleIndex?: number) => {
@@ -862,6 +871,7 @@ export const StudyWorkspace: React.FC<StudyWorkspaceProps> = ({
       deep_solve: customTitle || 'Deep Solve',
       plotter: customTitle || 'Curve Plotter',
       sketch_tutor: customTitle || 'Visual Whiteboard',
+      arxiv_reader: customTitle || 'arXiv Reader',
     };
     if (FULL_PAGE_TOOL_TYPES.has(type)) {
       setFullPageFeature({
@@ -1876,12 +1886,36 @@ ${fullTranscriptText}`;
   };
 
   const handleTogglePodcast = () => {
-    if (!podcastOpen) {
-      setPodcastOpen(true);
-      setPodcastPlaying(true);
-      return;
+    setPodcastOpen((open) => !open);
+  };
+
+  const handleExportAnki = async (format: 'apkg' | 'txt') => {
+    if (customFlashcards.length === 0 || ankiExporting) return;
+    setAnkiMenuOpen(false);
+    setAnkiExporting(true);
+    setAnkiStatusMsg(null);
+    const deckCards = customFlashcards.map((fc) => ({
+      front: fc.front,
+      back: fc.back,
+      hint: (fc as { hint?: string }).hint,
+      tags: [sourceType === 'youtube' ? 'youtube' : sourceType === 'pdf' ? 'pdf' : 'study'],
+    }));
+    try {
+      if (format === 'txt') {
+        const res = exportAnkiTxt(resolvedTitle || 'Kinich Flashcards', deckCards);
+        if (res.ok) {
+          setAnkiStatusMsg(`Exported ${res.count} cards (.txt)`);
+        }
+      } else {
+        const res = await exportAnkiApkg(resolvedTitle || 'Kinich Flashcards', deckCards);
+        if (res.ok) {
+          setAnkiStatusMsg(`Exported ${res.count} cards (.${res.format})`);
+        }
+      }
+      setTimeout(() => setAnkiStatusMsg(null), 3200);
+    } finally {
+      setAnkiExporting(false);
     }
-    setPodcastPlaying((p) => !p);
   };
 
   const handleExportStudyPack = () => {
@@ -2503,7 +2537,32 @@ ${fullTranscriptText}`;
       {/* VIEW 0: DEDICATED FULL-PAGE TOOL SCREEN (NO SCRIM, BACK BUTTON)       */}
       {/* ===================================================================== */}
       {fullPageFeature ? (
-        <div className="flex-1 min-h-0 overflow-y-auto">
+        <div
+          className={`flex-1 min-h-0 ${
+            fullPageFeature.type === 'arxiv_reader' ? 'overflow-hidden' : 'overflow-y-auto'
+          }`}
+        >
+          {fullPageFeature.type === 'arxiv_reader' && (
+            <ArxivEditorialReader
+              initialPaperId={activeArxivPaperId}
+              isDark={isDark}
+              onBack={() => {
+                const ret = fullPageFeature.returnTo;
+                setFullPageFeature(null);
+                if (ret === 'home') setViewMode('home');
+              }}
+              onAskTutor={(prompt, topicOverride) => {
+                setFullPageFeature(null);
+                setViewMode('workspace');
+                openOrFocusTab('chat', 'Tutor');
+                handleSendStudyChat(prompt, {
+                  topicOverride,
+                  resetContext: Boolean(topicOverride),
+                });
+              }}
+            />
+          )}
+
           {fullPageFeature.type === 'sketch_tutor' && (
             <StudySketchTutor
               topicTitle={resolvedTitle}
@@ -2849,310 +2908,608 @@ ${fullTranscriptText}`;
           )}
         </div>
       ) : viewMode === 'home' ? (
-        <div className="flex-1 flex flex-col overflow-y-auto">
-          {/* Header without translucent scrim, blur, or gradient */}
-          <header className="h-13 px-3 sm:px-5 bg-transparent flex items-center justify-between gap-2 shrink-0">
-            <div className="flex items-center gap-2.5">
+        <div className="flex-1 flex flex-col overflow-y-auto relative">
+          {/* Transparent click-outside catcher for home dropdowns */}
+          {(homeDropdown || openSpaceMenuId) && (
+            <div
+              className="fixed inset-0 z-20"
+              aria-hidden="true"
+              onClick={() => {
+                setHomeDropdown(null);
+                setOpenSpaceMenuId(null);
+              }}
+            />
+          )}
+
+          {/* Minimal 3-Zone Header: Back + Title | Focus + Tools Dropdown */}
+          <header className="h-13 px-3.5 sm:px-5 lg:px-8 max-w-2xl lg:max-w-4xl xl:max-w-5xl w-full mx-auto bg-transparent flex items-center justify-between gap-2 shrink-0 relative z-50">
+            <div className="flex items-center gap-2 min-w-0">
               <button
                 type="button"
                 onClick={onBackToChat}
-                className={`h-8 px-3.5 rounded-full border text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 active:scale-95 ${
+                className={`h-8 px-3 rounded-full border text-[11px] font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 whitespace-nowrap active:scale-95 ${
                   isDark
-                    ? 'bg-white/[0.04] hover:bg-white/[0.09] border-white/[0.12] text-neutral-200 hover:text-white'
-                    : 'bg-black/[0.03] hover:bg-black/[0.07] border-black/[0.12] text-neutral-800 hover:text-black'
+                    ? 'bg-white/[0.04] hover:bg-white/[0.09] border-white/[0.1] text-neutral-200 hover:text-white'
+                    : 'bg-black/[0.03] hover:bg-black/[0.07] border-black/[0.1] text-neutral-800 hover:text-black'
                 }`}
                 title="Back to Chat"
               >
-                <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
+                <ArrowLeft className="w-3 h-3 shrink-0" />
                 <span>Back</span>
               </button>
-              <span className="font-semibold text-sm tracking-tight">Study Space</span>
+              <span className="font-semibold text-[13px] sm:text-sm tracking-tight truncate">
+                Study Space
+              </span>
             </div>
 
-            <div className="flex items-center gap-1.5 sm:gap-2">
+            <div className="flex items-center gap-1.5 shrink-0">
               <StudyFocusTimer isDark={isDark} />
 
-              <button
-                type="button"
-                onClick={() => setFormulaScratchpadOpen(true)}
-                className={`h-8 px-2.5 sm:px-3 rounded-full border text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer active:scale-95 ${
-                  isDark
-                    ? 'bg-white/[0.04] hover:bg-white/[0.09] border-white/[0.12] text-neutral-200 hover:text-white'
-                    : 'bg-black/[0.03] hover:bg-black/[0.07] border-black/[0.12] text-neutral-800 hover:text-black'
-                }`}
-                title="STEM Formula Sheet & Study Scratchpad"
-              >
-                <Sigma className="w-3.5 h-3.5 shrink-0" />
-                <span className="hidden sm:inline">Formulas</span>
-              </button>
+              {/* Compact Tools Dropdown (arXiv Reader, Podcast, Formulas, Recall, Hitaishi) */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setHomeDropdown((prev) => (prev === 'tools' ? null : 'tools'))
+                  }
+                  data-testid="study-home-tools-dropdown"
+                  aria-expanded={homeDropdown === 'tools'}
+                  className={`h-8 px-2.5 sm:px-3 rounded-full border text-[11px] font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap active:scale-95 ${
+                    homeDropdown === 'tools'
+                      ? isDark
+                        ? 'bg-white text-black border-white'
+                        : 'bg-black text-white border-black'
+                      : isDark
+                      ? 'bg-white/[0.04] hover:bg-white/[0.09] border-white/[0.1] text-neutral-200 hover:text-white'
+                      : 'bg-black/[0.03] hover:bg-black/[0.07] border-black/[0.1] text-neutral-800 hover:text-black'
+                  }`}
+                >
+                  <Sliders className="w-3 h-3 shrink-0" />
+                  <span>Tools</span>
+                  <ChevronDown
+                    className={`w-3 h-3 opacity-70 transition-transform duration-150 ${
+                      homeDropdown === 'tools' ? 'rotate-180' : ''
+                    }`}
+                  />
+                </button>
 
-              <button
-                type="button"
-                onClick={() =>
-                  openHitaishiWithWorkspaceScope(
-                    'study',
-                    `Help me study my Study Space "${resolvedTitle || 'Study Space'}".`
-                  )
-                }
-                className={`h-8 px-2.5 sm:px-3 rounded-full border text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer active:scale-95 ${
-                  isDark
-                    ? 'bg-white/[0.05] hover:bg-white/[0.11] border-white/[0.14] text-white'
-                    : 'bg-black/[0.04] hover:bg-black/[0.08] border-black/[0.12] text-black'
-                }`}
-                title="Study with Hitaishi Voice Companion"
-              >
-                <img
-                  src="/hitaishi-assets/characters/n01/avatar.webp"
-                  alt="Hitaishi"
-                  className="w-4 h-4 rounded-full object-cover"
-                />
-                <span className="hidden sm:inline">Hitaishi</span>
-              </button>
+                {homeDropdown === 'tools' && (
+                  <div
+                    className={`absolute right-0 top-full mt-2 w-56 rounded-3xl border p-1.5 shadow-2xl z-50 ${
+                      isDark
+                        ? 'bg-[#141417] border-white/[0.12] text-neutral-100'
+                        : 'bg-white border-black/[0.1] text-neutral-900'
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      data-testid="study-home-arxiv-reader-btn"
+                      onClick={() => {
+                        setHomeDropdown(null);
+                        setActiveArxivPaperId(null);
+                        openOrFocusTab('arxiv_reader', 'arXiv Reader');
+                      }}
+                      className={`w-full px-3 py-2 rounded-2xl text-left flex items-center gap-2.5 transition-colors cursor-pointer ${
+                        isDark ? 'hover:bg-white/[0.07]' : 'hover:bg-black/[0.045]'
+                      }`}
+                    >
+                      <BookOpen className="w-3.5 h-3.5 shrink-0 opacity-80" />
+                      <div className="min-w-0">
+                        <div className="text-[11px] font-semibold">arXiv Reader</div>
+                        <div className={`text-[10px] truncate ${textMuted}`}>
+                          Long-form papers, highlights &amp; TOC
+                        </div>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      data-testid="study-home-podcast-btn"
+                      onClick={() => {
+                        setHomeDropdown(null);
+                        setPodcastOpen(true);
+                      }}
+                      className={`w-full px-3 py-2 rounded-2xl text-left flex items-center gap-2.5 transition-colors cursor-pointer ${
+                        isDark ? 'hover:bg-white/[0.07]' : 'hover:bg-black/[0.045]'
+                      }`}
+                    >
+                      <Mic2 className="w-3.5 h-3.5 shrink-0 opacity-80" />
+                      <div className="min-w-0">
+                        <div className="text-[11px] font-semibold">2-Host Podcast</div>
+                        <div className={`text-[10px] truncate ${textMuted}`}>
+                          Alex &amp; Maya audio overview
+                        </div>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setHomeDropdown(null);
+                        setFormulaScratchpadOpen(true);
+                      }}
+                      className={`w-full px-3 py-2 rounded-2xl text-left flex items-center gap-2.5 transition-colors cursor-pointer ${
+                        isDark ? 'hover:bg-white/[0.07]' : 'hover:bg-black/[0.045]'
+                      }`}
+                    >
+                      <Sigma className="w-3.5 h-3.5 shrink-0 opacity-80" />
+                      <div className="min-w-0">
+                        <div className="text-[11px] font-semibold">Formula Sheet</div>
+                        <div className={`text-[10px] truncate ${textMuted}`}>
+                          STEM equations &amp; scratchpad
+                        </div>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setHomeDropdown(null);
+                        setShowHomeStudyLoop((v) => !v);
+                      }}
+                      className={`w-full px-3 py-2 rounded-2xl text-left flex items-center gap-2.5 transition-colors cursor-pointer ${
+                        isDark ? 'hover:bg-white/[0.07]' : 'hover:bg-black/[0.045]'
+                      }`}
+                    >
+                      <Clock className="w-3.5 h-3.5 shrink-0 opacity-80" />
+                      <div className="min-w-0">
+                        <div className="text-[11px] font-semibold">Daily Recall &amp; Plan</div>
+                        <div className={`text-[10px] truncate ${textMuted}`}>
+                          {showHomeStudyLoop ? 'Hide study schedule' : 'Spaced repetition & exams'}
+                        </div>
+                      </div>
+                    </button>
+
+                    <div
+                      className={`my-1 h-px ${
+                        isDark ? 'bg-white/[0.08]' : 'bg-black/[0.07]'
+                      }`}
+                    />
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setHomeDropdown(null);
+                        openHitaishiWithWorkspaceScope(
+                          'study',
+                          `Help me study my Study Space "${resolvedTitle || 'Study Space'}".`
+                        );
+                      }}
+                      className={`w-full px-3 py-2 rounded-2xl text-left flex items-center gap-2.5 transition-colors cursor-pointer ${
+                        isDark ? 'hover:bg-white/[0.07]' : 'hover:bg-black/[0.045]'
+                      }`}
+                    >
+                      <img
+                        src="/hitaishi-assets/characters/n01/avatar.webp"
+                        alt="Hitaishi"
+                        className="w-4 h-4 rounded-full object-cover shrink-0"
+                      />
+                      <div className="min-w-0">
+                        <div className="text-[11px] font-semibold">Hitaishi Voice</div>
+                        <div className={`text-[10px] truncate ${textMuted}`}>
+                          Live voice companion
+                        </div>
+                      </div>
+                    </button>
+                  </div>
+                )}
+              </div>
 
               {(activeVideoId || studyBundle) && (
                 <button
                   type="button"
                   onClick={() => setViewMode('workspace')}
-                  className={`h-8 px-3.5 rounded-full border text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer active:scale-95 ${
+                  className={`h-8 px-3 rounded-full border text-[11px] font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap active:scale-95 ${
                     isDark
                       ? 'bg-white text-black border-white hover:bg-neutral-200'
                       : 'bg-black text-white border-black hover:bg-neutral-800'
                   }`}
                 >
-                  <span>Resume Workspace</span>
+                  <span>Resume</span>
                 </button>
               )}
             </div>
           </header>
 
-          <div className="max-w-2xl w-full mx-auto px-3 sm:px-5 py-3 space-y-3.5">
-            {/* 3-Column Compact Ingestion: Upload, Link, Paste (Pill-shaped, Clean) */}
-            <div className="grid grid-cols-3 gap-2 sm:gap-2.5">
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className={`px-3.5 py-2 rounded-full border text-left flex items-center gap-2.5 transition-all cursor-pointer ${
+          {/* Clean, Focused Study Home Body */}
+          <div className="max-w-2xl lg:max-w-4xl xl:max-w-5xl w-full mx-auto px-3.5 sm:px-5 lg:px-8 pt-2 pb-10 space-y-4">
+            {/* Primary Command Input + Single Compact Action Strip */}
+            <div className="space-y-2.5 relative z-30">
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const q = homePromptDraft.trim();
+                  if (!q) return;
+                  const arxivMatch = q.match(
+                    /^(?:https?:\/\/arxiv\.org\/(?:abs|pdf|html)\/)?([0-9]{4}\.[0-9]{4,5}(?:v\d+)?)(?:\.pdf)?$/i
+                  );
+                  if (arxivMatch?.[1]) {
+                    setHomePromptDraft('');
+                    setActiveArxivPaperId(arxivMatch[1].replace(/v\d+$/i, ''));
+                    openOrFocusTab('arxiv_reader', 'arXiv Reader');
+                    return;
+                  }
+                  const ytId = extractYouTubeIdFromInput(q);
+                  setHomePromptDraft('');
+                  if (ytId) {
+                    loadYouTubeSource(ytId);
+                  } else {
+                    loadTopicStudySpace(q);
+                  }
+                }}
+                className={`flex items-center justify-between gap-2 p-1 pl-3.5 sm:p-1.5 sm:pl-4 rounded-full border transition-colors ${
                   isDark
-                    ? 'bg-[#121215] border-white/[0.08] hover:border-white/[0.2] hover:bg-[#18181c]'
-                    : 'bg-white border-black/[0.08] hover:border-black/[0.2] hover:bg-neutral-50 shadow-xs'
+                    ? 'bg-[#121215] border-white/[0.1] focus-within:border-white/[0.25]'
+                    : 'bg-white border-black/[0.1] focus-within:border-black/[0.25] shadow-2xs'
                 }`}
               >
-                <div
-                  className={`size-7 rounded-full flex items-center justify-center shrink-0 ${
-                    isDark ? 'bg-white/[0.06] text-neutral-200' : 'bg-black/[0.05] text-neutral-800'
-                  }`}
-                >
-                  <Upload className="w-3.5 h-3.5" />
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <Search className="w-3.5 h-3.5 opacity-40 shrink-0" />
+                  <input
+                    type="text"
+                    value={homePromptDraft}
+                    onChange={(e) => setHomePromptDraft(e.target.value)}
+                    placeholder="Ask a topic, paste a YouTube or arXiv link..."
+                    className="w-full h-8 bg-transparent border-0 text-xs sm:text-[13px] outline-none placeholder:text-muted-foreground/60"
+                  />
                 </div>
-                <div className="min-w-0">
-                  <div className="text-xs sm:text-sm font-semibold truncate">Upload</div>
-                  <div className={`text-[10px] truncate ${textMuted} hidden sm:block`}>PDF, Audio</div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const q = homePromptDraft.trim();
+                      setHomePromptDraft('');
+                      setViewMode('workspace');
+                      openOrFocusTab('chat', 'Tutor');
+                      if (q) {
+                        handleSendStudyChat(q, {
+                          topicOverride: q.slice(0, 72),
+                          resetContext: true,
+                        });
+                      }
+                    }}
+                    className={`h-7 px-2.5 rounded-full border text-[11px] font-medium inline-flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap ${
+                      isDark
+                        ? 'border-white/[0.1] text-neutral-200 hover:bg-white/[0.08]'
+                        : 'border-black/[0.1] text-neutral-800 hover:bg-black/[0.05]'
+                    }`}
+                    title="Ask Study Tutor directly"
+                    data-testid="home-ask-tutor-btn"
+                  >
+                    <MessageSquare className="w-3 h-3" />
+                    <span>Tutor</span>
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={!homePromptDraft.trim()}
+                    className={`size-8 rounded-full flex items-center justify-center transition-all cursor-pointer shrink-0 ${
+                      !homePromptDraft.trim()
+                        ? 'opacity-30 cursor-not-allowed bg-neutral-500/20 text-neutral-400'
+                        : isDark
+                        ? 'bg-white text-black hover:bg-neutral-200 active:scale-95'
+                        : 'bg-black text-white hover:bg-neutral-800 active:scale-95'
+                    }`}
+                    title="Start learning"
+                  >
+                    <ArrowUp className="w-3.5 h-3.5" />
+                  </button>
                 </div>
-              </button>
+              </form>
 
-              <button
-                type="button"
-                onClick={() => setLinkModalOpen(true)}
-                className={`px-3.5 py-2 rounded-full border text-left flex items-center gap-2.5 transition-all cursor-pointer ${
-                  isDark
-                    ? 'bg-[#121215] border-white/[0.08] hover:border-white/[0.2] hover:bg-[#18181c]'
-                    : 'bg-white border-black/[0.08] hover:border-black/[0.2] hover:bg-neutral-50 shadow-xs'
-                }`}
-              >
-                <div
-                  className={`size-7 rounded-full flex items-center justify-center shrink-0 ${
-                    isDark ? 'bg-white/[0.06] text-neutral-200' : 'bg-black/[0.05] text-neutral-800'
-                  }`}
-                >
-                  <Link2 className="w-3.5 h-3.5" />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-xs sm:text-sm font-semibold truncate">Link</div>
-                  <div className={`text-[10px] truncate ${textMuted} hidden sm:block`}>YouTube, Web</div>
-                </div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setPasteModalOpen(true)}
-                className={`px-3.5 py-2 rounded-full border text-left flex items-center gap-2.5 transition-all cursor-pointer ${
-                  isDark
-                    ? 'bg-[#121215] border-white/[0.08] hover:border-white/[0.2] hover:bg-[#18181c]'
-                    : 'bg-white border-black/[0.08] hover:border-black/[0.2] hover:bg-neutral-50 shadow-xs'
-                }`}
-              >
-                <div
-                  className={`size-7 rounded-full flex items-center justify-center shrink-0 ${
-                    isDark ? 'bg-white/[0.06] text-neutral-200' : 'bg-black/[0.05] text-neutral-800'
-                  }`}
-                >
-                  <ClipboardPaste className="w-3.5 h-3.5" />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-xs sm:text-sm font-semibold truncate">Paste</div>
-                  <div className={`text-[10px] truncate ${textMuted} hidden sm:block`}>Text notes</div>
-                </div>
-              </button>
-            </div>
-
-            {/* Topic / Question / YouTube URL Input Bar (Compact) */}
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                const q = homePromptDraft.trim();
-                if (!q) return;
-                const ytId = extractYouTubeIdFromInput(q);
-                setHomePromptDraft('');
-                if (ytId) {
-                  loadYouTubeSource(ytId);
-                } else {
-                  loadTopicStudySpace(q);
-                }
-              }}
-              className={`flex items-center justify-between gap-2 p-1.5 pl-3.5 sm:p-2 sm:pl-4 rounded-full border transition-all ${
-                isDark
-                  ? 'bg-[#121215] border-white/[0.1] focus-within:border-white/[0.25]'
-                  : 'bg-white border-black/[0.1] focus-within:border-black/[0.25]'
-              }`}
-            >
-              <div className="flex items-center gap-2.5 flex-1 min-w-0">
-                <Search className="w-4 h-4 opacity-40 shrink-0" />
-                <input
-                  type="text"
-                  value={homePromptDraft}
-                  onChange={(e) => setHomePromptDraft(e.target.value)}
-                  placeholder="Ask a question, enter a topic, or paste a YouTube link..."
-                  className="w-full bg-transparent border-0 text-xs sm:text-sm outline-none placeholder:text-muted-foreground/60"
-                />
-              </div>
-              <div className="flex items-center gap-1.5 shrink-0">
+              {/* Single Clean Quick-Action Row: Snap & Solve + Add Dropdown + Labs Dropdown */}
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => {
-                    const q = homePromptDraft.trim();
-                    setHomePromptDraft('');
-                    setViewMode('workspace');
-                    openOrFocusTab('chat', 'Tutor');
-                    if (q) {
-                      handleSendStudyChat(q, {
-                        topicOverride: q.slice(0, 72),
-                        resetContext: true,
-                      });
-                    }
+                    setHomeDropdown(null);
+                    setSnapSolveModalOpen(true);
                   }}
-                  className={`h-8 px-3 rounded-full border text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
+                  data-testid="study-home-snap-solve-btn"
+                  className={`h-9 px-3.5 sm:px-4 rounded-full border text-[11px] sm:text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0 active:scale-[0.98] ${
                     isDark
-                      ? 'border-white/[0.12] text-neutral-200 hover:bg-white/[0.08]'
-                      : 'border-black/[0.12] text-neutral-800 hover:bg-black/[0.05]'
+                      ? 'bg-white text-black border-white hover:bg-neutral-200'
+                      : 'bg-black text-white border-black hover:bg-neutral-800'
                   }`}
-                  title="Ask Study Tutor directly"
-                  data-testid="home-ask-tutor-btn"
                 >
-                  <MessageSquare className="w-3.5 h-3.5" />
-                  <span>Tutor</span>
+                  <Camera className="w-3.5 h-3.5 shrink-0" />
+                  <span>Snap &amp; Solve</span>
                 </button>
-                <button
-                  type="submit"
-                  disabled={!homePromptDraft.trim()}
-                  className={`size-8 sm:size-9 rounded-full flex items-center justify-center transition-all cursor-pointer shrink-0 ${
-                    !homePromptDraft.trim()
-                      ? 'opacity-30 cursor-not-allowed bg-neutral-500/20 text-neutral-400'
-                      : isDark
-                      ? 'bg-white text-black hover:bg-neutral-200 active:scale-95'
-                      : 'bg-black text-white hover:bg-neutral-800 active:scale-95'
-                  }`}
-                  title="Start learning"
-                >
-                  <ArrowUp className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                </button>
-              </div>
-            </form>
 
-            {/* Studio Tools Grid: Visual Whiteboard & Interactive Study Labs */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 pt-1" data-testid="study-home-deeptutor-bar">
-              {[
-                {
-                  mode: 'sketch_tutor' as const,
-                  title: 'Visual Whiteboard',
-                  sub: 'Drawn lessons & audio',
-                  Icon: Pencil,
-                },
-                {
-                  mode: 'visualize' as const,
-                  title: 'Physics Lab',
-                  sub: 'Interactive simulation',
-                  Icon: Atom,
-                },
-                {
-                  mode: 'diagram' as const,
-                  title: 'Concept Diagram',
-                  sub: 'Flows & SVG export',
-                  Icon: Network,
-                },
-                {
-                  mode: 'mastery_path' as const,
-                  title: 'Mastery Path',
-                  sub: 'Skill checkpoints',
-                  Icon: Compass,
-                },
-                {
-                  mode: 'deep_solve' as const,
-                  title: 'Deep Solve',
-                  sub: 'Step-by-step proofs',
-                  Icon: Sigma,
-                },
-                {
-                  mode: 'plotter' as const,
-                  title: 'Curve Plotter',
-                  sub: 'y(x) function graph',
-                  Icon: Activity,
-                },
-              ].map((card) => {
-                const Icon = card.Icon;
-                return (
+                {/* Add Source Dropdown (Upload, Link, Paste, Podcast) */}
+                <div className="relative flex-1 sm:flex-none">
                   <button
-                    key={card.mode}
                     type="button"
-                    onClick={() => launchDeepTutorMode(card.mode, card.title)}
-                    className={`group relative min-h-[82px] px-3.5 py-3 rounded-2xl border text-left flex flex-col justify-between gap-2.5 transition-all duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] active:scale-[0.985] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 ${
-                      isDark
-                        ? 'bg-[#121215] border-white/[0.08] hover:border-white/[0.22] hover:bg-[#17171b] text-neutral-100 focus-visible:ring-white/40 focus-visible:ring-offset-[#09090b]'
-                        : 'bg-white border-black/[0.08] hover:border-black/[0.2] hover:bg-[#fafafa] text-neutral-900 shadow-[0_1px_2px_rgba(0,0,0,0.03)] focus-visible:ring-black/30 focus-visible:ring-offset-white'
+                    onClick={() =>
+                      setHomeDropdown((prev) => (prev === 'add' ? null : 'add'))
+                    }
+                    data-testid="study-home-add-dropdown"
+                    aria-expanded={homeDropdown === 'add'}
+                    className={`w-full sm:w-auto h-9 px-3 rounded-full border text-[11px] sm:text-xs font-medium inline-flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
+                      homeDropdown === 'add'
+                        ? isDark
+                          ? 'bg-white/[0.12] border-white/30 text-white'
+                          : 'bg-black/[0.08] border-black/30 text-black'
+                        : isDark
+                        ? 'bg-[#121215] border-white/[0.1] hover:border-white/[0.22] text-neutral-200'
+                        : 'bg-white border-black/[0.1] hover:border-black/[0.22] text-neutral-800'
                     }`}
                   >
-                    <div className="flex items-center justify-between gap-2">
-                      <span
-                        className={`size-7 rounded-lg flex items-center justify-center transition-colors ${
-                          isDark
-                            ? 'bg-white/[0.06] text-neutral-300 group-hover:bg-white/[0.12] group-hover:text-white'
-                            : 'bg-black/[0.045] text-neutral-700 group-hover:bg-black/[0.08] group-hover:text-black'
+                    <Plus className="w-3.5 h-3.5 shrink-0" />
+                    <span>Add</span>
+                    <ChevronDown
+                      className={`w-3 h-3 opacity-60 transition-transform duration-150 ${
+                        homeDropdown === 'add' ? 'rotate-180' : ''
+                      }`}
+                    />
+                  </button>
+
+                  {homeDropdown === 'add' && (
+                    <div
+                      className={`absolute left-0 top-full mt-2 w-56 rounded-3xl border p-1.5 shadow-2xl z-40 ${
+                        isDark
+                          ? 'bg-[#141417] border-white/[0.12] text-neutral-100'
+                          : 'bg-white border-black/[0.1] text-neutral-900'
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setHomeDropdown(null);
+                          fileInputRef.current?.click();
+                        }}
+                        className={`w-full px-3 py-2 rounded-2xl text-left flex items-center gap-2.5 transition-colors cursor-pointer ${
+                          isDark ? 'hover:bg-white/[0.07]' : 'hover:bg-black/[0.045]'
                         }`}
                       >
-                        <Icon className="w-3.5 h-3.5" strokeWidth={1.9} />
-                      </span>
-                      <ArrowUpRight
-                        className={`w-3.5 h-3.5 transition-transform duration-150 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 ${
-                          isDark
-                            ? 'text-neutral-600 group-hover:text-neutral-300'
-                            : 'text-neutral-400 group-hover:text-neutral-700'
+                        <Upload className="w-3.5 h-3.5 shrink-0 opacity-80" />
+                        <div className="min-w-0">
+                          <div className="text-[11px] font-semibold">Upload File</div>
+                          <div className={`text-[10px] truncate ${textMuted}`}>
+                            PDF, audio, or slides
+                          </div>
+                        </div>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setHomeDropdown(null);
+                          setLinkModalOpen(true);
+                        }}
+                        className={`w-full px-3 py-2 rounded-2xl text-left flex items-center gap-2.5 transition-colors cursor-pointer ${
+                          isDark ? 'hover:bg-white/[0.07]' : 'hover:bg-black/[0.045]'
+                        }`}
+                      >
+                        <Link2 className="w-3.5 h-3.5 shrink-0 opacity-80" />
+                        <div className="min-w-0">
+                          <div className="text-[11px] font-semibold">YouTube / Web Link</div>
+                          <div className={`text-[10px] truncate ${textMuted}`}>
+                            Import video or article
+                          </div>
+                        </div>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setHomeDropdown(null);
+                          setPasteModalOpen(true);
+                        }}
+                        className={`w-full px-3 py-2 rounded-2xl text-left flex items-center gap-2.5 transition-colors cursor-pointer ${
+                          isDark ? 'hover:bg-white/[0.07]' : 'hover:bg-black/[0.045]'
+                        }`}
+                      >
+                        <ClipboardPaste className="w-3.5 h-3.5 shrink-0 opacity-80" />
+                        <div className="min-w-0">
+                          <div className="text-[11px] font-semibold">Paste Notes</div>
+                          <div className={`text-[10px] truncate ${textMuted}`}>
+                            Turn raw text into study pack
+                          </div>
+                        </div>
+                      </button>
+
+                      <div
+                        className={`my-1 h-px ${
+                          isDark ? 'bg-white/[0.08]' : 'bg-black/[0.07]'
                         }`}
                       />
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setHomeDropdown(null);
+                          setActiveArxivPaperId(null);
+                          openOrFocusTab('arxiv_reader', 'arXiv Reader');
+                        }}
+                        className={`w-full px-3 py-2 rounded-2xl text-left flex items-center gap-2.5 transition-colors cursor-pointer ${
+                          isDark ? 'hover:bg-white/[0.07]' : 'hover:bg-black/[0.045]'
+                        }`}
+                      >
+                        <BookOpen className="w-3.5 h-3.5 shrink-0 opacity-80" />
+                        <div className="min-w-0">
+                          <div className="text-[11px] font-semibold">arXiv Paper Reader</div>
+                          <div className={`text-[10px] truncate ${textMuted}`}>
+                            Long-form typography &amp; notes
+                          </div>
+                        </div>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setHomeDropdown(null);
+                          setPodcastOpen(true);
+                        }}
+                        className={`w-full px-3 py-2 rounded-2xl text-left flex items-center gap-2.5 transition-colors cursor-pointer ${
+                          isDark ? 'hover:bg-white/[0.07]' : 'hover:bg-black/[0.045]'
+                        }`}
+                      >
+                        <Mic2 className="w-3.5 h-3.5 shrink-0 opacity-80" />
+                        <div className="min-w-0">
+                          <div className="text-[11px] font-semibold">2-Host Podcast</div>
+                          <div className={`text-[10px] truncate ${textMuted}`}>
+                            Generate dual-voice episode
+                          </div>
+                        </div>
+                      </button>
                     </div>
-                    <div className="min-w-0">
-                      <div className="text-sm font-semibold tracking-tight leading-snug truncate">
-                        {card.title}
-                      </div>
-                      <div className={`text-xs leading-snug truncate mt-0.5 ${textMuted}`}>
-                        {card.sub}
-                      </div>
-                    </div>
+                  )}
+                </div>
+
+                {/* Study Labs Dropdown (6 Interactive Labs + Daily Recall) */}
+                <div className="relative flex-1 sm:flex-none" data-testid="study-home-deeptutor-bar">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setHomeDropdown((prev) => (prev === 'labs' ? null : 'labs'))
+                    }
+                    data-testid="study-home-labs-dropdown"
+                    aria-expanded={homeDropdown === 'labs'}
+                    className={`w-full sm:w-auto h-9 px-3 rounded-full border text-[11px] sm:text-xs font-medium inline-flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
+                      homeDropdown === 'labs'
+                        ? isDark
+                          ? 'bg-white/[0.12] border-white/30 text-white'
+                          : 'bg-black/[0.08] border-black/30 text-black'
+                        : isDark
+                        ? 'bg-[#121215] border-white/[0.1] hover:border-white/[0.22] text-neutral-200'
+                        : 'bg-white border-black/[0.1] hover:border-black/[0.22] text-neutral-800'
+                    }`}
+                  >
+                    <Layers className="w-3.5 h-3.5 shrink-0" />
+                    <span>Labs</span>
+                    <ChevronDown
+                      className={`w-3 h-3 opacity-60 transition-transform duration-150 ${
+                        homeDropdown === 'labs' ? 'rotate-180' : ''
+                      }`}
+                    />
                   </button>
-                );
-              })}
+
+                  {homeDropdown === 'labs' && (
+                    <div
+                      className={`absolute right-0 sm:left-0 sm:right-auto top-full mt-2 w-60 rounded-3xl border p-1.5 shadow-2xl z-40 ${
+                        isDark
+                          ? 'bg-[#141417] border-white/[0.12] text-neutral-100'
+                          : 'bg-white border-black/[0.1] text-neutral-900'
+                      }`}
+                    >
+                      {[
+                        {
+                          mode: 'sketch_tutor' as const,
+                          title: 'Visual Whiteboard',
+                          sub: 'Drawn lessons & audio',
+                          Icon: Pencil,
+                        },
+                        {
+                          mode: 'visualize' as const,
+                          title: 'Physics Lab',
+                          sub: 'Interactive simulation',
+                          Icon: Atom,
+                        },
+                        {
+                          mode: 'diagram' as const,
+                          title: 'Concept Diagram',
+                          sub: 'Flows & SVG export',
+                          Icon: Network,
+                        },
+                        {
+                          mode: 'mastery_path' as const,
+                          title: 'Mastery Path',
+                          sub: 'Skill checkpoints',
+                          Icon: Compass,
+                        },
+                        {
+                          mode: 'deep_solve' as const,
+                          title: 'Deep Solve',
+                          sub: 'Step-by-step proofs',
+                          Icon: Sigma,
+                        },
+                        {
+                          mode: 'plotter' as const,
+                          title: 'Curve Plotter',
+                          sub: 'y(x) function graph',
+                          Icon: Activity,
+                        },
+                      ].map((lab) => {
+                        const Icon = lab.Icon;
+                        return (
+                          <button
+                            key={lab.mode}
+                            type="button"
+                            onClick={() => {
+                              setHomeDropdown(null);
+                              launchDeepTutorMode(lab.mode, lab.title);
+                            }}
+                            className={`w-full px-3 py-2 rounded-2xl text-left flex items-center justify-between gap-2.5 transition-colors cursor-pointer ${
+                              isDark ? 'hover:bg-white/[0.07]' : 'hover:bg-black/[0.045]'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <Icon className="w-3.5 h-3.5 shrink-0 opacity-75" strokeWidth={1.9} />
+                              <div className="min-w-0">
+                                <div className="text-[11px] font-semibold truncate">{lab.title}</div>
+                                <div className={`text-[10px] truncate ${textMuted}`}>{lab.sub}</div>
+                              </div>
+                            </div>
+                            <ArrowUpRight className="w-3 h-3 shrink-0 opacity-40" />
+                          </button>
+                        );
+                      })}
+
+                      <div
+                        className={`my-1 h-px ${
+                          isDark ? 'bg-white/[0.08]' : 'bg-black/[0.07]'
+                        }`}
+                      />
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setHomeDropdown(null);
+                          setActiveArxivPaperId(null);
+                          openOrFocusTab('arxiv_reader', 'arXiv Reader');
+                        }}
+                        className={`w-full px-3 py-2 rounded-2xl text-left flex items-center justify-between gap-2.5 transition-colors cursor-pointer ${
+                          isDark ? 'hover:bg-white/[0.07]' : 'hover:bg-black/[0.045]'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <BookOpen className="w-3.5 h-3.5 shrink-0 opacity-75" />
+                          <div className="min-w-0">
+                            <div className="text-[11px] font-semibold">arXiv Reader</div>
+                            <div className={`text-[10px] truncate ${textMuted}`}>
+                              Full HTML papers, notes &amp; TOC
+                            </div>
+                          </div>
+                        </div>
+                        <ArrowUpRight className="w-3 h-3 shrink-0 opacity-40" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setHomeDropdown(null);
+                          setShowHomeStudyLoop((v) => !v);
+                        }}
+                        className={`w-full px-3 py-2 rounded-2xl text-left flex items-center gap-2.5 transition-colors cursor-pointer ${
+                          isDark ? 'hover:bg-white/[0.07]' : 'hover:bg-black/[0.045]'
+                        }`}
+                      >
+                        <Clock className="w-3.5 h-3.5 shrink-0 opacity-75" />
+                        <div className="min-w-0">
+                          <div className="text-[11px] font-semibold">Daily Recall &amp; Exam Plan</div>
+                          <div className={`text-[10px] truncate ${textMuted}`}>
+                            Spaced review &amp; schedule
+                          </div>
+                        </div>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
 
             {typeof window !== 'undefined' && window.location.pathname.startsWith('/battle/') && (
-              <div className="pt-1">
+              <div>
                 <StudyArsenalPanel
                   initialFeature="quiz_battles"
                   singlePageMode={true}
@@ -3161,53 +3518,45 @@ ${fullTranscriptText}`;
               </div>
             )}
 
-            {isSnapSolveRoute ? (
-              <div className="pt-1" data-testid="snap-solve-direct-panel">
+            {/* On-demand Daily Recall / Exam Plan Drawer (Hidden by default to keep Home clean) */}
+            {(isSnapSolveRoute || showHomeStudyLoop) && (
+              <div
+                className="space-y-2"
+                data-testid={isSnapSolveRoute ? 'snap-solve-direct-panel' : 'home-study-loop-panel'}
+              >
+                {!isSnapSolveRoute && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-semibold tracking-tight">
+                      Daily Recall &amp; Exam Plan
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowHomeStudyLoop(false)}
+                      className={`text-[11px] font-medium inline-flex items-center gap-1 cursor-pointer ${textMuted} hover:opacity-100`}
+                    >
+                      <X className="w-3 h-3" />
+                      <span>Hide</span>
+                    </button>
+                  </div>
+                )}
                 <StudyLoopPanel
                   embedded={true}
                   isDark={isDark}
-                  initialTab="snap_solve"
+                  initialTab={isSnapSolveRoute ? 'snap_solve' : 'revision'}
                   onOpenPricing={() => onOpenPricing?.('spark')}
                 />
               </div>
-            ) : (
-              /* Collapsible Study Loop Dropdown on Study Home */
-              <div className="pt-1">
-                <button
-                  type="button"
-                  onClick={() => setShowHomeStudyLoop((v) => !v)}
-                  className={`w-full px-3.5 py-2.5 rounded-xl border flex items-center justify-between text-xs font-medium transition cursor-pointer ${
-                    isDark
-                      ? 'bg-[#121215] border-white/[0.08] text-neutral-200 hover:border-white/[0.2]'
-                      : 'bg-white border-black/[0.08] text-neutral-800 hover:border-black/[0.2]'
-                  }`}
-                >
-                  <span>Daily Recall, Exam Plan &amp; Snap Solve</span>
-                  <ChevronDown
-                    className={`w-3.5 h-3.5 transition-transform ${
-                      showHomeStudyLoop ? 'rotate-180' : ''
-                    }`}
-                  />
-                </button>
-                {showHomeStudyLoop && (
-                  <div className="pt-2">
-                    <StudyLoopPanel
-                      embedded={true}
-                      isDark={isDark}
-                      initialTab="revision"
-                      onOpenPricing={() => onOpenPricing?.('spark')}
-                    />
-                  </div>
-                )}
-              </div>
             )}
 
-            {/* Saved Spaces Section */}
-            <div className="space-y-2.5 pt-1">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <h2 className="text-xs sm:text-sm font-semibold tracking-tight">Spaces</h2>
-                  <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-neutral-500/10 text-muted-foreground">
+            {/* Saved Spaces Section — Immediately Visible Above the Fold */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between px-0.5">
+                <div className="flex items-center gap-1.5 text-[11px] sm:text-xs">
+                  <h2 className="font-semibold tracking-tight">Spaces</h2>
+                  <span aria-hidden="true" className={textMuted}>
+                    ·
+                  </span>
+                  <span className={`font-mono tabular-nums text-[11px] ${textMuted}`}>
                     {spaces.length}
                   </span>
                 </div>
@@ -3216,13 +3565,12 @@ ${fullTranscriptText}`;
                   onClick={() => setSpacesSort((s) => (s === 'Newest' ? 'Oldest' : 'Newest'))}
                   className={`inline-flex items-center gap-1 text-[11px] font-medium ${textMuted} hover:opacity-100 cursor-pointer`}
                 >
-                  <Clock className="w-3 h-3" />
                   <span>{spacesSort}</span>
                   <ChevronDown className="w-3 h-3 opacity-60" />
                 </button>
               </div>
 
-              <div className="space-y-1.5">
+              <div className="space-y-2 lg:space-y-0 lg:grid lg:grid-cols-2 xl:grid-cols-3 lg:gap-2.5">
                 {[...spaces]
                   .sort((a, b) =>
                     spacesSort === 'Newest' ? b.createdAt - a.createdAt : a.createdAt - b.createdAt
@@ -3246,16 +3594,18 @@ ${fullTranscriptText}`;
                             loadTopicStudySpace(sp.name);
                           }
                         }}
-                        className={`group px-3 py-2.5 rounded-2xl border flex items-center justify-between gap-3 transition-all cursor-pointer ${
+                        className={`group relative min-h-[48px] px-3 py-2 rounded-full border flex items-center justify-between gap-2.5 transition-colors cursor-pointer ${
+                          openSpaceMenuId === sp.id ? 'z-30' : 'z-10'
+                        } ${
                           isDark
                             ? 'bg-[#121215] border-white/[0.07] hover:border-white/[0.18] hover:bg-[#16161a]'
-                            : 'bg-white border-black/[0.07] hover:border-black/[0.18] hover:bg-neutral-50 shadow-2xs'
+                            : 'bg-white border-black/[0.08] hover:border-black/[0.18] hover:bg-neutral-50'
                         }`}
                       >
                         <div className="flex items-center gap-2.5 min-w-0 flex-1">
                           <div
                             className={`size-7 rounded-full flex items-center justify-center shrink-0 ${
-                              isDark ? 'bg-white/[0.06] text-neutral-300' : 'bg-black/[0.05] text-neutral-700'
+                              isDark ? 'bg-white/[0.05] text-neutral-300' : 'bg-black/[0.04] text-neutral-700'
                             }`}
                           >
                             {isYt ? (
@@ -3267,13 +3617,13 @@ ${fullTranscriptText}`;
                             )}
                           </div>
                           <div className="min-w-0 flex-1">
-                            <div className="text-xs sm:text-sm font-medium truncate group-hover:text-primary transition-colors">
+                            <div className="text-xs sm:text-[13px] font-medium truncate leading-tight">
                               {sp.name}
                             </div>
+                            <div className={`text-[10px] truncate mt-0.5 ${textMuted}`}>
+                              {isYt ? 'YouTube' : isPdf ? 'PDF' : 'Topic'}
+                            </div>
                           </div>
-                          <span className={`text-[10px] px-2 py-0.5 rounded-full border border-black/8 dark:border-white/8 shrink-0 ${textMuted}`}>
-                            {isYt ? 'YouTube' : isPdf ? 'PDF' : 'Topic'}
-                          </span>
                         </div>
 
                         <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
@@ -3292,7 +3642,7 @@ ${fullTranscriptText}`;
 
                           {openSpaceMenuId === sp.id && (
                             <div
-                              className={`absolute right-0 top-full mt-1 w-40 rounded-xl border p-1 z-30 shadow-xl ${
+                              className={`absolute right-0 top-full mt-1 w-36 rounded-2xl border p-1 z-40 shadow-xl ${
                                 isDark
                                   ? 'bg-[#18181b] border-white/[0.12] text-white'
                                   : 'bg-white border-black/[0.1] text-black'
@@ -3315,9 +3665,9 @@ ${fullTranscriptText}`;
                                   }
                                   openOrFocusTab('chat', 'Tutor');
                                 }}
-                                className="w-full px-2.5 py-1.5 rounded-lg text-xs text-left flex items-center gap-2 hover:bg-current/5 cursor-pointer transition-colors font-medium"
+                                className="w-full px-2.5 py-1.5 rounded-xl text-[11px] text-left flex items-center gap-2 hover:bg-current/5 cursor-pointer transition-colors font-medium"
                               >
-                                <MessageSquare className="w-3.5 h-3.5" />
+                                <MessageSquare className="w-3 h-3" />
                                 <span>Study Tutor</span>
                               </button>
                               <button
@@ -3326,7 +3676,7 @@ ${fullTranscriptText}`;
                                   setSpaces((prev) => prev.filter((item) => item.id !== sp.id));
                                   setOpenSpaceMenuId(null);
                                 }}
-                                className="w-full px-2.5 py-1.5 rounded-lg text-xs text-left flex items-center gap-2 hover:bg-red-500/10 text-red-500 cursor-pointer transition-colors"
+                                className="w-full px-2.5 py-1.5 rounded-xl text-[11px] text-left flex items-center gap-2 hover:bg-red-500/10 text-red-500 cursor-pointer transition-colors"
                               >
                                 <Trash2 className="w-3 h-3" />
                                 <span>Delete</span>
@@ -3939,77 +4289,7 @@ ${fullTranscriptText}`;
             </button>
           </div>
 
-          {/* Audio Player Popover */}
-          {podcastOpen && (
-            <div
-              className={`absolute top-24 left-1/2 -translate-x-1/2 z-40 w-[300px] sm:w-[330px] rounded-2xl border p-4 shadow-2xl ${
-                isDark
-                  ? 'bg-[#18181b] border-white/[0.14] text-white'
-                  : 'bg-white border-black/[0.12] text-black'
-              }`}
-            >
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-semibold">Audio Summary</span>
-                <button
-                  type="button"
-                  onClick={() => setPodcastOpen(false)}
-                  aria-label="Close audio summary player"
-                  title="Close audio summary player"
-                  className="p-1 rounded-lg opacity-60 hover:opacity-100 cursor-pointer"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </div>
-              <div className={`text-[11px] font-mono tabular-nums mb-3 ${textMuted}`}>
-                {formatTime(podcastSec)} / {formatTime(podcastDuration)}
-              </div>
-              <div className="flex items-center justify-between gap-2">
-                <button
-                  type="button"
-                  onClick={handleExportStudyPack}
-                  className={`size-9 rounded-xl flex items-center justify-center cursor-pointer ${bgSubtle}`}
-                  title="Download"
-                >
-                  <Download className="w-4 h-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPodcastSec((s) => Math.max(0, s - 15))}
-                  className="text-xs font-mono px-2 py-1 rounded-lg hover:bg-current/5 cursor-pointer"
-                >
-                  -15s
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPodcastPlaying((p) => !p);
-                    handleToggleListenSummary();
-                  }}
-                  className={`size-11 rounded-xl flex items-center justify-center cursor-pointer ${
-                    isDark ? 'bg-white text-black' : 'bg-black text-white'
-                  }`}
-                >
-                  {podcastPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPodcastSec((s) => Math.min(podcastDuration, s + 15))}
-                  className="text-xs font-mono px-2 py-1 rounded-lg hover:bg-current/5 cursor-pointer"
-                >
-                  +15s
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setPodcastSpeed((sp) => (sp === 1 ? 1.25 : sp === 1.25 ? 1.5 : sp === 1.5 ? 2 : 1))
-                  }
-                  className={`size-9 rounded-xl text-xs font-mono font-semibold flex items-center justify-center cursor-pointer ${bgSubtle}`}
-                >
-                  {podcastSpeed}x
-                </button>
-              </div>
-            </div>
-          )}
+          {/* 2-Host Podcast Studio is mounted at the root of StudyWorkspace so it works from Home & Workspace */}
 
           {/* Main Tab Content Viewport */}
           <div className="flex-1 overflow-y-auto">
@@ -4295,8 +4575,8 @@ ${fullTranscriptText}`;
                           },
                           {
                             id: 'podcast',
-                            label: 'Audio Summary',
-                            sub: 'Listen & review',
+                            label: '2-Host Podcast',
+                            sub: 'Alex & Maya audio',
                             onClick: () => handleTogglePodcast(),
                           },
                           {
@@ -5653,40 +5933,107 @@ ${fullTranscriptText}`;
                 {/* =========================================================== */}
                 {activeTabObj?.type === 'flashcards' && (
                   <div className="max-w-2xl mx-auto px-4 sm:px-6 py-5 space-y-6 pb-20">
-                    <div className="flex items-center justify-between gap-2">
-                      <h2 className="text-base font-semibold">Flashcards</h2>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2.5">
+                        <h2 className="text-base font-semibold">Flashcards</h2>
+                        {ankiStatusMsg && (
+                          <span className={`text-[11px] font-medium ${textMuted}`}>
+                            · {ankiStatusMsg}
+                          </span>
+                        )}
+                      </div>
 
-                      <div
-                        className={`inline-flex items-center p-0.5 rounded-full border ${
-                          isDark ? 'bg-[#121215] border-white/[0.08]' : 'bg-[#f4f4f5] border-black/[0.08]'
-                        }`}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => setFlashcardMode('spaced')}
-                          className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer ${
-                            flashcardMode === 'spaced'
-                              ? isDark
-                                ? 'bg-white text-black font-semibold'
-                                : 'bg-white text-black shadow-xs font-semibold'
-                              : textMuted
+                      <div className="flex items-center gap-2">
+                        {/* Anki Export Dropdown (.apkg & .txt) */}
+                        <div className="relative">
+                          <button
+                            type="button"
+                            disabled={customFlashcards.length === 0 || ankiExporting}
+                            onClick={() => setAnkiMenuOpen((v) => !v)}
+                            data-testid="study-export-anki-btn"
+                            className={`h-8 px-3 rounded-full border text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-40 whitespace-nowrap ${
+                              isDark
+                                ? 'bg-[#121215] border-white/[0.12] hover:border-white/25 text-neutral-100'
+                                : 'bg-white border-black/[0.12] hover:border-black/25 text-neutral-900'
+                            }`}
+                            title="Export flashcards to Anki"
+                          >
+                            {ankiExporting ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <Download className="w-3.5 h-3.5" />
+                            )}
+                            <span>Export Anki</span>
+                          </button>
+
+                          {ankiMenuOpen && (
+                            <div
+                              className={`absolute right-0 mt-1.5 w-56 rounded-xl border p-1.5 shadow-xl z-30 ${
+                                isDark
+                                  ? 'bg-[#141418] border-white/[0.14] text-neutral-100'
+                                  : 'bg-white border-black/[0.12] text-neutral-900'
+                              }`}
+                            >
+                              <button
+                                type="button"
+                                onClick={() => void handleExportAnki('apkg')}
+                                className={`w-full text-left px-3 py-2 rounded-lg transition-colors cursor-pointer ${
+                                  isDark ? 'hover:bg-white/[0.07]' : 'hover:bg-black/[0.05]'
+                                }`}
+                              >
+                                <div className="text-xs font-semibold">Anki Package (.apkg)</div>
+                                <div className={`text-[11px] ${textMuted}`}>
+                                  1-click import for Desktop &amp; AnkiDroid
+                                </div>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void handleExportAnki('txt')}
+                                className={`w-full text-left px-3 py-2 rounded-lg transition-colors cursor-pointer ${
+                                  isDark ? 'hover:bg-white/[0.07]' : 'hover:bg-black/[0.05]'
+                                }`}
+                              >
+                                <div className="text-xs font-semibold">Anki Text Deck (.txt)</div>
+                                <div className={`text-[11px] ${textMuted}`}>
+                                  Tab-separated HTML + MathJax
+                                </div>
+                              </button>
+                            </div>
+                          )}
+                        </div>
+
+                        <div
+                          className={`inline-flex items-center p-0.5 rounded-full border ${
+                            isDark ? 'bg-[#121215] border-white/[0.08]' : 'bg-[#f4f4f5] border-black/[0.08]'
                           }`}
                         >
-                          Edit Cards
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setFlashcardMode('fast')}
-                          className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer ${
-                            flashcardMode === 'fast'
-                              ? isDark
-                                ? 'bg-white text-black font-semibold'
-                                : 'bg-white text-black shadow-xs font-semibold'
-                              : textMuted
-                          }`}
-                        >
-                          Study Mode
-                        </button>
+                          <button
+                            type="button"
+                            onClick={() => setFlashcardMode('spaced')}
+                            className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer ${
+                              flashcardMode === 'spaced'
+                                ? isDark
+                                  ? 'bg-white text-black font-semibold'
+                                  : 'bg-white text-black shadow-xs font-semibold'
+                                : textMuted
+                            }`}
+                          >
+                            Edit Cards
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setFlashcardMode('fast')}
+                            className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer ${
+                              flashcardMode === 'fast'
+                                ? isDark
+                                  ? 'bg-white text-black font-semibold'
+                                  : 'bg-white text-black shadow-xs font-semibold'
+                                : textMuted
+                            }`}
+                          >
+                            Study Mode
+                          </button>
+                        </div>
                       </div>
                     </div>
 
@@ -7027,6 +7374,53 @@ ${fullTranscriptText}`;
           openOrFocusTab('chat', 'Tutor');
           handleSendStudyChat(prompt, {
             topicOverride: 'Formula Derivation',
+            resetContext: true,
+          });
+        }}
+      />
+
+      <InstantSnapSolveModal
+        isOpen={snapSolveModalOpen}
+        onClose={() => setSnapSolveModalOpen(false)}
+        isDark={isDark}
+        onOpenPricing={onOpenPricing}
+        onAskFollowUp={(prompt) => {
+          setSnapSolveModalOpen(false);
+          setFullPageFeature(null);
+          setViewMode('workspace');
+          openOrFocusTab('chat', 'Tutor');
+          handleSendStudyChat(prompt, {
+            topicOverride: 'Snap & Solve',
+            resetContext: true,
+          });
+        }}
+      />
+
+      <TwoHostPodcastStudio
+        isOpen={podcastOpen}
+        onClose={() => setPodcastOpen(false)}
+        isDark={isDark}
+        sourceTitle={viewMode === 'workspace' ? resolvedTitle : ''}
+        sourceContent={
+          viewMode === 'workspace'
+            ? [
+                studyBundle?.summary?.overview || '',
+                aiExhaustiveSummary || '',
+                statementBreakdown.map((s) => `${s.heading}: ${s.elaboration}`).join('\n'),
+                rawSourceText || segments.map((s) => s.text).join(' '),
+              ]
+                .filter(Boolean)
+                .join('\n\n')
+                .slice(0, 16000)
+            : ''
+        }
+        onAskTutor={(prompt) => {
+          setPodcastOpen(false);
+          setFullPageFeature(null);
+          setViewMode('workspace');
+          openOrFocusTab('chat', 'Tutor');
+          handleSendStudyChat(prompt, {
+            topicOverride: '2-Host Podcast',
             resetContext: true,
           });
         }}

@@ -1,20 +1,35 @@
 {
-  "updatedAt": 1795079545012,
+  "updatedAt": 1795363023928,
   "records": {
     "ip:169.254.169.126": {
-      "quotaDate": "2026-11-19",
+      "quotaDate": "2026-11-22",
       "principalKey": "ip:169.254.169.126",
       "uid": null,
       "plan": "spark",
       "billingCycle": "monthly",
-      "messagesUsed": 373,
+      "messagesUsed": 398,
       "filesUploaded": 4,
-      "searchesUsed": 164,
+      "searchesUsed": 179,
       "deepResearchUsed": 47,
-      "pdfStudyUsed": 125,
-      "tokensUsed": 920224,
-      "updatedAt": 1795079545012,
-      "windowStartAt": 1795079275151
+      "pdfStudyUsed": 147,
+      "tokensUsed": 1002435,
+      "updatedAt": 1795360779224,
+      "windowStartAt": 1795360331343
+    },
+    "ip:127.0.0.1": {
+      "quotaDate": "2026-11-22",
+      "principalKey": "ip:127.0.0.1",
+      "uid": null,
+      "plan": "spark",
+      "billingCycle": "monthly",
+      "messagesUsed": 0,
+      "filesUploaded": 0,
+      "searchesUsed": 1,
+      "deepResearchUsed": 0,
+      "pdfStudyUsed": 0,
+      "tokensUsed": 2144,
+      "updatedAt": 1795363023928,
+      "windowStartAt": 1795363016963
     }
   },
   "plans": {

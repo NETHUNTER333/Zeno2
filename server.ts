@@ -66,6 +66,7 @@ import {
   upgradeServerSubscriptionPlan,
   verifyChatQuotaBeforeExecution,
   recordServerQuotaConsumption,
+  isServerUnlimitedModel,
   verifyHitaishiRateLimitAndQuota,
   checkHitaishiWebSocketRateLimit,
 } from './server/rateLimiter';
@@ -122,6 +123,7 @@ import {
 import { initBackendSentry, sentryBackendMiddleware, sentryErrorHandler, reportUpstreamProviderFailure, Sentry } from './server/sentry';
 import { registerDodoBillingRoutes, ensureBillingUserHydrated } from './server/billingEngine';
 import { registerAgentFrameworkRoutes, setAgentImageSearchBridge, setAgentLlmBridge } from './server/agentFramework';
+import { registerStudyMediaRoutes } from './server/studyMediaRoutes';
 import {
   isValidCoordinate,
   reverseGeocodeCoordinates,
@@ -1029,6 +1031,7 @@ const OPEN_FREE_GATEWAY_MODELS = [
   'qwen-3.8-27b:free',
   'qwen-3.8-max:free',
   'qwen3-8-omni-flash:free',
+  'qwen4-max:free',
   'solar-mini4:free',
   'xing4.0-29b-a4b:free',
 ];
@@ -4907,6 +4910,7 @@ app.post('/api/dodo/webhook', handleDodoWebhook);
 registerDodoBillingRoutes(app);
 setAgentImageSearchBridge((query, limit = 4) => searchImagesViaTreg(query, false, limit, 0));
 registerAgentFrameworkRoutes(app);
+registerStudyMediaRoutes(app);
 
 // Fetch 100% real X / Twitter status post details via fxtwitter API
 async function fetchRealXPostByStatusId(handle: string, tweetId: string): Promise<any | null> {
@@ -5818,13 +5822,14 @@ app.post('/api/hitaishi/companion', async (req, res) => {
       `1. Directly answer the user's question, study topic, flashcard/quiz request, workspace task, or emotional tone in character. If they ask about their Study Space, flashcards, notes, quiz, SideChat, or active Chat threads, use the UNIFIED WORKSPACE & STUDY SPACE MEMORY above to help, tutor, or quiz them!`,
       `2. Keep your spoken response concise, vivid, and natural for voice playback (1 to 3 sentences, max 50 words). No markdown tables or code blocks.`,
       `3. Prefix your response with two tags in brackets indicating your facial expression and physical action for this turn:`,
-      `   [EXPR:smile] or [EXPR:shy] or [EXPR:angry] or [EXPR:sad] or [EXPR:neutral]`,
+      `   [EXPR:smile] or [EXPR:playful] or [EXPR:shy] or [EXPR:angry] or [EXPR:sad] or [EXPR:neutral]`,
       `   [ACT:nod] or [ACT:shake] or [ACT:tilt] or [ACT:hop] or [ACT:shy] or [ACT:none]`,
+      `   - Choose [EXPR:playful] when joking, teasing playfully, winking, being witty, or having cheeky fun.`,
       `   - Choose [EXPR:shy] when complimented, teased romantically, praised, or flustered.`,
       `   - Choose [EXPR:angry] when playfully annoyed, insulted, or ranting.`,
       `   - Choose [EXPR:sad] when expressing sympathy, disappointment, or sadness.`,
       `   - Choose [EXPR:neutral] when explaining study concepts, facts, thinking seriously, or staying calm.`,
-      `   - Choose [EXPR:smile] when happy, excited, encouraging, or joking.`,
+      `   - Choose [EXPR:smile] when happy, excited, warm, or encouraging.`,
       languageInstruction,
     ]
       .filter(Boolean)
@@ -5882,13 +5887,13 @@ app.post('/api/hitaishi/companion', async (req, res) => {
     }
 
     // Parse [EXPR:...] and [ACT:...] tags
-    let expression: 'smile' | 'shy' | 'angry' | 'sad' | null = null;
+    let expression: 'smile' | 'playful' | 'shy' | 'angry' | 'sad' | null = null;
     let action: 'nod' | 'shake' | 'tilt' | 'hop' | 'shy' | null = null;
 
-    const exprMatch = rawReply.match(/\[EXPR:\s*(smile|shy|angry|sad|neutral)\s*\]/i);
+    const exprMatch = rawReply.match(/\[EXPR:\s*(smile|playful|shy|angry|sad|neutral)\s*\]/i);
     if (exprMatch) {
       const val = exprMatch[1].toLowerCase();
-      expression = val === 'neutral' ? null : (val as 'smile' | 'shy' | 'angry' | 'sad');
+      expression = val === 'neutral' ? null : (val as 'smile' | 'playful' | 'shy' | 'angry' | 'sad');
     }
 
     const actMatch = rawReply.match(/\[ACT:\s*(nod|shake|tilt|hop|shy|none)\s*\]/i);
@@ -5913,6 +5918,13 @@ app.post('/api/hitaishi/companion', async (req, res) => {
     const combinedLower = `${userMessage} ${cleanReply}`.toLowerCase();
     if (!exprMatch) {
       if (
+        /\b(haha|hehe|lol|lmao|joke|tease|wink|cheeky|silly|prank|gotcha|playful)\b/.test(
+          combinedLower
+        )
+      ) {
+        expression = 'playful';
+        action = action || 'tilt';
+      } else if (
         /\b(cute|pretty|love|beautiful|crush|blush|sweet|marry|adorable|shy|flirt|handsome|gorgeous)\b/.test(
           combinedLower
         )
@@ -11189,7 +11201,25 @@ app.post('/api/video/generate', async (req, res) => {
 
     const monidKey = process.env.MONID_API_KEY || '';
     if (!monidKey) {
-      return res.status(503).json({ success: false, error: 'Video generation not configured' });
+      const zenoApiOrigin =
+        process.env.ZENO_API_ORIGIN ||
+        'https://prod-main-zeno-api-c257d4-00gfx3c9932.compute.instacloud-edge.com';
+      const upstreamRes = await fetch(`${zenoApiOrigin.replace(/\/$/, '')}/api/video/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ prompt, resolution, duration }),
+        signal: AbortSignal.timeout(125000),
+      });
+      const upstreamData = await upstreamRes.json().catch(() => null);
+      const upstreamUrl =
+        upstreamData?.videoUrl || upstreamData?.video_url || upstreamData?.output?.video_url || upstreamData?.url;
+      if (!upstreamRes.ok || !upstreamUrl) {
+        return res.status(upstreamRes.ok ? 502 : upstreamRes.status).json({
+          success: false,
+          error: upstreamData?.error || upstreamData?.message || 'Video generation failed',
+        });
+      }
+      return res.json({ success: true, videoUrl: String(upstreamUrl), runId: upstreamData?.runId });
     }
 
     // Start the run
@@ -11255,6 +11285,447 @@ app.post('/api/video/generate', async (req, res) => {
     return res.status(500).json({ success: false, error: err?.message || 'Failed to generate video' });
   }
 });
+
+// Helper: parse & normalize AI-directed video explainer JSON scenes (petergyang/video-explainer architecture)
+function normalizeExplainerProject(
+  rawText: string,
+  fallbackTopic: string,
+  style: 'motion' | 'illustrated' | '3d',
+  webSources: Array<{ title: string; url: string; domain: string; snippet: string }>
+) {
+  const validVisualTypes = new Set([
+    'kinetic-title',
+    'bar-chart',
+    'flow-route',
+    'metric-grid',
+    'quote-clipping',
+    'device-card',
+    '3d-orbit',
+  ]);
+  const palette = ['#38bdf8', '#a78bfa', '#34d399', '#f59e0b', '#f472b6', '#60a5fa'];
+
+  let parsed: any = null;
+  try {
+    const cleaned = String(rawText || '')
+      .replace(/^```(?:json)?\s*/i, '')
+      .replace(/\s*```$/i, '')
+      .trim();
+    const startIdx = cleaned.indexOf('{');
+    const endIdx = cleaned.lastIndexOf('}');
+    if (startIdx >= 0 && endIdx > startIdx) {
+      parsed = JSON.parse(cleaned.slice(startIdx, endIdx + 1));
+    }
+  } catch {
+    parsed = null;
+  }
+
+  const rawScenes = Array.isArray(parsed?.scenes) ? parsed.scenes : [];
+  const scenes = rawScenes
+    .slice(0, 40)
+    .map((s: any, idx: number) => {
+      const visualType = validVisualTypes.has(s?.visualType)
+        ? s.visualType
+        : idx === 0
+        ? 'kinetic-title'
+        : style === '3d' && idx === rawScenes.length - 1
+        ? '3d-orbit'
+        : (['metric-grid', 'bar-chart', 'flow-route', 'quote-clipping', 'device-card'][idx % 5] as string);
+      const durationSec = Math.min(22, Math.max(5, Math.round(Number(s?.durationSec) || 10)));
+      const sourceMatch = webSources[idx % Math.max(1, webSources.length)];
+      return {
+        id: String(s?.id || `scene-${idx + 1}`),
+        title: String(s?.title || `${fallbackTopic} — Part ${idx + 1}`).slice(0, 72),
+        kicker: String(s?.kicker || `Scene ${String(idx + 1).padStart(2, '0')}`).slice(0, 36),
+        subtitle: String(s?.subtitle || '').slice(0, 120),
+        durationSec,
+        narration: String(
+          s?.narration ||
+            `Here is a closer look at ${s?.title || fallbackTopic}, breaking down the key mechanism clearly.`
+        ).slice(0, 600),
+        visualType,
+        accentColor:
+          typeof s?.accentColor === 'string' && /^#[0-9a-f]{6}$/i.test(s.accentColor)
+            ? s.accentColor
+            : palette[idx % palette.length],
+        sourceAttribution:
+          typeof s?.sourceAttribution === 'string' && s.sourceAttribution.trim()
+            ? s.sourceAttribution.trim().slice(0, 80)
+            : sourceMatch?.domain || undefined,
+        bars: Array.isArray(s?.bars)
+          ? s.bars.slice(0, 5).map((b: any, bi: number) => ({
+              label: String(b?.label || `Item ${bi + 1}`).slice(0, 24),
+              value: Math.max(1, Math.min(100, Number(b?.value) || 40 + bi * 15)),
+              displayValue: String(b?.displayValue || `${Math.round(Number(b?.value) || 50)}%`).slice(0, 16),
+            }))
+          : undefined,
+        steps: Array.isArray(s?.steps)
+          ? s.steps.slice(0, 5).map((st: any, si: number) => ({
+              label: String(st?.label || st || `Step ${si + 1}`).slice(0, 28),
+              detail: String(st?.detail || '').slice(0, 68),
+            }))
+          : undefined,
+        metrics: Array.isArray(s?.metrics)
+          ? s.metrics.slice(0, 4).map((m: any, mi: number) => ({
+              value: String(m?.value || `${(mi + 1) * 24}%`).slice(0, 16),
+              label: String(m?.label || `Metric ${mi + 1}`).slice(0, 34),
+            }))
+          : undefined,
+        quote:
+          s?.quote && typeof s.quote === 'object'
+            ? {
+                text: String(s.quote.text || '').slice(0, 180),
+                author: String(s.quote.author || sourceMatch?.domain || 'Source').slice(0, 54),
+                publication: String(s.quote.publication || sourceMatch?.title || 'Field Report').slice(0, 54),
+              }
+            : undefined,
+        deviceLines: Array.isArray(s?.deviceLines)
+          ? s.deviceLines.slice(0, 6).map((l: any) => String(l || '').slice(0, 56))
+          : undefined,
+      };
+    });
+
+  if (scenes.length === 0) {
+    const srcDomain = webSources[0]?.domain || 'Explainer Studio';
+    scenes.push(
+      {
+        id: 'scene-1',
+        title: fallbackTopic.slice(0, 64),
+        kicker: 'Opening Hook',
+        subtitle: 'A sixty-second visual breakdown',
+        durationSec: 8,
+        narration: `Let's unpack ${fallbackTopic} in under a minute—starting with why it matters right now.`,
+        visualType: 'kinetic-title',
+        accentColor: '#38bdf8',
+        sourceAttribution: srcDomain,
+      },
+      {
+        id: 'scene-2',
+        title: 'How the Pipeline Works',
+        kicker: 'Core Mechanism',
+        subtitle: 'From raw input to deterministic output',
+        durationSec: 10,
+        narration: `Every step follows a clear sequence: analyze the input, structure the core logic, and render crisp results.`,
+        visualType: 'flow-route',
+        accentColor: '#a78bfa',
+        steps: [
+          { label: 'Ingest', detail: 'Parse topic, docs, or live URL' },
+          { label: 'Structure', detail: 'Map key insights into beats' },
+          { label: 'Visualize', detail: 'Animate charts and diagrams' },
+          { label: 'Refine', detail: 'Iterate via pinned frame notes' },
+        ],
+        sourceAttribution: srcDomain,
+      },
+      {
+        id: 'scene-3',
+        title: 'Key Impact Signals',
+        kicker: 'By The Numbers',
+        subtitle: 'Comparing speed, clarity, and retention',
+        durationSec: 9,
+        narration: `Visual storytelling boosts comprehension dramatically compared to dense walls of text.`,
+        visualType: 'bar-chart',
+        accentColor: '#34d399',
+        bars: [
+          { label: 'Visual Retention', value: 88, displayValue: '88%' },
+          { label: 'Review Speed', value: 76, displayValue: '3.2x' },
+          { label: 'Clarity Score', value: 94, displayValue: '94/100' },
+          { label: 'Edit Velocity', value: 82, displayValue: '4.5x' },
+        ],
+        sourceAttribution: srcDomain,
+      },
+      {
+        id: 'scene-4',
+        title: 'Takeaway',
+        kicker: 'Summary',
+        subtitle: 'Ready to review, pin feedback, and export',
+        durationSec: 8,
+        narration: `Click any frame to pin a review comment, apply instant AI revisions, or export the finished video.`,
+        visualType: style === '3d' ? '3d-orbit' : 'metric-grid',
+        accentColor: '#f59e0b',
+        metrics: [
+          { value: '60s', label: 'Concise runtime' },
+          { value: '3 Styles', label: 'Motion, Illustrated, 3D' },
+          { value: 'Live TTS', label: 'Synced captions & score' },
+        ],
+        sourceAttribution: srcDomain,
+      }
+    );
+  }
+
+  return {
+    id: `exp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    title: String(parsed?.title || fallbackTopic).slice(0, 84),
+    topic: fallbackTopic,
+    style,
+    summary: String(parsed?.summary || `Code-driven ${style} explainer for ${fallbackTopic}`).slice(0, 220),
+    musicMood: (['ambient', 'upbeat', 'editorial', 'cinematic'].includes(parsed?.musicMood)
+      ? parsed.musicMood
+      : 'editorial') as 'ambient' | 'upbeat' | 'editorial' | 'cinematic',
+    scenes,
+    sources: webSources.slice(0, 5),
+    createdAt: Date.now(),
+  };
+}
+
+// POST /api/video/explainer — Direct a code-driven ~1-minute explainer video from any topic, URL, or doc
+app.post('/api/video/explainer', async (req, res) => {
+  try {
+    const topic = String(req.body?.topic || '').trim();
+    const sourceText = String(req.body?.sourceText || '').trim().slice(0, 6000);
+    const sourceUrl = String(req.body?.sourceUrl || '').trim();
+    const rawStyle = String(req.body?.style || 'motion').toLowerCase();
+    const style: 'motion' | 'illustrated' | '3d' =
+      rawStyle === 'illustrated' || rawStyle === '3d' ? rawStyle : 'motion';
+    const targetDurationSec = Math.min(600, Math.max(30, Number(req.body?.targetDurationSec) || 60));
+    const webGrounded = req.body?.webGrounded !== false;
+
+    if (!topic && !sourceText && !sourceUrl) {
+      return res.status(400).json({ success: false, error: 'Please provide a topic, URL, or source notes.' });
+    }
+
+    const effectiveTopic = topic || sourceUrl || sourceText.slice(0, 90);
+    const webSources: Array<{ title: string; url: string; domain: string; snippet: string }> = [];
+    let urlExtractedContext = '';
+
+    // 1. Optional URL extraction (validated against SSRF via validateSafePublicUrl)
+    if (sourceUrl) {
+      try {
+        const safeCheck = validateSafePublicUrl(sourceUrl);
+        if (safeCheck.valid && safeCheck.url) {
+          const resolvedUrl = safeCheck.url.toString();
+          const urlRes = await fetch(resolvedUrl, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (compatible; KinichExplainer/1.0)' },
+            signal: AbortSignal.timeout(6500),
+          });
+          if (urlRes.ok) {
+            const html = await urlRes.text();
+            urlExtractedContext = html
+              .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+              .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+              .replace(/<[^>]+>/g, ' ')
+              .replace(/\s+/g, ' ')
+              .trim()
+              .slice(0, 3500);
+            const domain = safeCheck.url.hostname.replace(/^www\./, '');
+            webSources.push({
+              title: domain,
+              url: resolvedUrl,
+              domain,
+              snippet: urlExtractedContext.slice(0, 220),
+            });
+          }
+        }
+      } catch {}
+    }
+
+    // 2. Real web grounding (pulls quotes, stats, and source attributions)
+    if (webGrounded) {
+      try {
+        const searchOutcome = await Promise.race([
+          searchWebReliable(effectiveTopic, 'organic'),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 4500)),
+        ]);
+        if (searchOutcome && Array.isArray(searchOutcome.results)) {
+          const seenDomains = new Set(webSources.map((s) => s.domain));
+          for (const r of searchOutcome.results.slice(0, 8)) {
+            if (!r?.url) continue;
+            let domain = 'web';
+            try {
+              domain = new URL(r.url).hostname.replace(/^www\./, '');
+            } catch {}
+            if (seenDomains.has(domain) && webSources.length >= 2) continue;
+            seenDomains.add(domain);
+            webSources.push({
+              title: String(r.title || domain).slice(0, 90),
+              url: String(r.url),
+              domain,
+              snippet: String(r.snippet || '').slice(0, 240),
+            });
+            if (webSources.length >= 4) break;
+          }
+        }
+      } catch {}
+    }
+
+    const groundingBlock = [
+      sourceText ? `USER SOURCE NOTES / CODEBASE / DOC:\n${sourceText}` : '',
+      urlExtractedContext ? `EXTRACTED PAGE CONTENT (${sourceUrl}):\n${urlExtractedContext}` : '',
+      webSources.length > 0
+        ? `WEB GROUNDING SOURCES:\n${webSources
+            .map((s, i) => `[${i + 1}] ${s.title} (${s.domain}): ${s.snippet}`)
+            .join('\n')}`
+        : '',
+    ]
+      .filter(Boolean)
+      .join('\n\n');
+
+    const sceneCount = Math.max(6, Math.min(36, Math.round(targetDurationSec / (targetDurationSec > 180 ? 16 : targetDurationSec > 90 ? 14 : 10))));
+    const avgSceneSec = Math.max(7, Math.min(20, Math.round(targetDurationSec / sceneCount)));
+    const wordsMin = Math.max(18, Math.round(avgSceneSec * 2.1));
+    const wordsMax = Math.max(30, Math.round(avgSceneSec * 2.9));
+
+    const directorPrompt = [
+      `You are an elite motion-design video director building a code-driven ~${targetDurationSec}-second (${Math.round((targetDurationSec / 60) * 10) / 10} minute) explainer video in "${style}" style.`,
+      `TOPIC: ${effectiveTopic}`,
+      groundingBlock ? `\n${groundingBlock}\n` : '',
+      `Create exactly ${sceneCount} tightly paced chaptered scenes totaling ~${targetDurationSec} seconds. Each scene MUST use a varied visualType from: "kinetic-title", "bar-chart", "flow-route", "metric-grid", "quote-clipping", "device-card", "3d-orbit".`,
+      `- Scene 1 should use "kinetic-title" as a punchy hook.`,
+      `- Alternate smoothly across data scenes ("bar-chart", "metric-grid"), mechanism scenes ("flow-route", "device-card", "3d-orbit"), and grounded quotes ("quote-clipping") so the full runtime feels rich and non-repetitive.`,
+      `- When web sources are present, cite real sourceAttribution domains accurately.`,
+      `- Keep each scene's narration crisp, natural, spoken-word friendly (${wordsMin}-${wordsMax} words), matching its durationSec (${Math.max(6, avgSceneSec - 2)}-${Math.min(22, avgSceneSec + 3)} seconds).`,
+      `Return ONLY valid JSON with this exact schema (no markdown fences, no prose outside JSON):`,
+      `{`,
+      `  "title": "Short punchy video title",`,
+      `  "summary": "1 sentence overview",`,
+      `  "musicMood": "editorial" | "ambient" | "upbeat" | "cinematic",`,
+      `  "scenes": [`,
+      `    {`,
+      `      "id": "scene-1",`,
+      `      "kicker": "01 · Hook",`,
+      `      "title": "Short headline (max 8 words)",`,
+      `      "subtitle": "Concise supporting line",`,
+      `      "durationSec": 8,`,
+      `      "narration": "Natural spoken voiceover script for this scene.",`,
+      `      "visualType": "kinetic-title",`,
+      `      "accentColor": "#38bdf8",`,
+      `      "sourceAttribution": "domain.com",`,
+      `      "bars": [{ "label": "Label", "value": 82, "displayValue": "82%" }],`,
+      `      "steps": [{ "label": "Step", "detail": "Short detail" }],`,
+      `      "metrics": [{ "value": "10x", "label": "Faster" }],`,
+      `      "quote": { "text": "Short grounded quote", "author": "Name", "publication": "Outlet" },`,
+      `      "deviceLines": ["$ command or UI line 1", "Output line 2"]`,
+      `    }`,
+      `  ]`,
+      `}`,
+    ].join('\n');
+
+    let rawJson = '';
+    try {
+      const { resp } = await generateGeminiContentWithFallback(directorPrompt, false);
+      rawJson = String(resp?.text || '').trim();
+    } catch (err) {
+      console.warn('[VideoExplainer] Falling back to deterministic template:', err);
+    }
+
+    const project = normalizeExplainerProject(rawJson, effectiveTopic, style, webSources);
+    return res.json({ success: true, project });
+  } catch (err: any) {
+    console.error('Video explainer error:', err);
+    return res.status(500).json({ success: false, error: err?.message || 'Failed to direct explainer video' });
+  }
+});
+
+// POST /api/video/explainer/revise — Human-in-the-loop review loop applying pinned canvas/timeline comments
+app.post('/api/video/explainer/revise', async (req, res) => {
+  try {
+    const project = req.body?.project;
+    const comments = Array.isArray(req.body?.comments) ? req.body.comments : [];
+    if (!project || !Array.isArray(project.scenes)) {
+      return res.status(400).json({ success: false, error: 'Valid explainer project is required' });
+    }
+    const openComments = comments.filter((c: any) => !c?.resolved && String(c?.text || '').trim());
+    if (openComments.length === 0) {
+      return res.status(400).json({ success: false, error: 'Add at least one pinned review comment first' });
+    }
+
+    const revisionPrompt = [
+      `You are the Video Explainer AI Director applying human-in-the-loop frame-accurate review comments.`,
+      `CURRENT PROJECT JSON:\n${JSON.stringify({
+        title: project.title,
+        summary: project.summary,
+        style: project.style,
+        musicMood: project.musicMood,
+        scenes: project.scenes,
+      })}`,
+      `\nPINNED REVIEW COMMENTS TO APPLY:\n${openComments
+        .map(
+          (c: any, i: number) =>
+            `${i + 1}. [Scene ${c.sceneId} @ ${Number(c.timeSec || 0).toFixed(1)}s, frame position (${Math.round(
+              Number(c.xPct || 50)
+            )}%, ${Math.round(Number(c.yPct || 50))}%)] ${String(c.text).trim()}`
+        )
+        .join('\n')}`,
+      `\nUpdate ONLY the requested scenes/fields accurately while keeping the overall pacing crisp and cohesive. Preserve existing scene IDs and runtime.`,
+      `Return ONLY the complete updated JSON object matching the exact project schema (no markdown fences).`,
+    ].join('\n');
+
+    const { resp } = await generateGeminiContentWithFallback(revisionPrompt, false);
+    const updated = normalizeExplainerProject(
+      String(resp?.text || ''),
+      String(project.topic || project.title || 'Explainer'),
+      project.style === 'illustrated' || project.style === '3d' ? project.style : 'motion',
+      Array.isArray(project.sources) ? project.sources : []
+    );
+    updated.id = project.id || updated.id;
+    return res.json({ success: true, project: updated, appliedCount: openComments.length });
+  } catch (err: any) {
+    console.error('Video explainer revision error:', err);
+    return res.status(500).json({ success: false, error: err?.message || 'Failed to apply review comments' });
+  }
+});
+
+// POST /api/video/transcode — Transcode recorded combined video+audio WebM into universally playable MP4 or MP3 via ffmpeg
+app.post(
+  '/api/video/transcode',
+  express.raw({ type: ['video/*', 'audio/*', 'application/octet-stream'], limit: '250mb' }),
+  async (req, res) => {
+    const rawFormat = String(req.query?.format || 'mp4').toLowerCase();
+    const format: 'mp4' | 'mp3' = rawFormat === 'mp3' ? 'mp3' : 'mp4';
+    const inputBuf = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+    if (inputBuf.length < 128) {
+      return res.status(400).json({ success: false, error: 'Recorded media payload is empty' });
+    }
+
+    const osMod = await import('os');
+    const cpMod = await import('child_process');
+    const tmpDir = await fs.promises.mkdtemp(path.join(osMod.tmpdir(), 'kinich-vid-'));
+    const inputPath = path.join(tmpDir, 'input.webm');
+    const outputPath = path.join(tmpDir, format === 'mp3' ? 'output.mp3' : 'output.mp4');
+
+    try {
+      await fs.promises.writeFile(inputPath, inputBuf);
+      const args =
+        format === 'mp3'
+          ? ['-y', '-i', inputPath, '-vn', '-acodec', 'libmp3lame', '-b:a', '192k', outputPath]
+          : [
+              '-y',
+              '-i',
+              inputPath,
+              '-c:v',
+              'libx264',
+              '-preset',
+              'veryfast',
+              '-crf',
+              '22',
+              '-pix_fmt',
+              'yuv420p',
+              '-c:a',
+              'aac',
+              '-b:a',
+              '192k',
+              '-movflags',
+              '+faststart',
+              outputPath,
+            ];
+
+      await new Promise<void>((resolve, reject) => {
+        cpMod.execFile('ffmpeg', args, { timeout: 180_000, maxBuffer: 10 * 1024 * 1024 }, (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+
+      const outBuf = await fs.promises.readFile(outputPath);
+      res.setHeader('Content-Type', format === 'mp3' ? 'audio/mpeg' : 'video/mp4');
+      res.setHeader('Content-Length', String(outBuf.length));
+      return res.send(outBuf);
+    } catch (err: any) {
+      console.error('[VideoTranscode] ffmpeg error:', err?.message || err);
+      return res.status(500).json({ success: false, error: 'Media transcode failed' });
+    } finally {
+      await fs.promises.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+);
 
 // POST /api/youtube/transcript — Extract timed transcript & video metadata via InstaCloud Subclip + Innertube
 app.post('/api/youtube/transcript', async (req, res) => {
@@ -15435,7 +15906,7 @@ ${transcriptSnippet
     }
 
     const updatedQuotaSnapshot = recordServerQuotaConsumption(req, {
-      messages: 1,
+      messages: isServerUnlimitedModel(model) ? 0 : 1,
       files: incomingAttachmentsCount,
       searches: enrichedSearchSources.length > 0 ? 1 : 0,
       deepResearch: req.body?.isResearchMode ? 1 : 0,
@@ -15571,6 +16042,26 @@ app.get('/api/instacloud/agents/status', (_req, res) => {
       'instacloud.subagent.synthesizer',
     ],
   });
+});
+
+app.post('/api/video/generate', async (req, res) => {
+  try {
+    const prompt = String(req.body?.prompt || '').trim();
+    if (!prompt) return res.status(400).json({ success: false, error: 'Prompt is required.' });
+    const resolution = ['480p', '720p', '1080p'].includes(req.body?.resolution) ? req.body.resolution : '480p';
+    const duration = Math.min(30, Math.max(3, Number(req.body?.duration) || 5));
+    const zenoApiOrigin = process.env.ZENO_API_ORIGIN || 'https://prod-main-zeno-api-c257d4-00gfx3c9932.compute.instacloud-edge.com';
+    const upstream = await fetch(`${zenoApiOrigin.replace(/\/$/, '')}/api/video/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ prompt, resolution, duration }),
+      signal: AbortSignal.timeout(95000),
+    });
+    const data = await upstream.json().catch(() => ({ success: false, error: 'Invalid response from zeno-api.' }));
+    return res.status(upstream.status).json(data);
+  } catch (err: any) {
+    return res.status(502).json({ success: false, error: err?.message || 'Video generation upstream error.' });
+  }
 });
 
 app.post('/api/instacloud/agents/run', async (req, res) => {

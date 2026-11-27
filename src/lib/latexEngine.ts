@@ -131,11 +131,25 @@ const LATEX_ENV_SIGNAL_RE =
   /\\begin\{(?:equation\*?|align\*?|aligned|gather\*?|cases|pmatrix|bmatrix|vmatrix|matrix|smallmatrix)\}/;
 
 /**
- * Escapes literal currency dollar signs (e.g. "$5", "$12.50", "$5 to $10", "$2.4B")
- * outside $$...$$ display math so remark-math does not mistake prices for inline math delimiters.
+ * Escapes literal currency dollar signs (e.g. "$5", "$12.50", "$20 USD ... **$20,000 USD**",
+ * "$5 to $10", "$2.4B") outside $$...$$ display math so remark-math does not mistake prices
+ * for inline math delimiters or produce red KaTeX parse errors.
  */
 export function escapeCurrencyDollars(text: string): string {
   if (!text || !text.includes('$')) return text;
+
+  const isCurrencyFollowup = (afterNum: string): boolean => {
+    // Tight algebra like $2x$, $2^3$, $2_1$, $2\pi$ is NOT currency
+    if (/^[a-zA-Z_^{\\]/.test(afterNum) && !/^(?:k|m|b|t|bn|mn|usd|eur|gbp|inr|cad|aud|jpy|chf|sgd|aed)\b/i.test(afterNum)) {
+      return false;
+    }
+    // Immediate math operators after a number (e.g., $2 + 2 = 4$, $3.14 \times 10^8$, $1/2$)
+    if (/^\s*(?:[+=<>^_\\×÷]|\/(?=\d|\()|-(?!\s*\$))/.test(afterNum)) {
+      return false;
+    }
+    // Otherwise (punctuation, end of string, space + words like "USD", "/mo", "per month", "**", etc.) -> currency
+    return true;
+  };
 
   // Preserve $$...$$ display math blocks intact
   const parts = text.split(/(\$\$[\s\S]*?\$\$)/g);
@@ -143,7 +157,6 @@ export function escapeCurrencyDollars(text: string): string {
     .map((part) => {
       if (part.startsWith('$$') && part.endsWith('$$')) return part;
 
-      // Replace unescaped $ before digits when it clearly represents currency rather than math
       let out = '';
       let i = 0;
       while (i < part.length) {
@@ -155,31 +168,73 @@ export function escapeCurrencyDollars(text: string): string {
         }
         if (ch === '$') {
           const rest = part.slice(i + 1);
-          const currencyLead = rest.match(/^(\d{1,3}(?:,\d{3})*|\d+)(?:\.\d+)?/);
+
+          // Opening $ followed by whitespace or end-of-line is always literal
+          if (!rest || /^[\s]/.test(rest)) {
+            out += '\\$';
+            i += 1;
+            continue;
+          }
+
+          // Fast-path: $ followed by a currency number (e.g. $20 USD, $20,000, $9.99/mo, $50,)
+          const currencyLead = rest.match(/^(\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?/);
           if (currencyLead) {
             const afterNum = rest.slice(currencyLead[0].length);
-            // If immediately followed by an alphabetic variable (e.g. $2x$) or caret/subscript ($2^3$), treat as math
-            const isTightAlgebra = /^[a-zA-Z_^{\\]/.test(afterNum) && !/^(?:k|m|b|t|usd)\b/i.test(afterNum);
-            if (!isTightAlgebra) {
-              // Check if there is a closing $ later on the same line with explicit math operators between them
-              const lineEnd = rest.indexOf('\n');
-              const sameLine = lineEnd === -1 ? rest : rest.slice(0, lineEnd);
-              const nextDollar = sameLine.indexOf('$');
-              const insidePair = nextDollar !== -1 ? sameLine.slice(0, nextDollar) : '';
-              const looksLikeMathPair =
-                nextDollar !== -1 &&
-                nextDollar > 0 &&
-                (/[=+*<>^_\\|]/.test(insidePair) || /[\d)]\s*-\s*[\d(a-zA-Z\\]/.test(insidePair)) &&
-                !/^\d[\d,.]*\s+(?:to|and|or|vs|per|for|-|–|—)\s*$/i.test(insidePair.trim());
+            // Comma-grouped numbers like $20,000 or $1,500 are always currency unless followed by math ops
+            const hasCommaGroup = currencyLead[0].includes(',');
+            if (isCurrencyFollowup(afterNum) || (hasCommaGroup && !/^\s*[+=<>^_\\×÷]/.test(afterNum))) {
+              out += '\\$';
+              i += 1;
+              continue;
+            }
+          }
 
-              if (!looksLikeMathPair) {
-                out += '\\$';
-                i += 1;
-                continue;
+          // Check if there is a valid Pandoc-style closing $ on the same line
+          const lineEnd = rest.indexOf('\n');
+          const sameLine = lineEnd === -1 ? rest : rest.slice(0, lineEnd);
+
+          let closeRel = -1;
+          for (let j = 0; j < sameLine.length; j++) {
+            if (sameLine[j] === '\\' && j + 1 < sameLine.length) {
+              j += 1; // Skip escaped characters including \$
+              continue;
+            }
+            if (sameLine[j] === '$') {
+              const prevC = j > 0 ? sameLine[j - 1] : '';
+              const nextC = j + 1 < sameLine.length ? sameLine[j + 1] : '';
+              // Legal closing $ cannot be preceded by whitespace and cannot be followed by a digit ($20,000)
+              if (j > 0 && !/\s/.test(prevC) && !/^\d/.test(nextC)) {
+                closeRel = j;
+                break;
               }
             }
           }
+
+          if (closeRel !== -1) {
+            const inside = sameLine.slice(0, closeRel);
+            // Reject spans containing Markdown bold/code or multi-word prose sentences
+            const hasMarkdownNoise = /\*\*|__|`|\[[^\]]+\]\([^)]+\)/.test(inside);
+            const strippedLatex = inside.replace(/\\[a-zA-Z]+/g, ' ').replace(/\{[^{}]*\}/g, ' ');
+            const hasProseSentence = /\b[a-zA-Z]{3,}\s+[a-zA-Z]{3,}\s+[a-zA-Z]{3,}\b/.test(strippedLatex);
+            const hasCurrencySuffix =
+              /^\d[\d,.]*\s*(?:usd|eur|gbp|inr|cad|aud|per\s+month|per\s+year|\/mo|\/yr|\/month|\/year|monthly|yearly)\b/i.test(
+                inside.trim()
+              );
+
+            if (!hasMarkdownNoise && !hasProseSentence && !hasCurrencySuffix) {
+              // Genuine inline math span — preserve verbatim and advance past closing $
+              out += part.slice(i, i + 1 + closeRel + 1);
+              i += closeRel + 2;
+              continue;
+            }
+          }
+
+          // No valid closing $ or failed math sanity checks -> escape as literal $
+          out += '\\$';
+          i += 1;
+          continue;
         }
+
         out += ch;
         i += 1;
       }
@@ -398,6 +453,7 @@ export function renderLatexToHtml(
       throwOnError: false,
       strict: false,
       trust: false,
+      errorColor: 'inherit',
       output: 'htmlAndMathml',
       macros: STEM_KATEX_MACROS,
     });

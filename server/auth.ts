@@ -112,6 +112,9 @@ export const OPTIONAL_AUTH_API_ROUTES = [
   '/location/ip',
   '/location/reverse-geocode',
   '/weather',
+  '/video/generate',
+  '/video/explainer',
+  '/video/explainer/revise',
 ] as const;
 
 export const PUBLIC_API_ROUTES = [

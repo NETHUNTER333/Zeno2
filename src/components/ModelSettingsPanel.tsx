@@ -59,7 +59,9 @@ export const ModelSettingsPanel: React.FC<ModelSettingsPanelProps> = ({
     const q = modelSearch.trim().toLowerCase();
     return GROK_MODELS.filter((m) => {
       const tier = getModelRequiredTier(m);
-      if ((tierFilter === 'free' || tierFilter === 'spark' || tierFilter === 'fire') && tier !== tierFilter) {
+      if (m.unlimited) {
+        if (tierFilter === 'spark' || tierFilter === 'fire') return false;
+      } else if ((tierFilter === 'free' || tierFilter === 'spark' || tierFilter === 'fire') && tier !== tierFilter) {
         return false;
       }
       if (!q) return true;
@@ -111,7 +113,7 @@ export const ModelSettingsPanel: React.FC<ModelSettingsPanelProps> = ({
 
   const handleSelectDefaultChatModel = (model: ModelOption) => {
     const reqTier = getModelRequiredTier(model);
-    if (!UserAccountStore.canUseModel(reqTier)) {
+    if (!model.unlimited && !UserAccountStore.canUseModel(reqTier)) {
       if (onOpenPricing) {
         onOpenPricing(reqTier === 'fire' ? 'fire' : 'spark', `${model.name} requires the ${reqTier === 'fire' ? 'Fire' : 'Spark'} plan.`);
       } else {
@@ -129,7 +131,7 @@ export const ModelSettingsPanel: React.FC<ModelSettingsPanelProps> = ({
     const found = visionModels.find((m) => m.id === modelId);
     if (!found) return;
     const reqTier = getModelRequiredTier(found);
-    if (!UserAccountStore.canUseModel(reqTier)) {
+    if (!found.unlimited && !UserAccountStore.canUseModel(reqTier)) {
       onOpenPricing?.(
         reqTier === 'fire' ? 'fire' : 'spark',
         `${found.name} requires the ${reqTier === 'fire' ? 'Fire' : 'Spark'} plan.`
@@ -603,7 +605,7 @@ export const ModelSettingsPanel: React.FC<ModelSettingsPanelProps> = ({
           ) : (
             filteredModels.slice(0, 40).map((m) => {
               const tier = getModelRequiredTier(m);
-              const unlocked = UserAccountStore.canUseModel(tier);
+              const unlocked = m.unlimited ? true : UserAccountStore.canUseModel(tier);
               const isSelected = selectedModel.id === m.id;
               return (
                 <button
@@ -627,9 +629,9 @@ export const ModelSettingsPanel: React.FC<ModelSettingsPanelProps> = ({
                     </div>
                   </div>
                   <div className="flex items-center gap-3 shrink-0">
-                    <span className={`text-[11px] font-mono tabular-nums ${mutedText}`}>
+                    <span className={`text-[11px] font-mono tabular-nums ${m.unlimited ? 'text-emerald-500 font-semibold' : mutedText}`}>
                       {m.contextLength || '128K'} · {m.supportsVision ? 'Vision · ' : ''}
-                      {tier === 'free' ? 'Free' : tier === 'spark' ? 'Spark' : 'Fire'}
+                      {m.unlimited ? 'Unlimited' : tier === 'free' ? 'Free' : tier === 'spark' ? 'Spark' : 'Fire'}
                     </span>
                     {isSelected ? (
                       <Check className="w-4 h-4 text-[#FC4C01]" />

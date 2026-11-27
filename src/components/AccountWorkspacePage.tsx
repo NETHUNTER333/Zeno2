@@ -1624,7 +1624,7 @@ export const AccountWorkspacePage: React.FC<AccountWorkspacePageProps> = ({
           aria-labelledby={`account-desktop-tab-${activeTab}`}
           className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 lg:p-10 slim-scrollbar"
         >
-          <div className={`${activeTab === 'pricing' ? 'max-w-6xl' : 'max-w-3xl'} mx-auto space-y-6 pb-16`}>
+          <div className={`${activeTab === 'pricing' ? 'max-w-6xl' : 'max-w-3xl xl:max-w-4xl'} mx-auto space-y-6 pb-16`}>
             {/* Tab: Model Settings */}
             {activeTab === 'models' && (
               <ModelSettingsPanel

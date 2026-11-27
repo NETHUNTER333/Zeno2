@@ -45,6 +45,7 @@ function zenoStaticPrerenderPlugin() {
           'kinich-icon-1024_544040c6.png',
           'IMG_b19e3948-9e9c-40a0-92b9-9924f87dff0f_d403c7fb.jpg',
           'IMG_f15b9024-053c-4665-9ad8-fde18e6bca08_1a22887e.jpg',
+          'Screenshot_2026_1123_112035_23a228ec.jpg',
         ]);
         const distAistudioDir = path.resolve(distDir, 'assets', 'aistudio');
         if (fs.existsSync(distAistudioDir)) {
@@ -70,11 +71,25 @@ export default defineConfig(() => {
   return {
     plugins: [react(), tailwindcss(), zenoStaticPrerenderPlugin()],
     resolve: {
+      dedupe: ['react', 'react-dom'],
       alias: {
         '@': path.resolve(import.meta.dirname, './src'),
       },
     },
     optimizeDeps: {
+      include: [
+        'react',
+        'react-dom',
+        'react-dom/client',
+        'react/jsx-runtime',
+        'react/jsx-dev-runtime',
+        'three',
+        'three/examples/jsm/environments/RoomEnvironment.js',
+        '@livliv-dev/player',
+        '@livliv-dev/player/body',
+        'motion/react',
+        'lucide-react',
+      ],
       exclude: ['phonon-tts'],
     },
     worker: {

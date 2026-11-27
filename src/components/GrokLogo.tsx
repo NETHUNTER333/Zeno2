@@ -15,12 +15,12 @@ export const GrokLogo: React.FC<GrokLogoProps> = ({
 }) => {
   const iconSize =
     size === 'sm'
-      ? 'w-6 h-6'
+      ? 'w-7 h-7 rounded-[8px]'
       : size === 'lg'
-      ? 'w-12 h-12'
+      ? 'w-12 h-12 rounded-xl'
       : size === 'xl'
-      ? 'w-16 h-16'
-      : 'w-9 h-9';
+      ? 'w-16 h-16 rounded-2xl'
+      : 'w-9 h-9 rounded-[10px]';
 
   const textSize =
     size === 'sm'
@@ -38,20 +38,16 @@ export const GrokLogo: React.FC<GrokLogoProps> = ({
       } ${className}`}
     >
       <div
-        className={`${iconSize} relative rounded-xl overflow-hidden shrink-0 border ${
+        className={`${iconSize} relative overflow-hidden shrink-0 isolate bg-[#140c06] border ${
           isDark
-            ? 'border-white/15 shadow-[0_0_18px_rgba(252,76,1,0.35)]'
-            : 'border-black/10 shadow-[0_4px_14px_rgba(252,76,1,0.22)]'
+            ? 'border-white/15 shadow-[0_0_16px_rgba(252,76,1,0.3)]'
+            : 'border-black/15 shadow-[0_2px_8px_rgba(20,12,6,0.18)]'
         }`}
-        style={{
-          background:
-            'radial-gradient(circle 85% at 92% 92%, #fffbe6 0%, #ffd447 22%, #ff8826 48%, #fc4c01 66%, #120905 78%, #070606 100%)',
-        }}
       >
         <img
           src="/assets/aistudio/kinich-icon-1024_544040c6.png"
           alt="Kinich Logo"
-          className="w-full h-full object-cover mix-blend-screen opacity-95"
+          className="w-full h-full object-cover block"
         />
       </div>
 

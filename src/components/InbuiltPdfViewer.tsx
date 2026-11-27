@@ -40,6 +40,7 @@ import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import { MathMarkdown, MathText, MathFormula } from './MathMarkdown';
 import { speakTextWithSmallestAi, stopSmallestSpeech } from '../lib/smallestAi';
+import { exportAnkiApkg } from '../lib/ankiExport';
 import { getAuthHeaders } from '../lib/firebase';
 import { ArxivPaper } from '../types';
 import {
@@ -1660,6 +1661,30 @@ export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
                       </span>
 
                       <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          disabled={allFlashcards.length === 0}
+                          onClick={() =>
+                            void exportAnkiApkg(
+                              activePdfName || 'PDF Flashcards',
+                              allFlashcards.map((c) => ({
+                                front: c.front,
+                                back: c.back,
+                                tags: ['pdf'],
+                              }))
+                            )
+                          }
+                          className={`px-2.5 py-1 rounded-full border text-[11px] font-medium transition-colors cursor-pointer disabled:opacity-40 inline-flex items-center gap-1 ${
+                            isDark
+                              ? 'border-white/[0.1] text-neutral-300 hover:text-white'
+                              : 'border-black/[0.1] text-neutral-700 hover:text-black'
+                          }`}
+                          title="Export flashcards as Anki .apkg deck"
+                        >
+                          <Download className="w-3 h-3" />
+                          <span>Anki .apkg</span>
+                        </button>
+
                         <button
                           type="button"
                           onClick={() => {

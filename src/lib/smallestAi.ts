@@ -1,7 +1,7 @@
 // Rumik AI Silk Read Out Loud Engine with Language & Male/Female Audio Preferences
 import { getAuthHeaders } from './firebase';
 
-let phononModulePromise: Promise<typeof import('./phononTTS')> | null = null;
+let phononModulePromise: Promise<typeof import('./phononTTS') | null> | null = null;
 let loadedPhononModule: typeof import('./phononTTS') | null = null;
 
 function isPhononRuntimeSupported(): boolean {
@@ -490,7 +490,7 @@ export async function speakTextWithSmallestAi(
           clearProgressRaf();
           onEnd?.();
         },
-        onError: (e) => {
+        onError: (e: unknown) => {
           phononActive = false;
           clearProgressRaf();
           onError?.(e);

@@ -650,7 +650,24 @@ const SERVER_FREE_MODELS = new Set<string>([
   'zro/glm-5.3-flash',
   'zro-glm-5.3-flash',
   'glm-5.3-flash',
+  // CrowLLM Qwen 3.8 Omni Flash (Unlimited, outside all paid plans)
+  'fgw-qwen3-8-omni-flash-free',
+  'fgw/qwen3-8-omni-flash:free',
+  'qwen3-8-omni-flash:free',
 ]);
+
+// Models that are completely unlimited and outside all subscription plans (never gated or message-capped)
+const SERVER_UNLIMITED_MODELS = new Set<string>([
+  'fgw-qwen3-8-omni-flash-free',
+  'fgw/qwen3-8-omni-flash:free',
+  'qwen3-8-omni-flash:free',
+]);
+
+export function isServerUnlimitedModel(rawModel: string | undefined): boolean {
+  const model = String(rawModel || '').trim().toLowerCase();
+  if (!model) return false;
+  return SERVER_UNLIMITED_MODELS.has(model);
+}
 
 const SERVER_FIRE_MODELS = new Set<string>([
   'thk-gpt-6.1-sol-fast',
@@ -1255,18 +1272,22 @@ export function verifyChatQuotaBeforeExecution(
   const { limits, plan } = snapshot;
   const enforceInTest = req.headers['x-zeno-enforce-quota'] === 'true';
 
-  // 1. Model Tier Enforcement (Spark $3 / Fire $9 lock)
-  const requiredModelTier = classifyServerModelTier(options.model);
-  if (!canPlanUseModelTier(plan, requiredModelTier)) {
-    const tierLabel = requiredModelTier === 'fire' ? 'Fire ($9/mo Unlimited)' : 'Spark ($3/mo)';
-    return {
-      allowed: false,
-      statusCode: 403,
-      code: 'quota/model_tier_locked',
-      requiredTier: requiredModelTier,
-      message: `Requested model "${options.model}" requires the ${tierLabel} plan. Your active plan is ${limits.name}.`,
-      snapshot,
-    };
+  const unlimitedModel = isServerUnlimitedModel(options.model);
+
+  // 1. Model Tier Enforcement (Spark $3 / Fire $9 lock) — bypassed for unlimited open models
+  if (!unlimitedModel) {
+    const requiredModelTier = classifyServerModelTier(options.model);
+    if (!canPlanUseModelTier(plan, requiredModelTier)) {
+      const tierLabel = requiredModelTier === 'fire' ? 'Fire ($9/mo Unlimited)' : 'Spark ($3/mo)';
+      return {
+        allowed: false,
+        statusCode: 403,
+        code: 'quota/model_tier_locked',
+        requiredTier: requiredModelTier,
+        message: `Requested model "${options.model}" requires the ${tierLabel} plan. Your active plan is ${limits.name}.`,
+        snapshot,
+      };
+    }
   }
 
   // Skip daily counter caps in unit tests unless explicitly testing quota enforcement
@@ -1274,8 +1295,8 @@ export function verifyChatQuotaBeforeExecution(
     return { allowed: true, statusCode: 200, snapshot };
   }
 
-  // 2. Daily Prompt / Message Quota Enforcement (1,500 on Spark, Unlimited on Fire)
-  if (snapshot.messagesUsed >= limits.messageLimit) {
+  // 2. Daily Prompt / Message Quota Enforcement — bypassed for unlimited open models
+  if (!unlimitedModel && snapshot.messagesUsed >= limits.messageLimit) {
     const upgradeTarget: SubscriptionPlanTier = plan === 'spark' ? 'fire' : 'spark';
     return {
       allowed: false,

@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ChevronDown, Check } from 'lucide-react';
+import { ChevronDown, Check, Lock } from 'lucide-react';
 import { UserAccountStore } from '../lib/userAccountStore';
-import { getModelGradientTheme } from '../lib/modelGradients';
 
 export interface ModelOption {
   id: string;
@@ -11,1498 +10,214 @@ export interface ModelOption {
   supportsVision: boolean;
   contextLength?: string;
   requiredTier?: 'free' | 'spark' | 'fire';
+  unlimited?: boolean;
 }
 
-export const GROK_MODELS: ModelOption[] = [
-  {
-    id: 'zro-deepseek-v4.1-flash',
-    name: 'DeepSeek V4.1 Flash',
-    description: '1M zero-latency (Default · Free)',
-    geminiModel: 'zro/deepseek-v4.1-flash',
-    supportsVision: false,
-    contextLength: '1M',
-    requiredTier: 'free',
-  },
-  {
-    id: 'zro-glm-5.3-flash',
-    name: 'GLM 5.3 Flash (1M)',
-    description: 'Fast reasoning & vision (Free Vision)',
-    geminiModel: 'zro/glm-5.3-flash',
-    supportsVision: true,
-    contextLength: '1M',
-    requiredTier: 'free',
-  },
-  {
-    id: 'fgw-qwen-3.8-vl-72b-vision',
-    name: 'Qwen 3.8 VL 72B Vision',
-    description: 'High-res visual & OCR analysis',
-    geminiModel: 'fgw/qwen-3.8-max:free',
-    supportsVision: true,
-    contextLength: '1M',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-pixtral-large-2-vision',
-    name: 'Pixtral Large 2 Vision',
-    description: 'Frontier multimodal vision',
-    geminiModel: 'fgw/nvidia/mistral-large-4-1t-a52b:free',
-    supportsVision: true,
-    contextLength: '512K',
-    requiredTier: 'fire',
-  },
-  {
-    id: 'fgw-llama-4-maverick-vision',
-    name: 'Llama 4 Maverick Vision',
-    description: 'Native multimodal MoE vision',
-    geminiModel: 'fgw/nemotron-3.5-super-vl:free',
-    supportsVision: true,
-    contextLength: '1M',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'radox-gpt-6-omni-vision',
-    name: 'GPT-6 Omni Vision',
-    description: 'Deep visual & diagram reasoning',
-    geminiModel: 'radox/gpt-5.6-luna',
-    supportsVision: true,
-    contextLength: '1M',
-    requiredTier: 'fire',
-  },
-  {
-    id: 'itera-gemini-4-ultra-vision',
-    name: 'Gemini 4 Ultra Vision',
-    description: '2M context multimodal vision',
-    geminiModel: 'itera/gemini/gemini-4-argon',
-    supportsVision: true,
-    contextLength: '2M',
-    requiredTier: 'fire',
-  },
-  {
-    id: 'intern-internvl-3.5-78b-vision',
-    name: 'InternVL 3.5 78B Vision',
-    description: 'Scientific & document vision',
-    geminiModel: 'intern/deepseek-v4-flash-vision',
-    supportsVision: true,
-    contextLength: '1M',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-glm-5.3v-pro-vision',
-    name: 'GLM 5.3V Pro Vision',
-    description: 'Fast visual reasoning & UI',
-    geminiModel: 'fgw/glm-5.3-flash:free',
-    supportsVision: true,
-    contextLength: '1M',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-deepseek-v4.1-flash-free',
-    name: 'DeepSeek V4.1 Flash+',
-    description: 'High-speed reasoning',
-    geminiModel: 'fgw/deepseek-v4.1-flash:free',
-    supportsVision: false,
-    contextLength: '1M',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-deepseek-v4-flash-free',
-    name: 'DeepSeek V4 Flash+',
-    description: 'Fast analytical logic',
-    geminiModel: 'fgw/deepseek-v4-flash:free',
-    supportsVision: false,
-    contextLength: '1M',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-deepseek-v4-flash-0731-free',
-    name: 'DeepSeek V4 0731+',
-    description: 'Coding & math logic',
-    geminiModel: 'fgw/deepseek-v4-flash-0731:free',
-    supportsVision: false,
-    contextLength: '1M',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-deepseek-v4-flash-0731-thinking-free',
-    name: 'DeepSeek V4 Thinking',
-    description: 'Step-by-step chain of thought',
-    geminiModel: 'fgw/deepseek-v4-flash-0731-thinking:free',
-    supportsVision: false,
-    contextLength: '1M',
-    requiredTier: 'fire',
-  },
-  {
-    id: 'fgw-gemini-3.8-flash-free',
-    name: 'Gemini 3.8 Flash',
-    description: 'Fast multimodal reasoning',
-    geminiModel: 'fgw/gemini-3.8-flash:free',
-    supportsVision: true,
-    contextLength: '1M',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-gemini-3.7-flash-free',
-    name: 'Gemini 3.7 Flash+',
-    description: 'Low-latency multimodal',
-    geminiModel: 'fgw/gemini-3.7-flash:free',
-    supportsVision: true,
-    contextLength: '1M',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-gemini-3.5-flash-free',
-    name: 'Gemini 3.5 Flash',
-    description: 'Balanced multimodal flash',
-    geminiModel: 'fgw/gemini-3.5-flash:free',
-    supportsVision: true,
-    contextLength: '1M',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-gemini-3.1-pro-free',
-    name: 'Gemini 3.1 Pro+',
-    description: 'Deep pro reasoning',
-    geminiModel: 'fgw/gemini-3.1-pro:free',
-    supportsVision: true,
-    contextLength: '2M',
-    requiredTier: 'fire',
-  },
-  {
-    id: 'fgw-gemini-3-pro-free',
-    name: 'Gemini 3 Pro',
-    description: 'Frontier multimodal pro',
-    geminiModel: 'fgw/gemini-3-pro:free',
-    supportsVision: true,
-    contextLength: '2M',
-    requiredTier: 'fire',
-  },
-  {
-    id: 'fgw-gemini-3-flash-free',
-    name: 'Gemini 3 Flash',
-    description: 'High-speed multimodal',
-    geminiModel: 'fgw/gemini-3-flash:free',
-    supportsVision: true,
-    contextLength: '1M',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-gemini-2.5-pro-free',
-    name: 'Gemini 2.5 Pro',
-    description: 'Analytical pro reasoning',
-    geminiModel: 'fgw/gemini-2.5-pro:free',
-    supportsVision: true,
-    contextLength: '2M',
-    requiredTier: 'fire',
-  },
-  {
-    id: 'fgw-gemini-2.0-flash-free',
-    name: 'Gemini 2.0 Flash',
-    description: 'Fast everyday multimodal',
-    geminiModel: 'fgw/gemini-2.0-flash:free',
-    supportsVision: true,
-    contextLength: '1M',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-gemma-4-31b-it-free',
-    name: 'Gemma 4 31B',
-    description: 'Open-weights instruction',
-    geminiModel: 'fgw/gemma-4-31b-it:free',
-    supportsVision: true,
-    contextLength: '128K',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-grok-4.7-free',
-    name: 'Grok 4.7 Pro',
-    description: 'Real-time frontier synthesis',
-    geminiModel: 'fgw/grok-4.7:free',
-    supportsVision: true,
-    contextLength: '500K',
-    requiredTier: 'fire',
-  },
-  {
-    id: 'fgw-grok-4.7-fast-free',
-    name: 'Grok 4.7 Fast',
-    description: 'Low-latency synthesis',
-    geminiModel: 'fgw/grok-4.7-fast:free',
-    supportsVision: true,
-    contextLength: '500K',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-gpt-5.6-sol-free',
-    name: 'GPT-5.6 Sol+',
-    description: 'High-speed frontier logic',
-    geminiModel: 'fgw/gpt-5.6-sol:free',
-    supportsVision: true,
-    contextLength: '1M',
-    requiredTier: 'fire',
-  },
-  {
-    id: 'fgw-o3-free',
-    name: 'o3 Reasoning',
-    description: 'Deep STEM & math logic',
-    geminiModel: 'fgw/o3:free',
-    supportsVision: true,
-    contextLength: '200K',
-    requiredTier: 'fire',
-  },
-  {
-    id: 'fgw-o4-mini-free',
-    name: 'o4-mini',
-    description: 'Fast STEM & code reasoning',
-    geminiModel: 'fgw/o4-mini:free',
-    supportsVision: true,
-    contextLength: '200K',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-gpt-4.1-mini-free',
-    name: 'GPT-4.1 Mini',
-    description: 'Fast instruction & coding',
-    geminiModel: 'fgw/gpt-4.1-mini:free',
-    supportsVision: true,
-    contextLength: '1M',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-gpt-4o-free',
-    name: 'GPT-4o',
-    description: 'Omni multimodal intelligence',
-    geminiModel: 'fgw/gpt-4o:free',
-    supportsVision: true,
-    contextLength: '128K',
-    requiredTier: 'fire',
-  },
-  {
-    id: 'fgw-gpt-4o-mini-free',
-    name: 'GPT-4o Mini',
-    description: 'Lightweight omni speed',
-    geminiModel: 'fgw/gpt-4o-mini:free',
-    supportsVision: true,
-    contextLength: '128K',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-gpt-oss-20b-free',
-    name: 'GPT-OSS 20B+',
-    description: 'Open-weights reasoning',
-    geminiModel: 'fgw/openai/gpt-oss-20b:free',
-    supportsVision: false,
-    contextLength: '128K',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-qwen-3.8-max-free',
-    name: 'Qwen 3.8 Max+',
-    description: 'Flagship coding & math',
-    geminiModel: 'fgw/qwen-3.8-max:free',
-    supportsVision: true,
-    contextLength: '1M',
-    requiredTier: 'fire',
-  },
-  {
-    id: 'fgw-qwen-3.8-27b-free',
-    name: 'Qwen 3.8 27B+',
-    description: 'Dense 27B reasoning',
-    geminiModel: 'fgw/qwen-3.8-27b:free',
-    supportsVision: true,
-    contextLength: '256K',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-qwen3-8-omni-flash-free',
-    name: 'Qwen 3.8 Omni Flash',
-    description: 'Multimodal omni flash',
-    geminiModel: 'fgw/qwen3-8-omni-flash:free',
-    supportsVision: true,
-    contextLength: '256K',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-qwen-3.6-plus-free',
-    name: 'Qwen 3.6 Plus',
-    description: 'Balanced coding & analysis',
-    geminiModel: 'fgw/qwen-3.6-plus:free',
-    supportsVision: true,
-    contextLength: '256K',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-qwen-3.6-27b-free',
-    name: 'Qwen 3.6 27B',
-    description: 'Fast 27B synthesis',
-    geminiModel: 'fgw/qwen-3.6-27b:free',
-    supportsVision: false,
-    contextLength: '256K',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-qwen-3.5-397b-a17b-free',
-    name: 'Qwen 3.5 397B MoE',
-    description: '397B sparse MoE reasoning',
-    geminiModel: 'fgw/qwen-3.5-397b-a17b:free',
-    supportsVision: false,
-    contextLength: '256K',
-    requiredTier: 'fire',
-  },
-  {
-    id: 'fgw-glm-5.3-flash-free',
-    name: 'GLM 5.3 Flash+',
-    description: 'Fast reasoning & synthesis',
-    geminiModel: 'fgw/glm-5.3-flash:free',
-    supportsVision: true,
-    contextLength: '1M',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-caw-glm-5.3-flash-free',
-    name: 'GLM 5.3 Flash Turbo',
-    description: 'High-throughput flash',
-    geminiModel: 'fgw/caw/glm-5.3-flash:free',
-    supportsVision: true,
-    contextLength: '1M',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-caw-glm-5.3-flash-thinking-free',
-    name: 'GLM 5.3 Thinking',
-    description: 'Reflective chain of thought',
-    geminiModel: 'fgw/caw/glm-5.3-flash-thinking:free',
-    supportsVision: true,
-    contextLength: '1M',
-    requiredTier: 'fire',
-  },
-  {
-    id: 'fgw-glm-4.7-flash-free',
-    name: 'GLM 4.7 Flash',
-    description: 'Low-latency reasoning',
-    geminiModel: 'fgw/glm-4.7-flash:free',
-    supportsVision: false,
-    contextLength: '256K',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-glm-4.6v-flash-free',
-    name: 'GLM 4.6V Flash',
-    description: 'Multimodal visual analysis',
-    geminiModel: 'fgw/glm-4.6v-flash:free',
-    supportsVision: true,
-    contextLength: '128K',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-llama-3.3-70b-instruct-free',
-    name: 'Llama 3.3 70B Instruct',
-    description: 'Open-weights 70B chat',
-    geminiModel: 'fgw/llama-3.3-70b-instruct:free',
-    supportsVision: false,
-    contextLength: '128K',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-llama-3.3-70b-free',
-    name: 'Llama 3.3 70B',
-    description: '70B foundation model',
-    geminiModel: 'fgw/llama-3.3-70b:free',
-    supportsVision: false,
-    contextLength: '128K',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-mistral-medium-3.5-free',
-    name: 'Mistral Medium 3.5',
-    description: 'Multilingual logic & code',
-    geminiModel: 'fgw/mistral-medium-3.5:free',
-    supportsVision: true,
-    contextLength: '128K',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-nvidia-mistral-large-4-1t-free',
-    name: 'Mistral Large 4 1T',
-    description: '1T sparse MoE frontier',
-    geminiModel: 'fgw/nvidia/mistral-large-4-1t-a52b:free',
-    supportsVision: true,
-    contextLength: '512K',
-    requiredTier: 'fire',
-  },
-  {
-    id: 'fgw-nemotron-3-ultra-550b-free',
-    name: 'Nemotron 3 Ultra 550B',
-    description: '550B MoE analytical',
-    geminiModel: 'fgw/nemotron-3-ultra-550b-a55b:free',
-    supportsVision: false,
-    contextLength: '1M',
-    requiredTier: 'fire',
-  },
-  {
-    id: 'fgw-nvidia-nemotron-3-ultra-550b-free',
-    name: 'Nemotron 3 Ultra (Fast)',
-    description: 'High-throughput 550B MoE',
-    geminiModel: 'fgw/nvidia/nemotron-3-ultra-550b-a55b:free',
-    supportsVision: false,
-    contextLength: '1M',
-    requiredTier: 'fire',
-  },
-  {
-    id: 'fgw-nemotron-3.5-super-vl-free',
-    name: 'Nemotron 3.5 Super VL',
-    description: 'Vision-language reasoning',
-    geminiModel: 'fgw/nemotron-3.5-super-vl:free',
-    supportsVision: true,
-    contextLength: '1M',
-    requiredTier: 'fire',
-  },
-  {
-    id: 'fgw-nvidia-nemotron-3.5-super-vl-120b-free',
-    name: 'Nemotron 3.5 VL 120B',
-    description: '120B multimodal MoE',
-    geminiModel: 'fgw/nvidia/nemotron-3.5-super-vl-120b-a12b:free',
-    supportsVision: true,
-    contextLength: '1M',
-    requiredTier: 'fire',
-  },
-  {
-    id: 'fgw-nvidia-nemotron-3.5-bolt-e4b-free',
-    name: 'Nemotron 3.5 Bolt',
-    description: 'Ultra-fast compact flash',
-    geminiModel: 'fgw/nvidia/nemotron-3.5-bolt-e4b:free',
-    supportsVision: false,
-    contextLength: '64K',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-minimax-m3.1-flash-free',
-    name: 'MiniMax M3.1 Flash',
-    description: 'Long-context fast synthesis',
-    geminiModel: 'fgw/minimax-m3.1-flash:free',
-    supportsVision: true,
-    contextLength: '1M',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-nvidia-minimax-m3.1-flash-free',
-    name: 'MiniMax M3.1 Turbo',
-    description: 'High-speed 1M flash',
-    geminiModel: 'fgw/nvidia/minimax-m3.1-flash:free',
-    supportsVision: true,
-    contextLength: '1M',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-minimax-m2.5-free',
-    name: 'MiniMax M2.5',
-    description: 'Balanced long-context chat',
-    geminiModel: 'fgw/minimax-m2.5:free',
-    supportsVision: false,
-    contextLength: '512K',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-agnes-3.0-flash-free',
-    name: 'Agnes 3.0 Flash',
-    description: 'Fast structured synthesis',
-    geminiModel: 'fgw/agnes-3.0-flash:free',
-    supportsVision: false,
-    contextLength: '128K',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-ernie-5.5-flash-preview-free',
-    name: 'Ernie 5.5 Flash',
-    description: 'Knowledge-enhanced flash',
-    geminiModel: 'fgw/ernie-5.5-flash-preview:free',
-    supportsVision: false,
-    contextLength: '256K',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-laguna-s-2.1-free',
-    name: 'Laguna S 2.1+',
-    description: 'Software engineering & code',
-    geminiModel: 'fgw/laguna-s-2.1:free',
-    supportsVision: false,
-    contextLength: '1M',
-    requiredTier: 'fire',
-  },
-  {
-    id: 'fgw-laguna-xs-2.1-free',
-    name: 'Laguna XS 2.1+',
-    description: 'Fast code completion',
-    geminiModel: 'fgw/laguna-xs-2.1:free',
-    supportsVision: false,
-    contextLength: '256K',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-nvidia-laguna-xs-2.1-free',
-    name: 'Laguna XS 2.1 Turbo',
-    description: 'Accelerated code generation',
-    geminiModel: 'fgw/nvidia/laguna-xs-2.1:free',
-    supportsVision: false,
-    contextLength: '256K',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-muse-spark-1.1-free',
-    name: 'Muse Spark 1.1+',
-    description: 'Creative writing & ideation',
-    geminiModel: 'fgw/muse-spark-1.1:free',
-    supportsVision: false,
-    contextLength: '256K',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-mimo-v2.6-flash-free',
-    name: 'MiMo V2.6 Flash+',
-    description: 'Fast mathematical reasoning',
-    geminiModel: 'fgw/mimo-v2.6-flash:free',
-    supportsVision: false,
-    contextLength: '1M',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-k2-horizon-375b-free',
-    name: 'K2 Horizon 375B',
-    description: '375B MoE deep synthesis',
-    geminiModel: 'fgw/k2-horizon-375b-a23b:free',
-    supportsVision: false,
-    contextLength: '256K',
-    requiredTier: 'fire',
-  },
-  {
-    id: 'fgw-jais-3-mova-36b-free',
-    name: 'Jais 3 Mova 36B',
-    description: 'Multilingual MoE reasoning',
-    geminiModel: 'fgw/jais-3-mova-36b-a4b:free',
-    supportsVision: false,
-    contextLength: '128K',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-xing4.0-29b-free',
-    name: 'Xing 4.0 29B',
-    description: 'Efficient MoE logic',
-    geminiModel: 'fgw/xing4.0-29b-a4b:free',
-    supportsVision: false,
-    contextLength: '128K',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-longcat-2.5-free',
-    name: 'LongCat 2.5+',
-    description: 'Long-context reasoning',
-    geminiModel: 'fgw/longcat-2.5:free',
-    supportsVision: true,
-    contextLength: '1M',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-dots-3-note-preview-free',
-    name: 'Dots 3 Note+',
-    description: 'Research & note synthesis',
-    geminiModel: 'fgw/dots-3-note-preview:free',
-    supportsVision: true,
-    contextLength: '512K',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-flint-v1.0-free',
-    name: 'Flint v1.0+',
-    description: 'Code & analytical logic',
-    geminiModel: 'fgw/flint-v1.0:free',
-    supportsVision: false,
-    contextLength: '256K',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-liquid-lfm-2.5-2.6b-free',
-    name: 'LFM 2.5 2.6B+',
-    description: 'Liquid foundation speed',
-    geminiModel: 'fgw/liquid/lfm-2.5-2.6b:free',
-    supportsVision: false,
-    contextLength: '128K',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-liquid-lfm-2.5-thinking-free',
-    name: 'LFM 2.5 Thinking',
-    description: 'Compact chain of thought',
-    geminiModel: 'fgw/liquid/lfm-2.5-2.6b-thinking:free',
-    supportsVision: false,
-    contextLength: '128K',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-minicpm-v-4.7-35b-free',
-    name: 'MiniCPM-V 4.7 35B',
-    description: '35B vision-language MoE',
-    geminiModel: 'fgw/openbmb/MiniCPM-V-4.7-35B-A3B:free',
-    supportsVision: true,
-    contextLength: '128K',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-minicpm-v-4.7-35b-thinking-free',
-    name: 'MiniCPM-V 4.7 Thinking',
-    description: 'Multimodal visual thinking',
-    geminiModel: 'fgw/openbmb/MiniCPM-V-4.7-35B-A3B-thinking:free',
-    supportsVision: true,
-    contextLength: '128K',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-minicpm-v-4.7-1b-free',
-    name: 'MiniCPM-V 4.7 1B',
-    description: 'Ultra-light vision model',
-    geminiModel: 'fgw/MiniCPM-V-4.7-1B:free',
-    supportsVision: true,
-    contextLength: '64K',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-minicpm5-2b-free',
-    name: 'MiniCPM 5 2B',
-    description: 'Compact edge instruction',
-    geminiModel: 'fgw/MiniCPM5-2B:free',
-    supportsVision: false,
-    contextLength: '64K',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'fgw-hy4-free',
-    name: 'Hunyuan 4',
-    description: 'Flagship reasoning & synthesis',
-    geminiModel: 'fgw/hy4:free',
-    supportsVision: false,
-    contextLength: '256K',
-    requiredTier: 'fire',
-  },
-  {
-    id: 'fgw-solar-mini4-free',
-    name: 'Solar Mini 4',
-    description: 'Compact high-efficiency pro',
-    geminiModel: 'fgw/solar-mini4:free',
-    supportsVision: false,
-    contextLength: '128K',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'zro-deepseek-v4-flash-0731',
-    name: 'DeepSeek V4 (0731)',
-    description: 'Coding & math reasoning',
-    geminiModel: 'zro/deepseek-v4-flash-0731',
-    supportsVision: false,
-    contextLength: '1M',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'deepseek-v4.1-flash-free',
-    name: 'DeepSeek V4.1',
-    description: 'Instant reasoning',
-    geminiModel: 'zro/deepseek-v4.1-flash',
-    supportsVision: false,
-    contextLength: '1M',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'itera-qwen3.8-27b-free',
-    name: 'Qwen 3.8 27B',
-    description: 'Fast reply & vision',
-    geminiModel: 'itera/qwen/qwen3.8-27b',
-    supportsVision: true,
-    contextLength: '256K',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'deepseek-v4-flash-0731-free',
-    name: 'DeepSeek V4 Flash',
-    description: 'Analytical reasoning',
-    geminiModel: 'zro/deepseek-v4-flash-0731',
-    supportsVision: false,
-    contextLength: '1M',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'glm-5.3-flash-free',
-    name: 'GLM 5.3 Flash',
-    description: 'Low-latency vision',
-    geminiModel: 'zro/glm-5.3-flash',
-    supportsVision: true,
-    contextLength: '1M',
-    requiredTier: 'spark',
-  },
-  {
-    id: 'mimo-v2.6-flash-free',
-    name: 'MiMo V2.6',
-    description: 'Fast thinking',
-    geminiModel: 'thk/mimo-v2.6-flash:free',
-    supportsVision: false,
-    contextLength: '1M',
-  },
-  {
-    id: 'agents-a1',
-    name: 'Agents-A1',
-    description: 'Scientific multimodal',
-    geminiModel: 'intern/Agents-A1',
-    supportsVision: true,
-    contextLength: '256K',
-  },
-  {
-    id: 'atria-dawn',
-    name: 'Atria-Dawn',
-    description: 'Scientific reasoning',
-    geminiModel: 'intern/Atria-Dawn',
-    supportsVision: false,
-    contextLength: '512K',
-  },
-  {
-    id: 'glm-5.3-free',
-    name: 'GLM 5.3',
-    description: 'Reasoning & vision',
-    geminiModel: 'glm-5.3-free',
-    supportsVision: true,
-    contextLength: '1M',
-  },
-  {
-    id: 'flm-auto',
-    name: 'Auto Router',
-    description: 'Smart model router',
-    geminiModel: 'flm/auto',
-    supportsVision: false,
-    contextLength: 'Auto',
-  },
-  {
-    id: 'gpt-6-luna',
-    name: 'GPT-6 Luna',
-    description: 'Multimodal intelligence',
-    geminiModel: 'thk/gpt-6-luna-fast',
-    supportsVision: true,
-    contextLength: '1M',
-  },
-  {
-    id: 'claude-sonnet-4.6',
-    name: 'Claude 4.6 Sonnet',
-    description: 'Coding & writing',
-    geminiModel: 'thk/claude-sonnet-4.6',
-    supportsVision: true,
-    contextLength: '1M',
-  },
-  {
-    id: 'thk-gpt-6.1-sol-fast',
-    name: 'GPT-6.1 Sol',
-    description: 'Frontier speed',
-    geminiModel: 'thk/gpt-6.1-sol-fast',
-    supportsVision: true,
-    contextLength: '1M',
-  },
-  {
-    id: 'thk-gpt-6-astra-fast',
-    name: 'GPT-6 Astra',
-    description: 'Flagship intelligence',
-    geminiModel: 'thk/gpt-6-astra-fast',
-    supportsVision: true,
-    contextLength: '1M',
-  },
-  {
-    id: 'thk-kimi-k3-fast',
-    name: 'Kimi K3 Fast',
-    description: 'Long-context reasoning',
-    geminiModel: 'thk/kimi-k3-fast',
-    supportsVision: true,
-    contextLength: '1M',
-  },
-  {
-    id: 'thk-claude-sonnet-5.5',
-    name: 'Claude Sonnet 5.5',
-    description: 'Balanced coding',
-    geminiModel: 'thk/claude-sonnet-5.5',
-    supportsVision: true,
-    contextLength: '1M',
-  },
-  {
-    id: 'thk-claude-opus-5.5',
-    name: 'Claude Opus 5.5',
-    description: 'Deep reasoning & code',
-    geminiModel: 'thk/claude-opus-5.5',
-    supportsVision: true,
-    contextLength: '1M',
-  },
-  {
-    id: 'thk-grok-4.7',
-    name: 'Grok 4.7',
-    description: 'Real-time synthesis',
-    geminiModel: 'thk/grok-4.7',
-    supportsVision: true,
-    contextLength: '500K',
-  },
-  {
-    id: 'thk-gemini-4-argon',
-    name: 'Gemini 4 Argon',
-    description: 'Multimodal frontier',
-    geminiModel: 'thk/gemini-4-argon',
-    supportsVision: true,
-    contextLength: '1M',
-  },
-  {
-    id: 'thk-mistral-large-4',
-    name: 'Mistral Large 4',
-    description: 'Multilingual frontier',
-    geminiModel: 'thk/mistral-large-4',
-    supportsVision: true,
-    contextLength: '512K',
-  },
-  {
-    id: 'atria-dawn-preview',
-    name: 'Atria-Dawn Preview',
-    description: 'Frontier science',
-    geminiModel: 'intern/Atria-Dawn-Preview',
-    supportsVision: false,
-    contextLength: '512K',
-  },
-  {
-    id: 'deepseek-v4-flash-vision',
-    name: 'DeepSeek V4 Vision',
-    description: 'Multimodal thinking',
-    geminiModel: 'intern/deepseek-v4-flash-vision',
-    supportsVision: true,
-    contextLength: '1M',
-  },
-  {
-    id: 'deepseek-v4-pro-0813',
-    name: 'DeepSeek V4 Pro',
-    description: 'Deep thinking & tools',
-    geminiModel: 'intern/deepseek-v4-pro-0813',
-    supportsVision: false,
-    contextLength: '1M',
-  },
-  {
-    id: 'intern-decision-4b',
-    name: 'Scholar 4B',
-    description: 'Structured decision',
-    geminiModel: 'intern/intern-decision-4b',
-    supportsVision: false,
-    contextLength: '8K',
-  },
-  {
-    id: 'intern-s2',
-    name: 'Scholar-S2',
-    description: 'Scientific research',
-    geminiModel: 'intern/intern-s2',
-    supportsVision: true,
-    contextLength: '256K',
-  },
-  {
-    id: 'kimi-k2.6',
-    name: 'Kimi K2.6',
-    description: 'In-depth thinking',
-    geminiModel: 'intern/kimi-k2.6',
-    supportsVision: true,
-    contextLength: '256K',
-  },
-  {
-    id: 'minimax-m3',
-    name: 'MiniMax-M3',
-    description: 'Long-context thinking',
-    geminiModel: 'intern/minimax-m3',
-    supportsVision: false,
-    contextLength: '1M',
-  },
-  {
-    id: 'qwen3.8-27b',
-    name: 'Qwen 3.8 Pro',
-    description: 'Multimodal & tools',
-    geminiModel: 'itera/qwen/qwen3.8-27b',
-    supportsVision: true,
-    contextLength: '256K',
-  },
-  {
-    id: 'larp-deepseek-v4',
-    name: 'DeepSeek V4',
-    description: 'Analytical reasoning',
-    geminiModel: 'larp/deepseek-v4',
-    supportsVision: false,
-    contextLength: '1M',
-  },
-  {
-    id: 'larp-claude-sonnet',
-    name: 'Claude Sonnet',
-    description: 'Coding & writing',
-    geminiModel: 'larp/claude-sonnet',
-    supportsVision: true,
-    contextLength: '1M',
-  },
-  {
-    id: 'larp-gpt-6',
-    name: 'GPT-6 Frontier',
-    description: 'High intelligence',
-    geminiModel: 'larp/gpt-6',
-    supportsVision: true,
-    contextLength: '1M',
-  },
-  {
-    id: 'larp-glm-5',
-    name: 'GLM-5',
-    description: 'Vision & reasoning',
-    geminiModel: 'larp/glm-5',
-    supportsVision: true,
-    contextLength: '1M',
-  },
-  {
-    id: 'larp-auto',
-    name: 'Smart Router',
-    description: 'Dynamic routing',
-    geminiModel: 'larp/auto',
-    supportsVision: false,
-    contextLength: 'Auto',
-  },
-  {
-    id: 'radox-gemini-3.7-flash',
-    name: 'Gemini 3.7 Flash',
-    description: 'Fast multimodal',
-    geminiModel: 'radox/gemini-3.7-flash',
-    supportsVision: true,
-    contextLength: '1M',
-  },
-  {
-    id: 'radox-claude-sonnet-5',
-    name: 'Claude Sonnet 5',
-    description: 'Fast coding',
-    geminiModel: 'radox/claude-sonnet-5',
-    supportsVision: true,
-    contextLength: '1M',
-  },
-  {
-    id: 'radox-claude-opus-5.5',
-    name: 'Claude Opus 5.5 Pro',
-    description: 'Flagship reasoning',
-    geminiModel: 'radox/claude-opus-5.5',
-    supportsVision: true,
-    contextLength: '1M',
-  },
-  {
-    id: 'radox-claude-fable-5.1',
-    name: 'Claude Fable 5.1',
-    description: 'Creative synthesis',
-    geminiModel: 'radox/claude-fable-5.1',
-    supportsVision: true,
-    contextLength: '1M',
-  },
-  {
-    id: 'radox-gpt-5.6-sol',
-    name: 'GPT-5.6 Sol',
-    description: 'High-speed frontier',
-    geminiModel: 'radox/gpt-5.6-sol',
-    supportsVision: true,
-    contextLength: '1M',
-  },
-  {
-    id: 'radox-gpt-5.6-terra',
-    name: 'GPT-5.6 Terra',
-    description: 'Deep analytical',
-    geminiModel: 'radox/gpt-5.6-terra',
-    supportsVision: true,
-    contextLength: '1M',
-  },
-  {
-    id: 'radox-gpt-5.6-luna',
-    name: 'GPT-5.6 Luna',
-    description: 'Multimodal vision',
-    geminiModel: 'radox/gpt-5.6-luna',
-    supportsVision: true,
-    contextLength: '1M',
-  },
-  {
-    id: 'radox-deepseek-v4-pro-max',
-    name: 'DeepSeek V4 Max',
-    description: 'Max reasoning & math',
-    geminiModel: 'radox/deepseek-v4-pro-max',
-    supportsVision: false,
-    contextLength: '1M',
-  },
-  {
-    id: 'radox-gemini-3.1-pro',
-    name: 'Gemini 3.1 Pro',
-    description: '2M pro reasoning',
-    geminiModel: 'radox/gemini-3.1-pro',
-    supportsVision: true,
-    contextLength: '2M',
-  },
-  {
-    id: 'radox-grok-4.6',
-    name: 'Grok 4.6',
-    description: 'Real-time intelligence',
-    geminiModel: 'radox/grok-4.6',
-    supportsVision: true,
-    contextLength: '500K',
-  },
-  {
-    id: 'radox-qwen3.8-max',
-    name: 'Qwen 3.8 Max',
-    description: 'Flagship coding',
-    geminiModel: 'radox/qwen3.8-max',
-    supportsVision: true,
-    contextLength: '1M',
-  },
-  {
-    id: 'radox-kimi-k3',
-    name: 'Kimi K3',
-    description: 'Long-context synthesis',
-    geminiModel: 'radox/kimi-k3',
-    supportsVision: true,
-    contextLength: '1M',
-  },
-  {
-    id: 'radox-seed-2.1-pro',
-    name: 'Seed 2.1 Pro',
-    description: 'High-precision pro',
-    geminiModel: 'radox/seed-2.1-pro',
-    supportsVision: true,
-    contextLength: '512K',
-  },
-  {
-    id: 'radox-muse-spark-1.1',
-    name: 'Muse Spark 1.1',
-    description: 'Fast creative',
-    geminiModel: 'radox/muse-spark-1.1',
-    supportsVision: false,
-    contextLength: '256K',
-  },
-  {
-    id: 'itera-claude-haiku-5.5',
-    name: 'Claude Haiku 5.5',
-    description: 'Low-latency speed',
-    geminiModel: 'itera/anthropic/claude-haiku-5-5',
-    supportsVision: true,
-    contextLength: '1M',
-  },
-  {
-    id: 'itera-deepseek-v4.1-flash-1017',
-    name: 'DeepSeek V4.1 (1017)',
-    description: 'Latest fast reasoning',
-    geminiModel: 'itera/deepseek/deepseek-v4.1-flash-1017',
-    supportsVision: false,
-    contextLength: '1M',
-  },
-  {
-    id: 'itera-claude-sonnet-5.5',
-    name: 'Claude Sonnet 5.5 Fast',
-    description: 'Fast coding & logic',
-    geminiModel: 'itera/anthropic/claude-sonnet-5-5',
-    supportsVision: true,
-    contextLength: '1M',
-  },
-  {
-    id: 'itera-kimi-k3-free',
-    name: 'Kimi K3 (1M)',
-    description: '1M deep reasoning',
-    geminiModel: 'itera/moonshotai/kimi-k3-free',
-    supportsVision: true,
-    contextLength: '1M',
-  },
-  {
-    id: 'itera-claude-opus-5.5',
-    name: 'Claude Opus 5.5 Ultra',
-    description: 'Flagship multimodal',
-    geminiModel: 'itera/anthropic/claude-opus-5-5',
-    supportsVision: true,
-    contextLength: '1M',
-  },
-  {
-    id: 'itera-claude-fable-5.1',
-    name: 'Claude Fable Ultra',
-    description: 'Deep synthesis',
-    geminiModel: 'itera/anthropic/claude-fable-5-1',
-    supportsVision: true,
-    contextLength: '1M',
-  },
-  {
-    id: 'itera-gpt-6.1-sol',
-    name: 'GPT-6.1 Sol Pro',
-    description: 'Frontier intelligence',
-    geminiModel: 'itera/openai/gpt-6.1-sol',
-    supportsVision: true,
-    contextLength: '922K',
-  },
-  {
-    id: 'itera-gpt-6-astra',
-    name: 'GPT-6 Astra Pro',
-    description: 'Deep analytical',
-    geminiModel: 'itera/openai/gpt-6-astra',
-    supportsVision: true,
-    contextLength: '922K',
-  },
-  {
-    id: 'itera-gpt-6-luna',
-    name: 'GPT-6 Luna Pro',
-    description: 'Vision & reasoning',
-    geminiModel: 'itera/openai/gpt-6-luna',
-    supportsVision: true,
-    contextLength: '922K',
-  },
-  {
-    id: 'itera-gemini-4-argon',
-    name: 'Gemini 4 Argon Pro',
-    description: 'Next-gen multimodal',
-    geminiModel: 'itera/gemini/gemini-4-argon',
-    supportsVision: true,
-    contextLength: '1M',
-  },
-  {
-    id: 'itera-deepseek-v4-pro-0813',
-    name: 'DeepSeek V4 Pro+',
-    description: 'Analytical pro',
-    geminiModel: 'itera/deepseek/deepseek-v4-pro-0813',
-    supportsVision: false,
-    contextLength: '1M',
-  },
-  {
-    id: 'itera-qwen3.8-2.4t',
-    name: 'Qwen 3.8 2.4T',
-    description: '2.4T MoE reasoning',
-    geminiModel: 'itera/qwen/qwen3.8-2.4t-a95b',
-    supportsVision: true,
-    contextLength: '1M',
-  },
-  {
-    id: 'itera-kimi-k2.7-code',
-    name: 'Kimi K2.7 Code',
-    description: 'Software engineering',
-    geminiModel: 'itera/moonshotai/kimi-k2.7-code',
-    supportsVision: false,
-    contextLength: '256K',
-  },
-  {
-    id: 'itera-minimax-m3',
-    name: 'MiniMax M3 Pro',
-    description: '1M context flagship',
-    geminiModel: 'itera/minimax/minimax-m3',
-    supportsVision: false,
-    contextLength: '1M',
-  },
-  {
-    id: 'itera-glm-5.3',
-    name: 'GLM 5.3 Max',
-    description: 'Max effort reasoning',
-    geminiModel: 'itera/z-ai/glm-5.3',
-    supportsVision: true,
-    contextLength: '1M',
-  },
-  {
-    id: 'ar-anyrouter-free',
-    name: 'Unified Router',
-    description: 'Smart routing engine',
-    geminiModel: 'ar/anyrouter/free',
-    supportsVision: false,
-    contextLength: '1M',
-  },
-  {
-    id: 'ar-anyrouter-auto',
-    name: 'Auto Multimodal',
-    description: 'Multimodal router',
-    geminiModel: 'ar/anyrouter/auto',
-    supportsVision: true,
-    contextLength: '1M',
-  },
-  {
-    id: 'ar-anyrouter-latest',
-    name: 'Frontier Router',
-    description: 'Flagship router',
-    geminiModel: 'ar/anyrouter/latest',
-    supportsVision: true,
-    contextLength: '1M',
-  },
-  {
-    id: 'ar-anyrouter-hermes',
-    name: 'Hermes Router',
-    description: 'Agentic & coding',
-    geminiModel: 'ar/anyrouter/hermes',
-    supportsVision: false,
-    contextLength: '1M',
-  },
-  {
-    id: 'ar-anyrouter-cowork',
-    name: 'Cowork Router',
-    description: 'Collaborative vision',
-    geminiModel: 'ar/anyrouter/cowork',
-    supportsVision: true,
-    contextLength: '1M',
-  },
-  {
-    id: 'ar-nemotron-3.5-super-vl-120b',
-    name: 'Nemotron 3.5 120B',
-    description: 'Multimodal & code',
-    geminiModel: 'ar/nvidia/nemotron-3.5-super-vl-120b-a12b',
-    supportsVision: true,
-    contextLength: '1M',
-  },
-  {
-    id: 'ar-nemotron-3.5-lightning-30b',
-    name: 'Nemotron 3.5 30B',
-    description: 'Fast 30B MoE',
-    geminiModel: 'ar/nvidia/nemotron-3.5-lightning-30b-a3b',
-    supportsVision: false,
-    contextLength: '1M',
-  },
-  {
-    id: 'ar-nemotron-3.5-bolt-e4b',
-    name: 'Nemotron Bolt',
-    description: 'Sub-second flash',
-    geminiModel: 'ar/nvidia/nemotron-3.5-bolt-e4b',
-    supportsVision: false,
-    contextLength: '64K',
-  },
-  {
-    id: 'ar-nemotron-3-ultra-550b',
-    name: 'Nemotron Ultra 550B',
-    description: '550B frontier MoE',
-    geminiModel: 'ar/nvidia/nemotron-3-ultra-550b-a55b',
-    supportsVision: false,
-    contextLength: '1M',
-  },
-  {
-    id: 'ar-nemotron-parse-2.0',
-    name: 'Nemotron Parse 2.0',
-    description: 'Document parser',
-    geminiModel: 'ar/nvidia/nemotron-parse-2.0',
-    supportsVision: true,
-    contextLength: '8K',
-  },
-  {
-    id: 'ar-riva-translate-4b-v2',
-    name: 'Riva Translate 4B',
-    description: 'Neural translation',
-    geminiModel: 'ar/nvidia/riva-translate-4b-instruct-v2',
-    supportsVision: false,
-    contextLength: '4K',
-  },
-  {
-    id: 'ar-minimax-m3.1-flash',
-    name: 'MiniMax M3.1',
-    description: 'Multimodal & coding',
-    geminiModel: 'ar/minimax/minimax-m3.1-flash',
-    supportsVision: true,
-    contextLength: '1M',
-  },
-  {
-    id: 'ar-longcat-2.5-preview',
-    name: 'LongCat 2.5',
-    description: 'Vision & code',
-    geminiModel: 'ar/meituan/longcat-2.5-preview',
-    supportsVision: true,
-    contextLength: '1M',
-  },
-  {
-    id: 'ar-meta-muse-glimmer-30b',
-    name: 'Muse Glimmer 30B',
-    description: 'Vision & code',
-    geminiModel: 'ar/meta/muse-glimmer-30b',
-    supportsVision: true,
-    contextLength: '128K',
-  },
-  {
-    id: 'ar-cohere-north-mini-code',
-    name: 'North Mini Code',
-    description: 'Code & reasoning',
-    geminiModel: 'ar/cohere/north-mini-code',
-    supportsVision: false,
-    contextLength: '256K',
-  },
-  {
-    id: 'ar-dots-3-note-preview',
-    name: 'Dots 3 Note',
-    description: 'Multimodal research',
-    geminiModel: 'ar/dots-studio/dots-3-note-preview',
-    supportsVision: true,
-    contextLength: '512K',
-  },
-  {
-    id: 'ar-liquid-lfm-2.5-2.6b',
-    name: 'LFM 2.5',
-    description: 'Fast foundation',
-    geminiModel: 'ar/liquid/lfm-2.5-2.6b',
-    supportsVision: false,
-    contextLength: '128K',
-  },
-  {
-    id: 'ar-liquid-d1',
-    name: 'Liquid d1',
-    description: 'Compact reasoning',
-    geminiModel: 'ar/liquid/d1',
-    supportsVision: false,
-    contextLength: '32K',
-  },
-  {
-    id: 'ar-openai-gpt-oss-20b',
-    name: 'GPT-OSS 20B',
-    description: 'Open-weights code',
-    geminiModel: 'ar/openai/gpt-oss-20b',
-    supportsVision: false,
-    contextLength: '128K',
-  },
-  {
-    id: 'ar-poolside-laguna-s-2.1',
-    name: 'Laguna S 2.1',
-    description: 'Software engineering',
-    geminiModel: 'ar/poolside/laguna-s-2.1',
-    supportsVision: false,
-    contextLength: '1M',
-  },
-  {
-    id: 'ar-poolside-laguna-xs-2.1',
-    name: 'Laguna XS 2.1',
-    description: 'Fast code synthesis',
-    geminiModel: 'ar/poolside/laguna-xs-2.1',
-    supportsVision: false,
-    contextLength: '256K',
-  },
-  {
-    id: 'ar-recursive-flint-v1',
-    name: 'Flint v1.0',
-    description: 'Code & analysis',
-    geminiModel: 'ar/recursive/flint-v1.0',
-    supportsVision: false,
-    contextLength: '256K',
-  },
-  {
-    id: 'ar-reflection-beam-1.0',
-    name: 'Beam 1.0',
-    description: '1M code synthesis',
-    geminiModel: 'ar/reflection/beam-1.0',
-    supportsVision: false,
-    contextLength: '1M',
-  },
-  {
-    id: 'ar-stealth-glyph-cluster',
-    name: 'Glyph Cluster',
-    description: 'Cluster reasoning',
-    geminiModel: 'ar/stealth/glyph-cluster',
-    supportsVision: false,
-    contextLength: '256K',
-  },
-  {
-    id: 'ar-glm-4.5-flash',
-    name: 'GLM 4.5 Flash',
-    description: 'Fast flash',
-    geminiModel: 'ar/z-ai/glm-4.5-flash',
-    supportsVision: false,
-    contextLength: '128K',
-  },
-  {
-    id: 'ar-glm-flash-latest',
-    name: 'GLM Flash',
-    description: 'High-speed flash',
-    geminiModel: 'ar/z-ai/glm-flash-latest',
-    supportsVision: false,
-    contextLength: '128K',
-  },
-  {
-    id: 'ar-pareto-code-router',
-    name: 'Pareto Code',
-    description: '2M code synthesis',
-    geminiModel: 'ar/openrouter/pareto-code',
-    supportsVision: true,
-    contextLength: '2M',
-  },
-  {
-    id: 'ar-inception-mercury-decide',
-    name: 'Mercury Decide',
-    description: 'Ultra-fast diffusion',
-    geminiModel: 'ar/inception/mercury-decide',
-    supportsVision: false,
-    contextLength: '32K',
-  },
+// Ponytail compact model table: [id, name, description, geminiModel, vision(1|0), ctx, tier('free'|'spark'|'fire'), unlimited?]
+type ModelTuple = [string, string, string, string, 0 | 1, string, 'free' | 'spark' | 'fire', 1?];
+
+const MODEL_SPECS: ModelTuple[] = [
+  ['fgw-qwen3-8-omni-flash-free', 'Qwen 3.8 Omni Flash', 'Fast Multimodal Omni · Unlimited', 'fgw/qwen3-8-omni-flash:free', 1, '256K', 'free', 1],
+  ['zro-deepseek-v4.1-flash', 'DeepSeek V4.1 Flash', 'Zero-Latency Reasoning & Chat', 'zro/deepseek-v4.1-flash', 0, '1M', 'free'],
+  ['zro-glm-5.3-flash', 'GLM 5.3 Flash', 'Fast Reasoning & Vision', 'zro/glm-5.3-flash', 1, '1M', 'free'],
+  ['claude-sonnet-4.6', 'Claude 4.6 Sonnet', 'Advanced Coding & Nuanced Writing', 'thk/claude-sonnet-4.6', 1, '1M', 'spark'],
+  ['flm-auto', 'FLM Auto', 'Adaptive Smart Model Router', 'flm/auto', 0, 'Auto', 'spark'],
+  ['agents-a1', 'Agents-A1', 'Scientific Reasoning & Multimodal', 'intern/Agents-A1', 1, '256K', 'spark'],
+  ['atria-dawn', 'Atria-Dawn', 'Deep Scientific Reasoning', 'intern/Atria-Dawn', 0, '512K', 'spark'],
+  ['atria-dawn-preview', 'Atria-Dawn Preview', 'Frontier Scientific Reasoning', 'intern/Atria-Dawn-Preview', 0, '512K', 'spark'],
+  ['deepseek-v4-flash-vision', 'DeepSeek V4 Flash Vision', 'Multimodal In-Depth Thinking', 'intern/deepseek-v4-flash-vision', 1, '1M', 'spark'],
+  ['deepseek-v4-pro-0813', 'DeepSeek V4 Pro', 'Tool Usage & In-Depth Thinking', 'intern/deepseek-v4-pro-0813', 0, '1M', 'spark'],
+  ['intern-decision-4b', 'Scholar Decision 4B', 'Structured Decision & Policy Engine', 'intern/intern-decision-4b', 0, '8K', 'spark'],
+  ['intern-s2', 'Scholar-S2', 'Scientific Research & Multimodal', 'intern/intern-s2', 1, '256K', 'spark'],
+  ['fgw-qwen-3.8-vl-72b-vision', 'Qwen 3.8 VL 72B Vision', 'High-Res Visual & OCR Analysis', 'fgw/qwen-3.8-max:free', 1, '1M', 'spark'],
+  ['fgw-pixtral-large-2-vision', 'Pixtral Large 2 Vision', 'Frontier Multimodal Vision', 'fgw/nvidia/mistral-large-4-1t-a52b:free', 1, '512K', 'fire'],
+  ['fgw-llama-4-maverick-vision', 'Llama 4 Maverick Vision', 'Native Multimodal MoE Vision', 'fgw/nemotron-3.5-super-vl:free', 1, '1M', 'spark'],
+  ['radox-gpt-6-omni-vision', 'GPT-6 Omni Vision', 'Deep Visual & Diagram Reasoning', 'radox/gpt-5.6-luna', 1, '1M', 'fire'],
+  ['itera-gemini-4-ultra-vision', 'Gemini 4 Ultra Vision', 'Long-Context Multimodal Vision', 'itera/gemini/gemini-4-argon', 1, '2M', 'fire'],
+  ['intern-internvl-3.5-78b-vision', 'InternVL 3.5 78B Vision', 'Scientific & Document Vision', 'intern/deepseek-v4-flash-vision', 1, '1M', 'spark'],
+  ['fgw-glm-5.3v-pro-vision', 'GLM 5.3V Pro Vision', 'Fast Visual Reasoning & UI', 'fgw/glm-5.3-flash:free', 1, '1M', 'spark'],
+  ['fgw-deepseek-v4.1-flash-free', 'DeepSeek V4.1 Flash+', 'High-Speed Reasoning', 'fgw/deepseek-v4.1-flash:free', 0, '1M', 'spark'],
+  ['fgw-deepseek-v4-flash-free', 'DeepSeek V4 Flash+', 'Fast Analytical Logic', 'fgw/deepseek-v4-flash:free', 0, '1M', 'spark'],
+  ['fgw-deepseek-v4-flash-0731-free', 'DeepSeek V4 0731+', 'Coding & Math Logic', 'fgw/deepseek-v4-flash-0731:free', 0, '1M', 'spark'],
+  ['fgw-deepseek-v4-flash-0731-thinking-free', 'DeepSeek V4 Thinking', 'Step-by-Step Chain of Thought', 'fgw/deepseek-v4-flash-0731-thinking:free', 0, '1M', 'fire'],
+  ['fgw-gemini-3.8-flash-free', 'Gemini 3.8 Flash', 'Fast Multimodal Reasoning', 'fgw/gemini-3.8-flash:free', 1, '1M', 'spark'],
+  ['fgw-gemini-3.7-flash-free', 'Gemini 3.7 Flash+', 'Low-Latency Multimodal', 'fgw/gemini-3.7-flash:free', 1, '1M', 'spark'],
+  ['fgw-gemini-3.5-flash-free', 'Gemini 3.5 Flash', 'Balanced Multimodal Flash', 'fgw/gemini-3.5-flash:free', 1, '1M', 'spark'],
+  ['fgw-gemini-3.1-pro-free', 'Gemini 3.1 Pro+', 'Deep Pro Reasoning', 'fgw/gemini-3.1-pro:free', 1, '2M', 'fire'],
+  ['fgw-gemini-3-pro-free', 'Gemini 3 Pro', 'Frontier Multimodal Pro', 'fgw/gemini-3-pro:free', 1, '2M', 'fire'],
+  ['fgw-gemini-3-flash-free', 'Gemini 3 Flash', 'High-Speed Multimodal', 'fgw/gemini-3-flash:free', 1, '1M', 'spark'],
+  ['fgw-gemini-2.5-pro-free', 'Gemini 2.5 Pro', 'Analytical Pro Reasoning', 'fgw/gemini-2.5-pro:free', 1, '2M', 'fire'],
+  ['fgw-gemini-2.0-flash-free', 'Gemini 2.0 Flash', 'Fast Everyday Multimodal', 'fgw/gemini-2.0-flash:free', 1, '1M', 'spark'],
+  ['fgw-gemma-4-31b-it-free', 'Gemma 4 31B', 'Open-Weights Instruction', 'fgw/gemma-4-31b-it:free', 1, '128K', 'spark'],
+  ['fgw-grok-4.7-free', 'Grok 4.7 Pro', 'Real-Time Frontier Synthesis', 'fgw/grok-4.7:free', 1, '500K', 'fire'],
+  ['fgw-grok-4.7-fast-free', 'Grok 4.7 Fast', 'Low-Latency Synthesis', 'fgw/grok-4.7-fast:free', 1, '500K', 'spark'],
+  ['fgw-gpt-5.6-sol-free', 'GPT-5.6 Sol+', 'High-Speed Frontier Logic', 'fgw/gpt-5.6-sol:free', 1, '1M', 'fire'],
+  ['fgw-o3-free', 'o3 Reasoning', 'Deep STEM & Math Logic', 'fgw/o3:free', 1, '200K', 'fire'],
+  ['fgw-o4-mini-free', 'o4-mini', 'Fast STEM & Code Reasoning', 'fgw/o4-mini:free', 1, '200K', 'spark'],
+  ['fgw-gpt-4.1-mini-free', 'GPT-4.1 Mini', 'Fast Instruction & Coding', 'fgw/gpt-4.1-mini:free', 1, '1M', 'spark'],
+  ['fgw-gpt-4o-free', 'GPT-4o', 'Omni Multimodal Intelligence', 'fgw/gpt-4o:free', 1, '128K', 'fire'],
+  ['fgw-gpt-4o-mini-free', 'GPT-4o Mini', 'Lightweight Omni Speed', 'fgw/gpt-4o-mini:free', 1, '128K', 'spark'],
+  ['fgw-gpt-oss-20b-free', 'GPT-OSS 20B+', 'Open-Weights Reasoning', 'fgw/openai/gpt-oss-20b:free', 0, '128K', 'spark'],
+  ['fgw-qwen-3.8-max-free', 'Qwen 3.8 Max+', 'Flagship Coding & Math', 'fgw/qwen-3.8-max:free', 1, '1M', 'fire'],
+  ['fgw-qwen-3.8-27b-free', 'Qwen 3.8 27B+', 'Dense 27B Reasoning', 'fgw/qwen-3.8-27b:free', 1, '256K', 'spark'],
+  ['fgw-qwen-3.6-plus-free', 'Qwen 3.6 Plus', 'Balanced Coding & Analysis', 'fgw/qwen-3.6-plus:free', 1, '256K', 'spark'],
+  ['fgw-qwen-3.6-27b-free', 'Qwen 3.6 27B', 'Fast 27B Synthesis', 'fgw/qwen-3.6-27b:free', 0, '256K', 'spark'],
+  ['fgw-qwen-3.5-397b-a17b-free', 'Qwen 3.5 397B MoE', '397B Sparse MoE Reasoning', 'fgw/qwen-3.5-397b-a17b:free', 0, '256K', 'fire'],
+  ['fgw-glm-5.3-flash-free', 'GLM 5.3 Flash+', 'Fast Reasoning & Synthesis', 'fgw/glm-5.3-flash:free', 1, '1M', 'spark'],
+  ['fgw-caw-glm-5.3-flash-free', 'GLM 5.3 Flash Turbo', 'High-Throughput Flash', 'fgw/caw/glm-5.3-flash:free', 1, '1M', 'spark'],
+  ['fgw-caw-glm-5.3-flash-thinking-free', 'GLM 5.3 Thinking', 'Reflective Chain of Thought', 'fgw/caw/glm-5.3-flash-thinking:free', 1, '1M', 'fire'],
+  ['fgw-glm-4.7-flash-free', 'GLM 4.7 Flash', 'Low-Latency Reasoning', 'fgw/glm-4.7-flash:free', 0, '256K', 'spark'],
+  ['fgw-glm-4.6v-flash-free', 'GLM 4.6V Flash', 'Multimodal Visual Analysis', 'fgw/glm-4.6v-flash:free', 1, '128K', 'spark'],
+  ['fgw-llama-3.3-70b-instruct-free', 'Llama 3.3 70B Instruct', 'Open-Weights 70B Chat', 'fgw/llama-3.3-70b-instruct:free', 0, '128K', 'spark'],
+  ['fgw-llama-3.3-70b-free', 'Llama 3.3 70B', '70B Foundation Model', 'fgw/llama-3.3-70b:free', 0, '128K', 'spark'],
+  ['fgw-mistral-medium-3.5-free', 'Mistral Medium 3.5', 'Multilingual Logic & Code', 'fgw/mistral-medium-3.5:free', 1, '128K', 'spark'],
+  ['fgw-nvidia-mistral-large-4-1t-free', 'Mistral Large 4 1T', '1T Sparse MoE Frontier', 'fgw/nvidia/mistral-large-4-1t-a52b:free', 1, '512K', 'fire'],
+  ['fgw-nemotron-3-ultra-550b-free', 'Nemotron 3 Ultra 550B', '550B MoE Analytical', 'fgw/nemotron-3-ultra-550b-a55b:free', 0, '1M', 'fire'],
+  ['fgw-nvidia-nemotron-3-ultra-550b-free', 'Nemotron 3 Ultra (Fast)', 'High-Throughput 550B MoE', 'fgw/nvidia/nemotron-3-ultra-550b-a55b:free', 0, '1M', 'fire'],
+  ['fgw-nemotron-3.5-super-vl-free', 'Nemotron 3.5 Super VL', 'Vision-Language Reasoning', 'fgw/nemotron-3.5-super-vl:free', 1, '1M', 'fire'],
+  ['fgw-nvidia-nemotron-3.5-super-vl-120b-free', 'Nemotron 3.5 VL 120B', '120B Multimodal MoE', 'fgw/nvidia/nemotron-3.5-super-vl-120b-a12b:free', 1, '1M', 'fire'],
+  ['fgw-nvidia-nemotron-3.5-bolt-e4b-free', 'Nemotron 3.5 Bolt', 'Ultra-Fast Compact Flash', 'fgw/nvidia/nemotron-3.5-bolt-e4b:free', 0, '64K', 'spark'],
+  ['fgw-minimax-m3.1-flash-free', 'MiniMax M3.1 Flash', 'Long-Context Fast Synthesis', 'fgw/minimax-m3.1-flash:free', 1, '1M', 'spark'],
+  ['fgw-nvidia-minimax-m3.1-flash-free', 'MiniMax M3.1 Turbo', 'High-Speed Flash', 'fgw/nvidia/minimax-m3.1-flash:free', 1, '1M', 'spark'],
+  ['fgw-minimax-m2.5-free', 'MiniMax M2.5', 'Balanced Long-Context Chat', 'fgw/minimax-m2.5:free', 0, '512K', 'spark'],
+  ['fgw-agnes-3.0-flash-free', 'Agnes 3.0 Flash', 'Fast Structured Synthesis', 'fgw/agnes-3.0-flash:free', 0, '128K', 'spark'],
+  ['fgw-ernie-5.5-flash-preview-free', 'Ernie 5.5 Flash', 'Knowledge-Enhanced Flash', 'fgw/ernie-5.5-flash-preview:free', 0, '256K', 'spark'],
+  ['fgw-laguna-s-2.1-free', 'Laguna S 2.1+', 'Software Engineering & Code', 'fgw/laguna-s-2.1:free', 0, '1M', 'fire'],
+  ['fgw-laguna-xs-2.1-free', 'Laguna XS 2.1+', 'Fast Code Completion', 'fgw/laguna-xs-2.1:free', 0, '256K', 'spark'],
+  ['fgw-nvidia-laguna-xs-2.1-free', 'Laguna XS 2.1 Turbo', 'Accelerated Code Generation', 'fgw/nvidia/laguna-xs-2.1:free', 0, '256K', 'spark'],
+  ['fgw-muse-spark-1.1-free', 'Muse Spark 1.1+', 'Creative Writing & Ideation', 'fgw/muse-spark-1.1:free', 0, '256K', 'spark'],
+  ['fgw-mimo-v2.6-flash-free', 'MiMo V2.6 Flash+', 'Fast Mathematical Reasoning', 'fgw/mimo-v2.6-flash:free', 0, '1M', 'spark'],
+  ['fgw-k2-horizon-375b-free', 'K2 Horizon 375B', '375B MoE Deep Synthesis', 'fgw/k2-horizon-375b-a23b:free', 0, '256K', 'fire'],
+  ['fgw-jais-3-mova-36b-free', 'Jais 3 Mova 36B', 'Multilingual MoE Reasoning', 'fgw/jais-3-mova-36b-a4b:free', 0, '128K', 'spark'],
+  ['fgw-xing4.0-29b-free', 'Xing 4.0 29B', 'Efficient MoE Logic', 'fgw/xing4.0-29b-a4b:free', 0, '128K', 'spark'],
+  ['fgw-longcat-2.5-free', 'LongCat 2.5+', 'Long-Context Reasoning', 'fgw/longcat-2.5:free', 1, '1M', 'spark'],
+  ['fgw-dots-3-note-preview-free', 'Dots 3 Note+', 'Research & Note Synthesis', 'fgw/dots-3-note-preview:free', 1, '512K', 'spark'],
+  ['fgw-flint-v1.0-free', 'Flint v1.0+', 'Code & Analytical Logic', 'fgw/flint-v1.0:free', 0, '256K', 'spark'],
+  ['fgw-liquid-lfm-2.5-2.6b-free', 'LFM 2.5 2.6B+', 'Liquid Foundation Speed', 'fgw/liquid/lfm-2.5-2.6b:free', 0, '128K', 'spark'],
+  ['fgw-liquid-lfm-2.5-thinking-free', 'LFM 2.5 Thinking', 'Compact Chain of Thought', 'fgw/liquid/lfm-2.5-2.6b-thinking:free', 0, '128K', 'spark'],
+  ['fgw-minicpm-v-4.7-35b-free', 'MiniCPM-V 4.7 35B', '35B Vision-Language MoE', 'fgw/openbmb/MiniCPM-V-4.7-35B-A3B:free', 1, '128K', 'spark'],
+  ['fgw-minicpm-v-4.7-35b-thinking-free', 'MiniCPM-V 4.7 Thinking', 'Multimodal Visual Thinking', 'fgw/openbmb/MiniCPM-V-4.7-35B-A3B-thinking:free', 1, '128K', 'spark'],
+  ['fgw-minicpm-v-4.7-1b-free', 'MiniCPM-V 4.7 1B', 'Ultra-Light Vision Model', 'fgw/MiniCPM-V-4.7-1B:free', 1, '64K', 'spark'],
+  ['fgw-minicpm5-2b-free', 'MiniCPM 5 2B', 'Compact Edge Instruction', 'fgw/MiniCPM5-2B:free', 0, '64K', 'spark'],
+  ['fgw-hy4-free', 'Hunyuan 4', 'Flagship Reasoning & Synthesis', 'fgw/hy4:free', 0, '256K', 'fire'],
+  ['fgw-solar-mini4-free', 'Solar Mini 4', 'Compact High-Efficiency Pro', 'fgw/solar-mini4:free', 0, '128K', 'spark'],
+  ['zro-deepseek-v4-flash-0731', 'DeepSeek V4 (0731)', 'Coding & Math Reasoning', 'zro/deepseek-v4-flash-0731', 0, '1M', 'spark'],
+  ['deepseek-v4.1-flash-free', 'DeepSeek V4.1', 'Instant Reasoning', 'zro/deepseek-v4.1-flash', 0, '1M', 'spark'],
+  ['itera-qwen3.8-27b-free', 'Qwen 3.8 27B', 'Fast Reply & Vision', 'itera/qwen/qwen3.8-27b', 1, '256K', 'spark'],
+  ['deepseek-v4-flash-0731-free', 'DeepSeek V4 Flash', 'Analytical Reasoning', 'zro/deepseek-v4-flash-0731', 0, '1M', 'spark'],
+  ['glm-5.3-flash-free', 'GLM 5.3 Flash (Alt)', 'Low-Latency Vision', 'zro/glm-5.3-flash', 1, '1M', 'spark'],
+  ['mimo-v2.6-flash-free', 'MiMo V2.6', 'Fast Thinking', 'thk/mimo-v2.6-flash:free', 0, '1M', 'spark'],
+  ['glm-5.3-free', 'GLM 5.3', 'Reasoning & Vision', 'glm-5.3-free', 1, '1M', 'spark'],
+  ['gpt-6-luna', 'GPT-6 Luna', 'Multimodal Intelligence', 'thk/gpt-6-luna-fast', 1, '1M', 'spark'],
+  ['thk-gpt-6.1-sol-fast', 'GPT-6.1 Sol', 'Frontier Speed', 'thk/gpt-6.1-sol-fast', 1, '1M', 'fire'],
+  ['thk-gpt-6-astra-fast', 'GPT-6 Astra', 'Flagship Intelligence', 'thk/gpt-6-astra-fast', 1, '1M', 'fire'],
+  ['thk-kimi-k3-fast', 'Kimi K3 Fast', 'Long-Context Reasoning', 'thk/kimi-k3-fast', 1, '1M', 'spark'],
+  ['thk-claude-sonnet-5.5', 'Claude Sonnet 5.5', 'Balanced Coding', 'thk/claude-sonnet-5.5', 1, '1M', 'spark'],
+  ['thk-claude-opus-5.5', 'Claude Opus 5.5', 'Deep Reasoning & Code', 'thk/claude-opus-5.5', 1, '1M', 'fire'],
+  ['thk-grok-4.7', 'Grok 4.7', 'Real-Time Synthesis', 'thk/grok-4.7', 1, '500K', 'fire'],
+  ['thk-gemini-4-argon', 'Gemini 4 Argon', 'Multimodal Frontier', 'thk/gemini-4-argon', 1, '1M', 'fire'],
+  ['thk-mistral-large-4', 'Mistral Large 4', 'Multilingual Frontier', 'thk/mistral-large-4', 1, '512K', 'spark'],
+  ['kimi-k2.6', 'Kimi K2.6', 'In-Depth Thinking', 'intern/kimi-k2.6', 1, '256K', 'spark'],
+  ['minimax-m3', 'MiniMax-M3', 'Long-Context Thinking', 'intern/minimax-m3', 0, '1M', 'spark'],
+  ['qwen3.8-27b', 'Qwen 3.8 Pro', 'Multimodal & Tools', 'itera/qwen/qwen3.8-27b', 1, '256K', 'spark'],
+  ['larp-deepseek-v4', 'DeepSeek V4', 'Analytical Reasoning', 'larp/deepseek-v4', 0, '1M', 'spark'],
+  ['larp-claude-sonnet', 'Claude Sonnet', 'Coding & Writing', 'larp/claude-sonnet', 1, '1M', 'spark'],
+  ['larp-gpt-6', 'GPT-6 Frontier', 'High Intelligence', 'larp/gpt-6', 1, '1M', 'fire'],
+  ['larp-glm-5', 'GLM-5', 'Vision & Reasoning', 'larp/glm-5', 1, '1M', 'spark'],
+  ['larp-auto', 'Smart Router', 'Dynamic Routing', 'larp/auto', 0, 'Auto', 'spark'],
+  ['radox-gemini-3.7-flash', 'Gemini 3.7 Flash', 'Fast Multimodal', 'radox/gemini-3.7-flash', 1, '1M', 'spark'],
+  ['radox-claude-sonnet-5', 'Claude Sonnet 5', 'Fast Coding', 'radox/claude-sonnet-5', 1, '1M', 'spark'],
+  ['radox-claude-opus-5.5', 'Claude Opus 5.5 Pro', 'Flagship Reasoning', 'radox/claude-opus-5.5', 1, '1M', 'fire'],
+  ['radox-claude-fable-5.1', 'Claude Fable 5.1', 'Creative Synthesis', 'radox/claude-fable-5.1', 1, '1M', 'fire'],
+  ['radox-gpt-5.6-sol', 'GPT-5.6 Sol', 'High-Speed Frontier', 'radox/gpt-5.6-sol', 1, '1M', 'fire'],
+  ['radox-gpt-5.6-terra', 'GPT-5.6 Terra', 'Deep Analytical', 'radox/gpt-5.6-terra', 1, '1M', 'fire'],
+  ['radox-gpt-5.6-luna', 'GPT-5.6 Luna', 'Multimodal Vision', 'radox/gpt-5.6-luna', 1, '1M', 'spark'],
+  ['radox-deepseek-v4-pro-max', 'DeepSeek V4 Max', 'Max Reasoning & Math', 'radox/deepseek-v4-pro-max', 0, '1M', 'fire'],
+  ['radox-gemini-3.1-pro', 'Gemini 3.1 Pro', 'Pro Reasoning', 'radox/gemini-3.1-pro', 1, '2M', 'fire'],
+  ['radox-grok-4.6', 'Grok 4.6', 'Real-Time Intelligence', 'radox/grok-4.6', 1, '500K', 'spark'],
+  ['radox-qwen3.8-max', 'Qwen 3.8 Max', 'Flagship Coding', 'radox/qwen3.8-max', 1, '1M', 'fire'],
+  ['radox-kimi-k3', 'Kimi K3', 'Long-Context Synthesis', 'radox/kimi-k3', 1, '1M', 'spark'],
+  ['radox-seed-2.1-pro', 'Seed 2.1 Pro', 'High-Precision Pro', 'radox/seed-2.1-pro', 1, '512K', 'fire'],
+  ['radox-muse-spark-1.1', 'Muse Spark 1.1', 'Fast Creative', 'radox/muse-spark-1.1', 0, '256K', 'spark'],
+  ['itera-claude-haiku-5.5', 'Claude Haiku 5.5', 'Low-Latency Speed', 'itera/anthropic/claude-haiku-5-5', 1, '1M', 'spark'],
+  ['itera-deepseek-v4.1-flash-1017', 'DeepSeek V4.1 (1017)', 'Latest Fast Reasoning', 'itera/deepseek/deepseek-v4.1-flash-1017', 0, '1M', 'spark'],
+  ['itera-claude-sonnet-5.5', 'Claude Sonnet 5.5 Fast', 'Fast Coding & Logic', 'itera/anthropic/claude-sonnet-5-5', 1, '1M', 'spark'],
+  ['itera-kimi-k3-free', 'Kimi K3 (1M)', 'Deep Reasoning', 'itera/moonshotai/kimi-k3-free', 1, '1M', 'spark'],
+  ['itera-claude-opus-5.5', 'Claude Opus 5.5 Ultra', 'Flagship Multimodal', 'itera/anthropic/claude-opus-5-5', 1, '1M', 'fire'],
+  ['itera-claude-fable-5.1', 'Claude Fable Ultra', 'Deep Synthesis', 'itera/anthropic/claude-fable-5-1', 1, '1M', 'fire'],
+  ['itera-gpt-6.1-sol', 'GPT-6.1 Sol Pro', 'Frontier Intelligence', 'itera/openai/gpt-6.1-sol', 1, '922K', 'fire'],
+  ['itera-gpt-6-astra', 'GPT-6 Astra Pro', 'Deep Analytical', 'itera/openai/gpt-6-astra', 1, '922K', 'fire'],
+  ['itera-gpt-6-luna', 'GPT-6 Luna Pro', 'Vision & Reasoning', 'itera/openai/gpt-6-luna', 1, '922K', 'fire'],
+  ['itera-gemini-4-argon', 'Gemini 4 Argon Pro', 'Next-Gen Multimodal', 'itera/gemini/gemini-4-argon', 1, '1M', 'fire'],
+  ['itera-deepseek-v4-pro-0813', 'DeepSeek V4 Pro+', 'Analytical Pro', 'itera/deepseek/deepseek-v4-pro-0813', 0, '1M', 'spark'],
+  ['itera-qwen3.8-2.4t', 'Qwen 3.8 2.4T', '2.4T MoE Reasoning', 'itera/qwen/qwen3.8-2.4t-a95b', 1, '1M', 'fire'],
+  ['itera-kimi-k2.7-code', 'Kimi K2.7 Code', 'Software Engineering', 'itera/moonshotai/kimi-k2.7-code', 0, '256K', 'spark'],
+  ['itera-minimax-m3', 'MiniMax M3 Pro', 'Long-Context Flagship', 'itera/minimax/minimax-m3', 0, '1M', 'fire'],
+  ['itera-glm-5.3', 'GLM 5.3 Max', 'Max Effort Reasoning', 'itera/z-ai/glm-5.3', 1, '1M', 'fire'],
+  ['ar-anyrouter-free', 'Unified Router', 'Smart Routing Engine', 'ar/anyrouter/free', 0, '1M', 'spark'],
+  ['ar-anyrouter-auto', 'Auto Multimodal', 'Multimodal Router', 'ar/anyrouter/auto', 1, '1M', 'spark'],
+  ['ar-anyrouter-latest', 'Frontier Router', 'Flagship Router', 'ar/anyrouter/latest', 1, '1M', 'fire'],
+  ['ar-anyrouter-hermes', 'Hermes Router', 'Agentic & Coding', 'ar/anyrouter/hermes', 0, '1M', 'spark'],
+  ['ar-anyrouter-cowork', 'Cowork Router', 'Collaborative Vision', 'ar/anyrouter/cowork', 1, '1M', 'spark'],
+  ['ar-nemotron-3.5-super-vl-120b', 'Nemotron 3.5 120B', 'Multimodal & Code', 'ar/nvidia/nemotron-3.5-super-vl-120b-a12b', 1, '1M', 'fire'],
+  ['ar-nemotron-3.5-lightning-30b', 'Nemotron 3.5 30B', 'Fast 30B MoE', 'ar/nvidia/nemotron-3.5-lightning-30b-a3b', 0, '1M', 'spark'],
+  ['ar-nemotron-3.5-bolt-e4b', 'Nemotron Bolt', 'Sub-Second Flash', 'ar/nvidia/nemotron-3.5-bolt-e4b', 0, '64K', 'spark'],
+  ['ar-nemotron-3-ultra-550b', 'Nemotron Ultra 550B', '550B Frontier MoE', 'ar/nvidia/nemotron-3-ultra-550b-a55b', 0, '1M', 'fire'],
+  ['ar-nemotron-parse-2.0', 'Nemotron Parse 2.0', 'Document Parser', 'ar/nvidia/nemotron-parse-2.0', 1, '8K', 'spark'],
+  ['ar-riva-translate-4b-v2', 'Riva Translate 4B', 'Neural Translation', 'ar/nvidia/riva-translate-4b-instruct-v2', 0, '4K', 'spark'],
+  ['ar-minimax-m3.1-flash', 'MiniMax M3.1', 'Multimodal & Coding', 'ar/minimax/minimax-m3.1-flash', 1, '1M', 'spark'],
+  ['ar-longcat-2.5-preview', 'LongCat 2.5', 'Vision & Code', 'ar/meituan/longcat-2.5-preview', 1, '1M', 'spark'],
+  ['ar-meta-muse-glimmer-30b', 'Muse Glimmer 30B', 'Vision & Code', 'ar/meta/muse-glimmer-30b', 1, '128K', 'spark'],
+  ['ar-cohere-north-mini-code', 'North Mini Code', 'Code & Reasoning', 'ar/cohere/north-mini-code', 0, '256K', 'spark'],
+  ['ar-dots-3-note-preview', 'Dots 3 Note', 'Multimodal Research', 'ar/dots-studio/dots-3-note-preview', 1, '512K', 'spark'],
+  ['ar-liquid-lfm-2.5-2.6b', 'LFM 2.5', 'Fast Foundation', 'ar/liquid/lfm-2.5-2.6b', 0, '128K', 'spark'],
+  ['ar-liquid-d1', 'Liquid d1', 'Compact Reasoning', 'ar/liquid/d1', 0, '32K', 'spark'],
+  ['ar-openai-gpt-oss-20b', 'GPT-OSS 20B', 'Open-Weights Code', 'ar/openai/gpt-oss-20b', 0, '128K', 'spark'],
+  ['ar-poolside-laguna-s-2.1', 'Laguna S 2.1', 'Software Engineering', 'ar/poolside/laguna-s-2.1', 0, '1M', 'fire'],
+  ['ar-poolside-laguna-xs-2.1', 'Laguna XS 2.1', 'Fast Code Synthesis', 'ar/poolside/laguna-xs-2.1', 0, '256K', 'spark'],
+  ['ar-recursive-flint-v1', 'Flint v1.0', 'Code & Analysis', 'ar/recursive/flint-v1.0', 0, '256K', 'spark'],
+  ['ar-reflection-beam-1.0', 'Beam 1.0', 'Code Synthesis', 'ar/reflection/beam-1.0', 0, '1M', 'fire'],
+  ['ar-stealth-glyph-cluster', 'Glyph Cluster', 'Cluster Reasoning', 'ar/stealth/glyph-cluster', 0, '256K', 'spark'],
+  ['ar-glm-4.5-flash', 'GLM 4.5 Flash', 'Fast Flash', 'ar/z-ai/glm-4.5-flash', 0, '128K', 'spark'],
+  ['ar-glm-flash-latest', 'GLM Flash', 'High-Speed Flash', 'ar/z-ai/glm-flash-latest', 0, '128K', 'spark'],
+  ['ar-pareto-code-router', 'Pareto Code', 'Code Synthesis', 'ar/openrouter/pareto-code', 1, '2M', 'fire'],
+  ['ar-inception-mercury-decide', 'Mercury Decide', 'Ultra-Fast Diffusion', 'ar/inception/mercury-decide', 0, '32K', 'spark'],
 ];
 
-const FIRE_MODEL_IDS = new Set([
-  'thk-gpt-6.1-sol-fast',
-  'thk-gpt-6-astra-fast',
-  'thk-claude-opus-5.5',
-  'thk-grok-4.7',
-  'thk-gemini-4-argon',
-  'larp-gpt-6',
-  'radox-claude-opus-5.5',
-  'radox-claude-fable-5.1',
-  'radox-gpt-5.6-sol',
-  'radox-gpt-5.6-terra',
-  'radox-deepseek-v4-pro-max',
-  'radox-gemini-3.1-pro',
-  'radox-qwen3.8-max',
-  'radox-seed-2.1-pro',
-  'itera-claude-opus-5.5',
-  'itera-claude-fable-5.1',
-  'itera-gpt-6.1-sol',
-  'itera-gpt-6-astra',
-  'itera-gpt-6-luna',
-  'itera-gemini-4-argon',
-  'itera-qwen3.8-2.4t',
-  'itera-minimax-m3',
-  'itera-glm-5.3',
-  'ar-anyrouter-latest',
-  'ar-nemotron-3.5-super-vl-120b',
-  'ar-nemotron-3-ultra-550b',
-  'ar-poolside-laguna-s-2.1',
-  'ar-reflection-beam-1.0',
-  'ar-pareto-code-router',
-  'fgw-deepseek-v4-flash-0731-thinking-free',
-  'fgw-gemini-3.1-pro-free',
-  'fgw-gemini-3-pro-free',
-  'fgw-gemini-2.5-pro-free',
-  'fgw-grok-4.7-free',
-  'fgw-gpt-5.6-sol-free',
-  'fgw-o3-free',
-  'fgw-gpt-4o-free',
-  'fgw-qwen-3.8-max-free',
-  'fgw-qwen-3.5-397b-a17b-free',
-  'fgw-caw-glm-5.3-flash-thinking-free',
-  'fgw-nvidia-mistral-large-4-1t-free',
-  'fgw-nemotron-3-ultra-550b-free',
-  'fgw-nvidia-nemotron-3-ultra-550b-free',
-  'fgw-nemotron-3.5-super-vl-free',
-  'fgw-nvidia-nemotron-3.5-super-vl-120b-free',
-  'fgw-laguna-s-2.1-free',
-  'fgw-k2-horizon-375b-free',
-  'fgw-hy4-free',
-  'fgw-pixtral-large-2-vision',
-  'radox-gpt-6-omni-vision',
-  'itera-gemini-4-ultra-vision',
-]);
+export const GROK_MODELS: ModelOption[] = MODEL_SPECS.map(
+  ([id, name, description, geminiModel, vision, contextLength, requiredTier, unlimited]) => ({
+    id,
+    name,
+    description,
+    geminiModel,
+    supportsVision: Boolean(vision),
+    contextLength,
+    requiredTier,
+    ...(unlimited ? { unlimited: true } : {}),
+  })
+);
 
-export const FREE_MODEL_IDS = new Set<string>([
-  'zro-deepseek-v4.1-flash',
-  'zro-glm-5.3-flash',
-]);
+export const FREE_MODEL_IDS = new Set(
+  GROK_MODELS.filter((m) => m.requiredTier === 'free').map((m) => m.id)
+);
 
-export function getModelRequiredTier(model: ModelOption): 'free' | 'spark' | 'fire' {
-  if (model.requiredTier) return model.requiredTier;
-  if (FREE_MODEL_IDS.has(model.id)) return 'free';
-  if (FIRE_MODEL_IDS.has(model.id)) return 'fire';
-  return 'spark';
-}
+export const getModelRequiredTier = (model: ModelOption): 'free' | 'spark' | 'fire' =>
+  model.unlimited ? 'free' : model.requiredTier || 'spark';
 
 export function getPreferredDefaultModel(): ModelOption {
   const prefId = UserAccountStore.getPersonalization().defaultModelId;
-  if (prefId) {
-    const found = GROK_MODELS.find((m) => m.id === prefId);
-    if (found && UserAccountStore.canUseModel(getModelRequiredTier(found))) {
-      return found;
-    }
-  }
-  return GROK_MODELS[0];
+  const found = prefId ? GROK_MODELS.find((m) => m.id === prefId) : undefined;
+  return found && (found.unlimited || UserAccountStore.canUseModel(getModelRequiredTier(found)))
+    ? found
+    : GROK_MODELS[0];
 }
 
 export function getDefaultVisionModel(): ModelOption {
-  const prefVisionId = UserAccountStore.getPersonalization().defaultVisionModelId;
-  if (prefVisionId) {
-    const preferred = GROK_MODELS.find((m) => m.id === prefVisionId && m.supportsVision);
-    if (preferred && UserAccountStore.canUseModel(getModelRequiredTier(preferred))) {
-      return preferred;
-    }
-  }
+  const prefId = UserAccountStore.getPersonalization().defaultVisionModelId;
+  const pref = prefId ? GROK_MODELS.find((m) => m.id === prefId && m.supportsVision) : undefined;
+  if (pref && (pref.unlimited || UserAccountStore.canUseModel(getModelRequiredTier(pref)))) return pref;
   return (
-    GROK_MODELS.find((m) => m.supportsVision && UserAccountStore.canUseModel(getModelRequiredTier(m))) ||
+    GROK_MODELS.find((m) => m.supportsVision && (m.unlimited || UserAccountStore.canUseModel(getModelRequiredTier(m)))) ||
     GROK_MODELS.find((m) => m.supportsVision) ||
     GROK_MODELS[0]
   );
@@ -1527,218 +242,141 @@ export const GrokModelPicker: React.FC<GrokModelPickerProps> = ({
   variant = 'header',
 }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [tierFilter, setTierFilter] = useState<'all' | 'free' | 'spark' | 'fire'>('all');
-  const [, setCurrentPlan] = useState<'free' | 'spark' | 'fire'>(() =>
-    UserAccountStore.getNormalizedPlan()
-  );
+  const [, setPlanTick] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
-
   const current = GROK_MODELS.find((m) => m.id === selectedModelId) || GROK_MODELS[0];
-  const currentTheme = getModelGradientTheme(current.id);
 
   useEffect(() => {
-    const syncPlan = () => setCurrentPlan(UserAccountStore.getNormalizedPlan());
-    window.addEventListener('kinich-account-updated', syncPlan);
-    return () => window.removeEventListener('kinich-account-updated', syncPlan);
-  }, []);
-
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setIsOpen(false);
-      }
+    const sync = () => setPlanTick((n) => n + 1);
+    const onOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setIsOpen(false);
     };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsOpen(false);
+    };
+    window.addEventListener('kinich-account-updated', sync);
+    document.addEventListener('mousedown', onOutside);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('kinich-account-updated', sync);
+      document.removeEventListener('mousedown', onOutside);
+      document.removeEventListener('keydown', onKey);
+    };
   }, []);
 
-  const filteredModels = GROK_MODELS.filter((m) => {
-    if (tierFilter !== 'all' && getModelRequiredTier(m) !== tierFilter) return false;
-    return true;
-  });
-
-  const triggerPricingPopup = (tier: 'free' | 'spark' | 'fire', modelName: string) => {
-    if (tier === 'free') return;
-    const planLabel = tier === 'spark' ? 'Spark ($3/mo)' : 'Fire ($9/mo Unlimited)';
-    const reason = `${modelName} requires the ${planLabel} plan. Upgrade now to unlock it.`;
-    if (onOpenPricing) {
-      onOpenPricing(tier, reason);
-    } else if (typeof window !== 'undefined') {
-      window.dispatchEvent(
-        new CustomEvent('kinich-open-pricing', {
-          detail: { highlightPlan: tier, reason },
-        })
-      );
-    }
+  const openUpgrade = (tier: 'spark' | 'fire', modelName: string) => {
+    const reason = `${modelName} requires the ${tier === 'spark' ? 'Spark ($3/mo)' : 'Fire ($9/mo Unlimited)'} plan. Upgrade now to unlock it.`;
+    if (onOpenPricing) onOpenPricing(tier, reason);
+    else window.dispatchEvent(new CustomEvent('kinich-open-pricing', { detail: { highlightPlan: tier, reason } }));
   };
 
-  const triggerClasses =
+  const triggerCls =
     variant === 'header'
-      ? `flex items-center gap-1.5 h-7.5 sm:h-8 px-2.5 sm:px-3 rounded-full border transition-colors cursor-pointer font-medium text-xs sm:text-[13px] select-none ${
+      ? `flex items-center gap-1 h-7 sm:h-8 px-2.5 sm:px-3 rounded-full border transition-all cursor-pointer font-medium text-[11px] sm:text-xs select-none ${
           isDark
-            ? 'bg-[#09090b] hover:bg-white/[0.08] border-white/[0.14] text-white'
-            : 'bg-white hover:bg-black/[0.05] border-black/[0.1] text-zinc-900'
+            ? 'bg-[#141416]/95 hover:bg-white/[0.08] border-white/[0.12] text-white'
+            : 'bg-white/95 hover:bg-black/[0.03] border-black/[0.08] text-[#111111] shadow-[0_1px_4px_rgba(0,0,0,0.05)]'
         }`
-      : `flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs transition-colors cursor-pointer ${
-          isDark ? 'text-white/80 hover:text-white' : 'text-black/75 hover:text-black'
+      : `flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors cursor-pointer ${
+          isDark ? 'text-white/85 hover:text-white' : 'text-black/80 hover:text-black'
         }`;
 
-  const dropdownPositionClasses =
+  const posCls =
     dropdownDirection === 'down'
-      ? 'top-full left-0 mt-1.5'
+      ? 'top-full left-1/2 -translate-x-1/2 mt-2'
       : 'bottom-full right-0 mb-2';
 
   return (
     <div className="relative" ref={containerRef}>
       <button
         type="button"
-        onClick={() => setIsOpen(!isOpen)}
-        className={`${triggerClasses} max-w-[150px] sm:max-w-[200px]`}
+        onClick={() => setIsOpen((v) => !v)}
+        aria-expanded={isOpen}
+        aria-haspopup="listbox"
+        className={`${triggerCls} max-w-[155px] sm:max-w-[205px]`}
         title={current.name}
       >
-        <span className="font-medium text-xs sm:text-[13px] tracking-tight truncate">{current.name}</span>
+        <span className="tracking-[-0.01em] truncate">{current.name}</span>
         <ChevronDown
-          className={`w-3 h-3 shrink-0 transition-transform duration-150 ${
-            isOpen ? 'rotate-180' : ''
-          } opacity-70`}
+          className={`w-3 h-3 shrink-0 transition-transform duration-150 opacity-65 ${isOpen ? 'rotate-180' : ''}`}
         />
       </button>
 
       {isOpen && (
         <div
-          className={`absolute ${dropdownPositionClasses} w-56 sm:w-64 max-w-[calc(100vw-1.5rem)] max-h-[min(360px,65dvh)] flex flex-col rounded-xl border p-1.5 z-50 text-[11px] backdrop-blur-2xl backdrop-saturate-150 shadow-2xl animate-in fade-in zoom-in-95 duration-150 ${
+          role="listbox"
+          className={`absolute ${posCls} w-[268px] sm:w-[304px] max-w-[calc(100vw-1.5rem)] rounded-[22px] border overflow-hidden z-50 backdrop-blur-2xl backdrop-saturate-150 animate-in fade-in zoom-in-95 duration-150 ${
             isDark
-              ? 'bg-neutral-900/75 border-white/[0.16] text-white shadow-[0_16px_48px_rgba(0,0,0,0.85)]'
-              : 'bg-white/80 border-black/[0.1] text-[#0d0d0d] shadow-[0_16px_48px_rgba(0,0,0,0.16)]'
+              ? 'bg-[#151517]/94 border-white/[0.1] text-white shadow-[0_20px_50px_rgba(0,0,0,0.78)]'
+              : 'bg-white/95 border-black/[0.07] text-[#111111] shadow-[0_16px_42px_rgba(0,0,0,0.12)]'
           }`}
         >
-          {/* Tier Filter */}
-          <div className="pb-1.5 mb-1 border-b border-black/10 dark:border-white/10 shrink-0">
-            <div className="flex items-center gap-0.5">
-              {(
-                [
-                  { id: 'all', label: 'All' },
-                  { id: 'free', label: 'Free' },
-                  { id: 'spark', label: 'Spark ($3)' },
-                  { id: 'fire', label: 'Fire ($9)' },
-                ] as const
-              ).map((tab) => {
-                const active = tierFilter === tab.id;
-                return (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    onClick={() => setTierFilter(tab.id)}
-                    className={`flex-1 py-0.5 px-1.5 rounded-md text-[10px] font-medium transition-colors cursor-pointer whitespace-nowrap ${
-                      active
-                        ? isDark
-                          ? 'bg-white text-black'
-                          : 'bg-black text-white'
-                        : isDark
-                        ? 'text-white/55 hover:bg-white/5 hover:text-white'
-                        : 'text-black/55 hover:bg-black/5 hover:text-black'
-                    }`}
-                  >
-                    {tab.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          <div className="max-h-[min(440px,66dvh)] overflow-y-auto ultra-slim-scrollbar p-1.5 pr-1 flex flex-col gap-0.5">
+            {GROK_MODELS.map((m) => {
+              const isSelected = m.id === current.id;
+              const reqTier = getModelRequiredTier(m);
+              const isLocked = !m.unlimited && !UserAccountStore.canUseModel(reqTier);
+              const showCtx = m.contextLength && m.contextLength !== 'Auto' && !m.description.includes(m.contextLength);
+              const subtitle = showCtx ? `${m.description} (${m.contextLength})` : m.description;
 
-          {/* Compact Models List */}
-          <div className="space-y-0.5 overflow-y-auto slim-scrollbar pr-0.5">
-            {filteredModels.length === 0 ? (
-              <div className="py-4 text-center text-[10px] opacity-50">No models found</div>
-            ) : (
-              filteredModels.map((m) => {
-                const isSelected = m.id === current.id;
-                const reqTier = getModelRequiredTier(m);
-                const isLocked = !UserAccountStore.canUseModel(reqTier);
-
-                const itemTheme = getModelGradientTheme(m.id);
-                return (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onClick={() => {
-                      if (isLocked) {
-                        setIsOpen(false);
-                        triggerPricingPopup(reqTier, m.name);
-                        return;
-                      }
-                      UserAccountStore.recordModelExplored(m.id);
-                      onSelectModel(m);
-                      setIsOpen(false);
-                    }}
-                    className={`w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg text-left transition-colors cursor-pointer group ${
-                      isSelected
-                        ? isDark
-                          ? 'bg-white/10 text-white'
-                          : 'bg-black/5 text-[#0d0d0d]'
-                        : isDark
-                        ? 'hover:bg-white/[0.05] text-white/85'
-                        : 'hover:bg-black/[0.04] text-black/85'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 min-w-0 flex-1">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <span
-                            className={`font-medium text-[11px] leading-tight truncate ${
-                              isLocked ? 'opacity-70' : ''
-                            }`}
-                          >
-                            {m.name}
-                          </span>
-                          {m.contextLength && (
-                            <span
-                              className={`text-[9px] font-mono shrink-0 ${
-                                isDark ? 'text-white/35' : 'text-black/40'
-                              }`}
-                            >
-                              {m.contextLength}
-                            </span>
-                          )}
-                        </div>
-                        <div
-                          className={`text-[9.5px] leading-tight truncate mt-0.5 ${
-                            isDark ? 'text-white/45' : 'text-black/45'
-                          }`}
-                        >
-                          {m.description}
-                          {m.supportsVision ? ' · Vision' : ''}
-                        </div>
-                      </div>
+              return (
+                <button
+                  key={m.id}
+                  type="button"
+                  role="option"
+                  aria-selected={isSelected}
+                  onClick={() => {
+                    setIsOpen(false);
+                    if (isLocked && reqTier !== 'free') {
+                      openUpgrade(reqTier, m.name);
+                      return;
+                    }
+                    UserAccountStore.recordModelExplored(m.id);
+                    onSelectModel(m);
+                  }}
+                  className={`w-full flex items-center justify-between gap-2.5 px-3 py-2 rounded-[14px] text-left transition-colors cursor-pointer ${
+                    isSelected
+                      ? isDark
+                        ? 'bg-white/[0.08]'
+                        : 'bg-black/[0.045]'
+                      : isDark
+                      ? 'hover:bg-white/[0.05]'
+                      : 'hover:bg-black/[0.03]'
+                  }`}
+                >
+                  <div className="min-w-0 flex-1">
+                    <div
+                      className={`text-[12px] sm:text-[12.5px] font-semibold leading-tight tracking-[-0.01em] truncate ${
+                        isLocked
+                          ? isDark
+                            ? 'text-white/60'
+                            : 'text-[#111111]/60'
+                          : isDark
+                          ? 'text-white'
+                          : 'text-[#111111]'
+                      }`}
+                    >
+                      {m.name}
                     </div>
-
-                    <div className="shrink-0 flex items-center">
-                      {isSelected ? (
-                        <Check
-                          className={`w-3 h-3 ${isDark ? 'text-white' : 'text-black'}`}
-                        />
-                      ) : (
-                        <span
-                          className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${
-                            reqTier === 'free'
-                              ? 'text-emerald-400 bg-emerald-500/10 border border-emerald-500/20'
-                              : reqTier === 'fire'
-                              ? 'text-orange-400 bg-orange-500/10 border border-orange-500/20'
-                              : 'text-sky-400 bg-sky-500/10 border border-sky-500/20'
-                          }`}
-                        >
-                          {reqTier === 'free' ? 'Free' : reqTier === 'fire' ? '$9' : '$3'}
-                        </span>
-                      )}
+                    <div
+                      className={`text-[10px] sm:text-[10.5px] leading-snug truncate mt-0.5 ${
+                        isDark ? 'text-white/50' : 'text-[#6e6e73]'
+                      }`}
+                    >
+                      {subtitle}
                     </div>
-                  </button>
-                );
-              })
-            )}
+                  </div>
+                  {isSelected ? (
+                    <Check className={`w-3.5 h-3.5 shrink-0 ${isDark ? 'text-white/85' : 'text-[#111111]'}`} />
+                  ) : isLocked ? (
+                    <Lock className={`w-3 h-3 shrink-0 ${isDark ? 'text-white/30' : 'text-black/30'}`} />
+                  ) : null}
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
     </div>
   );
 };
-

@@ -13,6 +13,7 @@ import {
 } from './firebase';
 import { UserAccountStore, toIstDateKey } from './userAccountStore';
 import { KnowledgeVaultStore } from './growthStore';
+import { apiFetch } from './apiBase';
 
 export type RecallGrade = 'again' | 'hard' | 'good' | 'easy';
 
@@ -132,6 +133,7 @@ export interface SnapSolveApiResponse {
   checkWithTextbook?: boolean;
   error?: string;
   message?: string;
+  code?: string;
 }
 
 export interface UploadedStudyPack {
@@ -1479,12 +1481,14 @@ export const StudyLoopStore = {
     ok: boolean;
     result?: SnapSolveResult;
     error?: string;
+    status?: number;
+    code?: string;
   }> {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 16000);
+    const timer = setTimeout(() => controller.abort(), 45000);
     try {
       const headers = await getAuthHeaders();
-      const res = await fetch('/api/study/snap-solve', {
+      const res = await apiFetch('/api/study/snap-solve', {
         method: 'POST',
         headers,
         signal: controller.signal,
@@ -1509,6 +1513,8 @@ export const StudyLoopStore = {
       if (!res.ok || validSteps.length === 0 || !validAnswer) {
         return {
           ok: false,
+          status: res.status,
+          code: data?.code,
           error:
             data?.message ||
             data?.error ||
@@ -1518,6 +1524,7 @@ export const StudyLoopStore = {
 
       return {
         ok: true,
+        status: res.status,
         result: {
           questionExtracted: data.questionExtracted || input.questionText || 'Problem Solution',
           steps: validSteps,
@@ -1529,11 +1536,14 @@ export const StudyLoopStore = {
           checkWithTextbook: Boolean(data.checkWithTextbook),
         },
       };
-    } catch {
+    } catch (err: any) {
       clearTimeout(timer);
+      const isAbort = err?.name === 'AbortError';
       return {
         ok: false,
-        error: 'Snap & Solve timed out. Tap Retry to solve this question.',
+        error: isAbort
+          ? 'Snap & Solve timed out. Try cropping tighter around one question and tap Retry.'
+          : 'Network error while solving. Check your connection and tap Retry.',
       };
     }
   },

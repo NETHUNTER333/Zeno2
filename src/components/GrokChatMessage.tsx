@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, Suspense, lazy } from 'react';
+import { createPortal } from 'react-dom';
 import { motion } from 'motion/react';
 import {
   Copy,
@@ -48,7 +49,7 @@ import rehypeRaw from 'rehype-raw';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import { ChatMessage as ChatMessageType, YouTubeVideoInfo, FinanceQuote, KnowledgeVaultItem, AgentReplyCard } from '../types';
-import { normalizeMathDelimiters } from './MathMarkdown';
+import { normalizeMathDelimiters, KATEX_PLUGIN_OPTIONS } from './MathMarkdown';
 import { GrokTimingTooltip } from './GrokTimingTooltip';
 import { GenerativeUiViewer } from './GenerativeUiViewer';
 import { ArxivPaperCard } from './ArxivPaperCard';
@@ -408,17 +409,83 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
 
   const [savedToVault, setSavedToVault] = useState(false);
   const [showActionsOnTap, setShowActionsOnTap] = useState(false);
+  const [actionPopupPos, setActionPopupPos] = useState<{ top: number; left: number; maxHeight: number } | null>(null);
+  const actionPopupRef = React.useRef<HTMLDivElement>(null);
+
+  const openActionsAt = React.useCallback(
+    (clientX?: number, clientY?: number, fallbackEl?: HTMLElement | null) => {
+      if (typeof window !== 'undefined') {
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const topSafe = 68;
+        const bottomSafe = Math.max(topSafe + 150, vh - 96);
+        const maxHeight = Math.max(150, bottomSafe - topSafe);
+        const menuW = isUser ? 156 : 168;
+        const estH = Math.min(maxHeight, isUser ? 182 : 332);
+
+        const rect =
+          fallbackEl?.getBoundingClientRect() ||
+          document.getElementById(`msg-${message.id}`)?.getBoundingClientRect();
+        const ax =
+          typeof clientX === 'number' && clientX > 0
+            ? clientX
+            : rect
+            ? isUser
+              ? rect.right - 16
+              : rect.left + 16
+            : vw / 2;
+        const ay =
+          typeof clientY === 'number' && clientY > 0
+            ? clientY
+            : rect
+            ? Math.max(topSafe, Math.min(bottomSafe, rect.top + Math.min(48, rect.height / 2)))
+            : vh / 2;
+
+        const left = isUser
+          ? Math.max(12, Math.min(vw - menuW - 12, ax - menuW + 16))
+          : Math.max(12, Math.min(vw - menuW - 12, ax - 16));
+
+        let top = ay + 10;
+        if (top + estH > bottomSafe) {
+          const aboveTop = ay - estH - 10;
+          top = aboveTop >= topSafe ? aboveTop : Math.max(topSafe, bottomSafe - estH);
+        }
+        top = Math.max(topSafe, Math.min(bottomSafe - Math.min(estH, maxHeight), top));
+        setActionPopupPos({ top: Math.round(top), left: Math.round(left), maxHeight });
+      }
+      setShowActionsOnTap(true);
+    },
+    [isUser, message.id]
+  );
 
   useEffect(() => {
     if (!showActionsOnTap) return;
-    const handleOutsideClick = (e: MouseEvent) => {
-      const el = document.getElementById(`msg-${message.id}`);
-      if (el && !el.contains(e.target as Node)) {
+    const handleOutside = (e: MouseEvent | TouchEvent) => {
+      const target = e.target as Node | null;
+      const msgEl = document.getElementById(`msg-${message.id}`);
+      const inPopup = actionPopupRef.current?.contains(target);
+      const inMsg = msgEl?.contains(target);
+      if (!inPopup && !inMsg) {
         setShowActionsOnTap(false);
       }
     };
-    document.addEventListener('mousedown', handleOutsideClick);
-    return () => document.removeEventListener('mousedown', handleOutsideClick);
+    const handleDismiss = (e?: Event) => {
+      if (e && actionPopupRef.current?.contains(e.target as Node)) return;
+      setShowActionsOnTap(false);
+    };
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowActionsOnTap(false);
+    };
+    document.addEventListener('mousedown', handleOutside);
+    window.addEventListener('scroll', handleDismiss, true);
+    window.addEventListener('resize', handleDismiss);
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      window.removeEventListener('scroll', handleDismiss, true);
+      window.removeEventListener('resize', handleDismiss);
+      document.removeEventListener('keydown', handleKey);
+    };
   }, [showActionsOnTap, message.id]);
 
   // Highlight & Save Segment to Knowledge Vault state
@@ -856,6 +923,10 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
     if ((e.target as HTMLElement).closest('button, a, input, textarea, iframe, video, [role="button"]')) {
       return;
     }
+    const touch = e.touches?.[0];
+    const tx = touch?.clientX;
+    const ty = touch?.clientY;
+    const el = e.currentTarget as HTMLElement;
     touchMovedRef.current = false;
     longPressTriggeredRef.current = false;
     if (longPressTimerRef.current) {
@@ -868,7 +939,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
           clearTimeout(singleTapTimerRef.current);
           singleTapTimerRef.current = null;
         }
-        setShowActionsOnTap(true);
+        openActionsAt(tx, ty, el);
       }
     }, 420);
   };
@@ -904,7 +975,6 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
     const now = Date.now();
     const timeSinceLastTap = now - lastTapTimeRef.current;
 
-    // Double-tap detected: cancel pending single-tap popup and toggle message collapse/expand cleanly
     if (timeSinceLastTap > 0 && timeSinceLastTap < 280) {
       if (singleTapTimerRef.current) {
         clearTimeout(singleTapTimerRef.current);
@@ -930,7 +1000,6 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
 
     lastTapTimeRef.current = now;
 
-    // If popup menu is already open, close it immediately without delay
     if (showActionsOnTap) {
       if (singleTapTimerRef.current) {
         clearTimeout(singleTapTimerRef.current);
@@ -940,13 +1009,15 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
       return;
     }
 
-    // Wait briefly to confirm it is not a double-tap before opening popup menu
+    const cx = e.clientX;
+    const cy = e.clientY;
+    const el = e.currentTarget as HTMLElement;
     if (singleTapTimerRef.current) {
       clearTimeout(singleTapTimerRef.current);
     }
     singleTapTimerRef.current = setTimeout(() => {
       singleTapTimerRef.current = null;
-      setShowActionsOnTap(true);
+      openActionsAt(cx, cy, el);
     }, 240);
   };
 
@@ -959,7 +1030,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
       >
         <ReactMarkdown
           remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: true }]]}
-          rehypePlugins={[rehypeRaw, rehypeKatex]}
+          rehypePlugins={[rehypeRaw, [rehypeKatex, KATEX_PLUGIN_OPTIONS]]}
           components={{
             p: ({ node, children, ...props }) => (
               <p
@@ -1624,7 +1695,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                     onTouchEnd={handleTouchEnd}
                     onContextMenu={(e) => {
                       e.preventDefault();
-                      setShowActionsOnTap(true);
+                      openActionsAt(e.clientX, e.clientY, e.currentTarget);
                     }}
                     onClick={handleMessageTap}
                     className={`cursor-pointer select-text text-[14.5px] sm:text-[15px] leading-[24px] tracking-normal [word-spacing:normal] font-normal px-4 py-2.5 rounded-[22px] backdrop-blur-2xl backdrop-saturate-150 border w-fit max-w-full min-w-0 overflow-hidden whitespace-pre-wrap break-words [overflow-wrap:anywhere] [word-break:break-word] ${
@@ -1654,16 +1725,24 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                 );
               })()}
 
-              {/* Vertical Context Menu Popup on Tap / Long-Press */}
-              {showActionsOnTap && (
-                <div
-                  onClick={(e) => e.stopPropagation()}
-                  className={`absolute right-0 top-full mt-2 z-50 min-w-[156px] p-1.5 rounded-2xl border backdrop-blur-2xl flex flex-col gap-0.5 animate-in fade-in zoom-in-95 duration-150 ${
-                    isDark
-                      ? 'bg-[#1f1f23]/95 border-white/[0.1] shadow-[0_14px_40px_rgba(0,0,0,0.65)] text-[#f5f5f7]'
-                      : 'bg-white/95 border-black/[0.08] shadow-[0_14px_36px_rgba(0,0,0,0.14)] text-[#1d1d1f]'
-                  }`}
-                >
+              {/* Viewport-Clamped Context Menu Popup on Tap / Long-Press */}
+              {showActionsOnTap && actionPopupPos && typeof document !== 'undefined' &&
+                createPortal(
+                  <div
+                    ref={actionPopupRef}
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                      position: 'fixed',
+                      top: actionPopupPos.top,
+                      left: actionPopupPos.left,
+                      maxHeight: actionPopupPos.maxHeight,
+                    }}
+                    className={`z-[90] min-w-[152px] overflow-y-auto ultra-slim-scrollbar p-1.5 rounded-[20px] border backdrop-blur-2xl flex flex-col gap-0.5 animate-in fade-in zoom-in-95 duration-150 ${
+                      isDark
+                        ? 'bg-[#1f1f23]/95 border-white/[0.1] shadow-[0_14px_40px_rgba(0,0,0,0.65)] text-[#f5f5f7]'
+                        : 'bg-white/95 border-black/[0.08] shadow-[0_14px_36px_rgba(0,0,0,0.14)] text-[#1d1d1f]'
+                    }`}
+                  >
                   <button
                     type="button"
                     onClick={(e) => {
@@ -1731,8 +1810,9 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                       </button>
                     </>
                   )}
-                </div>
-              )}
+                  </div>,
+                  document.body
+                )}
             </div>
           )}
         </div>
@@ -2203,7 +2283,7 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                   return;
                 }
                 e.preventDefault();
-                setShowActionsOnTap(true);
+                openActionsAt(e.clientX, e.clientY, e.currentTarget);
               }}
               onClick={handleMessageTap}
               className="prose-grok ds-markdown max-w-none my-0 text-[14.5px] sm:text-[15.5px] leading-[24px] sm:leading-[26px] tracking-normal [word-spacing:normal]"
@@ -2916,15 +2996,23 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                 </Suspense>
               )}
 
-              {showActionsOnTap && (
-                <div
-                  onClick={(e) => e.stopPropagation()}
-                  className={`absolute left-0 bottom-full mb-2 z-50 min-w-[168px] p-1.5 rounded-2xl border backdrop-blur-2xl flex flex-col gap-0.5 animate-in fade-in zoom-in-95 duration-150 ${
-                    isDark
-                      ? 'bg-[#1f1f23]/95 border-white/[0.1] shadow-[0_14px_40px_rgba(0,0,0,0.65)] text-[#f5f5f7]'
-                      : 'bg-white/95 border-black/[0.08] shadow-[0_14px_36px_rgba(0,0,0,0.14)] text-[#1d1d1f]'
-                  }`}
-                >
+              {showActionsOnTap && actionPopupPos && typeof document !== 'undefined' &&
+                createPortal(
+                  <div
+                    ref={actionPopupRef}
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                      position: 'fixed',
+                      top: actionPopupPos.top,
+                      left: actionPopupPos.left,
+                      maxHeight: actionPopupPos.maxHeight,
+                    }}
+                    className={`z-[90] min-w-[162px] overflow-y-auto ultra-slim-scrollbar p-1.5 rounded-[20px] border backdrop-blur-2xl flex flex-col gap-0.5 animate-in fade-in zoom-in-95 duration-150 ${
+                      isDark
+                        ? 'bg-[#1f1f23]/95 border-white/[0.1] shadow-[0_14px_40px_rgba(0,0,0,0.65)] text-[#f5f5f7]'
+                        : 'bg-white/95 border-black/[0.08] shadow-[0_14px_36px_rgba(0,0,0,0.14)] text-[#1d1d1f]'
+                    }`}
+                  >
                   <button
                     type="button"
                     onClick={(e) => {
@@ -3079,8 +3167,9 @@ export const GrokChatMessage: React.FC<GrokChatMessageProps> = ({
                     <Flag className="w-[15px] h-[15px] opacity-90 stroke-[1.85] shrink-0" />
                     <span>Report</span>
                   </button>
-                </div>
-              )}
+                  </div>,
+                  document.body
+                )}
             </div>
           )}
 

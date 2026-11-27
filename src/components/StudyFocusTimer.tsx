@@ -153,19 +153,19 @@ export const StudyFocusTimer: React.FC<StudyFocusTimerProps> = ({ isDark }) => {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className={`h-8 px-3 rounded-full border text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap active:scale-95 ${
+        className={`h-8 px-2.5 sm:px-3 rounded-full border text-[11px] font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap active:scale-95 ${
           running
             ? isDark
               ? 'bg-white text-black border-white font-semibold'
               : 'bg-black text-white border-black font-semibold'
             : isDark
-            ? 'bg-white/[0.05] hover:bg-white/[0.1] border-white/[0.14] text-neutral-200'
-            : 'bg-black/[0.04] hover:bg-black/[0.08] border-black/[0.12] text-neutral-800'
+            ? 'bg-white/[0.04] hover:bg-white/[0.09] border-white/[0.1] text-neutral-200'
+            : 'bg-black/[0.03] hover:bg-black/[0.07] border-black/[0.1] text-neutral-800'
         }`}
         title="Study Focus Timer"
         aria-label="Study Focus Timer"
       >
-        <Timer className="w-3.5 h-3.5 shrink-0" />
+        <Timer className="w-3 h-3 shrink-0" />
         <span className={running ? 'font-mono tabular-nums' : ''}>
           {running || secondsLeft !== totalSec ? formatted : 'Focus'}
         </span>

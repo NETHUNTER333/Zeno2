@@ -29,10 +29,11 @@ export interface MathMarkdownProps {
   className?: string;
 }
 
-const KATEX_PLUGIN_OPTIONS = {
+export const KATEX_PLUGIN_OPTIONS = {
   throwOnError: false,
   strict: false,
   trust: false,
+  errorColor: 'inherit',
   output: 'htmlAndMathml' as const,
   macros: STEM_KATEX_MACROS,
 };

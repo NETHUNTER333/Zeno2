@@ -120,42 +120,54 @@
   }
 }
 
-/* Ultra-slim scrollbars */
+/* Ultra-slim 2px rounded scrollbars */
 * {
   scrollbar-width: thin;
 }
 
-::-webkit-scrollbar {
+@supports selector(::-webkit-scrollbar) {
+  .slim-scrollbar,
+  .ultra-slim-scrollbar {
+    scrollbar-width: auto;
+  }
+}
+
+::-webkit-scrollbar,
+.slim-scrollbar::-webkit-scrollbar,
+.ultra-slim-scrollbar::-webkit-scrollbar {
   width: 2px;
   height: 2px;
 }
-::-webkit-scrollbar-track {
+::-webkit-scrollbar-track,
+.slim-scrollbar::-webkit-scrollbar-track,
+.ultra-slim-scrollbar::-webkit-scrollbar-track {
   background: transparent;
 }
-html.dark ::-webkit-scrollbar-thumb {
+html.dark ::-webkit-scrollbar-thumb,
+html.dark .ultra-slim-scrollbar::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.16);
   border-radius: 9999px;
 }
-html.dark ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.28);
+html.dark ::-webkit-scrollbar-thumb:hover,
+html.dark .ultra-slim-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
 }
-html.light ::-webkit-scrollbar-thumb {
+html.light ::-webkit-scrollbar-thumb,
+html.light .ultra-slim-scrollbar::-webkit-scrollbar-thumb {
   background: rgba(0, 0, 0, 0.16);
   border-radius: 9999px;
 }
-html.light ::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.28);
+html.light ::-webkit-scrollbar-thumb:hover,
+html.light .ultra-slim-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.3);
 }
 
-.slim-scrollbar {
-  scrollbar-width: thin;
+.ultra-slim-scrollbar::-webkit-scrollbar {
+  width: 1.5px;
+  height: 1.5px;
 }
-.slim-scrollbar::-webkit-scrollbar {
-  width: 2px;
-  height: 2px;
-}
-.slim-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
+.ultra-slim-scrollbar::-webkit-scrollbar-track {
+  margin: 10px 0;
 }
 
 .scrollbar-none,
@@ -664,6 +676,11 @@ html.light .prose-custom hr {
   font-size: 1.02em;
   line-height: 1.45;
   color: inherit;
+}
+
+.katex-error {
+  color: inherit !important;
+  font-family: inherit;
 }
 
 .katex-display {

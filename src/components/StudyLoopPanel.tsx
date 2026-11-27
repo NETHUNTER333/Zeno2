@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   ArrowLeft,
   CheckCircle2,
+  Download,
   MessageSquare,
   MoreVertical,
   Send,
@@ -28,6 +29,7 @@ import { extractTextFromPdfFile } from '../lib/pdfStudyEngine';
 import { StudyLanguageDropdown } from './CustomSearchSelect';
 import ErrorState from './ErrorState';
 import { MathMarkdown, MathText } from './MathMarkdown';
+import { exportAnkiApkg } from '../lib/ankiExport';
 
 interface StudyLoopPanelProps {
   isOpen?: boolean;
@@ -1771,8 +1773,28 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                   )}
 
                   {packSubTab === 'flashcards' && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                      {activeStudyPack.flashcards.map((fc) => {
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-end">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void exportAnkiApkg(
+                              activeStudyPack.title || 'Study Pack Flashcards',
+                              activeStudyPack.flashcards.map((fc) => ({
+                                front: fc.front,
+                                back: fc.back,
+                                tags: [activeStudyPack.subject || 'study_pack'],
+                              }))
+                            )
+                          }
+                          className={`px-3 py-1.5 rounded-lg border text-xs font-medium inline-flex items-center gap-1.5 transition cursor-pointer ${btnGhost}`}
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>Export Anki (.apkg)</span>
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        {activeStudyPack.flashcards.map((fc) => {
                         const flipped = Boolean(packFlippedCards[fc.id]);
                         const activeGrade = StudyLoopStore.getCardGrade(fc.id) || StudyLoopStore.getCardGrade(fc.front);
                         return (
@@ -1829,6 +1851,7 @@ export const StudyLoopPanel: React.FC<StudyLoopPanelProps> = ({
                           </div>
                         );
                       })}
+                      </div>
                     </div>
                   )}
 
