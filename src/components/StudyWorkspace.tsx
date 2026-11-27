@@ -1665,7 +1665,7 @@ ${fullTranscriptText}`;
           textContent: cleanText,
           difficulty: 'medium',
         }),
-        signal: AbortSignal.timeout(35000),
+        signal: AbortSignal.timeout(120000),
       });
 
       if (!res.ok) {

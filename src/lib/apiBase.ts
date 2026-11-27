@@ -114,7 +114,26 @@ export async function apiFetch(path: string, init?: RequestInit): Promise<Respon
   return res;
 }
 
-// Patch window.fetch to route /api/* calls through the backend origin and fall back to zeno-api on static hosts or Capacitor if /api/* returns 404 or network error.
+function isFullStackOrigin(): boolean {
+  if (typeof window === 'undefined') return false;
+  if (isCapacitorOrMobileApp()) return false;
+  const host = window.location.hostname.toLowerCase();
+  if (host.includes('vercel.app') || host.includes('netlify.app')) return false;
+  return (
+    host === 'localhost' ||
+    host === '127.0.0.1' ||
+    host.endsWith('.run.app') ||
+    host.endsWith('.aistudio.google.com')
+  );
+}
+
+function isAbortLikeError(err: unknown, init?: RequestInit): boolean {
+  if (init?.signal?.aborted) return true;
+  const name = (err as any)?.name;
+  return name === 'AbortError' || name === 'TimeoutError';
+}
+
+// Patch window.fetch to route /api/* calls through the backend origin and fall back to zeno-api only on static hosts or Capacitor.
 if (typeof window !== 'undefined' && typeof window.fetch === 'function') {
   try {
     const originalFetch = window.fetch.bind(window);
@@ -136,13 +155,15 @@ if (typeof window !== 'undefined' && typeof window.fetch === 'function') {
         const targetUrl = `${PRODUCTION_PUBLIC_ORIGIN}${pathPart.startsWith('/') ? pathPart : `/${pathPart}`}`;
         try {
           return await originalFetch(targetUrl, init);
-        } catch {
+        } catch (err) {
+          if (isAbortLikeError(err, init)) throw err;
           return await originalFetch(`${INSTACLOUD_ZENO_API_ORIGIN}${pathPart.startsWith('/') ? pathPart : `/${pathPart}`}`, init);
         }
       }
 
       if (url.startsWith('/api/') || url.startsWith('/api?')) {
         const base = getBackendBaseUrl();
+        const allowExternalFallback = !isFullStackOrigin();
         if (base) {
           const newUrl = base + url;
           try {
@@ -152,22 +173,23 @@ if (typeof window !== 'undefined' && typeof window.fetch === 'function') {
                 : input instanceof URL
                 ? await originalFetch(new URL(newUrl), init)
                 : await originalFetch(new Request(newUrl, input), init);
-            if (res.status === 404) {
+            if (res.status === 404 && allowExternalFallback) {
               return await originalFetch(`${INSTACLOUD_ZENO_API_ORIGIN}${url}`, init);
             }
             return res;
-          } catch {
+          } catch (err) {
+            if (!allowExternalFallback || isAbortLikeError(err, init)) throw err;
             return await originalFetch(`${INSTACLOUD_ZENO_API_ORIGIN}${url}`, init);
           }
         }
         try {
           const res = await originalFetch(input, init);
-          if (res.status === 404 && typeof input === 'string') {
+          if (res.status === 404 && allowExternalFallback && typeof input === 'string') {
             return await originalFetch(`${INSTACLOUD_ZENO_API_ORIGIN}${url}`, init);
           }
           return res;
         } catch (err) {
-          if (typeof input === 'string') {
+          if (allowExternalFallback && !isAbortLikeError(err, init) && typeof input === 'string') {
             return await originalFetch(`${INSTACLOUD_ZENO_API_ORIGIN}${url}`, init);
           }
           throw err;

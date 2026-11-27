@@ -42,6 +42,7 @@ import { MathMarkdown, MathText, MathFormula } from './MathMarkdown';
 import { speakTextWithSmallestAi, stopSmallestSpeech } from '../lib/smallestAi';
 import { exportAnkiApkg } from '../lib/ankiExport';
 import { getAuthHeaders } from '../lib/firebase';
+import { apiFetch } from '../lib/apiBase';
 import { ArxivPaper } from '../types';
 import {
   DocumentStudyBundle,
@@ -87,22 +88,8 @@ interface PdfChatTurn {
   content: string;
 }
 
-const INSTACLOUD_API_BASE = 'https://prod-main-zeno-api-c257d4-00gfx3c9932.compute.instacloud-edge.com';
-
 async function callKinichApi(path: string, init?: RequestInit): Promise<Response> {
-  const isStaticHost =
-    typeof window !== 'undefined' &&
-    (window.location.hostname.includes('vercel.app') ||
-      window.location.hostname.includes('netlify.app'));
-  if (isStaticHost) {
-    return fetch(`${INSTACLOUD_API_BASE}${path}`, init);
-  }
-  try {
-    const localRes = await fetch(path, init);
-    const ct = localRes.headers.get('content-type') || '';
-    if (localRes.ok && ct.includes('application/json')) return localRes;
-  } catch {}
-  return fetch(`${INSTACLOUD_API_BASE}${path}`, init);
+  return apiFetch(path, init);
 }
 
 export const InbuiltPdfViewer: React.FC<InbuiltPdfViewerProps> = ({
